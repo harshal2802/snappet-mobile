@@ -31,6 +31,9 @@ final class HouseholdPeerService {
     /// Household phones currently visible on the network, by device id.
     private(set) var nearby: [UUID: NWEndpoint] = [:]
     private(set) var lastError: String?
+    /// Local Network access is off for Snappet (Settings › Privacy & Security › Local Network): nothing
+    /// can be found or reached until it's on. The likeliest first-run problem, so it gets its own banner.
+    private(set) var localNetworkDenied = false
 
     @ObservationIgnored private var listener: NWListener?
     @ObservationIgnored private var browser: NWBrowser?
@@ -135,7 +138,11 @@ final class HouseholdPeerService {
             }
             l.stateUpdateHandler = { [weak self] state in
                 MainActor.assumeIsolated {
-                    if case .failed(let error) = state { self?.lastError = "\(error)"; self?.stop() }
+                    switch state {
+                    case .waiting(let error): self?.noteNetwork(error)
+                    case .failed(let error): self?.noteNetwork(error); self?.lastError = "\(error)"; self?.stop()
+                    default: break
+                    }
                 }
             }
             l.start(queue: .main)
@@ -145,12 +152,31 @@ final class HouseholdPeerService {
             b.browseResultsChangedHandler = { [weak self] results, _ in
                 MainActor.assumeIsolated { self?.handle(results) }
             }
+            b.stateUpdateHandler = { [weak self] state in
+                MainActor.assumeIsolated {
+                    switch state {
+                    case .ready: self?.localNetworkDenied = false
+                    case .waiting(let error), .failed(let error): self?.noteNetwork(error)
+                    default: break
+                    }
+                }
+            }
             b.start(queue: .main)
             browser = b
             isRunning = true
         } catch {
             lastError = "\(error)"
         }
+    }
+
+    private func noteNetwork(_ error: NWError) {
+        if Self.isPolicyDenied(error) { localNetworkDenied = true }
+    }
+
+    /// `kDNSServiceErr_PolicyDenied`: the user (or a profile) has Local Network off for the app.
+    nonisolated static func isPolicyDenied(_ error: NWError) -> Bool {
+        if case .dns(let code) = error { return code == -65570 }
+        return false
     }
 
     private func stop() {

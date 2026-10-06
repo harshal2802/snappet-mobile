@@ -19,6 +19,8 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     var onPause: (() -> Void)?
     /// Phone asked to resume the workout.
     var onResume: (() -> Void)?
+    /// The phone's latest household chores (household prompt 04), as application context.
+    var onHousehold: ((HouseholdWidgetSnapshot) -> Void)?
 
     private let session: WCSession? = WCSession.isSupported() ? WCSession.default : nil
 
@@ -59,7 +61,26 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
 
     func session(_ session: WCSession,
                  activationDidCompleteWith state: WCSessionActivationState,
-                 error: Error?) {}
+                 error: Error?) {
+        // The last chores the phone sent survive a relaunch as the received context.
+        dispatchHousehold(session.receivedApplicationContext)
+    }
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        dispatchHousehold(applicationContext)
+    }
+
+    private func dispatchHousehold(_ payload: [String: Any]) {
+        guard case .snapshot(let data)? = HouseholdWatchMessage(payload: payload),
+              let snapshot = HouseholdWidgetStore.decode(data) else { return }
+        onHousehold?(snapshot)
+    }
+
+    /// A chore ticked on the wrist: queued with `transferUserInfo`, so it arrives even if the phone is away.
+    func sendChoreToggle(_ toggle: ChoreToggle) {
+        guard let session, session.activationState == .activated else { return }
+        session.transferUserInfo(HouseholdWatchMessage.toggle(toggle).payload)
+    }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         dispatch(message)

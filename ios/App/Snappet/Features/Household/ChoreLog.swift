@@ -98,6 +98,9 @@ struct ChoreOp: Identifiable, Equatable, Sendable {
         case pauseHouse(until: String?)
         case resumeHouse
         case namePet(name: String)
+        /// Household prompt 04: a timed blitz everyone joins, until `ends`, aiming for `target` chores.
+        case startPowerHour(ends: Date, target: Int)
+        case endPowerHour
         /// A kind from a newer app version: kept in the log (and relayed), ignored by the fold.
         case unknown(String)
     }
@@ -179,6 +182,7 @@ private struct Wire: Codable {
     var note: String?
     var by: String?
     var until: String?
+    var ends: String?
 
     init(_ o: ChoreOp) {
         v = ChoreOp.wireVersion
@@ -201,6 +205,8 @@ private struct Wire: Codable {
         case .pauseHouse(let u): kind = "pause_house"; until = u
         case .resumeHouse: kind = "resume_house"
         case .namePet(let n): kind = "name_pet"; name = n
+        case .startPowerHour(let e, let t): kind = "start_power_hour"; ends = ChoreOp.formatDate(e); target = t
+        case .endPowerHour: kind = "end_power_hour"
         case .unknown(let k): kind = k
         }
     }
@@ -226,6 +232,10 @@ private struct Wire: Codable {
         case "pause_house": k = .pauseHouse(until: until)
         case "resume_house": k = .resumeHouse
         case "name_pet": k = .namePet(name: name ?? "")
+        case "start_power_hour":
+            guard let e = ends.flatMap(ChoreOp.parseDate) else { k = .unknown(kind); break }
+            k = .startPowerHour(ends: e, target: target ?? 0)
+        case "end_power_hour": k = .endPowerHour
         default: k = .unknown(kind)
         }
         return ChoreOp(id: id, device: device, seq: seq, at: date, kind: k)

@@ -21,6 +21,8 @@ final class HouseholdStore {
     @ObservationIgnored private var formerEarnings: [Progression.Earning] = []
     /// Told after every local write, so the peer service can push it to phones in reach.
     @ObservationIgnored var onLocalChange: (() -> Void)?
+    /// Told after every reload (any change, local or synced): the widget, watch and Live Activity follow.
+    @ObservationIgnored var onReload: (() -> Void)?
 
     var me: UUID { household.myMemberID }
     var myDevice: UUID { household.myDeviceID }
@@ -65,6 +67,7 @@ final class HouseholdStore {
         peers = ((try? context.fetch(FetchDescriptor<HouseholdPeer>(predicate: #Predicate { $0.householdID == id })))
                  ?? []).sorted { $0.lastSyncedAt > $1.lastSyncedAt }
         HouseholdXP.shared.publish(HouseholdXP.earnings(board: board, me: me) + formerEarnings)
+        onReload?()
     }
 
     static func ops(for householdID: UUID, context: ModelContext) -> [ChoreOp] {
@@ -144,6 +147,46 @@ final class HouseholdStore {
         guard !n.isEmpty, n != myName else { return }
         append(.addMember(member: me, name: n))
     }
+
+    // MARK: Ticks from the widget and the watch (household prompt 04)
+
+    /// Applies ticks made away from the app, oldest first, as ops stamped with the tap's time. Idempotent:
+    /// a tick for a chore I've already done in that round (or an untick of one I haven't) writes nothing.
+    /// Returns the ids handled (applied or no-op), for the outbox to drop.
+    @discardableResult
+    func apply(_ toggles: [ChoreToggle], calendar: Calendar = .current) -> [UUID] {
+        var handled: [UUID] = []
+        var wrote = false
+        for t in toggles.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            handled.append(t.id)
+            guard let chore = board.chores[t.choreID], !chore.archived else { continue }
+            let at = min(t.requestedAt, .now)
+            let round: ChoreRound?
+            if case .done(let r) = board.status(of: chore, now: at, calendar: calendar) { round = r } else { round = nil }
+            let mine = round?.completions.filter { $0.member == me } ?? []
+            if t.desired, mine.isEmpty {
+                _ = writeOp(.complete(chore: chore.id, member: me), at: at)
+                wrote = true
+            } else if !t.desired, !mine.isEmpty {
+                for c in mine { _ = writeOp(.undo(op: c.opID), at: at) }
+                wrote = true
+            }
+            if wrote { board = ChoreBoard.fold(records.compactMap(\.op)) }   // the next toggle sees this one
+        }
+        if wrote {
+            reload()
+            onLocalChange?()
+        }
+        return handled
+    }
+
+    // MARK: Power hour (household prompt 04)
+
+    func startPowerHour(minutes: Int, target: Int, now: Date = .now) {
+        append(.startPowerHour(ends: now.addingTimeInterval(TimeInterval(minutes * 60)), target: target), at: now)
+    }
+
+    func endPowerHour() { append(.endPowerHour) }
 
     // MARK: Cooperative (household prompt 03)
 

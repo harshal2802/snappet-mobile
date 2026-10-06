@@ -25,17 +25,60 @@ struct WatchWorkoutView: View {
                 }
                 .tabViewStyle(.verticalPage)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                ContentUnavailableView(
-                    "No Workout",
-                    systemImage: "applewatch",
-                    description: Text("Start a routine on your iPhone to begin tracking here.")
-                )
+            } else if let household = manager.household, !household.chores.isEmpty {
+                // No workout: your household chores lead (household prompt 04), the workout hint below.
+                TabView {
+                    WatchChoresPage(snapshot: household) { manager.toggleChore($0) }
+                    noWorkout
+                }
+                .tabViewStyle(.verticalPage)
                 .transition(.opacity)
+            } else {
+                noWorkout.transition(.opacity)
             }
         }
         .animation(.snappy, value: manager.isRunning)
         .animation(.snappy, value: manager.paused)
+    }
+
+    private var noWorkout: some View {
+        ContentUnavailableView(
+            "No Workout",
+            systemImage: "applewatch",
+            description: Text("Start a routine on your iPhone to begin tracking here.")
+        )
+    }
+}
+
+/// Your chores today on the wrist (household prompt 04). Ticks go to the phone, which writes the op.
+private struct WatchChoresPage: View {
+    let snapshot: HouseholdWidgetSnapshot
+    let toggle: (UUID) -> Void
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(snapshot.chores) { chore in
+                    Button { toggle(chore.id) } label: {
+                        HStack(spacing: 8) {
+                            Text(chore.emoji)
+                            Text(chore.name).strikethrough(chore.done).lineLimit(2)
+                            Spacer(minLength: 0)
+                            Image(systemName: chore.done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(chore.done ? .green : .secondary)
+                        }
+                    }
+                    .accessibilityLabel(chore.done ? "\(chore.name), done" : chore.name)
+                }
+            } header: {
+                Text(snapshot.goalTarget > 0 ? "\(snapshot.petName) · \(snapshot.goalDone)/\(snapshot.goalTarget)" : snapshot.petName)
+            } footer: {
+                if let hour = snapshot.powerHour, hour.end > .now {
+                    Text("Power hour · \(hour.done) done · ends \(hour.end.formatted(date: .omitted, time: .shortened))")
+                }
+            }
+        }
+        .navigationTitle("Chores")
     }
 }
 

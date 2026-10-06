@@ -123,4 +123,28 @@ final class HouseholdUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["household.recap.total"].waitForExistence(timeout: 4), "the recap sheet")
         app.buttons["household.recap.close"].tap()
     }
+
+    /// Household P4 (prompt 159): start a power hour, tick a chore, see the count, end it.
+    func testPowerHourStartCountAndEnd() {
+        openHousehold()
+        app.buttons["household.empty.starter"].tap()
+        let start = app.buttons["household.powerHour.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 4))
+        start.tap()
+        app.buttons["household.powerHour.go"].tap()
+        let count = app.staticTexts["household.powerHour.count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 4), "the banner replaces the start button")
+        XCTAssertEqual(count.label, "0 of 10 chores")
+
+        let check = app.buttons["household.check.Dishes"]
+        var tries = 0
+        while !check.isHittable && tries < 4 { app.swipeUp(); tries += 1 }
+        check.tap()
+        tries = 0
+        while !count.isHittable && tries < 4 { app.swipeDown(); tries += 1 }
+        XCTAssertTrue(app.staticTexts["1 of 10 chores"].waitForExistence(timeout: 4), "the tick counts")
+
+        app.buttons["household.powerHour.end"].tap()
+        XCTAssertTrue(app.buttons["household.powerHour.start"].waitForExistence(timeout: 4), "ended")
+    }
 }

@@ -58,6 +58,17 @@ final class WorkoutWatchManager: NSObject {
     /// The relay back to the phone. The manager forwards each new HR/energy sample here.
     let link = WatchConnectivityLink()
 
+    /// Your household chores today, from the phone (household prompt 04). nil = no household.
+    private(set) var household: HouseholdWidgetSnapshot?
+
+    /// Tick or untick on the wrist: shown at once, applied by the phone when the message lands.
+    func toggleChore(_ id: UUID) {
+        guard var snap = household, let i = snap.chores.firstIndex(where: { $0.id == id }) else { return }
+        snap.chores[i].done.toggle()
+        household = snap
+        link.sendChoreToggle(ChoreToggle(choreID: id, desired: snap.chores[i].done))
+    }
+
     override init() {
         super.init()
         link.onStart = { [weak self] activityType, maxHR, restHR in
@@ -73,6 +84,9 @@ final class WorkoutWatchManager: NSObject {
         }
         link.onResume = { [weak self] in
             Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
+        }
+        link.onHousehold = { [weak self] snapshot in
+            Task { @MainActor [weak self] in self?.household = snapshot }
         }
         link.activate()
     }

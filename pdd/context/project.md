@@ -220,7 +220,10 @@ version-vector op exchange, the Household tab (names, members, phones, Sync now,
 sync pill. **P3 (prompt 158)** adds the cooperative layer: a shared house pet (the buddy creature; level from
 uncapped house XP, mood from overdue chores and goal pace, never naming anyone), house streak, pause, fair share
 with a balance pill, lean-toward-lighter-share rotation, help requests (ask / take it), thanks, and a weekly
-"Week in the house" recap with a thank-you line for every member. Not yet: widgets, watch, Live Activity, Android (P4).
+"Week in the house" recap with a thank-you line for every member. **P4 (prompt 159)** adds the Household widget
+(Home + Lock Screen, tick off in place), a Chores page on the watch, and power hours (a timed blitz with a Live
+Activity on every phone), plus a Local-Network-off banner. Not in this round: Android (protocol spec is ready),
+Wi-Fi Aware, background notifications.
 
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,

@@ -401,3 +401,95 @@ struct HouseholdRecapCard: View {
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 }
+
+// MARK: - Power hour (household prompt 04, frame 7)
+
+/// Today's power-hour row: a live banner while one runs (anyone's), otherwise a way to start one.
+struct HouseholdPowerHourRow: View {
+    let store: HouseholdStore
+    @State private var starting = false
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let hour = store.board.powerHour(at: context.date) {
+                banner(hour, now: context.date)
+            } else {
+                Button { starting = true } label: {
+                    Label("Start a power hour", systemImage: "sparkles")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .accessibilityIdentifier("household.powerHour.start")
+            }
+        }
+        .sheet(isPresented: $starting) {
+            PowerHourStartSheet { minutes, target in store.startPowerHour(minutes: minutes, target: target) }
+        }
+    }
+
+    private func banner(_ hour: PowerHour, now: Date) -> some View {
+        let progress = store.board.powerHourProgress(hour, now: now)
+        let left = max(0, Int(hour.end.timeIntervalSince(now)))
+        let who = progress.members.map { $0 == store.me ? "you" : store.board.name(of: $0) }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Power hour", systemImage: "sparkles").font(.headline).foregroundStyle(SnappetColor.household)
+                Spacer()
+                Text("\(left / 60):\(String(format: "%02d", left % 60)) left").font(.subheadline.monospacedDigit().weight(.semibold))
+            }
+            Text(hour.target > 0 ? "\(progress.done) of \(hour.target) chores" : "\(progress.done) chores so far")
+                .font(.subheadline)
+                .accessibilityIdentifier("household.powerHour.count")
+            ProgressView(value: Double(min(progress.done, max(1, hour.target))), total: Double(max(1, hour.target)))
+                .tint(SnappetColor.household)
+            HStack {
+                Text(who.isEmpty ? "Tick something to get it going" : "In: \(who.joined(separator: ", "))")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("End", role: .destructive) { store.endPowerHour() }
+                    .font(.caption.weight(.bold)).buttonStyle(.bordered)
+                    .accessibilityIdentifier("household.powerHour.end")
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("household.powerHour.banner")
+    }
+}
+
+struct PowerHourStartSheet: View {
+    let start: (Int, Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var minutes = 30
+    @State private var target = 10
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("How long", selection: $minutes) {
+                        ForEach([15, 30, 45, 60], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("How long")
+                } footer: {
+                    Text("Everyone's phone shows the countdown on the Lock Screen. The count catches up whenever phones sync.")
+                }
+                Section("Aim for") {
+                    Stepper("\(target) chores", value: $target, in: 1...100)
+                        .accessibilityIdentifier("household.powerHour.target")
+                }
+            }
+            .navigationTitle("Power hour")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Go") { start(minutes, target); dismiss() }
+                        .accessibilityIdentifier("household.powerHour.go")
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}

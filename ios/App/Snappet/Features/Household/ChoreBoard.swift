@@ -58,6 +58,8 @@ struct ChoreBoard: Equatable, Sendable {
     var thanks: [HouseholdThanks] = []
     var pauses: [HousePause] = []
     var petName: String?
+    /// Household prompt 04.
+    var powerHours: [PowerHour] = []
 
     static func fold(_ ops: [ChoreOp]) -> ChoreBoard {
         var seen = Set<UUID>()
@@ -113,6 +115,17 @@ struct ChoreBoard: Equatable, Sendable {
                 }
             case .namePet(let name):
                 if !name.isEmpty { board.petName = name }
+            case .startPowerHour(let ends, let target):
+                // One at a time: a start while one is running replaces it (the later start wins).
+                if let i = board.powerHours.indices.last, board.powerHours[i].end > op.at {
+                    board.powerHours[i].end = op.at
+                }
+                guard ends > op.at else { continue }
+                board.powerHours.append(PowerHour(opID: op.id, start: op.at, end: ends, target: max(0, target)))
+            case .endPowerHour:
+                if let i = board.powerHours.indices.last, board.powerHours[i].end > op.at {
+                    board.powerHours[i].end = op.at
+                }
             case .createChore, .undo, .unknown:
                 continue
             }
@@ -327,5 +340,90 @@ extension ChoreBoard {
             // A newer request for the same chore replaces this one.
             return !helpRequests.contains { $0.chore == req.chore && $0.at > req.at && $0.at <= now }
         }
+    }
+}
+
+/// A power hour (household prompt 04): everyone blitzes chores from `start` until `end`.
+struct PowerHour: Equatable, Sendable {
+    var opID: UUID
+    var start: Date
+    var end: Date
+    var target: Int
+
+    func isRunning(at date: Date) -> Bool { date >= start && date < end }
+}
+
+extension ChoreBoard {
+    func powerHour(at date: Date) -> PowerHour? {
+        powerHours.last { $0.isRunning(at: date) }
+    }
+
+    /// Rounds first done during the power hour (up to `now`), and who joined in.
+    func powerHourProgress(_ hour: PowerHour, now: Date = .now, calendar: Calendar = .current) -> (done: Int, members: [UUID]) {
+        let until = min(now, hour.end)
+        var done = 0
+        var who: [UUID] = []
+        for chore in chores.values {
+            for round in rounds(of: chore, calendar: calendar) {
+                let inHour = round.completions.filter { $0.at >= hour.start && $0.at < until }
+                guard !inHour.isEmpty else { continue }
+                if round.first.at >= hour.start { done += 1 }
+                for c in inHour where !who.contains(c.member) { who.append(c.member) }
+            }
+        }
+        return (done, who)
+    }
+}
+
+// MARK: - Today, bucketed (shared by the Today screen, the widget and the watch)
+
+struct TodayRow: Equatable, Sendable {
+    var chore: Chore
+    var status: ChoreStatus
+    var assignee: UUID?
+}
+
+struct TodayBuckets: Equatable, Sendable {
+    /// My turn, claimed by me, or done by me today.
+    var mine: [TodayRow] = []
+    /// Due, unassigned and unclaimed.
+    var grabs: [TodayRow] = []
+    /// Someone else's turn.
+    var others: [TodayRow] = []
+    /// Not due today, with the next day it is.
+    var later: [(chore: Chore, next: DayKey)] = []
+
+    static func == (a: TodayBuckets, b: TodayBuckets) -> Bool {
+        a.mine == b.mine && a.grabs == b.grabs && a.others == b.others
+            && a.later.map(\.chore) == b.later.map(\.chore) && a.later.map(\.next) == b.later.map(\.next)
+    }
+}
+
+extension ChoreBoard {
+    func today(me: UUID, now: Date, calendar: Calendar = .current) -> TodayBuckets {
+        let rows = activeChores.map { TodayRow(chore: $0, status: status(of: $0, now: now, calendar: calendar),
+                                               assignee: assignee(of: $0, now: now, calendar: calendar)) }
+        func isToday(_ s: ChoreStatus) -> Bool {
+            switch s {
+            case .due: return true
+            case .done(let round): return calendar.isDate(round.completions.last?.at ?? .distantPast, inSameDayAs: now)
+            case .notDue: return false
+            }
+        }
+        func doneByMe(_ s: ChoreStatus) -> Bool {
+            if case .done(let round) = s { return round.members.contains(me) } else { return false }
+        }
+        var b = TodayBuckets()
+        for r in rows where isToday(r.status) {
+            if r.assignee == me || doneByMe(r.status) { b.mine.append(r) }
+            else if r.assignee == nil { b.grabs.append(r) }
+            else { b.others.append(r) }
+        }
+        b.later = rows.compactMap { r in
+            guard !isToday(r.status), case .notDue(let next?) = r.status else { return nil }
+            return (r.chore, next)
+        }
+        .sorted { $0.next < $1.next }
+        return b
     }
 }

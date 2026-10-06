@@ -250,8 +250,14 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
             Task { @MainActor [weak self] in self?.setPaused(true, propagate: false) }
         case .resume?:
             Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
-        case .start?, .stop?, .none:
+        case .start?, .stop?:
             break   // start/stop flow phone → watch only
+        case .none:
+            // A chore ticked on the watch (household prompt 04): into the outbox, applied on the main actor.
+            if case .toggle(let toggle)? = HouseholdWatchMessage(payload: payload) {
+                ChoreOutbox.append(toggle)
+                Task { @MainActor in HouseholdSurfaces.shared.reconcile() }
+            }
         }
     }
 

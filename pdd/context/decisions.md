@@ -9655,3 +9655,22 @@ Non-obvious calls:
   `interactive: false` (it rendered blank with the drag gesture on). The Today card drops its 3D view while
   the pet screen is on top, so only one creature renders.
 
+## 2026-10-05 — Household P4: off-app surfaces, and what's left out of the first beta (household prompt 04 / 159)
+
+- **Widget and watch ticks are ops stamped with the tap time**, applied when the app next runs (App Group
+  outbox, one file per tap, absolute desired state, the Habits widget pattern). Idempotent: a tick for a round
+  I've already done, or an untick of one I haven't, writes nothing; an unknown chore is dropped, not retried.
+- One snapshot type (`HouseholdWidgetSnapshot`, in `Shared/`) feeds both the widget and the watch, built from
+  the same `ChoreBoard.today` bucketing the Today screen uses (extracted from the view for that reason).
+- The watch rides the phone's existing `WCSession` delegate: application context down, `transferUserInfo` up,
+  so a tick on the wrist arrives even if the phone was away. The chores page appears only when there's no
+  workout running and the phone has sent chores.
+- **Power hour** is two ops. Every phone shows the Live Activity once it has synced the start; the countdown is
+  OS-ticked, and the count updates when the app syncs or opens (no server, so no background push: accepted).
+- **Local Network denied** gets its own banner with Open Settings (`kDNSServiceErr_PolicyDenied` on the
+  browser or listener). It's the likeliest first-beta failure.
+- **Out of the first beta (user: iOS first; multi-phone testing only possible in Public Beta):** Android (no
+  beta channel; `household-wire-format.md` is its contract), Wi-Fi Aware (new entitlement + two iPhone 12+ to
+  test; Bonjour covers the home), and notifications for others' chores (could only fire while the app is open,
+  where the board already updates live).
+
