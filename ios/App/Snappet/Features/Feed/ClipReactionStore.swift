@@ -13,11 +13,14 @@ import SwiftData
 // Favorites are now `FeedReaction` rows (the existing, already-backed-up "private reaction on content"
 // model) keyed by the CLIP — `SessionMedia.id`, which survives regrouping, bakes and restore. A post is a
 // favorite when any of its clips is; hearting a post hearts all of its clips. No new @Model.
+// Prompt 164 adds "Hide from Clips" on the same rows/key (`clipHidden`), so hiding is backed up too.
 
 /// Pure keys + the one-time legacy migration rule — unit-tested without a store.
 enum ClipFavorites {
     /// `FeedReaction.typeRaw` for a Clips favorite (Recap reactions are "emoji" / "note").
     static let reactionType = "clipFavorite"
+    /// `FeedReaction.typeRaw` for a clip hidden from Clips (prompt 164) — same clip key, same backup.
+    static let hiddenType = "clipHidden"
     /// `FeedReaction.activityContentId` namespace — never collides with a Recap card's content id.
     static let contentPrefix = "clipmedia:"
     /// The prompt-88 UserDefaults set of hearted POST ids, migrated once then removed.
@@ -43,6 +46,8 @@ enum ClipFavorites {
     /// Hearted clip ids (`SessionMedia.id`) — a cache of the `FeedReaction` rows, so the feed's per-card
     /// reads never fetch.
     private var mediaIDs: Set<UUID> = []
+    /// Clips hidden from the feed (prompt 164) — non-destructive: the media and session are untouched.
+    private(set) var hiddenIDs: Set<UUID> = []
 
     /// `defaults` is injectable so the legacy migration unit-tests against a throwaway suite.
     init(defaults: UserDefaults = .standard) {
@@ -57,12 +62,38 @@ enum ClipFavorites {
     }
 
     func reload() {
-        guard let context else { return }
-        let type = ClipFavorites.reactionType
+        let favorites = rowIDs(ofType: ClipFavorites.reactionType)
+        if favorites != mediaIDs { mediaIDs = favorites }   // no observation churn when nothing changed
+        let hidden = rowIDs(ofType: ClipFavorites.hiddenType)
+        if hidden != hiddenIDs { hiddenIDs = hidden }
+    }
+
+    private func rowIDs(ofType type: String) -> Set<UUID> {
+        guard let context else { return [] }
         let rows = (try? context.fetch(FetchDescriptor<FeedReaction>(
             predicate: #Predicate { $0.typeRaw == type }))) ?? []
-        let ids = Set(rows.compactMap { ClipFavorites.mediaID(fromContentId: $0.activityContentId) })
-        if ids != mediaIDs { mediaIDs = ids }   // no observation churn when nothing changed
+        return Set(rows.compactMap { ClipFavorites.mediaID(fromContentId: $0.activityContentId) })
+    }
+
+    // MARK: Hide from Clips (prompt 164)
+
+    func isHidden(_ mediaID: UUID) -> Bool { hiddenIDs.contains(mediaID) }
+
+    func hide(_ ids: Set<UUID>) {
+        let new = ids.subtracting(hiddenIDs)
+        guard let context, !new.isEmpty else { return }
+        for id in new {
+            context.insert(FeedReaction(activityContentId: ClipFavorites.contentId(for: id),
+                                        typeRaw: ClipFavorites.hiddenType))
+        }
+        try? context.save()
+        hiddenIDs.formUnion(new)
+    }
+
+    func unhide(_ ids: Set<UUID>) {
+        guard let context, !ids.isDisjoint(with: hiddenIDs) else { return }
+        deleteRows(type: ClipFavorites.hiddenType, ids: ids, in: context)
+        hiddenIDs.subtract(ids)
     }
 
     func isFavorite(_ post: ClipFeedPost) -> Bool {
@@ -100,12 +131,15 @@ enum ClipFavorites {
 
     private func remove(_ ids: Set<UUID>) {
         guard let context else { return }
-        let type = ClipFavorites.reactionType
+        deleteRows(type: ClipFavorites.reactionType, ids: ids, in: context)
+        mediaIDs.subtract(ids)
+    }
+
+    private func deleteRows(type: String, ids: Set<UUID>, in context: ModelContext) {
         let contentIds = Set(ids.map(ClipFavorites.contentId(for:)))
         let rows = (try? context.fetch(FetchDescriptor<FeedReaction>(
             predicate: #Predicate { $0.typeRaw == type }))) ?? []
         for row in rows where contentIds.contains(row.activityContentId) { context.delete(row) }
         try? context.save()
-        mediaIDs.subtract(ids)
     }
 }

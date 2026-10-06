@@ -9748,3 +9748,12 @@ stripes, and the panel read as an opaque slab.
   the Outcome part is on, so it isn't said twice.
 - **One SwiftUI drawing (`ClipOverlayChrome`)** for the poster and the sheet preview, so the preview can't lie.
 - The ✎ button shows only when the feed has posts (like the grid/autoplay buttons).
+
+## 2026-10-06 — Clips: Hide from Clips is a reaction, not a delete (prompt 164)
+
+- **Non-destructive by design**: hiding never touches `SessionMedia`, the session or Photos — it's a `FeedReaction`
+  row (`clipHidden`), keyed by clip like favorites (prompt 162), so it's backed up and survives regrouping.
+- **Hidden clips leave their posts, not the whole post**: a post shows the clips you didn't hide; attempt labels
+  keep their real numbers (so "Attempt 1" may be missing — that's the truth). A post with nothing left disappears.
+- **Recovery path is visible**: a "Hidden · N" chip at the end of the strip, shown only when something is hidden,
+  plus a 4 s Undo toast. No settings screen.

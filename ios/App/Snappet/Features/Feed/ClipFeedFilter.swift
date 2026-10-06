@@ -31,6 +31,8 @@ struct ClipFeedFilter: Equatable, Sendable {
     var reelsOnly: Bool = false
     /// Show only climbs sent or flashed that session (prompt 161). Stacks with the other chips.
     var sendsOnly: Bool = false
+    /// Show ONLY the clips hidden from Clips (prompt 164) — where you go to unhide them.
+    var showHidden: Bool = false
 
     /// The query with edge whitespace dropped — what matching + the "no results for X" copy both use.
     var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -39,10 +41,26 @@ struct ClipFeedFilter: Equatable, Sendable {
     /// and the fast path (inactive ⇒ `apply` returns the input untouched).
     var isActive: Bool {
         !trimmedQuery.isEmpty || discipline != .all || kind != .all || favoritesOnly || reelsOnly || sendsOnly
+            || showHidden
     }
 
     /// One-tap recovery: the default (all-off) filter.
     static let cleared = ClipFeedFilter()
+
+    /// Hidden clips (prompt 164) leave their posts; a post with nothing left disappears. With `showHidden`
+    /// it's the reverse — only hidden clips, so they can be found and unhidden. Posts stay whole otherwise
+    /// (attempt labels keep their real numbers). Fast path: nothing hidden and not showing hidden → input.
+    static func withHidden(_ posts: [ClipFeedPost], hidden: Set<UUID>, showHidden: Bool) -> [ClipFeedPost] {
+        guard showHidden || !hidden.isEmpty else { return posts }
+        return posts.compactMap { post in
+            let kept = post.clips.filter { hidden.contains($0.media.id) == showHidden }
+            guard !kept.isEmpty else { return nil }
+            if kept.count == post.clips.count { return post }
+            var p = post
+            p.clips = kept
+            return p
+        }
+    }
 
     /// Filter `posts` down to the visible set. `isFavorite` injects the reaction store lookup so the
     /// UserDefaults edge stays out of the pure layer (and is only consulted when `favoritesOnly` is on).

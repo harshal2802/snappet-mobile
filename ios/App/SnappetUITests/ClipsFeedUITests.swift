@@ -123,4 +123,42 @@ import XCTest
         XCTAssertTrue(show.waitForExistence(timeout: 4))
         XCTAssertEqual(show.value as? String, "0", "the saved default survives reopening the sheet")
     }
+
+    /// Prompt 164: hide a clip from the ⋯ menu → it leaves the feed with an Undo toast → the Hidden chip
+    /// finds it → Unhide brings it back.
+    func testHideFromClipsAndUnhide() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+
+        let post = app.staticTexts["Neon Harbor · Pyramid Stage"]
+        XCTAssertTrue(post.waitForExistence(timeout: 15))
+        // The artist·stage post is the festival-tagged one; open ITS ⋯ menu (the first card's).
+        let menus = app.buttons.matching(identifier: "clips.post.menu")
+        XCTAssertTrue(menus.firstMatch.waitForExistence(timeout: 6))
+        menus.firstMatch.tap()
+        let hide = app.buttons["clips.post.hide"]
+        XCTAssertTrue(hide.waitForExistence(timeout: 4))
+        hide.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["clips.hide.toast"].waitForExistence(timeout: 4),
+                      "hiding shows the Undo toast")
+        let chip = app.buttons["clips.filter.hidden"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 6), "the Hidden chip appears once something is hidden")
+
+        let strip = app.scrollViews["clips.filter.chips"]
+        let screen = app.windows.firstMatch.frame
+        for _ in 0..<4 where !screen.contains(chip.frame) { strip.swipeLeft() }
+        chip.tap()
+        XCTAssertTrue(menus.firstMatch.waitForExistence(timeout: 6), "the hidden clip shows behind the chip")
+        menus.firstMatch.tap()
+        let unhide = app.buttons["clips.post.unhide"]
+        XCTAssertTrue(unhide.waitForExistence(timeout: 4))
+        unhide.tap()
+        // Nothing hidden any more → the chip goes away once the filter is off.
+        chip.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: chip)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 6), .completed)
+    }
 }

@@ -214,4 +214,27 @@ final class ClipFeedFilterTests: XCTestCase {
         f.discipline = .climbs
         XCTAssertEqual(ids(f.apply(sample + [sent, flash, project]) { _ in false }), ["s"])
     }
+
+    // MARK: Hidden (prompt 164)
+
+    func testHiddenClipsLeaveTheirPostsAndShowHiddenInvertsIt() {
+        let a = clip("video"), b = clip("video"), c = clip("photo")
+        var two = post(id: "two", kind: .kilter, title: "Crux", subtitle: "Tue")
+        two.clips = [a, b]
+        var one = post(id: "one", kind: .gym, title: "Bench", subtitle: "Push")
+        one.clips = [c]
+        let posts = [two, one]
+        // Nothing hidden → the input, untouched.
+        XCTAssertEqual(ClipFeedFilter.withHidden(posts, hidden: [], showHidden: false), posts)
+        // Hide one clip of "two" and the only clip of "one".
+        let hidden: Set<UUID> = [a.media.id, c.media.id]
+        let normal = ClipFeedFilter.withHidden(posts, hidden: hidden, showHidden: false)
+        XCTAssertEqual(ids(normal), ["two"])
+        XCTAssertEqual(normal.first?.clips.map(\.media.id), [b.media.id])
+        let onlyHidden = ClipFeedFilter.withHidden(posts, hidden: hidden, showHidden: true)
+        XCTAssertEqual(ids(onlyHidden), ["two", "one"])
+        XCTAssertEqual(onlyHidden.first?.clips.map(\.media.id), [a.media.id])
+        var f = ClipFeedFilter(); f.showHidden = true
+        XCTAssertTrue(f.isActive)
+    }
 }
