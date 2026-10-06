@@ -61,6 +61,8 @@ struct ChoreFields: Equatable, Sendable {
     var effort: ChoreEffort?
     var repeats: ChoreRepeat?
     var assignment: ChoreAssignment?
+    /// Household prompt 03: a rotating chore goes to whoever in its rotation has done least this week.
+    var lean: Bool?
 }
 
 struct ChoreOp: Identifiable, Equatable, Sendable {
@@ -87,6 +89,15 @@ struct ChoreOp: Identifiable, Equatable, Sendable {
         case setGoal(week: String, target: Int, reward: String)
         /// Household prompt 02: the shared household name. Latest wins.
         case renameHousehold(name: String)
+        /// Household prompt 03: "can someone take this?" Open until the chore is next done, someone
+        /// else claims it, or it's undone.
+        case askHelp(chore: UUID, member: UUID, note: String)
+        /// A thank-you from `by` to `member`, optionally for a chore.
+        case thank(member: UUID, by: UUID, chore: UUID?)
+        /// The house on holiday from this op's time until `until` (yyyy-MM-dd, inclusive) or a resume.
+        case pauseHouse(until: String?)
+        case resumeHouse
+        case namePet(name: String)
         /// A kind from a newer app version: kept in the log (and relayed), ignored by the fold.
         case unknown(String)
     }
@@ -165,6 +176,9 @@ private struct Wire: Codable {
     var week: String?
     var target: Int?
     var reward: String?
+    var note: String?
+    var by: String?
+    var until: String?
 
     init(_ o: ChoreOp) {
         v = ChoreOp.wireVersion
@@ -182,6 +196,11 @@ private struct Wire: Codable {
         case .claim(let c, let m): kind = "claim"; chore = c.wire; member = m.wire
         case .setGoal(let w, let t, let r): kind = "set_goal"; week = w; target = t; reward = r
         case .renameHousehold(let n): kind = "rename_household"; name = n
+        case .askHelp(let c, let m, let n): kind = "ask_help"; chore = c.wire; member = m.wire; note = n
+        case .thank(let m, let b, let c): kind = "thank"; member = m.wire; by = b.wire; chore = c?.wire
+        case .pauseHouse(let u): kind = "pause_house"; until = u
+        case .resumeHouse: kind = "resume_house"
+        case .namePet(let n): kind = "name_pet"; name = n
         case .unknown(let k): kind = k
         }
     }
@@ -202,6 +221,11 @@ private struct Wire: Codable {
         case "claim": k = .claim(chore: choreID, member: memberID)
         case "set_goal": k = .setGoal(week: week ?? "", target: target ?? 0, reward: reward ?? "")
         case "rename_household": k = .renameHousehold(name: name ?? "")
+        case "ask_help": k = .askHelp(chore: choreID, member: memberID, note: note ?? "")
+        case "thank": k = .thank(member: memberID, by: UUID(wire: by), chore: chore.flatMap(UUID.init(uuidString:)))
+        case "pause_house": k = .pauseHouse(until: until)
+        case "resume_house": k = .resumeHouse
+        case "name_pet": k = .namePet(name: name ?? "")
         default: k = .unknown(kind)
         }
         return ChoreOp(id: id, device: device, seq: seq, at: date, kind: k)
@@ -215,9 +239,10 @@ private struct WireFields: Codable {
     var effort: String?
     var repeats: WireRepeat?
     var assignment: WireAssignment?
+    var lean: Bool?
 
     init(_ f: ChoreFields) {
-        name = f.name; emoji = f.emoji; room = f.room; effort = f.effort?.rawValue
+        name = f.name; emoji = f.emoji; room = f.room; effort = f.effort?.rawValue; lean = f.lean
         repeats = f.repeats.map(WireRepeat.init)
         assignment = f.assignment.map(WireAssignment.init)
     }
@@ -225,7 +250,7 @@ private struct WireFields: Codable {
     /// Unknown effort / repeat / assignment values (a newer app's) drop just that field.
     var value: ChoreFields {
         ChoreFields(name: name, emoji: emoji, room: room, effort: effort.flatMap(ChoreEffort.init(rawValue:)),
-                    repeats: repeats?.value, assignment: assignment?.value)
+                    repeats: repeats?.value, assignment: assignment?.value, lean: lean)
     }
 }
 

@@ -51,21 +51,24 @@ final class HouseholdUITests: XCTestCase {
             let e = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text), object: card)
             return XCTWaiter.wait(for: [e], timeout: 4) == .completed
         }
-        XCTAssertTrue(cardSays("0 of 5 chores → Pizza"), card.label)
+        XCTAssertTrue(cardSays("House goal 0 / 5 this week"), card.label)
 
         check.tap()
-        XCTAssertTrue(cardSays("1 of 5 chores → Pizza"), "ticking moves the goal: \(card.label)")
+        XCTAssertTrue(cardSays("House goal 1 / 5 this week"), "ticking moves the goal: \(card.label)")
 
         // Untick puts it back.
         app.buttons["household.check.Dishes"].tap()
-        XCTAssertTrue(cardSays("0 of 5 chores → Pizza"), card.label)
+        XCTAssertTrue(cardSays("House goal 0 / 5 this week"), card.label)
     }
 
     func testStarterChoresFillTheBoard() {
         openHousehold()
         app.buttons["household.empty.starter"].tap()
         XCTAssertTrue(app.buttons["household.check.Dishes"].waitForExistence(timeout: 4))
-        XCTAssertTrue(app.buttons["household.claim.Clean the fridge"].exists, "never-done fridge is up for grabs")
+        let claim = app.buttons["household.claim.Clean the fridge"]
+        var tries = 0
+        while !claim.exists && tries < 4 { app.swipeUp(); tries += 1 }   // below the pet card
+        XCTAssertTrue(claim.exists, "never-done fridge is up for grabs")
         app.segmentedControls["household.section"].buttons["All chores"].tap()
         XCTAssertTrue(app.staticTexts["Water plants"].waitForExistence(timeout: 4))
         app.segmentedControls["household.section"].buttons["Week"].tap()
@@ -95,5 +98,29 @@ final class HouseholdUITests: XCTestCase {
         link.typeText("https://example.com/not-an-invite")
         XCTAssertFalse(app.buttons["household.join.useLink"].isEnabled, "only a household invite link works")
         app.buttons["household.join.close"].tap()
+    }
+
+    /// Household P3 (prompt 158): the pet card leads Today, its screen shows mood and pause, and the
+    /// weekly recap opens from Week.
+    func testHousePetScreenAndRecap() {
+        openHousehold()
+        app.buttons["household.empty.starter"].tap()
+        let pet = app.buttons["household.pet"]
+        XCTAssertTrue(pet.waitForExistence(timeout: 4), "the house pet leads Today")
+        XCTAssertTrue(pet.label.contains("Biscuit"), pet.label)
+        pet.tap()
+        XCTAssertTrue(app.staticTexts["household.pet.mood"].waitForExistence(timeout: 4))
+        let pause = app.switches["household.pet.pause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 4))
+        pause.switches.firstMatch.exists ? pause.switches.firstMatch.tap() : pause.tap()
+        XCTAssertTrue(app.staticTexts["Dozing while you're away"].waitForExistence(timeout: 4), "paused: the pet dozes")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.segmentedControls["household.section"].buttons["Week"].tap()
+        let recap = app.buttons["household.week.recap"]
+        XCTAssertTrue(recap.waitForExistence(timeout: 4))
+        recap.tap()
+        XCTAssertTrue(app.staticTexts["household.recap.total"].waitForExistence(timeout: 4), "the recap sheet")
+        app.buttons["household.recap.close"].tap()
     }
 }

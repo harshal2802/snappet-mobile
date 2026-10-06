@@ -9630,3 +9630,28 @@ Non-obvious calls:
 - The household key lives in SwiftData and therefore in backups. Anyone holding a backup file could sync with
   the household on the same Wi-Fi; accepted for P2 (the file is the user's own), revisit with Keychain if needed.
 
+## 2026-10-05 — Household P3: one shared pet, balance not ranking (household prompt 03 / 158)
+
+- Everything cooperative is **derived from the op log** (no new models): pet level and mood, house streak,
+  fair share, help requests, thanks, the recap. So it syncs over P2 for free and folds identically on every phone.
+- **House XP is uncapped** and counts every credited member: the 300/day cap protects a person's level, not
+  the house's. Same level curve as the buddy, so the pet's stage reads the same way.
+- **Mood never names a person.** It's overdue chores weighted by effort and days (a week at most) against the
+  goal's pace. Without a goal it's overdue health alone. Tuned so one large chore a day late still reads cosy
+  and two chores three days late read "a bit neglected" (the first draft read "content", which was too kind). The
+  detail line names the room ("the kitchen's slipping").
+- **Fair share** is effort points (S1 · M2 · L3), and both people in a shared round get the points. Balance
+  thresholds are 10 and 25 percentage points between the top and bottom share. It's shown as a stacked bar
+  with a "not a ranking" caption.
+- **Lean toward lighter share** (frame 3's deferred toggle) picks the lightest member in the rotation; ties keep
+  rotation order, so a fresh week behaves like plain rotation.
+- **Help requests** close on completion, someone else's claim, a newer request, or undo; "Take it" is just a claim.
+- **The recap gives each member their best line** (took a help request › rescued an overdue chore › daily run
+  of 4+ › did N chores) and gives no line to someone who did nothing: never a call-out.
+- **Pause**: no overdue days inside a pause; a week paused 4+ days neither breaks nor extends the streak;
+  the pet dozes. An open-ended pause ignores a second pause op.
+- The pet reuses the buddy creature. Two RealityKit gotchas found: the creature is its own button (it
+  swallowed the card's tap, so the card uses `allowsHitTesting(false)`), and inside a scroll view it must be
+  `interactive: false` (it rendered blank with the drag gesture on). The Today card drops its 3D view while
+  the pet screen is on top, so only one creature renders.
+

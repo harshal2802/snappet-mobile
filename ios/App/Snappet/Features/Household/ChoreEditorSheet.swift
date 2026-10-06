@@ -19,6 +19,7 @@ struct ChoreEditorSheet: View {
     @State private var everyDays = 14
     @State private var who: Who = .rotate
     @State private var fixedMember: UUID?
+    @State private var lean = false
 
     enum RepeatMode: String, CaseIterable, Identifiable {
         case daily = "Daily", weekdays = "Days", weekly = "Weekly", afterDone = "After done", once = "Once"
@@ -45,6 +46,7 @@ struct ChoreEditorSheet: View {
         _emoji = State(initialValue: chore.emoji)
         _room = State(initialValue: chore.room)
         _effort = State(initialValue: chore.effort)
+        _lean = State(initialValue: chore.lean)
         switch chore.repeats {
         case .daily: _mode = State(initialValue: .daily)
         case .weekdays(let d): _mode = State(initialValue: .weekdays); _weekdays = State(initialValue: d)
@@ -112,6 +114,10 @@ struct ChoreEditorSheet: View {
                         ForEach(Who.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    if who == .rotate, members.count > 1 {
+                        Toggle("Lean toward lighter share", isOn: $lean)
+                            .accessibilityIdentifier("household.editor.lean")
+                    }
                     if who == .fixed, members.count > 1 {
                         Picker("Person", selection: Binding(get: { fixedMember ?? me }, set: { fixedMember = $0 })) {
                             ForEach(members) { m in Text(m.id == me ? "You" : m.name).tag(m.id) }
@@ -172,7 +178,7 @@ struct ChoreEditorSheet: View {
         case .grabs: assignment = .upForGrabs
         }
         return ChoreFields(name: name.trimmingCharacters(in: .whitespaces), emoji: emoji, room: room,
-                           effort: effort, repeats: repeats, assignment: assignment)
+                           effort: effort, repeats: repeats, assignment: assignment, lean: who == .rotate && lean)
     }
 }
 

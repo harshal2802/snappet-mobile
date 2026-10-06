@@ -112,6 +112,7 @@ final class HouseholdStore {
         if fields.effort != chore.effort { changed.effort = fields.effort }
         if fields.repeats != chore.repeats { changed.repeats = fields.repeats }
         if fields.assignment != chore.assignment { changed.assignment = fields.assignment }
+        if let lean = fields.lean, lean != chore.lean { changed.lean = lean }
         guard changed != ChoreFields() else { return }
         append(.editChore(chore: chore.id, fields: changed))
     }
@@ -142,6 +143,37 @@ final class HouseholdStore {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty, n != myName else { return }
         append(.addMember(member: me, name: n))
+    }
+
+    // MARK: Cooperative (household prompt 03)
+
+    var petName: String { board.petName ?? "Biscuit" }
+
+    func askHelp(_ chore: Chore, note: String) {
+        append(.askHelp(chore: chore.id, member: me, note: note.trimmingCharacters(in: .whitespaces)))
+    }
+
+    /// Takes back my own help request.
+    func retractHelp(_ request: HelpRequest) {
+        guard request.member == me else { return }
+        append(.undo(op: request.opID))
+    }
+
+    func thank(_ member: UUID, for chore: UUID?) {
+        guard member != me else { return }
+        append(.thank(member: member, by: me, chore: chore))
+    }
+
+    func pauseHouse(until: DayKey? = nil) {
+        append(.pauseHouse(until: until.map { String(format: "%04d-%02d-%02d", $0.value / 10_000, ($0.value / 100) % 100, $0.value % 100) }))
+    }
+
+    func resumeHouse() { append(.resumeHouse) }
+
+    func namePet(_ name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, n != petName else { return }
+        append(.namePet(name: n))
     }
 
     // MARK: Sync (household prompt 02)
