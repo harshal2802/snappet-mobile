@@ -1,6 +1,7 @@
 import Foundation
 import Photos
 import AVFoundation
+import UIKit
 
 // MARK: - Clips feed — share a single clip's video (prompt 87)
 //
@@ -25,7 +26,7 @@ enum ClipShareService {
         return await export(avAsset, preset: AVAssetExportPresetHighestQuality, fileType: .mp4)
     }
 
-    /// Render the clip's kept range with its HR tile + caption burned in (prompt 160) to a temp `.mp4`,
+    /// Render the clip's kept range with its HR tile + title burned in (prompt 160 · style 163) to a temp `.mp4`,
     /// or nil on failure. One clip, native orientation + resolution — the share looks like the poster.
     static func exportWithHeartRate(_ plan: ClipSharePlan.Plan) async -> URL? {
         guard let avAsset = await videoAsset(localIdentifier: plan.localIdentifier),
@@ -70,21 +71,82 @@ enum ClipShareService {
         instruction.layerInstructions = [layer]
         vc.instructions = [instruction]
 
-        // The caption rides the Studio's climb-name lower-third, TOP of frame: the feed scorebug sits
-        // at the bottom (HRTile default centerY 0.80), so the two never overlap.
-        let overlays = plan.caption.map {
-            [OverlayItem(kind: .climbName, content: $0, startSec: 0, endSec: plan.duration,
-                         position: CGPoint(x: 0.5, y: 0.1), highlightHex: "#000000")]
-        } ?? []
-        // The tile in the poster's band shape + inset, not its stored geometry (see `posterBand`).
+        // Tile + title where the POST draws them (prompt 163): the design's poster size/alignment at the
+        // style's edge, the title stacked beside it like the poster's VStack — one set of rules
+        // (`ClipOverlayStyle.placed` / `titleOrigin`), scaled to the video's width.
         var hr = plan.hr
-        hr.tile = hr.tile.map { ClipSharePlan.posterBand($0, canvas: canvas) }
+        hr.tile = hr.tile.map { ClipOverlayStyle.placed($0, edge: plan.style.hrEdge, canvas: canvas) }
+        let tileHeight = hr.tile.map { CGFloat($0.height) * canvas.height }
+        let titleLayers = plan.title.map { titleLayer($0, style: plan.style, canvas: canvas, tileHeight: tileHeight) }
         vc.animationTool = StudioOverlays.makeAnimationTool(
-            overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-            clipHR: [hr])
+            overlays: [], canvas: canvas, totalDuration: composition.duration.seconds,
+            clipHR: [hr], extraLayers: titleLayers.map { [$0] } ?? [])
         return await export(composition, preset: AVAssetExportPresetHighestQuality, fileType: .mp4,
                             videoComposition: vc)
         #endif
+    }
+
+    /// The title block as Core Animation layers — the export twin of `ClipOverlayChrome.titleView`: big
+    /// line, small line, the attempt chip (chip look), on a dark rounded chip or as shadowed plain text.
+    /// Sizes scale with the video width exactly as the poster's do with the card width. Bottom-left
+    /// layer space (the animation tool's).
+    private static func titleLayer(_ title: ClipOverlayStyle.TitleText, style: ClipOverlayStyle,
+                                   canvas: CGSize, tileHeight: CGFloat?) -> CALayer {
+        let k = canvas.width / ClipOverlayStyle.referenceWidth
+        let maxW = canvas.width * (1 - 2 * ClipOverlayStyle.insetFraction)
+        let pad = style.titleLook == .chip ? 10 * k : 0
+        let plain = style.titleLook == .plain
+
+        func text(_ s: String, size: CGFloat, weight: UIFont.Weight, color: UIColor) -> CATextLayer {
+            let font = UIFont.systemFont(ofSize: size, weight: weight)
+            let attr = NSAttributedString(string: s, attributes: [.font: font, .foregroundColor: color])
+            let l = CATextLayer()
+            l.string = attr; l.contentsScale = 2; l.isWrapped = false; l.truncationMode = .end
+            let sz = attr.size()
+            l.bounds = CGRect(x: 0, y: 0, width: min(ceil(sz.width), maxW - 2 * pad), height: ceil(sz.height))
+            if plain {
+                l.shadowColor = UIColor.black.cgColor; l.shadowOpacity = 0.9
+                l.shadowRadius = 5 * k; l.shadowOffset = .zero
+            }
+            return l
+        }
+        // Build top-down (top-left coordinates), then flip into the tool's bottom-left space.
+        var rows: [(CALayer, CGFloat)] = []          // (layer, gap above)
+        rows.append((text(title.primary, size: 20 * k, weight: .heavy, color: .white), 0))
+        if let s = title.secondary {
+            rows.append((text(s, size: 15 * k, weight: .semibold, color: UIColor.white.withAlphaComponent(0.9)), 3 * k))
+        }
+        if let c = title.chip {
+            let label = text(c, size: 11 * k, weight: .bold, color: .black)
+            let chip = CALayer()
+            chip.backgroundColor = UIColor.white.cgColor
+            chip.cornerRadius = 6 * k
+            chip.bounds = CGRect(x: 0, y: 0, width: label.bounds.width + 14 * k, height: label.bounds.height + 4 * k)
+            label.position = CGPoint(x: chip.bounds.midX, y: chip.bounds.midY)
+            chip.addSublayer(label)
+            rows.append((chip, 6 * k))
+        }
+        let contentW = rows.map { $0.0.bounds.width }.max() ?? 0
+        let contentH = rows.reduce(CGFloat(0)) { $0 + $1.0.bounds.height + $1.1 }
+        let block = CGSize(width: contentW + 2 * pad, height: contentH + 2 * pad)
+
+        let container = CALayer()
+        let origin = style.titleOrigin(blockSize: block, canvas: canvas, tileHeight: tileHeight)
+        container.frame = CGRect(x: origin.x, y: canvas.height - origin.y - block.height,
+                                 width: block.width, height: block.height)
+        if style.titleLook == .chip {
+            container.backgroundColor = UIColor.black.withAlphaComponent(0.4).cgColor
+            container.cornerRadius = 10 * k
+        }
+        var y = pad                                  // top-left y of the next row
+        for (layer, gap) in rows {
+            y += gap
+            let h = layer.bounds.height
+            layer.frame = CGRect(x: pad, y: block.height - y - h, width: layer.bounds.width, height: h)
+            container.addSublayer(layer)
+            y += h
+        }
+        return container
     }
 
     /// Resolve a Photos video by `localIdentifier` (iCloud download allowed), or nil.

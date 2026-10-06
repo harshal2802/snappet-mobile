@@ -67,6 +67,7 @@ enum SnappetBackup {
         WearEvent.self, WardrobeOutfit.self,
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
         Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
+        ClipOverlayDefaults.self,
     ]
 
     // MARK: - The envelope
@@ -126,6 +127,8 @@ enum SnappetBackup {
         var households: [HouseholdRow] = []
         var householdOps: [HouseholdOpRecordRow] = []
         var householdPeers: [HouseholdPeerRow] = []
+        // Clips overlay style (prompt 163) — defaulted so older backup blobs still decode.
+        var clipOverlayDefaults: [ClipOverlayDefaultsRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -177,6 +180,7 @@ enum SnappetBackup {
             n += households.count
             n += householdOps.count
             n += householdPeers.count
+            n += clipOverlayDefaults.count
             return n
         }
     }
@@ -265,6 +269,7 @@ enum SnappetBackup {
         file.households = try all(Household.self).map(HouseholdRow.init).sorted(by: rowKey)
         file.householdOps = try all(HouseholdOpRecord.self).map(HouseholdOpRecordRow.init).sorted(by: rowKey)
         file.householdPeers = try all(HouseholdPeer.self).map(HouseholdPeerRow.init).sorted(by: rowKey)
+        file.clipOverlayDefaults = try all(ClipOverlayDefaults.self).map(ClipOverlayDefaultsRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -383,6 +388,8 @@ enum SnappetBackup {
             uniqued(file.householdOps, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(HouseholdPeer.self)
             uniqued(file.householdPeers, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(ClipOverlayDefaults.self)
+            uniqued(file.clipOverlayDefaults, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -1435,5 +1442,15 @@ extension SnappetBackup {
                           platform: platform, lastSyncedAt: lastSyncedAt, ackedSeq: ackedSeq)
         }
         var sortKey: String { "\(householdID.uuidString)|\(deviceID.uuidString)|\(id.uuidString)" }
+    }
+
+    struct ClipOverlayDefaultsRow: BackupRow {
+        var id: UUID
+        var styleData: Data
+        var updatedAt: Date
+
+        init(_ m: ClipOverlayDefaults) { id = m.id; styleData = m.styleData; updatedAt = m.updatedAt }
+        func make() -> ClipOverlayDefaults { ClipOverlayDefaults(id: id, styleData: styleData, updatedAt: updatedAt) }
+        var sortKey: String { "\(updatedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
     }
 }

@@ -35,13 +35,14 @@ enum StudioOverlays {
     static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double,
                                   hrSamples: [HRPoint] = [],
                                   hrTile: ResolvedHRTile? = nil,
-                                  clipHR: [PlacedClipHR] = [])
+                                  clipHR: [PlacedClipHR] = [],
+                                  extraLayers: [CALayer] = [])
         -> AVVideoCompositionCoreAnimationTool? {
         // `.video` overlays are PiP video tracks (handled by the composer), NOT Core Animation layers.
         let visible = overlays.filter { !$0.content.isEmpty && $0.kind != .video }
         let perClip = !clipHR.isEmpty
         let hasTile = perClip ? clipHR.contains { $0.tile != nil } : (hrTile != nil)
-        guard (!visible.isEmpty || hasTile),
+        guard (!visible.isEmpty || hasTile || !extraLayers.isEmpty),
               canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
 
         let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: canvas)
@@ -76,6 +77,8 @@ enum StudioOverlays {
             // Session-wide tile (the fallback path for clips with no media link).
             overlayLayer.addSublayer(layer)
         }
+        // Caller-built layers (the Clips share's title block, prompt 163), already in this canvas's space.
+        for l in extraLayers { overlayLayer.addSublayer(l) }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
         return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)

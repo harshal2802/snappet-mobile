@@ -86,6 +86,9 @@ struct ClipsFeedView: View {
     /// Favorite reactions (prompt 88) — `FeedReaction` rows keyed by clip, so they're backed up and
     /// survive regrouping (prompt 162). Bound to the context in `rebuildFeed`.
     @State private var reactions = ClipReactionStore()
+    /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
+    @State private var overlayStore = ClipOverlayStyleStore()
+    @State private var showStyle = false
     /// Optional search + chip filter (prompt 107) — pure value state; `.searchable` binds `query`,
     /// the chip strip binds the rest. Session-scoped by design (resets on relaunch, like IG search).
     @State private var filter = ClipFeedFilter()
@@ -173,7 +176,8 @@ struct ClipsFeedView: View {
                                                      reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
                                                      payloads: cachedPayloads,
                                                      autoplayActive: autoplayActive,
-                                                     contentWidth: feedGeo.size.width)
+                                                     contentWidth: feedGeo.size.width,
+                                                     style: overlayStore.style)
                                             .id(post.id)
                                             // Warm the posters just below the fold (prompt 134). A poster
                                             // costs 70–120 ms and used to START loading only when its cell
@@ -229,6 +233,8 @@ struct ClipsFeedView: View {
             // (the aspect backfill) coalesces into one recompute (prompt 106).
             .task { rebuildFeed() }
             .onChange(of: feedKey) { _, _ in rebuildFeed(debounce: true) }
+            // A saved overlay style re-composes every payload with the new default tile (prompt 163).
+            .onChange(of: overlayStore.style) { _, _ in rebuildFeed() }
             // Audio session (prompt 93): driven from `ClipFeedPlayback.playing`'s didSet (NOT an `.onChange`
             // here — that would re-read `playing` and re-introduce the whole-feed invalidation prompt 97 removes).
             .onDisappear { ClipAudioSession.deactivate() }
@@ -238,6 +244,12 @@ struct ClipsFeedView: View {
             .navigationDestination(for: WeeklyReelRoute.self) { _ in WeeklyReelHostView() }
             .toolbar {
                 if !posts.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // The default HR tile + title for every clip (prompt 163).
+                        Button { showStyle = true } label: { Image(systemName: "paintbrush.pointed") }
+                            .accessibilityIdentifier("clips.style.button")
+                            .accessibilityLabel("Overlay style")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         // Autoplay-on-scroll toggle (prompt 90) — opt-in, off by default.
                         Button { autoplayEnabled.toggle() } label: {
@@ -252,11 +264,29 @@ struct ClipsFeedView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showStyle) {
+                ClipOverlayStyleSheet(store: overlayStore, preview: stylePreviewInput)
+            }
             .sheet(isPresented: $showGrid) {
                 // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
                 ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
             }
         }
+    }
+
+    // MARK: Overlay style (prompt 163)
+
+    /// The ✎ sheet's preview: the newest video post with HR whose session has no Studio tile of its own
+    /// (so the preview shows the DEFAULT), else the sample clip.
+    private var stylePreviewInput: ClipOverlayPreviewInput {
+        for post in cachedPosts where cachedHRTiles[post.sessionID] == nil {
+            guard let item = post.clips.first(where: { $0.media.kind == "video" && !$0.media.isReel }),
+                  let hr = cachedHRContext[post.sessionID], !hr.series.isEmpty,
+                  cachedPayloads[item.media.id] != nil else { continue }
+            return ClipOverlayPreviewInput(media: item.media, hr: hr, values: post.titleValues(for: item),
+                                           aspect: post.aspect, caption: post.title)
+        }
+        return .sample
     }
 
     // MARK: "Connect Apple Health" offer (highlights P5)
@@ -342,6 +372,8 @@ struct ClipsFeedView: View {
         /// session decoded every `hrSeries` blob per rebuild (and retained them) for posts that don't exist.
         var hr: [UUID: ClipFeedHR]
         var tiles: [UUID: HRTile]
+        /// The user's default tile (prompt 163) — used where a session has no Studio tile of its own.
+        var style: ClipOverlayStyle
     }
 
     /// The background composition's result, assigned back to the caches on the MainActor in one shot.
@@ -418,7 +450,7 @@ struct ClipsFeedView: View {
         }
         return FeedSnapshot(bundles: bundles, climbMeta: climbMeta, exerciseNames: exerciseName,
                             festivalMeta: makeFestivalMeta(workoutByID: workoutByID),
-                            hr: hr, tiles: sessionHRTile)
+                            hr: hr, tiles: sessionHRTile, style: overlayStore.style)
     }
 
     /// A Quick Session's climbs → their per-attempt outcomes (prompt 161), keyed like the post group
@@ -486,7 +518,9 @@ struct ClipsFeedView: View {
         var payloads: [UUID: ClipHROverlay.Payload] = [:]
         for post in posts {
             let hr = snap.hr[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
-            let tile = snap.tiles[post.sessionID]
+            // Precedence (prompt 163): the session's Studio tile → the user's default → (inside `make`,
+            // when neither would draw anything) the built-in scorebug.
+            let tile = snap.style.tile(sessionTile: snap.tiles[post.sessionID], restHR: hr.restHR)
             for item in post.clips where !item.media.isReel {
                 // A posted reel already carries the burned scorebug in its pixels (highlights P2) —
                 // composing a live overlay for it would double-draw, same rule as a baked clip.
@@ -534,6 +568,7 @@ struct ClipsFeedView: View {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled else { return }
             }
+            overlayStore.attach(context)   // re-read the saved style (picks up a restore)
             let snap = makeSnapshot()
             let composed = await Task.detached(priority: .userInitiated) { Self.compose(snap) }.value
             guard !Task.isCancelled else { return }   // a newer rebuild superseded this one
@@ -866,6 +901,8 @@ private struct ClipPostCard: View {
     /// The feed's content width (measured once at the feed level) — drives the adaptive tile height, so it's
     /// correct from the first render and never pops during scroll.
     let contentWidth: CGFloat
+    /// The user's default HR tile + title (prompt 163).
+    let style: ClipOverlayStyle
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -1139,7 +1176,7 @@ private struct ClipPostCard: View {
                     //
                     // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
                     // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
-                    ClipPosterView(item: item, post: post,
+                    ClipPosterView(item: item, post: post, style: style,
                                    playback: playback, postID: post.id, postIndex: idx,
                                    payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
                                    warmLive: warmLive(idx),
@@ -1163,7 +1200,8 @@ private struct ClipPostCard: View {
                                        fullscreen = ClipFullscreen(
                                            clips: post.clips.map(\.media), startIndex: idx,
                                            series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
-                                           title: post.title, tile: hrTile)
+                                           title: post.title,
+                                           tile: style.tile(sessionTile: hrTile, restHR: hr.restHR))
                                    })
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
@@ -1191,6 +1229,7 @@ private struct ClipPostCard: View {
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(.black.opacity(0.5), in: Capsule())
                         .padding(10)
+                        .padding(.top, topReserve)   // below a top-edge tile/title (prompt 163)
                 }
             }
             // One dot per clip stops scaling fast — 50 clips would draw a ~550 pt row that overflows the
@@ -1217,6 +1256,13 @@ private struct ClipPostCard: View {
 
     // MARK: ⋯ actions — reuse the existing Studio + session-detail entry points
 
+    /// How far the top chrome (page counter) drops to clear the style's top-edge overlays (prompt 163).
+    private var topReserve: CGFloat {
+        ClipOverlayChrome.topReserve(style: style, title: style.titleText(post.titleValues(for: currentClip)),
+                                     tileTemplate: payloads[currentClip.media.id]?.tile.template,
+                                     width: contentWidth)
+    }
+
     /// The clip currently centered in the carousel (clamped — `page` can outlive a clip-count change).
     private var currentClip: ClipFeedItem { post.clips[min(max(0, page), post.clips.count - 1)] }
 
@@ -1242,14 +1288,14 @@ private struct ClipPostCard: View {
     }
 
     /// Share the centered clip via the system share sheet — export off the main actor, then present
-    /// `ShareSheet`. `withHeartRate` (prompt 160) burns the poster's HR tile + name lower-third over the
-    /// kept range; otherwise the RAW video (prompt 87).
+    /// `ShareSheet`. `withHeartRate` (prompt 160) burns the poster's HR tile + title — at the user's
+    /// overlay style (prompt 163) — over the kept range; otherwise the RAW video (prompt 87).
     private func shareCurrentClip(withHeartRate: Bool) {
         let clip = currentClip
         guard clip.media.kind == "video", !preparingShare else { return }
         let plan = withHeartRate
             ? ClipSharePlan.plan(clip: clip.media, payload: payloads[clip.media.id],
-                                 title: post.title, detail: post.overlayDetail, attemptLabel: clip.attemptLabel)
+                                 title: style.titleText(post.titleValues(for: clip)), style: style)
             : nil
         if withHeartRate, plan == nil { shareFailed = true; return }
         preparingShare = true
@@ -1294,6 +1340,8 @@ private struct ClipPostCard: View {
 private struct ClipPosterView: View {
     let item: ClipFeedItem
     let post: ClipFeedPost
+    /// The user's default title + tile layout (prompt 163) — drawn by the shared `ClipOverlayChrome`.
+    let style: ClipOverlayStyle
     /// The feed's active-clip state (prompt 97). This LEAF reads `playback.playing` (via the `playing` computed
     /// below) so a swipe re-renders ONLY the two pages whose playing/live actually changed — not the card or the
     /// feed. The card passes `playback` + this page's identity; the leaf decides if IT plays.
@@ -1366,16 +1414,21 @@ private struct ClipPosterView: View {
                         // during a vertical scroll.
                         .opacity((!playing && isCurrentPage && !postOnScreen) ? 0 : 1)
                 }
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
-                    .allowsHitTesting(false)
-                VStack(alignment: .leading, spacing: 10) {
-                    nameOverlay
-                    // HR scorebug on every page (so it slides smoothly with the carousel, no pop-in). It's
-                    // cheap now: the inline tile uses a flat scrim (liveBlur: false), not a live backdrop
-                    // blur, so sliding it doesn't re-rasterize a blur every frame.
-                    hrOverlay
+                // Legibility scrims behind whichever edges carry overlays.
+                if usesEdge(.bottom) {
+                    LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+                        .allowsHitTesting(false)
                 }
-                .padding(12)
+                if usesEdge(.top) {
+                    LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .center)
+                        .allowsHitTesting(false)
+                }
+                // Title + HR tile at the user's style (prompt 163) — the SAME view the ✎ sheet previews.
+                // The tile is on every page (so it slides with the carousel, no pop-in) and cheap: a flat
+                // scrim (liveBlur: false), not a live backdrop blur.
+                ClipOverlayChrome(style: style, title: titleText, payload: payload,
+                                  fraction: playing ? liveFraction : ClipHROverlay.atEnd(for: payload),
+                                  width: geo.size.width, playing: playing)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -1391,18 +1444,21 @@ private struct ClipPosterView: View {
             // collide with the bottom HR scorebug or the top-trailing page counter. Driven by `muted`
             // (== playingClip.muted) so it stays in sync with autoplay + the scroll/transfer logic.
             .overlay(alignment: .topLeading) {
-                if playing, item.media.kind == "video" { muteButton.padding(12) }
+                if playing, item.media.kind == "video" { muteButton.padding(12).padding(.top, topReserve(geo.size.width)) }
             }
             // Studio-trimmed clip (prompt 116): a subtle chip naming the kept range — the honest signal
             // that the feed plays the edit (and that speed/filters/text live in the export/bake).
             // Gated + labelled by the EFFECTIVE kept range (the same `keptRange` verdict playback and
             // the HR window use) — a degenerate/whole-clip stored trim plays raw and shows NO chip.
             .overlay(alignment: .topTrailing) {
-                if item.media.isBaked {
-                    bakedChip.padding(12)
-                } else if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
-                    editedChip(kept).padding(12)
+                Group {
+                    if item.media.isBaked {
+                        bakedChip.padding(12)
+                    } else if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
+                        editedChip(kept).padding(12)
+                    }
                 }
+                .padding(.top, topReserve(geo.size.width))
             }
         }
     }
@@ -1443,39 +1499,19 @@ private struct ClipPosterView: View {
         .accessibilityLabel(muted ? "Unmute" : "Mute")
     }
 
-    // The climb-name lower-third (OverlayItem.climbName look) + the per-clip attempt/set chip.
-    private var nameOverlay: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(post.title).font(.title3.weight(.heavy)).foregroundStyle(.white).lineLimit(1)
-            if !post.overlayDetail.isEmpty {
-                Text(post.overlayDetail).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-            }
-            if let attempt = item.attemptLabel {
-                Text(attempt).font(.caption2.weight(.bold)).foregroundStyle(.black)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .padding(.top, 3)
-            }
-        }
-        .padding(10)
-        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    // The title at the user's style (prompt 163). Built-in = today's lower-third: name, grade · angle,
+    // and the attempt/set as a white chip. Drawn with the tile by `ClipOverlayChrome`, whose HR tile is
+    // the ONE `ClipHROverlay` mapping the poster, the inline player and the fullscreen viewer share.
+    private var titleText: ClipOverlayStyle.TitleText? { style.titleText(post.titleValues(for: item)) }
+
+    /// Whether anything (title or tile) sits on `edge` — drives the legibility scrims.
+    private func usesEdge(_ edge: ClipOverlayStyle.Edge) -> Bool {
+        (style.hrEdge == edge && payload != nil) || (style.titleEdge == edge && titleText != nil)
     }
 
-    // The HR scorebug — the ONE `ClipHROverlay` mapping the poster, the inline player, and the fullscreen
-    // viewer share. While this clip plays inline it sweeps off the live `liveFraction`; otherwise it shows
-    // the clip's at-end reading.
-    @ViewBuilder private var hrOverlay: some View {
-        if let payload {
-            HRTileView(tile: payload.tile, values: payload.values,
-                       fraction: playing ? liveFraction : ClipHROverlay.atEnd(for: payload),
-                       liveBlur: false)   // flat scrim, not a live backdrop blur → cheap to slide (prompt 92)
-                .frame(maxWidth: .infinity)
-                .frame(height: 96)
-                // Glide the BPM dot from the at-end reading into the live sweep at takeover instead of snapping
-                // — the small HR-overlay discontinuity the frame-0 poster fix doesn't touch (round 5 graft).
-                .animation(.easeOut(duration: 0.18), value: playing)
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("clips.post.hrTile")
-        }
+    /// How far this page's top chrome (mute, EDITED/BAKED chip) drops below top-edge overlays.
+    private func topReserve(_ width: CGFloat) -> CGFloat {
+        ClipOverlayChrome.topReserve(style: style, title: titleText,
+                                     tileTemplate: payload?.tile.template, width: width)
     }
 }

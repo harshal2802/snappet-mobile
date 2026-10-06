@@ -140,6 +140,8 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     var clips: [ClipFeedItem]
     /// How the climb went this session (prompt 161) — nil for non-climb posts or a climb with no log.
     var climbResult: ClipFeedClimbResult? = nil
+    /// The owning session's name (prompt 163) — the overlay title's optional "Session name" part.
+    var sessionTitle: String = ""
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double
@@ -227,6 +229,7 @@ enum ClipFeedComposer {
                     isFromAppleWatch: meta.isFromAppleWatch,
                     isReel: true,
                     clips: [ClipFeedItem(media: reel, attemptLabel: nil)],
+                    sessionTitle: sessionName(meta),
                     aspect: postAspect([reel])))
             }
             // Festival-tagged clips (festival prompt 03) leave the exercise grouping and become
@@ -259,6 +262,7 @@ enum ClipFeedComposer {
                     sessionEndedAt: meta.endedAt,
                     isFromAppleWatch: meta.isFromAppleWatch,
                     clips: items,
+                    sessionTitle: sessionName(meta),
                     aspect: postAspect(ordered)))
             }
             let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
@@ -321,6 +325,7 @@ enum ClipFeedComposer {
                     isFromAppleWatch: meta.isFromAppleWatch,
                     clips: items,
                     climbResult: result,
+                    sessionTitle: sessionName(meta),
                     aspect: postAspect(ordered)))
             }
         }
@@ -380,6 +385,12 @@ enum ClipFeedComposer {
 
     /// A clip is "assigned" when it's tied to a specific exercise/set or climb (vs the General bucket).
     private static func isAssigned(_ m: MediaInput) -> Bool { m.exerciseId != nil || m.climbUUID != nil }
+
+    /// The session's display name (no angle suffix) — the title's "Session name" part (prompt 163).
+    static func sessionName(_ meta: ClipFeedSessionMeta) -> String {
+        if !meta.title.isEmpty { return meta.title }
+        return meta.kind == .kilter ? "Kilter session" : "Workout"
+    }
 
     /// Header line 2: session title + a board-angle suffix for climbing.
     private static func subtitle(meta: ClipFeedSessionMeta, climb: ClipFeedClimbMeta?) -> String {

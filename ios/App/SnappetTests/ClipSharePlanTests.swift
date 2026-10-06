@@ -48,8 +48,7 @@ final class ClipSharePlanTests: XCTestCase {
     func testPlanBurnsThePosterPayloadOverTheWholeRawClip() throws {
         let c = clip()
         let p = try XCTUnwrap(payload(c))
-        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: p, title: "Crimp Line",
-                                                    detail: "6C · 40°", attemptLabel: "Attempt 2"))
+        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: p, title: nil))
         XCTAssertEqual(plan.localIdentifier, "asset")
         XCTAssertEqual(plan.start, 0)
         XCTAssertEqual(plan.duration, 8, accuracy: 0.0001)
@@ -57,14 +56,17 @@ final class ClipSharePlanTests: XCTestCase {
         XCTAssertEqual(plan.hr.durationSec, 8, accuracy: 0.0001)
         XCTAssertEqual(plan.hr.samples, p.values.samples)                 // the SAME window the poster draws
         XCTAssertEqual(plan.hr.tile, p.values.resolveTile(p.tile))        // the SAME tile, resolved
-        XCTAssertEqual(plan.caption, "Crimp Line · 6C · 40° · Attempt 2")
+        XCTAssertNil(plan.title)
+        let titled = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: p,
+                                                      title: .init(primary: "Crimp Line", secondary: "6C · 40°", chip: nil),
+                                                      style: .builtIn))
+        XCTAssertEqual(titled.title?.primary, "Crimp Line")
     }
 
     /// A Studio-trimmed clip shares exactly what the feed PLAYS — the kept range, not the raw clip.
     func testPlanHonoursTheStudioTrim() throws {
         let c = clip(dur: 10, edit: ClipStudioEdit(trimStart: 2, trimEnd: 7))
-        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: "Squat",
-                                                    detail: "", attemptLabel: nil))
+        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: nil))
         XCTAssertEqual(plan.start, 2, accuracy: 0.0001)
         XCTAssertEqual(plan.duration, 5, accuracy: 0.0001)
         XCTAssertEqual(plan.hr.durationSec, 5, accuracy: 0.0001)
@@ -75,18 +77,11 @@ final class ClipSharePlanTests: XCTestCase {
         let p = payload(plain)
         var reel = plain; reel.reelTitle = "R"
         var baked = plain; baked.isBaked = true
-        XCTAssertNil(ClipSharePlan.plan(clip: plain, payload: nil, title: "x", detail: "", attemptLabel: nil))
-        XCTAssertNil(ClipSharePlan.plan(clip: reel, payload: p, title: "x", detail: "", attemptLabel: nil))
-        XCTAssertNil(ClipSharePlan.plan(clip: baked, payload: p, title: "x", detail: "", attemptLabel: nil))
+        XCTAssertNil(ClipSharePlan.plan(clip: plain, payload: nil, title: nil))
+        XCTAssertNil(ClipSharePlan.plan(clip: reel, payload: p, title: nil))
+        XCTAssertNil(ClipSharePlan.plan(clip: baked, payload: p, title: nil))
         XCTAssertNil(ClipSharePlan.plan(clip: clip(kind: "photo", dur: nil), payload: p,
-                                        title: "x", detail: "", attemptLabel: nil))
-    }
-
-    // MARK: caption
-
-    func testCaptionDropsBlankParts() {
-        XCTAssertEqual(ClipSharePlan.caption(title: "Bench", detail: "", attemptLabel: "Set 3"), "Bench · Set 3")
-        XCTAssertEqual(ClipSharePlan.caption(title: "  ", detail: "", attemptLabel: nil), nil)
+                                        title: nil))
     }
 
     // MARK: clamped
@@ -94,8 +89,7 @@ final class ClipSharePlanTests: XCTestCase {
     /// The stored duration is approximate; the render re-slots the tile to what the asset really holds.
     func testClampShortensToTheAssetAndReslotsTheTile() throws {
         let c = clip()
-        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: "x",
-                                                    detail: "", attemptLabel: nil))
+        let plan = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: nil))
         let clamped = try XCTUnwrap(ClipSharePlan.clamped(plan, assetDuration: 7.5))
         XCTAssertEqual(clamped.duration, 7.5, accuracy: 0.0001)
         XCTAssertEqual(clamped.hr.durationSec, 7.5, accuracy: 0.0001)
@@ -105,23 +99,24 @@ final class ClipSharePlanTests: XCTestCase {
         XCTAssertNil(ClipSharePlan.clamped(plan, assetDuration: 0.05))
     }
 
-    // MARK: poster band (2026-10-06 device feedback)
+    // MARK: placement (2026-10-06 device feedback · prompt 163)
 
-    /// The share burns the tile in the POSTER's band shape at the bottom, whatever geometry it was stored
-    /// with — portrait and landscape keep the same ~4.2:1 band and inset, so the layout matches the post.
-    func testPosterBandMatchesThePosterShapeOnAnyCanvas() throws {
+    /// The share burns the tile where the POST draws it — the Broadcast band keeps the ~4.2:1 shape and
+    /// the poster inset on portrait and landscape renders, at the style's edge.
+    func testBroadcastPlacementMatchesThePosterBandOnAnyCanvas() throws {
         let c = clip()
-        let tile = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: "x", detail: "",
-                                                    attemptLabel: nil)?.hr.tile)
+        let tile = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: nil)?.hr.tile)
         for canvas in [CGSize(width: 1080, height: 1920), CGSize(width: 1920, height: 1080)] {
-            let band = ClipSharePlan.posterBand(tile, canvas: canvas)
+            let band = ClipOverlayStyle.placed(tile, edge: .bottom, canvas: canvas)
             let wPx = band.width * canvas.width, hPx = band.height * canvas.height
-            XCTAssertEqual(wPx / hPx, ClipSharePlan.posterBandAspect, accuracy: 0.01)
-            XCTAssertEqual(band.centerX, 0.5)
+            XCTAssertEqual(wPx / hPx, 4.2, accuracy: 0.01)
+            XCTAssertEqual(band.centerX, 0.5, accuracy: 0.0001)
             let bottomGapPx = (1 - band.centerY - band.height / 2) * canvas.height
             let sideGapPx = (1 - band.width) / 2 * canvas.width
             XCTAssertEqual(bottomGapPx, sideGapPx, accuracy: 0.5)          // same inset on the side and bottom
             XCTAssertEqual(band.metrics, tile.metrics)                       // only geometry changes
+            let top = ClipOverlayStyle.placed(tile, edge: .top, canvas: canvas)
+            XCTAssertEqual((top.centerY - top.height / 2) * canvas.height, sideGapPx, accuracy: 0.5)
         }
     }
 

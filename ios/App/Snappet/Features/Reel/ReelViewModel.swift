@@ -349,9 +349,18 @@ final class ReelViewModel {
                                      maxHR: wk.maxBpm, restHR: wk.restBpm)
         // `resolveTile` is the renderability gate (the same one the burn runs) — the view
         // draws the HRTile itself, exactly like the feed poster does.
-        let tile = HRTile.feedClipScorebug(restHR: wk.restBpm)
+        // The user's Clips overlay default (prompt 163), falling back to the built-in scorebug when it
+        // would draw nothing — the same fallback the burn applies.
+        let styled = styleTile(restHR: wk.restBpm)
+        let tile = values.resolveTile(styled) != nil ? styled : HRTile.feedClipScorebug(restHR: wk.restBpm)
         guard values.resolveTile(tile) != nil else { return nil }
         return (tile, values)
+    }
+
+    /// The saved Clips overlay default's tile (design + stats + transparency), or the built-in look.
+    private func styleTile(restHR: Double?) -> HRTile {
+        let style = model.modelContainer.map { ClipOverlayDefaults.style(in: $0.mainContext) } ?? .builtIn
+        return style.tile(sessionTile: nil, restHR: restHR)
     }
 
     private func invalidatePreview() {
@@ -380,7 +389,8 @@ final class ReelViewModel {
             // with the whole session's series across the reel, so every video surface matches.
             let overlay: ReelExporter.HROverlay? = (overlayEnabled && !wk.hr.isEmpty)
                 ? ReelExporter.HROverlay(hrSeries: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
-                                         maxHR: wk.maxBpm, restHR: wk.restBpm)
+                                         maxHR: wk.maxBpm, restHR: wk.restBpm,
+                                         tile: styleTile(restHR: wk.restBpm))
                 : nil
             let url = try await exporter.export(plan, hrOverlay: overlay, renderAspect: format.aspect)
             exportedDuration = plan.totalDuration

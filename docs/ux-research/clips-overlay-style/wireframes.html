@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Clips · Overlay Style · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values; Clips is media-dark) */
+    --coral:#FF7A6B; --amber:#F59E0B; --ember:#FF9645; --green:#5BC074; --flash:#009E73; --blue:#4FB3D9;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1a1424,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:2100px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb3a8 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1200px;margin:0 0 10px}
+  .sub b{color:#fff}
+  .wrap{max-width:2100px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#2a0f0a;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,122,107,.4)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .new{color:var(--coral);font-weight:700}
+
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{flex:none;height:44px;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{flex:none;padding:6px 18px 8px;display:flex;align-items:center;justify-content:space-between}
+  .navbar .t{font-size:30px;font-weight:800;letter-spacing:-.02em}
+  .navicons{display:flex;gap:10px;color:var(--ink);font-size:16px;align-items:center}
+  .navicons .ic{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .navicons .ic.new{background:rgba(255,122,107,.16);color:var(--coral);box-shadow:0 0 0 2px var(--coral)}
+  .tabbar{margin-top:auto;flex:none;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:9px 8px 24px}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:#8a8a90}
+  .tab.on{color:var(--coral)} .tab .ic{font-size:19px}
+  .chips{flex:none;display:flex;gap:8px;padding:2px 16px 10px;overflow:hidden}
+  .chip{flex:none;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:650;background:var(--muted);border:1px solid var(--hair);color:var(--t2)}
+
+  /* post */
+  .card{flex:none;margin:0 0 14px}
+  .phead{display:flex;align-items:center;gap:10px;padding:0 16px 8px}
+  .pglyph{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;
+    border:1.5px solid var(--amber);background:rgba(245,158,11,.16);color:var(--amber)}
+  .ptitle{font-size:14px;font-weight:800;line-height:1.2;display:flex;align-items:center;gap:6px}
+  .badge{font-size:8.5px;font-weight:800;padding:1px 6px;border-radius:99px;border:1px solid rgba(91,192,116,.5);background:rgba(91,192,116,.14);color:var(--green)}
+  .psub{font-size:11.5px;color:var(--t2)}
+  .pacts{margin-left:auto;display:flex;gap:12px;color:var(--ink);font-size:15px}
+
+  /* media frame (shared by post + preview) */
+  .media{position:relative;overflow:hidden;background:
+    radial-gradient(140px 70px at 30% 62%,rgba(91,192,116,.55),transparent 70%),
+    radial-gradient(160px 80px at 72% 58%,rgba(255,122,107,.5),transparent 72%),
+    radial-gradient(110px 70px at 50% 40%,rgba(79,179,217,.35),transparent 70%),
+    linear-gradient(180deg,#07080b 0%,#0f1218 45%,#1a1410 100%)}
+  .media.climb{background:
+    radial-gradient(90px 60px at 18% 32%,rgba(245,158,11,.30),transparent 70%),
+    radial-gradient(120px 80px at 74% 56%,rgba(93,102,120,.55),transparent 72%),
+    radial-gradient(70px 46px at 42% 78%,rgba(157,130,240,.25),transparent 70%),
+    linear-gradient(160deg,#3b3f47,#22242a 55%,#191b20)}
+  .media .count{position:absolute;top:10px;right:12px;background:rgba(0,0,0,.5);border-radius:99px;color:#fff;font-size:10px;font-weight:800;padding:3px 8px}
+
+  /* title variants */
+  .ttl{position:absolute;left:10px;max-width:calc(100% - 20px)}
+  .ttl.chip{background:rgba(0,0,0,.42);border-radius:10px;padding:7px 9px}
+  .ttl.plain{text-shadow:0 1px 6px rgba(0,0,0,.9)}
+  .ttl .n1{font-size:14px;font-weight:800;color:#fff;line-height:1.2}
+  .ttl .n2{font-size:10.5px;font-weight:650;color:rgba(255,255,255,.88)}
+  .ttl .att{display:inline-block;margin-top:4px;background:#fff;color:#111;border-radius:5px;padding:1px 6px;font-size:9px;font-weight:800}
+  .ttl .att.sent{background:var(--green);color:#06210f}
+
+  /* HR tile variants — the lighter glass (0.50) shipped in #351 */
+  .hr{position:absolute;left:10px;right:10px;border-radius:12px;background:rgba(17,25,40,.50);border:1px solid rgba(255,255,255,.14);color:#fff}
+  .hr.broadcast{height:58px;display:grid;grid-template-columns:4px 64px 44px 1fr;grid-template-rows:1fr 18px;gap:0 6px;padding:6px 8px}
+  .hr.broadcast .acc{grid-row:1;background:var(--blue);border-radius:2px}
+  .hr.broadcast .big{grid-row:1;font-size:24px;font-weight:900;line-height:1;align-self:center;text-shadow:0 1px 5px rgba(0,0,0,.85)}
+  .hr.broadcast .big small{font-size:8px;font-weight:800;opacity:.6;margin-left:2px}
+  .hr.broadcast .zb{grid-row:1;display:flex;gap:2px;align-items:stretch}
+  .hr.broadcast .zb i{flex:1;border-radius:2px;opacity:.35}
+  .hr.broadcast .zb i.on{opacity:1}
+  .hr.broadcast .st{grid-row:1;font-size:8.5px;line-height:1.35;align-self:center;text-shadow:0 1px 4px rgba(0,0,0,.9)}
+  .hr.broadcast .st span{display:flex;justify-content:space-between}
+  .hr.broadcast .st b{font-size:10px}
+  .hr.broadcast .ch{grid-column:1/-1;border-top:1px solid rgba(255,255,255,.08);position:relative}
+  .hr.broadcast .ch::after{content:"";position:absolute;left:0;right:0;top:9px;border-top:2px solid var(--blue);transform:skewY(-3deg)}
+  .hr.pill{left:auto;right:10px;height:30px;border-radius:99px;display:flex;align-items:center;gap:7px;padding:0 11px;font-size:13px;font-weight:900;text-shadow:0 1px 4px rgba(0,0,0,.85)}
+  .hr.pill .z{font-size:8.5px;font-weight:800;color:var(--green);border:1px solid rgba(91,192,116,.6);padding:0 5px;border-radius:99px}
+  .hr.pill .heart{color:var(--coral)}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;background:#1a1a1e;border-radius:22px 22px 0 0;display:flex;flex-direction:column;overflow:hidden}
+  .grab{width:38px;height:5px;border-radius:3px;background:#4a4a50;margin:7px auto 4px}
+  .shead{display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px;font-size:15px}
+  .shead .t{font-weight:750}
+  .shead .l{color:var(--t2);font-size:14px} .shead .r{color:var(--coral);font-weight:700;font-size:14px}
+  .preview{margin:0 16px;height:196px;border-radius:14px;flex:none}
+  .previewnote{font-size:10.5px;color:var(--t2);text-align:center;padding:5px 0 8px}
+  .seg{display:flex;margin:0 16px 10px;background:var(--muted);border-radius:9px;padding:2px;flex:none}
+  .seg span{flex:1;text-align:center;font-size:12.5px;font-weight:650;padding:5px 0;border-radius:7px;color:var(--t2)}
+  .seg span.on{background:#3a3a40;color:var(--ink)}
+  .scroll{flex:1;overflow:hidden;padding:0 16px}
+  .lbl{font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--t2);text-transform:uppercase;margin:4px 2px 6px}
+  .tpls{display:flex;gap:8px;overflow:hidden;margin-bottom:12px}
+  .tpl{flex:none;width:72px;border-radius:10px;background:var(--muted);border:1px solid var(--hair);padding:6px;font-size:9.5px;font-weight:700;text-align:center;color:var(--t2)}
+  .tpl .mini{height:34px;border-radius:6px;margin-bottom:5px;background:linear-gradient(160deg,#3a3d45,#202228);position:relative}
+  .tpl .mini i{position:absolute;left:4px;right:4px;bottom:4px;height:12px;border-radius:3px;background:rgba(17,25,40,.8);border:1px solid rgba(255,255,255,.15)}
+  .tpl .mini i.pill{left:auto;width:30px;height:8px;top:4px;bottom:auto;border-radius:99px}
+  .tpl .mini i.ring{left:6px;width:18px;height:18px;border-radius:50%;bottom:6px;background:none;border:3px solid var(--green)}
+  .tpl .mini i.trace{height:16px;background:linear-gradient(transparent 50%,rgba(79,179,217,.8) 52%,transparent 60%),rgba(17,25,40,.8)}
+  .tpl.on{border-color:var(--coral);color:var(--coral);background:rgba(255,122,107,.10)}
+  .group{background:var(--surface);border-radius:12px;margin-bottom:12px;overflow:hidden}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;font-size:13px;border-bottom:1px solid #2a2a30}
+  .row:last-child{border-bottom:none}
+  .row .v{color:var(--t2);font-size:12.5px}
+  .tog{width:38px;height:23px;border-radius:99px;background:#3a3a40;position:relative;flex:none}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--green)} .tog.on::after{left:17px}
+  .mchips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px}
+  .m{font-size:11.5px;font-weight:650;padding:5px 10px;border-radius:99px;background:var(--muted);border:1px solid var(--hair);color:var(--t2)}
+  .m.on{background:rgba(255,122,107,.14);border-color:var(--coral);color:var(--coral)}
+  .slider{flex:1;margin-left:14px;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--coral) 0 50%,#3a3a40 50%);position:relative}
+  .slider::after{content:"";position:absolute;left:50%;top:-8px;width:20px;height:20px;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .mini-seg{display:flex;background:var(--muted);border-radius:7px;padding:2px}
+  .mini-seg span{font-size:11.5px;font-weight:650;padding:3px 10px;border-radius:5px;color:var(--t2)}
+  .mini-seg span.on{background:#3a3a40;color:var(--ink)}
+  .reset{text-align:center;color:#ff6b6b;font-size:13px;font-weight:650;padding:2px 0 10px}
+  .foot{font-size:10.5px;color:var(--t2);padding:0 4px 12px;line-height:1.45}
+  .reorder{color:#6b6b72;margin-right:8px;font-size:12px}
+
+  /* shared-video frame */
+  .export{width:300px;height:533px;border-radius:6px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85);margin-top:96px}
+  .export .ttl .n1{font-size:19px} .export .ttl .n2{font-size:13px}
+  .export .hr.broadcast{height:72px;grid-template-columns:5px 80px 54px 1fr}
+  .export .hr.broadcast .big{font-size:30px}
+  .export .hr.pill{height:36px;font-size:16px}
+  .exportlbl{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--t2);text-transform:uppercase;margin:0 0 8px}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Clips — Overlay Style</h1>
+  <p class="sub"><b>One default for every clip's heart-rate tile and title.</b> Opened from a new ✎ button in the Clips toolbar.
+    The default applies to <b>feed posts, fullscreen, Share with heart rate and highlight reels</b>, so a post and the video
+    you share from it always match. Order of priority: <b>a session you styled in the Studio → your default → the built-in
+    Broadcast scorebug</b>. The default is saved in the database, so <b>it's included in backups</b>.</p>
+  <p class="sub">Templates and stats are the Studio's existing ones (Broadcast, Glass Hero, HR Trace, HUD Pill, Zone Ring, Rail,
+    Strain), so nothing new to draw. The preview is one of your own recent clips.</p>
+  <div class="wrap">
+    <div class="gallery">
+
+      <!-- 1 · feed with the new button -->
+      <div class="step">
+        <div class="stepnum">1</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="navbar"><div class="t">Clips</div>
+            <div class="navicons"><span class="ic new">✎</span><span class="ic">▶︎</span><span class="ic">▦</span></div></div>
+          <div class="chips"><div class="chip">♥ Favorites</div><div class="chip">✦ Reels</div><div class="chip">🧗 Climbs</div><div class="chip">✓ Sends</div></div>
+          <div class="card">
+            <div class="phead"><div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v6 <span class="badge">✓ SENT</span></div><div class="psub">Tuesday Session · 40°</div></div>
+              <div class="pacts"><span>♡</span><span>⋯</span></div></div>
+            <div class="media climb" style="height:420px">
+              <div class="count">1/3</div>
+              <div class="ttl chip" style="bottom:88px"><div class="n1">Black v6</div><div class="n2">6c/V5 · 40°</div><span class="att">Attempt 1</span></div>
+              <div class="hr broadcast" style="bottom:10px">
+                <div class="acc"></div><div class="big">156<small>BPM</small></div>
+                <div class="zb"><i style="background:#3b6fd8"></i><i style="background:#4FB3D9"></i><i class="on" style="background:#5BC074"></i><i style="background:#F59E0B"></i><i style="background:#E5484D"></i></div>
+                <div class="st"><span>HRR <b style="color:var(--green)">71%</b></span><span>AVG <b>148</b></span><span>PEAK <b>163</b></span></div>
+                <div class="ch"></div>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar"><div class="tab"><span class="ic">⌂</span>Home</div><div class="tab on"><span class="ic">▶</span>Clips</div><div class="tab"><span class="ic">▤</span>Recap</div><div class="tab"><span class="ic">▦</span>Apps</div></div>
+        </div></div>
+        <p class="caption"><span class="new">NEW</span> <b>✎ Overlay style</b> joins the toolbar, next to autoplay and the grid.
+          Today's look (Broadcast at the bottom, name chip above it) is what you get until you change it.</p>
+      </div>
+
+      <!-- 2 · sheet: heart rate -->
+      <div class="step">
+        <div class="stepnum">2</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="shead"><span class="l">Cancel</span><span class="t">Overlay style</span><span class="r">Done</span></div>
+            <div class="media climb preview">
+              <div class="ttl chip" style="bottom:80px"><div class="n1">Black v6</div><div class="n2">6c/V5 · 40°</div><span class="att">Attempt 1</span></div>
+              <div class="hr broadcast" style="bottom:8px">
+                <div class="acc"></div><div class="big">156<small>BPM</small></div>
+                <div class="zb"><i style="background:#3b6fd8"></i><i style="background:#4FB3D9"></i><i class="on" style="background:#5BC074"></i><i style="background:#F59E0B"></i><i style="background:#E5484D"></i></div>
+                <div class="st"><span>HRR <b style="color:var(--green)">71%</b></span><span>AVG <b>148</b></span><span>PEAK <b>163</b></span></div>
+                <div class="ch"></div>
+              </div>
+            </div>
+            <div class="previewnote">Live preview · Black v6, Tuesday</div>
+            <div class="seg"><span class="on">Heart rate</span><span>Title</span></div>
+            <div class="scroll">
+              <div class="lbl">Design</div>
+              <div class="tpls">
+                <div class="tpl on"><div class="mini"><i></i></div>Broadcast</div>
+                <div class="tpl"><div class="mini"><i class="pill"></i></div>HUD Pill</div>
+                <div class="tpl"><div class="mini"><i class="trace"></i></div>HR Trace</div>
+                <div class="tpl"><div class="mini"><i class="ring"></i></div>Zone Ring</div>
+              </div>
+              <div class="lbl">Show</div>
+              <div class="group"><div class="mchips">
+                <span class="m on">BPM</span><span class="m on">Zone</span><span class="m on">HRR</span><span class="m on">Avg</span><span class="m on">Peak</span>
+                <span class="m">Redline</span><span class="m">Strain</span><span class="m">kcal</span><span class="m">HRV</span>
+              </div>
+                <div class="row">Heart-rate chart<span class="tog on"></span></div>
+                <div class="row">Colour by zone<span class="tog on"></span></div>
+              </div>
+              <div class="group">
+                <div class="row">Transparency<span class="slider"></span></div>
+                <div class="row">Position<span class="mini-seg"><span>Top</span><span class="on">Bottom</span></span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Heart rate tab.</b> Pick a design, which stats to show, chart on/off, transparency and
+          top/bottom. The preview updates as you change things. Stats with no data on a clip (e.g. kcal without a
+          profile) just don't appear, the same as today.</p>
+      </div>
+
+      <!-- 3 · sheet: title -->
+      <div class="step">
+        <div class="stepnum">3</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="shead"><span class="l">Cancel</span><span class="t">Overlay style</span><span class="r">Done</span></div>
+            <div class="media climb preview">
+              <div class="hr pill" style="top:10px"><span class="heart">♥</span>156<span class="z">Z3</span></div>
+              <div class="ttl plain" style="bottom:12px"><div class="n1">Black v6 · Sent</div><div class="n2">6c/V5 · 40° · Attempt 3 · Tue 30 Sep</div></div>
+            </div>
+            <div class="previewnote">Live preview · Black v6, Tuesday</div>
+            <div class="seg"><span>Heart rate</span><span class="on">Title</span></div>
+            <div class="scroll">
+              <div class="group"><div class="row">Show title<span class="tog on"></span></div></div>
+              <div class="lbl">Include · drag to reorder</div>
+              <div class="group">
+                <div class="row"><span><span class="reorder">≡</span>Climb / exercise name</span><span class="tog on"></span></div>
+                <div class="row"><span><span class="reorder">≡</span>Outcome (Sent, Flash)</span><span class="tog on"></span></div>
+                <div class="row"><span><span class="reorder">≡</span>Grade · angle</span><span class="tog on"></span></div>
+                <div class="row"><span><span class="reorder">≡</span>Attempt / set</span><span class="tog on"></span></div>
+                <div class="row"><span><span class="reorder">≡</span>Date</span><span class="tog on"></span></div>
+                <div class="row"><span><span class="reorder">≡</span>Session name</span><span class="tog"></span></div>
+              </div>
+              <div class="group">
+                <div class="row">Position<span class="mini-seg"><span>Top</span><span class="on">Bottom</span></span></div>
+                <div class="row">Style<span class="mini-seg"><span>Chip</span><span class="on">Plain</span></span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Title tab.</b> Turn the title off or choose its parts. The first part is the big line and the rest
+          go on the small line under it. Position and style (dark chip or plain text with a shadow). Here the user
+          also moved heart rate to the top as a HUD Pill, so the title takes the bottom.</p>
+      </div>
+
+      <!-- 4 · applied: feed + shared video -->
+      <div class="step">
+        <div class="stepnum">4</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+          <div class="navbar"><div class="t">Clips</div>
+            <div class="navicons"><span class="ic">✎</span><span class="ic">▶︎</span><span class="ic">▦</span></div></div>
+          <div class="card">
+            <div class="phead"><div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v6 <span class="badge">✓ SENT</span></div><div class="psub">Tuesday Session · 40°</div></div>
+              <div class="pacts"><span>♡</span><span>⋯</span></div></div>
+            <div class="media climb" style="height:420px">
+              <div class="count" style="top:46px">3/3</div>
+              <div class="hr pill" style="top:10px"><span class="heart">♥</span>163<span class="z">Z4</span></div>
+              <div class="ttl plain" style="bottom:12px"><div class="n1">Black v6 · Sent</div><div class="n2">6c/V5 · 40° · Attempt 3 · Tue 30 Sep</div></div>
+            </div>
+          </div>
+          <div class="tabbar"><div class="tab"><span class="ic">⌂</span>Home</div><div class="tab on"><span class="ic">▶</span>Clips</div><div class="tab"><span class="ic">▤</span>Recap</div><div class="tab"><span class="ic">▦</span>Apps</div></div>
+        </div></div>
+        <p class="caption"><b>Applied everywhere.</b> Every post without its own Studio style now uses the new default, in the
+          feed and fullscreen. The page counter moves down when the tile is on top so they don't collide.</p>
+      </div>
+
+      <!-- 5 · shared video -->
+      <div class="step" style="width:300px">
+        <div class="stepnum">5</div>
+        <div class="export media climb">
+          <div class="hr pill" style="top:14px"><span class="heart">♥</span>163<span class="z">Z4</span></div>
+          <div class="ttl plain" style="bottom:18px;left:14px"><div class="n1">Black v6 · Sent</div><div class="n2">6c/V5 · 40° · Attempt 3 · Tue 30 Sep</div></div>
+        </div>
+        <p class="caption"><b>Share with heart rate</b> burns the same layout into the video: same design, same title parts, same
+          positions. A session styled in the Studio keeps its own look in both places. <b>Reset to built-in</b> at the
+          bottom of the sheet returns to screen 1's look.</p>
+      </div>
+
+    </div>
+  </div>
+</header>
+</body>
+</html>
