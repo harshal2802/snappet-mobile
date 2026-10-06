@@ -161,4 +161,20 @@ import XCTest
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: chip)
         XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 6), .completed)
     }
+
+    /// Prompt 166: the autoplay control is labelled and confirms what it did.
+    func testAutoplayControlIsLabelledAndConfirms() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let toggle = app.buttons["clips.autoplay.toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        XCTAssertEqual(toggle.value as? String, "Off")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "On")
+        XCTAssertTrue(app.descendants(matching: .any)["clips.toast"].waitForExistence(timeout: 3),
+                      "the toggle confirms what changed")
+        toggle.tap()   // leave it off for the other tests' shared defaults
+    }
 }
