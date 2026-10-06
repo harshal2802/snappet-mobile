@@ -64,12 +64,16 @@ enum SnappetDeepLink: Equatable, Sendable {
     /// pattern). The shell routes to the Festival mini-app + a one-shot `pendingFestivalImport`, which
     /// the root consumes into an import-confirm preview (new lineup / applied plan, never silent).
     case festivalLineup(SharedLineup)
+    /// `snappet://household/join?…` — a household invite (household prompt 02). The shell opens Household
+    /// with a one-shot `pendingHouseholdJoin`, which the root turns into the join-confirm sheet.
+    case householdJoin(HouseholdInvite)
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
         if let routine = SharedRoutine(decoding: url.absoluteString) { return .routine(routine) }
         if let lineup = SharedLineup(decoding: url.absoluteString) { return .festivalLineup(lineup) }
+        if let invite = HouseholdInvite(url: url) { return .householdJoin(invite) }
         if isStartFocus(url) { return .startFocus }
         if let id = exerciseID(url) { return .exercise(id: id) }
         return nil

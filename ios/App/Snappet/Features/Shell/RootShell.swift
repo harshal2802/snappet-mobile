@@ -31,6 +31,9 @@ struct RootShell: View {
                         // Skipped in the unit-test host so the simulator's store can't leak into XP tests.
                         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
                             HouseholdXP.shared.load(context: context)
+                            // Household sync (02): only ever runs for a shared household, invite or join.
+                            app.householdSync.configure(store: { [weak app] in app?.existingHouseholdStore() })
+                            app.householdSync.setForeground(scenePhase == .active)
                         }
                         // Publish the first Today snapshot for the home-screen widgets (#81 Phase 1)
                         // as soon as the store is up, so a widget added before the app is reopened
@@ -55,6 +58,7 @@ struct RootShell: View {
             if phase == .active || phase == .background {
                 WidgetSnapshotService.refresh(context: context)
             }
+            app.householdSync.setForeground(phase == .active)   // sockets don't survive the background
             if phase == .active {
                 app.screenAwake.reassert()   // prompt 135: re-apply the workout's keep-awake on return
                 drainAppActions()
@@ -116,6 +120,9 @@ struct RootShell: View {
             // library" landing), so it shows the import-confirm preview and inserts a NEW Routine.
             router.pendingRoutineImport = shared
             router.open(module: "workout-log")
+        case .householdJoin(let invite):
+            router.pendingHouseholdJoin = invite
+            router.open(module: "household")
         case .festivalLineup(let shared):
             // A shared festival lineup / plan (festival prompt 05): open the Festival mini-app + a
             // one-shot import intent. The root owns the model context + installer, so it shows the

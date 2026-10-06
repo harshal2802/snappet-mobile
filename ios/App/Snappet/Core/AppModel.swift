@@ -64,6 +64,34 @@ final class AppModel {
     /// there must never run unbound (no live HR / Live Activity / media) (#71 pre-merge review).
     let kilterSessions = KilterSessionManager()
 
+    /// Household sync between phones on the local network (household prompt 02). Configured with the
+    /// store once the container exists; started/stopped by the shell's scene phase.
+    let householdSync = HouseholdPeerService()
+    @ObservationIgnored private var householdStoreInstance: HouseholdStore?
+
+    /// The app's one household store (created with the household on first open of the mini-app).
+    func householdStore() -> HouseholdStore? {
+        if let householdStoreInstance { return householdStoreInstance }
+        guard let context = modelContainer?.mainContext else { return nil }
+        let store = HouseholdStore(context: context)
+        householdStoreInstance = store
+        householdSync.evaluate()
+        return store
+    }
+
+    /// The store only if a household already exists: the sync service must never create one.
+    func existingHouseholdStore() -> HouseholdStore? {
+        if let householdStoreInstance { return householdStoreInstance }
+        guard let context = modelContainer?.mainContext, HouseholdStore.active(context: context) != nil else { return nil }
+        return householdStore()
+    }
+
+    /// After a backup restore swaps the rows underneath it.
+    func resetHouseholdStore() {
+        householdStoreInstance = nil
+        householdSync.evaluate()
+    }
+
     /// Local notifications for a backgrounded / minimized workout (e.g. "rest complete"), so the
     /// session can still reach the notification bar alongside the Live Activity. No-ops when
     /// unauthorized (live-workout-studio next pass).

@@ -16,14 +16,47 @@ final class Household {
     /// The member this phone's user is in the log.
     var myMemberID: UUID = UUID()
     var createdAt: Date = Date()
+    /// The household secret (32 bytes) members prove to each other when syncing (household prompt 02).
+    /// Empty until the first invite; arrives in the welcome when joining. Never put in a QR or a URL.
+    var key: Data = Data()
+    /// Set when this phone joined another household: kept so its history and XP survive.
+    var leftAt: Date?
 
     init(id: UUID = UUID(), name: String, myDeviceID: UUID = UUID(), myMemberID: UUID = UUID(),
-         createdAt: Date = .now) {
+         createdAt: Date = .now, key: Data = Data(), leftAt: Date? = nil) {
         self.id = id
         self.name = name
         self.myDeviceID = myDeviceID
         self.myMemberID = myMemberID
         self.createdAt = createdAt
+        self.key = key
+        self.leftAt = leftAt
+    }
+}
+
+/// Another phone in the household, as last seen by a sync (household prompt 02, frame 5).
+@Model
+final class HouseholdPeer {
+    var id: UUID = UUID()
+    var householdID: UUID = UUID()
+    var deviceID: UUID = UUID()
+    var memberID: UUID?
+    var name: String = ""
+    var platform: String = ""
+    var lastSyncedAt: Date = Date()
+    /// The highest seq of this phone's own ops the peer has confirmed: what "changes waiting" counts from.
+    var ackedSeq: Int = 0
+
+    init(id: UUID = UUID(), householdID: UUID, deviceID: UUID, memberID: UUID?, name: String, platform: String,
+         lastSyncedAt: Date = .now, ackedSeq: Int = 0) {
+        self.id = id
+        self.householdID = householdID
+        self.deviceID = deviceID
+        self.memberID = memberID
+        self.name = name
+        self.platform = platform
+        self.lastSyncedAt = lastSyncedAt
+        self.ackedSeq = ackedSeq
     }
 }
 

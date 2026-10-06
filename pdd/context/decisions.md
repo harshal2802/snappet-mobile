@@ -9602,3 +9602,31 @@ Non-obvious calls:
 - Ops are stored as their wire JSON (`HouseholdOpRecord.payload`), not as columns, so an op kind from a
   newer app survives on an older phone and can be relayed.
 
+## 2026-10-04 — Household P2: phone-to-phone sync with app-level crypto, not TLS-PSK (household prompt 02 / 157)
+
+- **iOS first, Android in P4** (user's call). The protocol is still written for both: discovery, framing,
+  handshake and messages are specified with test vectors in `pdd/context/household-wire-format.md`.
+- **Not TLS-PSK** (the P1 plan): Android's TLS stack doesn't offer PSK suites to apps, so the channel is
+  HKDF-SHA256 per-session keys from fresh nonces + ChaCha20-Poly1305 frames + a sealed `auth` message each way.
+  Every primitive exists in CryptoKit and in JCA/Tink. The KDF and tag vectors were cross-checked against an
+  independent Python implementation before being pinned.
+- **The household key never travels in a QR or link.** An invite is a one-time 32-byte token (5 minutes,
+  single use, inviter memory only). The joiner proves the token over the channel and only then gets the key.
+  The token is burnt the moment the welcome is sent, even if the rest of that sync fails.
+- Nothing about the household (welcome, state, ops) is sent before the peer's `auth` opens. A wrong secret
+  costs the attacker one hello and one undecryptable auth.
+- The conversation is a **pure state machine** (`HouseholdSyncMachine`); `HouseholdPeerService` only moves
+  bytes. Two machines back to back are the main test harness, plus one real-socket loopback test and a
+  two-simulator Bonjour E2E test (`HouseholdE2ETests`, skipped unless both roles are run together).
+- Ops travel as their stored bytes, so a kind this phone doesn't understand is relayed untouched.
+- **Joining keeps your old household** (marked left) so its history and XP survive; "bring my chores" copies
+  active chores as new ones, reassigned to you (old member ids mean nothing in the new household).
+- The joiner mints its real device and member ids **before** the handshake, so the inviter records the right
+  peer (the first draft used throwaway ids and would have left a bogus peer row).
+- **Restore re-rolls device ids**: two phones restored from one backup must never write the same (device, seq).
+- The service runs only in the foreground and only with a reason (a shared household, an open invite, a join),
+  so solo users never see the Local Network prompt. Discovery-triggered syncs are dialled by the smaller device
+  id; local changes and "Sync now" dial everyone in reach.
+- The household key lives in SwiftData and therefore in backups. Anyone holding a backup file could sync with
+  the household on the same Wi-Fi; accepted for P2 (the file is the user's own), revisit with Keychain if needed.
+

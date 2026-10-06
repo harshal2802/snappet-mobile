@@ -50,6 +50,8 @@ struct ChoreBoard: Equatable, Sendable {
     /// Latest live claim per chore.
     var claims: [UUID: ChoreCompletion] = [:]
     var goals: [String: HouseholdGoal] = [:]
+    /// The shared household name, if anyone has set one (household prompt 02).
+    var householdName: String?
 
     static func fold(_ ops: [ChoreOp]) -> ChoreBoard {
         var seen = Set<UUID>()
@@ -88,6 +90,8 @@ struct ChoreBoard: Equatable, Sendable {
                 board.claims[chore] = ChoreCompletion(opID: op.id, chore: chore, member: member, at: op.at)
             case .setGoal(let week, let target, let reward):
                 board.goals[week] = HouseholdGoal(week: week, target: max(0, target), reward: reward)
+            case .renameHousehold(let name):
+                if !name.isEmpty { board.householdName = name }
             case .createChore, .undo, .unknown:
                 continue
             }
