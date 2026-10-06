@@ -64,9 +64,12 @@ struct ClipFeedFilter: Equatable, Sendable {
 
     /// Filter `posts` down to the visible set. `isFavorite` injects the reaction store lookup so the
     /// UserDefaults edge stays out of the pure layer (and is only consulted when `favoritesOnly` is on).
-    func apply(_ posts: [ClipFeedPost], isFavorite: (ClipFeedPost) -> Bool) -> [ClipFeedPost] {
+    func apply(_ posts: [ClipFeedPost], isFavorite: (ClipFeedPost) -> Bool,
+               searchContext: ClipSearch.Context = .current) -> [ClipFeedPost] {
         guard isActive else { return posts }
         let q = trimmedQuery
+        // Built once per apply (formatters + relative ranges), not per post (prompt 165).
+        let search = q.isEmpty ? nil : ClipSearch(query: q, context: searchContext)
         return posts.filter { post in
             if favoritesOnly, !isFavorite(post) { return false }
             if reelsOnly, !post.isReel { return false }
@@ -84,13 +87,10 @@ struct ClipFeedFilter: Equatable, Sendable {
             case .videos: if !post.clips.contains(where: { $0.media.kind == "video" }) { return false }
             case .photos: if !post.clips.contains(where: { $0.media.kind == "photo" }) { return false }
             }
-            if !q.isEmpty {
-                // Match the fields a user actually remembers: the climb/exercise name (post title) and
-                // the session title (subtitle). `localizedStandardContains` = case- and
-                // diacritic-insensitive, the same matching Spotlight-style search uses.
-                if !post.title.localizedStandardContains(q),
-                   !post.subtitle.localizedStandardContains(q) { return false }
-            }
+            // Every word must match something the user remembers (prompt 165): name, session, grade,
+            // angle, outcome, date words, or a relative range ("last week"). `localizedStandardContains`
+            // = case- and diacritic-insensitive, the same matching Spotlight-style search uses.
+            if let search, !search.matches(post) { return false }
             return true
         }
     }

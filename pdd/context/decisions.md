@@ -9757,3 +9757,12 @@ stripes, and the panel read as an opaque slab.
   keep their real numbers (so "Attempt 1" may be missing — that's the truth). A post with nothing left disappears.
 - **Recovery path is visible**: a "Hidden · N" chip at the end of the strip, shown only when something is hidden,
   plus a 4 s Undo toast. No settings screen.
+
+## 2026-10-06 — Clips search: every word must match; relative dates are ranges (prompt 165)
+
+- **AND across words** ("v5 sent sep" narrows) — the natural reading for a personal feed; prompt 107 matched the
+  whole query as one substring of the title/subtitle only.
+- **"sent" finds flashes too** (a flash is a send); "flash" finds only flashes.
+- **Relative phrases are parsed out first** (today, yesterday, this/last week, this/last month) and become ranges on
+  the post's capture time, using the user's calendar (first weekday from the locale).
+- Date words come from locale formatters (month, weekday, year, "d MMM"/"MMM d"), so non-English month names work.

@@ -205,7 +205,7 @@ struct ClipsFeedView: View {
                         // The standard iOS pull-down search field — invisible until wanted (prompt 107).
                         .searchable(text: $filter.query,
                                     placement: .navigationBarDrawer(displayMode: .automatic),
-                                    prompt: "Search climbs, exercises & sessions")
+                                    prompt: "Search names, grades, sends, dates…")
                         // Narrowing the feed can remove the playing post's card mid-playback; stop the
                         // active clip so playback state never points at a filtered-out page.
                         .onChange(of: filter) { _, _ in playback.playing = nil }
