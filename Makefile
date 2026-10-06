@@ -42,6 +42,11 @@ PROJECT      := $(IOS_DIR)/Snappet.xcodeproj
 DERIVED_DATA := $(IOS_DIR)/build/DerivedData
 DEST_SIM     := platform=iOS Simulator,name=$(SIMULATOR)
 DEST_DEVICE  := generic/platform=iOS
+# The watch target only builds, so it needs no named device: the generic destination works with
+# whatever watch simulators are installed. Pin one with  make ios-watch WATCH_SIMULATOR='Apple Watch Series 11 (46mm)'.
+comma := ,
+WATCH_SIMULATOR ?=
+DEST_WATCH   := $(if $(strip $(WATCH_SIMULATOR)),platform=watchOS Simulator$(comma)name=$(strip $(WATCH_SIMULATOR)),generic/platform=watchOS Simulator)
 XCGEN        := xcodegen
 
 # Android layout
@@ -126,7 +131,7 @@ ios-device: ios-generate ## Build the iOS app for a generic physical device
 ios-watch: ios-generate ## Build the watchOS companion (SnappetWatch scheme) for the simulator
 	$(require_macos)
 	cd $(IOS_DIR) && xcodebuild build -scheme SnappetWatch -configuration $(CONFIG) \
-		-destination 'platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)' -derivedDataPath build/DerivedData
+		-destination '$(DEST_WATCH)' -derivedDataPath build/DerivedData
 
 .PHONY: ios-run
 ios-run: ios-sim ## Build, boot the simulator, install + launch the app
