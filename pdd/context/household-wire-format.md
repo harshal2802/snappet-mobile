@@ -40,6 +40,8 @@ UUIDs are written lowercase; readers accept either case. Keys a kind doesn't use
 | `pause_house` | optional `until` (`yyyy-MM-dd`, inclusive) | The house on holiday from this op's time: nothing is overdue, and a week mostly paused neither breaks nor extends the streak. Ignored if already paused open-endedly. |
 | `resume_house` | (none) | Ends the open pause. |
 | `name_pet` | `name` | The house pet's name. Latest non-empty wins. |
+| `start_power_hour` | `ends` (ISO-8601, like `at`), `target` | Prompt 159: a power hour from this op's time until `ends`. A start while one is running ends that one at this op's time. A start whose `ends` isn't after `at` is ignored; one without a readable `ends` folds as unknown. |
+| `end_power_hour` | (none) | Ends the running power hour at this op's time. |
 
 A reader that meets an unknown `kind` keeps the op (stores it, counts it in version vectors, relays it)
 and ignores it when folding. That's how a newer app's ops survive an older phone.

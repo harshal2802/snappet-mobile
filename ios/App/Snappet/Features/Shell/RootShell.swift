@@ -34,6 +34,10 @@ struct RootShell: View {
                             // Household sync (02): only ever runs for a shared household, invite or join.
                             app.householdSync.configure(store: { [weak app] in app?.existingHouseholdStore() })
                             app.householdSync.setForeground(scenePhase == .active)
+                            // Widget / watch ticks made while closed, then republish (household 04).
+                            HouseholdSurfaces.shared.store = { [weak app] in app?.existingHouseholdStore() }
+                            HouseholdSurfaces.shared.reconcile()
+                            HouseholdSurfaces.shared.publishSoon()
                         }
                         // Publish the first Today snapshot for the home-screen widgets (#81 Phase 1)
                         // as soon as the store is up, so a widget added before the app is reopened
@@ -59,6 +63,10 @@ struct RootShell: View {
                 WidgetSnapshotService.refresh(context: context)
             }
             app.householdSync.setForeground(phase == .active)   // sockets don't survive the background
+            if phase == .active {
+                HouseholdSurfaces.shared.reconcile()   // widget / watch ticks made while away (household 04)
+                HouseholdSurfaces.shared.publishSoon()
+            }
             if phase == .active {
                 app.screenAwake.reassert()   // prompt 135: re-apply the workout's keep-awake on return
                 drainAppActions()

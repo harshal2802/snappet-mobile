@@ -75,6 +75,9 @@ final class AppModel {
         guard let context = modelContainer?.mainContext else { return nil }
         let store = HouseholdStore(context: context)
         householdStoreInstance = store
+        // The widget, watch and power-hour Live Activity follow every change (household prompt 04).
+        store.onReload = { HouseholdSurfaces.shared.publishSoon() }
+        HouseholdSurfaces.shared.publishSoon()
         householdSync.evaluate()
         return store
     }

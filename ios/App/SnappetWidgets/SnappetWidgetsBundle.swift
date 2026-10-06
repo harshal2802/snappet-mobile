@@ -13,5 +13,7 @@ struct SnappetWidgetsBundle: WidgetBundle {
         PomodoroLiveActivity()
         TodayWidget()
         BuddyWidget()
+        HouseholdWidget()
+        PowerHourLiveActivity()
     }
 }

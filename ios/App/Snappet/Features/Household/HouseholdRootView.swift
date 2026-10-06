@@ -206,23 +206,9 @@ struct HouseholdTodayView: View {
         let board = store.board
         let help = board.openHelpRequests(now: now)
         let thankable = Self.thankable(board, me: store.me, now: now)
-        let rows = board.activeChores.map { chore in
-            (chore: chore, status: board.status(of: chore, now: now), assignee: board.assignee(of: chore, now: now))
-        }
-        let isToday: (ChoreStatus) -> Bool = { status in
-            switch status {
-            case .due: return true
-            case .done(let round): return Calendar.current.isDateInToday(round.completions.last?.at ?? .distantPast)
-            case .notDue: return false
-            }
-        }
-        let todays = rows.filter { isToday($0.status) }
-        let mine = todays.filter { $0.assignee == store.me || isDoneByMe($0.status) }
-        let grabs = todays.filter { $0.assignee == nil && !isDoneByMe($0.status) }
-        let others = todays.filter { $0.assignee != nil && $0.assignee != store.me && !isDoneByMe($0.status) }
-        let later = rows.filter { !isToday($0.status) }.compactMap { r -> (Chore, DayKey)? in
-            if case .notDue(let next?) = r.status { return (r.chore, next) } else { return nil }
-        }.sorted { $0.1 < $1.1 }
+        let buckets = board.today(me: store.me, now: now)
+        let mine = buckets.mine, grabs = buckets.grabs, others = buckets.others
+        let later = buckets.later
 
         List {
             Section {
@@ -232,6 +218,8 @@ struct HouseholdTodayView: View {
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+
+            Section { HouseholdPowerHourRow(store: store) }
 
             if !help.isEmpty {
                 Section("Asked for a hand") {
@@ -280,7 +268,7 @@ struct HouseholdTodayView: View {
             }
             if !later.isEmpty {
                 Section("Coming up") {
-                    ForEach(later, id: \.0.id) { chore, next in
+                    ForEach(later, id: \.chore.id) { chore, next in
                         Button { edit(chore) } label: {
                             HStack(spacing: 12) {
                                 Text(chore.emoji).font(.title3)
@@ -294,11 +282,6 @@ struct HouseholdTodayView: View {
             }
         }
         .scrollContentBackground(.hidden)
-    }
-
-    private func isDoneByMe(_ status: ChoreStatus) -> Bool {
-        if case .done(let round) = status { return round.members.contains(store.me) }
-        return false
     }
 
     private func row(_ chore: Chore, _ status: ChoreStatus, _ assignee: UUID?, grab: Bool = false) -> some View {

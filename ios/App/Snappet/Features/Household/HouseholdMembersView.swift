@@ -13,6 +13,22 @@ struct HouseholdMembersView: View {
 
     var body: some View {
         List {
+            if service.localNetworkDenied {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Local Network is off for Snappet", systemImage: "wifi.exclamationmark")
+                            .font(.headline).foregroundStyle(SnappetColor.perfHard)
+                        Text("Phones can't find each other until it's on: Settings › Privacy & Security › Local Network › Snappet.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }
+                        .buttonStyle(.borderedProminent).tint(SnappetColor.household)
+                    }
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("household.localNetworkDenied")
+                }
+            }
             Section("Names") {
                 LabeledContent("Household") {
                     TextField("Household name", text: $householdName)
