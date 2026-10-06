@@ -9674,3 +9674,17 @@ Non-obvious calls:
   test; Bonjour covers the home), and notifications for others' chores (could only fire while the app is open,
   where the board already updates live).
 
+
+## 2026-10-06 — Clips: one-tap "Share with heart rate" (prompt 160)
+
+- **The burned share is the primary ⋯ share**; "Share original clip" keeps the raw lane (prompt 87). Reels and
+  baked clips only offer "Share clip": their HR is already in the pixels, and a second option would double-draw.
+- **WYSIWYG by reuse, not by a second derivation**: the render burns the SAME `ClipHROverlay.Payload` the poster
+  draws (its window samples + `resolveTile`), over the SAME kept range the feed plays. A custom Studio tile
+  therefore shares as customised. One `PlacedClipHR` slotted across the whole render.
+- **Its own one-clip composition, not ReelExporter**: ReelExporter only burns the session-wide `.feedClipScorebug`
+  over a whole reel, and its asset resolution is private. The clip lane needs the asset's real duration to clamp
+  the approximate stored `durationSec` before inserting the range (`ClipSharePlan.clamped`).
+- **Caption at the top of the frame** (the Studio climb-name lower-third style, y = 0.1) because the scorebug's
+  default sits at the bottom (centerY 0.80). A user's custom tile placed at the top could collide — not handled.
+- Simulator renders passthrough without the overlay (no encoder), like ReelExporter.

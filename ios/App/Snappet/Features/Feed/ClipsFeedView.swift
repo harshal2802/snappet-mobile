@@ -10,7 +10,7 @@ import SwiftData
 //
 // Derive-on-read, like the Recap `FeedView`: @Query the source @Models, snapshot to plain values at the
 // edge, compose with the pure `ClipFeedComposer`. The session stays the single source of truth — no new
-// store. Read-only vertical slice: reactions / share / explore-grid are a follow-up.
+// store. Reactions, share (raw + HR-burned, prompt 160) and the explore grid layered on since.
 
 /// Per-session HR context the posters slice their scorebug window from. `Sendable` — it crosses the
 /// off-main feed-composition hop (prompt 106).
@@ -1021,7 +1021,24 @@ private struct ClipPostCard: View {
                 if !currentClip.media.isReel {
                     Button { editCurrentClip() } label: { Label("Edit this clip", systemImage: "slider.horizontal.3") }
                 }
-                Button { shareCurrentClip() } label: { Label("Share clip", systemImage: "square.and.arrow.up") }
+                // Share (prompt 160): the HR-burned render is the primary share when there's HR to burn;
+                // a reel / baked clip already carries it in the pixels, so its raw share IS the burned one.
+                switch shareOffer {
+                case .burnedAndRaw:
+                    Button { shareCurrentClip(withHeartRate: true) } label: {
+                        Label("Share with heart rate", systemImage: "heart.text.square")
+                    }
+                    .accessibilityIdentifier("clips.post.shareHR")
+                    Button { shareCurrentClip(withHeartRate: false) } label: {
+                        Label("Share original clip", systemImage: "square.and.arrow.up")
+                    }
+                case .raw:
+                    Button { shareCurrentClip(withHeartRate: false) } label: {
+                        Label("Share clip", systemImage: "square.and.arrow.up")
+                    }
+                case .none:
+                    EmptyView()
+                }
             }
             if editableClipIDs.count > 1 {
                 Button { editAllClips() } label: { Label("Edit all · \(editableClipIDs.count)", systemImage: "rectangle.stack") }
@@ -1168,14 +1185,27 @@ private struct ClipPostCard: View {
         studio = StudioPresentation(project: project(), focus: clip.media.id, visible: [clip.media.id])
     }
 
-    /// Share the centered clip's RAW video via the system share sheet (prompt 87) — export off the main
-    /// actor, then present `ShareSheet`. (The HR-overlay-burned share is ⋯ → Edit this clip → Studio.)
-    private func shareCurrentClip() {
+    /// Which share actions the centred clip offers (prompt 160) — from the SAME payload its poster draws.
+    private var shareOffer: ClipSharePlan.Offer {
+        ClipSharePlan.offer(for: currentClip.media, payload: payloads[currentClip.media.id])
+    }
+
+    /// Share the centered clip via the system share sheet — export off the main actor, then present
+    /// `ShareSheet`. `withHeartRate` (prompt 160) burns the poster's HR tile + name lower-third over the
+    /// kept range; otherwise the RAW video (prompt 87).
+    private func shareCurrentClip(withHeartRate: Bool) {
         let clip = currentClip
         guard clip.media.kind == "video", !preparingShare else { return }
+        let plan = withHeartRate
+            ? ClipSharePlan.plan(clip: clip.media, payload: payloads[clip.media.id],
+                                 title: post.title, detail: post.overlayDetail, attemptLabel: clip.attemptLabel)
+            : nil
+        if withHeartRate, plan == nil { shareFailed = true; return }
         preparingShare = true
         Task { @MainActor in
-            let url = await ClipShareService.exportForSharing(localIdentifier: clip.media.localIdentifier)
+            let url: URL?
+            if let plan { url = await ClipShareService.exportWithHeartRate(plan) }
+            else { url = await ClipShareService.exportForSharing(localIdentifier: clip.media.localIdentifier) }
             preparingShare = false
             if let url { shareItem = ClipShareItem(url: url) } else { shareFailed = true }
         }
