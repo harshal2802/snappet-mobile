@@ -22,12 +22,12 @@ SHELL := /usr/bin/env bash
 .NOTPARALLEL:
 
 # ── Overridable configuration ────────────────────────────────────────────────
-# Override on the command line, e.g.  make ios-sim SIMULATOR='iPhone 16'  CONFIG=Release
+# Override on the command line, e.g.  make ios-sim SIMULATOR='iPhone 17'  CONFIG=Release
 # NOTE: keep these comments on their OWN lines. An inline `# ...` after a value bakes the
 # whitespace between the value and the `#` into the variable (GNU Make keeps it), which then
 # survives into the quoted `-destination '...name=$(SIMULATOR)'` and breaks the device match.
 # `xcrun simctl list devices` for installed simulator names
-SIMULATOR ?= iPhone 16 Pro
+SIMULATOR ?= iPhone 17 Pro
 # Debug | Release
 CONFIG    ?= Debug
 # app+watch+widgets+tests; SnappetWatch is watch-only
