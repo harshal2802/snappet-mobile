@@ -142,6 +142,8 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     var climbResult: ClipFeedClimbResult? = nil
     /// The owning session's name (prompt 163) — the overlay title's optional "Session name" part.
     var sessionTitle: String = ""
+    /// The Kilter board angle of the session (prompt 167 — the session header's "· 40°"); nil for gym.
+    var sessionAngle: Int? = nil
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double
@@ -230,6 +232,7 @@ enum ClipFeedComposer {
                     isReel: true,
                     clips: [ClipFeedItem(media: reel, attemptLabel: nil)],
                     sessionTitle: sessionName(meta),
+                    sessionAngle: meta.angle,
                     aspect: postAspect([reel])))
             }
             // Festival-tagged clips (festival prompt 03) leave the exercise grouping and become
@@ -263,6 +266,7 @@ enum ClipFeedComposer {
                     isFromAppleWatch: meta.isFromAppleWatch,
                     clips: items,
                     sessionTitle: sessionName(meta),
+                    sessionAngle: meta.angle,
                     aspect: postAspect(ordered)))
             }
             let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
@@ -326,6 +330,7 @@ enum ClipFeedComposer {
                     clips: items,
                     climbResult: result,
                     sessionTitle: sessionName(meta),
+                    sessionAngle: meta.angle,
                     aspect: postAspect(ordered)))
             }
         }

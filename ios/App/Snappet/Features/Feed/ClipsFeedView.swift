@@ -147,7 +147,8 @@ struct ClipsFeedView: View {
                   GeometryReader { feedGeo in
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(spacing: 18) {
+                            // Session headers pin while you're inside that session (prompt 167).
+                            LazyVStack(spacing: 18, pinnedViews: [.sectionHeaders]) {
                                 // Contextual "Connect Apple Health" offer (highlights P5): shown while
                                 // no watch-imported session exists and the user hasn't connected or
                                 // dismissed — the fresh-install read-priming gap the retired Workout
@@ -175,28 +176,28 @@ struct ClipsFeedView: View {
                                 if visible.isEmpty, filter.isActive {
                                     noMatchState
                                 } else {
-                                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, post in
-                                        ClipPostCard(post: post,
-                                                     hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
-                                                     allMedia: allMedia, playback: playback,
-                                                     reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
-                                                     payloads: cachedPayloads,
-                                                     autoplayActive: autoplayActive,
-                                                     contentWidth: feedGeo.size.width,
-                                                     style: overlayStore.style,
-                                                     showingHidden: filter.showHidden,
-                                                     onHide: hide, onUnhide: { reactions.unhide($0) })
-                                            .id(post.id)
-                                            // Warm the posters just below the fold (prompt 134). A poster
-                                            // costs 70–120 ms and used to START loading only when its cell
-                                            // appeared, so a normal scroll outran the loader and filled in
-                                            // behind the user. Hooking the row's own appearance keeps this
-                                            // free of scroll-offset tracking.
-                                            .onAppear {
-                                                prefetchPosters(after: index,
-                                                                in: visible,
-                                                                width: feedGeo.size.width)
+                                    // Grouped under a pinned session header (prompt 167) — over the
+                                    // VISIBLE posts, so filters and search group their results too.
+                                    let indexByID = Dictionary(visible.enumerated().map { ($1.id, $0) },
+                                                               uniquingKeysWith: { a, _ in a })
+                                    ForEach(ClipFeedSections.sessions(visible)) { section in
+                                        Section {
+                                            ForEach(section.posts) { post in
+                                                postCard(post, width: feedGeo.size.width)
+                                                    // Warm the posters just below the fold (prompt 134). A
+                                                    // poster costs 70–120 ms and used to START loading only
+                                                    // when its cell appeared, so a normal scroll outran the
+                                                    // loader. Hooking the row's own appearance keeps this
+                                                    // free of scroll-offset tracking.
+                                                    .onAppear {
+                                                        prefetchPosters(after: indexByID[post.id] ?? 0,
+                                                                        in: visible,
+                                                                        width: feedGeo.size.width)
+                                                    }
                                             }
+                                        } header: {
+                                            ClipSessionHeader(section: section)
+                                        }
                                     }
                                 }
                             }
@@ -313,6 +314,21 @@ struct ClipsFeedView: View {
                 ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
             }
         }
+    }
+
+    /// One post card with the feed's shared state (prompt 167 pulled it out of the grouped ForEach).
+    private func postCard(_ post: ClipFeedPost, width: CGFloat) -> some View {
+        ClipPostCard(post: post,
+                     hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
+                     allMedia: allMedia, playback: playback,
+                     reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
+                     payloads: cachedPayloads,
+                     autoplayActive: autoplayActive,
+                     contentWidth: width,
+                     style: overlayStore.style,
+                     showingHidden: filter.showHidden,
+                     onHide: hide, onUnhide: { reactions.unhide($0) })
+            .id(post.id)
     }
 
     // MARK: Hide from Clips (prompt 164)
@@ -849,6 +865,48 @@ private struct WeeklyReelHeroCard: View {
     }
 }
 
+// MARK: - Session header (prompt 167)
+
+/// The pinned header above a session's posts: kind glyph · session name · "Tue 30 Sep · Kilter · 40°" ·
+/// post count. Opaque so posts scroll under it cleanly.
+private struct ClipSessionHeader: View {
+    let section: ClipFeedSection
+
+    private var accent: Color {
+        if section.isFromAppleWatch { return SnappetColor.perfFresh }
+        if section.discipline == .festival { return SnappetColor.festival }
+        return section.kind == .kilter ? SnappetColor.kilter : SnappetColor.workout
+    }
+    private var glyph: String {
+        if section.isFromAppleWatch { return "applewatch" }
+        if section.discipline == .festival { return "music.mic" }
+        return section.kind == .kilter ? "figure.climbing" : "figure.strengthtraining.traditional"
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: glyph)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 28, height: 28)
+                .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(section.title).font(.footnote.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                if let detail = section.detail {
+                    Text(detail).font(.caption2).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(section.countLabel).font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
+        }
+        .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, 8)
+        .background(SnappetColor.paper.opacity(0.96))
+        .overlay(alignment: .bottom) { Rectangle().fill(SnappetColor.hairline).frame(height: 0.5) }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("clips.session.header")
+    }
+}
+
 // MARK: - Filter chip strip (prompt 107)
 
 /// The Clips filter chips: ♥ Favorites · Climbs · Gym · Videos · Photos. Visible above the feed (the
@@ -920,6 +978,7 @@ private struct ClipFilterChipStrip: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)   // the label says it; some symbols carry their own traits
                 Text(label).font(.caption.weight(.semibold))
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
