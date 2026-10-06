@@ -11,7 +11,9 @@ import CoreGraphics
 /// is in preview points (~hundreds wide) or export pixels (~1080 wide) — the scale-invariance that
 /// makes WYSIWYG hold (see `decisions.md`).
 enum HRTileStyle {
-    static let glassFillHex = "#111928";   static let glassFillAlpha: CGFloat = 0.72
+    // Lighter glass (2026-10-06, user feedback: the shared Clips tile read as a near-opaque slab) — 0.72 → 0.50;
+    // legibility moves to the text shadow (`textShadowAlpha`, scaled radius in the export).
+    static let glassFillHex = "#111928";   static let glassFillAlpha: CGFloat = 0.50
     static let chipFillHex  = "#1C2230";   static let chipFillAlpha: CGFloat  = 0.80
     static let hairlineHex  = "#FFFFFF";   static let hairlineAlpha: CGFloat  = 0.14
     static let heroTextHex  = "#F2F4F8"                                     // hero — never pure white
@@ -19,6 +21,7 @@ enum HRTileStyle {
     static let captionAlpha: CGFloat = 0.55                                // uppercase micro-label
     static let scrimAlpha: CGFloat   = 0.42                                // floor-fade behind the tile
     static let shadowAlpha: CGFloat  = 0.38
+    static let textShadowAlpha: CGFloat = 0.85                             // text drop shadow over footage
     static let lineWidthFull: CGFloat = 3.5                                // HR Trace / full-lane curve
     static let lineWidthSpark: CGFloat = 2.6                               // sparkline under a hero
     static let areaTopAlpha: CGFloat = 0.42                                // curve area-fill top alpha

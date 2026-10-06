@@ -76,9 +76,12 @@ enum ClipShareService {
             [OverlayItem(kind: .climbName, content: $0, startSec: 0, endSec: plan.duration,
                          position: CGPoint(x: 0.5, y: 0.1), highlightHex: "#000000")]
         } ?? []
+        // The tile in the poster's band shape + inset, not its stored geometry (see `posterBand`).
+        var hr = plan.hr
+        hr.tile = hr.tile.map { ClipSharePlan.posterBand($0, canvas: canvas) }
         vc.animationTool = StudioOverlays.makeAnimationTool(
             overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-            clipHR: [plan.hr])
+            clipHR: [hr])
         return await export(composition, preset: AVAssetExportPresetHighestQuality, fileType: .mp4,
                             videoComposition: vc)
         #endif

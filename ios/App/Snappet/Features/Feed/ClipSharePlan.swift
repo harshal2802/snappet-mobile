@@ -69,6 +69,29 @@ enum ClipSharePlan {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// The poster draws the tile as a BAND, not at the tile's stored geometry: the full card width (minus
+    /// 12pt padding) × 96pt — about 4.2:1 on a phone. The share burns it in that same shape and inset, so
+    /// the video matches the post. The template's own default box (scorebug 0.92 × 0.27 of a portrait
+    /// frame ≈ 1.9:1) laid the hero out far taller than the post and overran its column (2026-10-06).
+    static let posterBandAspect = 4.2
+    /// The poster's 12pt inset as a fraction of the card width.
+    static let posterInsetFraction = 12.0 / 418.0
+
+    /// `tile` re-placed as the poster's bottom band on a `canvas`-sized render.
+    static func posterBand(_ tile: ResolvedHRTile, canvas: CGSize) -> ResolvedHRTile {
+        guard canvas.width > 0, canvas.height > 0 else { return tile }
+        let inset = posterInsetFraction
+        let widthPx = canvas.width * (1 - 2 * inset)
+        let heightFrac = min(0.45, (widthPx / posterBandAspect) / canvas.height)
+        let bottomInsetFrac = canvas.width * inset / canvas.height
+        var t = tile
+        t.centerX = 0.5
+        t.width = 1 - 2 * inset
+        t.height = heightFrac
+        t.centerY = 1 - bottomInsetFrac - heightFrac / 2
+        return t
+    }
+
     /// Re-slot the plan's HR tile over the duration the render ACTUALLY inserted (the asset can be a
     /// hair shorter than the stored `durationSec`) so the dot parks on the last frame, not past it.
     static func clamped(_ plan: Plan, assetDuration: Double) -> Plan? {

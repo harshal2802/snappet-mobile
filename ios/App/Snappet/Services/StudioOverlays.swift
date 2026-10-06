@@ -280,7 +280,13 @@ enum StudioOverlays {
     /// The hero number: a near-white value + a small inline unit ("156" + "BPM"), bottom-aligned so they
     /// share a baseline. Grouped in one layer so a live-bpm cross-fade gates the value+unit together.
     private static func heroGroupLayer(_ reading: HROverlayValues.Reading, frame: CGRect,
-                                       fontSize: CGFloat, align: HRTileLayout.TextAlign) -> CALayer {
+                                       fontSize base: CGFloat, align: HRTileLayout.TextAlign) -> CALayer {
+        // Shrink value+unit to fit the column — the export twin of HRTileView's `minimumScaleFactor(0.5)`.
+        // Without it the unit overran into the next column (the zone bar) whenever the tile was taller
+        // than the preview's proportions (the font scales with height, the column with width).
+        let fontSize = shrinkToFit(fontSize: base, naturalWidth: inlineWidth(reading, fontSize: base,
+                                   valueWeight: .heavy, unitScale: 0.34, unitWeight: .bold, gapScale: 0.08),
+                                   available: frame.width)
         let group = CALayer(); group.frame = frame
         let valFont = tileFont(size: fontSize, weight: .heavy)
         let valAttr = NSAttributedString(string: reading.value, attributes: [.font: valFont, .foregroundColor: heroWhite()])
@@ -298,20 +304,42 @@ enum StudioOverlays {
         let valY = (frame.height - vs.height) / 2
         let vl = CATextLayer(); vl.string = valAttr; vl.contentsScale = 2; vl.isWrapped = false; vl.alignmentMode = .left
         vl.frame = CGRect(x: startX, y: valY, width: vw, height: vs.height)
-        applyTextShadow(vl); group.addSublayer(vl)
+        applyTextShadow(vl, fontSize: fontSize); group.addSublayer(vl)
         if let unitAttr {
             let ul = CATextLayer(); ul.string = unitAttr; ul.contentsScale = 2; ul.isWrapped = false; ul.alignmentMode = .left
             ul.frame = CGRect(x: startX + vw + gap, y: valY, width: us.width, height: us.height)   // bottom-aligned ≈ shared baseline
-            applyTextShadow(ul); group.addSublayer(ul)
+            applyTextShadow(ul, fontSize: fontSize); group.addSublayer(ul)
         }
         return group
+    }
+
+    /// The font size that fits `naturalWidth` (measured at `fontSize`) into `available`, never below half —
+    /// SwiftUI's `minimumScaleFactor(0.5)`, which the preview applies to the same text. Pure.
+    static func shrinkToFit(fontSize: CGFloat, naturalWidth: CGFloat, available: CGFloat) -> CGFloat {
+        guard naturalWidth > available, naturalWidth > 0, available > 0 else { return fontSize }
+        return fontSize * max(0.5, available / naturalWidth)
+    }
+
+    /// Measured width of a value + its small inline unit at `fontSize` (the layout both layers draw).
+    private static func inlineWidth(_ reading: HROverlayValues.Reading, fontSize: CGFloat,
+                                    valueWeight: UIFont.Weight, unitScale: CGFloat,
+                                    unitWeight: UIFont.Weight, gapScale: CGFloat) -> CGFloat {
+        let v = NSAttributedString(string: reading.value,
+                                   attributes: [.font: tileFont(size: fontSize, weight: valueWeight)]).size().width
+        guard let unit = reading.unit else { return ceil(v) }
+        let u = NSAttributedString(string: unit,
+                                   attributes: [.font: tileFont(size: fontSize * unitScale, weight: unitWeight)]).size().width
+        return ceil(v + fontSize * gapScale + u)
     }
 
     /// A field value + a SMALL inline unit (the unit at 0.5× the value, matching `HRTileView.field`'s
     /// preview — not a same-size concatenation), measured & aligned in `rect`. Grouped so a live cross-fade
     /// gates value+unit together.
     private static func valueUnitLayer(_ reading: HROverlayValues.Reading, color: UIColor,
-                                       fontSize: CGFloat, align: HRTileLayout.TextAlign, in rect: CGRect) -> CALayer {
+                                       fontSize base: CGFloat, align: HRTileLayout.TextAlign, in rect: CGRect) -> CALayer {
+        let fontSize = shrinkToFit(fontSize: base, naturalWidth: inlineWidth(reading, fontSize: base,
+                                   valueWeight: .bold, unitScale: 0.5, unitWeight: .semibold, gapScale: 0.1),
+                                   available: rect.width)
         let group = CALayer(); group.frame = rect
         let valFont = tileFont(size: fontSize, weight: .bold)
         let valAttr = NSAttributedString(string: reading.value, attributes: [.font: valFont, .foregroundColor: color])
@@ -330,11 +358,11 @@ enum StudioOverlays {
         let vl = CATextLayer(); vl.string = valAttr; vl.contentsScale = 2; vl.isWrapped = false; vl.alignmentMode = .left
         vl.truncationMode = .end
         vl.frame = CGRect(x: startX, y: valY, width: vw, height: vs.height)
-        applyTextShadow(vl); group.addSublayer(vl)
+        applyTextShadow(vl, fontSize: fontSize); group.addSublayer(vl)
         if let unitAttr {
             let ul = CATextLayer(); ul.string = unitAttr; ul.contentsScale = 2; ul.isWrapped = false; ul.alignmentMode = .left
             ul.frame = CGRect(x: startX + vw + gap, y: valY, width: us.width, height: us.height)   // bottom-aligned ≈ shared baseline
-            applyTextShadow(ul); group.addSublayer(ul)
+            applyTextShadow(ul, fontSize: fontSize); group.addSublayer(ul)
         }
         return group
     }
@@ -723,14 +751,16 @@ enum StudioOverlays {
         label.truncationMode = .end
         label.alignmentMode = align == .leading ? .left : (align == .trailing ? .right : .center)
         label.frame = CGRect(x: x, y: rect.midY - th / 2, width: tw, height: th)
-        if shadow { applyTextShadow(label) }
+        if shadow { applyTextShadow(label, fontSize: fontSize) }
         return label
     }
 
-    /// A soft drop shadow so text stays legible over footage.
-    private static func applyTextShadow(_ layer: CALayer) {
-        layer.shadowColor = UIColor.black.cgColor; layer.shadowOpacity = 0.7
-        layer.shadowRadius = 3; layer.shadowOffset = .zero
+    /// A soft drop shadow so text stays legible over footage. The radius SCALES with the text: export
+    /// canvases are video pixels (1080p+), where a fixed 3px blur vanished — and with the lighter glass
+    /// (HRTileStyle.glassFillAlpha) the shadow is what carries legibility over bright footage.
+    private static func applyTextShadow(_ layer: CALayer, fontSize: CGFloat) {
+        layer.shadowColor = UIColor.black.cgColor; layer.shadowOpacity = Float(HRTileStyle.textShadowAlpha)
+        layer.shadowRadius = max(3, fontSize * 0.08); layer.shadowOffset = .zero
     }
 
     private static func averageBPM(_ samples: [HRPoint]) -> Double {

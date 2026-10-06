@@ -42,6 +42,12 @@ the primary, one-tap share from the feed.
       orientation; Messages/Photos play it. (device leg owed)
 - [x] `SnappetTests` green (bar the pre-existing midnight flake in `HouseholdSurfacesTests`), 0 new warnings.
 
+## Follow-up (device feedback, same day)
+
+The first render's tile overlapped ("BPM" under the zone stripes) and read too opaque. Fixed in this PR: the
+share burns the tile in the poster's band shape (`ClipSharePlan.posterBand`), export text shrinks to fit like the
+preview (`StudioOverlays.shrinkToFit`), and the default glass is lighter (0.72 → 0.50) with scaled text shadows.
+
 ## Constraints
 
 - No new persistence; no change to the raw lane.

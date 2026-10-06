@@ -104,4 +104,31 @@ final class ClipSharePlanTests: XCTestCase {
         // Nothing left after the trim start → no render.
         XCTAssertNil(ClipSharePlan.clamped(plan, assetDuration: 0.05))
     }
+
+    // MARK: poster band (2026-10-06 device feedback)
+
+    /// The share burns the tile in the POSTER's band shape at the bottom, whatever geometry it was stored
+    /// with — portrait and landscape keep the same ~4.2:1 band and inset, so the layout matches the post.
+    func testPosterBandMatchesThePosterShapeOnAnyCanvas() throws {
+        let c = clip()
+        let tile = try XCTUnwrap(ClipSharePlan.plan(clip: c, payload: payload(c), title: "x", detail: "",
+                                                    attemptLabel: nil)?.hr.tile)
+        for canvas in [CGSize(width: 1080, height: 1920), CGSize(width: 1920, height: 1080)] {
+            let band = ClipSharePlan.posterBand(tile, canvas: canvas)
+            let wPx = band.width * canvas.width, hPx = band.height * canvas.height
+            XCTAssertEqual(wPx / hPx, ClipSharePlan.posterBandAspect, accuracy: 0.01)
+            XCTAssertEqual(band.centerX, 0.5)
+            let bottomGapPx = (1 - band.centerY - band.height / 2) * canvas.height
+            let sideGapPx = (1 - band.width) / 2 * canvas.width
+            XCTAssertEqual(bottomGapPx, sideGapPx, accuracy: 0.5)          // same inset on the side and bottom
+            XCTAssertEqual(band.metrics, tile.metrics)                       // only geometry changes
+        }
+    }
+
+    /// The export's hero/field text shrinks to its column like SwiftUI's `minimumScaleFactor(0.5)`.
+    func testShrinkToFitMirrorsMinimumScaleFactor() {
+        XCTAssertEqual(StudioOverlays.shrinkToFit(fontSize: 100, naturalWidth: 80, available: 120), 100)
+        XCTAssertEqual(StudioOverlays.shrinkToFit(fontSize: 100, naturalWidth: 200, available: 150), 75)
+        XCTAssertEqual(StudioOverlays.shrinkToFit(fontSize: 100, naturalWidth: 400, available: 100), 50)  // floor
+    }
 }

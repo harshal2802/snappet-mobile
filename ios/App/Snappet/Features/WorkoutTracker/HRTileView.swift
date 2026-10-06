@@ -62,7 +62,7 @@ struct HRTileView: View {
     /// scrim (it can't live-blur the footage), so the colours match and only the blur is preview-only.
     private func glassCard(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius)
-            .fill(liveBlur ? AnyShapeStyle(Material.ultraThinMaterial) : AnyShapeStyle(Color.black.opacity(0.30)))
+            .fill(liveBlur ? AnyShapeStyle(Material.ultraThinMaterial) : AnyShapeStyle(Color.black.opacity(0.18)))
             .overlay(RoundedRectangle(cornerRadius: radius)
                 .fill(Color(studioHex: HRTileStyle.glassFillHex).opacity(HRTileStyle.glassFillAlpha)))
             .overlay(RoundedRectangle(cornerRadius: radius)
@@ -194,7 +194,7 @@ struct HRTileView: View {
             }
         }
         .lineLimit(1).minimumScaleFactor(0.5)
-        .shadow(color: .black.opacity(0.45), radius: 3)
+        .shadow(color: .black.opacity(HRTileStyle.textShadowAlpha), radius: max(3, fontSize * 0.08))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign(align))
     }
 
