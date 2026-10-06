@@ -64,6 +64,9 @@ enum SnappetColor {
     /// and wardrobe-rose without touching either: more magenta than journal, more purple than
     /// wardrobe — confirmed against the ramp at festival prompt 02, per the ideation proposal).
     static let festival = dynamic(light: 0xB03AC2, dark: 0xD96BE8)
+    /// Household — sage/olive (homely; the yellow-green the ramp hadn't used, clearly apart from
+    /// habits' leaf-green and tip's mint).
+    static let household = dynamic(light: 0x6E8B1F, dark: 0xA8C64E)
 
     // MARK: - Performance ramp (the SECOND color axis — Pulse Pro, workout-redesign E0)
     //
@@ -122,6 +125,7 @@ enum SnappetColor {
         case "kilter":      return kilter
         case "wardrobe":    return wardrobe
         case "festival":    return festival
+        case "household":   return household
         default:            return brand
         }
     }

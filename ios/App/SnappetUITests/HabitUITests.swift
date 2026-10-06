@@ -17,10 +17,9 @@ final class HabitUITests: XCTestCase {
     /// Open the Habit mini-app from the App Library.
     private func openHabit() {
         app.tabBars.buttons["Apps"].tap()
-        let card = app.buttons["moduleCard.habit"]
-        XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have the habit card")
-        var tries = 0
-        while !card.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
+        // Productivity sits below the fold; the lazy grid only realizes it once scrolled near.
+        let card = app.scrollToModuleCard("habit")
+        XCTAssertTrue(card.exists, "App Library should have the habit card")
         card.tap()
         XCTAssertTrue(app.navigationBars["Habits"].waitForExistence(timeout: 6), "Habit root should open")
     }

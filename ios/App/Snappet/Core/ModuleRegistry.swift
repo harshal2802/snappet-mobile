@@ -11,6 +11,7 @@ enum ModuleRegistry {
             KilterModule.module,
             WardrobeModule.module,
             FestivalModule.module,
+            HouseholdModule.module,
             PomodoroModule.module,
             HabitModule.module,
             JournalModule.module,

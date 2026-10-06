@@ -300,6 +300,7 @@ struct BackupView: View {
         app.kilterSessions.detachForStoreRestore()
         do {
             try SnappetBackup.restore(file, into: context)
+            HouseholdXP.shared.load(context: context)   // chore XP from the restored log (household 01)
             if storeIsFallback {
                 // Honest about ephemerality: the in-memory preview vanishes on relaunch.
                 finish(.success("Restored \(file.recordCount) records into temporary storage "

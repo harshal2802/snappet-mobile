@@ -9560,3 +9560,45 @@ Non-obvious calls:
   and only against training climbs; an exact match with a held-out climb is called out as a rediscovery.
 - Generated climbs light with the user's board-size LED map, never the generator's: addresses differ per size.
 - Auto-light on generate is off by default (user's call), with a switch.
+
+## 2026-10-04 — Household chores: a cooperative mini-app on a local, sync-ready operation log (household prompt 01 / 156)
+
+- Wireframed first (`docs/ux-research/household-chores/wireframes.html`), user-approved. The user chose
+  **cooperative** (one shared house goal, a shared house pet, fair share as balance), not a leaderboard;
+  a **separate mini-app** rather than part of Habits; and **local P2P** sync for mostly-iPhone households
+  that must still let Android members join.
+- It is called **Household**, not "Home": `Features/Home` is already the suite's Home tab. The wireframe's
+  first draft gave it a bottom tab bar, which was replaced with a top segmented control (the 2026-07-12 rule).
+- **The model is an append-only operation log, not stored state.** The board is a pure, order-independent,
+  idempotent fold. That way P1 (one device) and P2 (many) are the same code, and sync is "swap version
+  vectors, send missing ops" with no migration. The v1 JSON wire format is a contract (Swift now, Kotlin in P4).
+- Merge rules are fixed before any networking: per-field last-writer-wins, archive beats edit, and two people
+  completing the same chore while apart **both get credit while the goal counts it once**. No conflict UI.
+- Transport plan (P2/P4): Bonjour/mDNS + TLS-PSK on the home Wi-Fi first (native on both OSes, no SDK);
+  the household key travels in a short-lived invite QR; Wi-Fi Aware (iOS 26+, Android 8+) later for
+  router-less sync; QR "sneakernet" as the fallback. Multipeer (Apple-only) and Google Nearby (flaky
+  iOS↔Android discovery) were rejected. Accepted limit: no server means syncing mostly happens while the app is open.
+- **Chores feed XP** (S/M/L = 10/20/35 under the shared 300/day cap). This reverses "only training feeds XP"
+  (2026-10-01) by the user's choice here; Home's training-first switch stays training-only.
+
+## 2026-10-04 — Household P1 build: chore XP reaches every ledger caller through one published feed (household prompt 01 / 156)
+
+- Chore XP is a `Progression.Earning` (id, time, lines) folded into the same ledger walk as sessions, so
+  chores and sessions share the 300/day cap first come first served. `Ledger.sessionCount` counts sessions
+  only, so chores never flip Home to training-first or hatch the buddy on their own.
+- The earnings come from `HouseholdXP.shared`, the default for `Progression.ledger(extras:)`. Threading a
+  chore query through all six ledger call sites (Home, buddy, history, session detail, XP card, widgets)
+  would let one of them silently disagree; a single observable feed means they can't. It's loaded at launch
+  (skipped in the unit-test host, so a simulator's real store can't leak into XP tests), republished on
+  every op, and reloaded after a backup restore.
+- The house goal counts **rounds of chores**, not effort points: "28 of 40 chores" is what the approved
+  wireframe says and what people understand. Effort points stay for the fair share (P3) and XP.
+- Rotation advances per **completed round**, not per calendar day: if nobody does Sam's dishes, it's still
+  Sam's turn tomorrow (the wireframe's "Sam's turn · 1 day over"), and helping out doesn't reshuffle the order.
+- An "after done" round runs from its first tick until that tick's due date, while the next due date
+  re-anchors on the latest tick. That keeps "two people did the fridge while apart" as one round without
+  letting regular early re-dos merge rounds forever.
+- An edit writes only the fields that changed, so P2's per-field last-writer-wins has something to merge.
+- Ops are stored as their wire JSON (`HouseholdOpRecord.payload`), not as columns, so an op kind from a
+  newer app survives on an older phone and can be relayed.
+

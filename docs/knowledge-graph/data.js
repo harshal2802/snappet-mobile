@@ -58,6 +58,7 @@ const GROUP_COLORS = {
   kilter:       "#d97706", // amber  — Kilter Board (climbing)
   wardrobe:     "#e86b99", // rose   — Wardrobe (private AI stylist)
   festival:     "#d96be8", // UV orchid — Festival (lineups, sets & your night)
+  household:    "#a8c64e", // sage — Household (shared chores)
   core:         "#5e5ce6",
   engine:       "#ff453a",
   watch:        "#66d4cf",
@@ -505,6 +506,21 @@ const nodes = [
     file: "ios/App/Snappet/Features/Festival/FestivalGettingStartedViews.swift", desc: "The dismissible banner the checklist collapses to once a lineup's installed (festival prompt 07, wireframe frame 6) — a progress ring (completedCount/3), a next-step nudge, and a ✕. Rides above FestivalScheduleView's day list; tapping the body deep-links the next step (reminders → the For-You sheet, where auth is requested + the lead-time lives; the star step is right below so its tap is inert). The ✕ sets festival.gettingStartedDismissed; the banner also retires the moment all three steps are done — non-blocking, never seen twice.", tags: ["onboarding","banner","dismissible","progress-ring","nudge","prompt-07"] },
 
   // ═════════════════ MODULE: Journal ═════════════════
+  // ───────────────────────── Household (shared chores, household prompt 01) ─────────────────────────
+  { id: "m-household", label: "Household", type: "module", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/HouseholdModule.swift", desc: "Shared chores, worked through together (household prompt 01 / 156; wireframes docs/ux-research/household-chores/). Cooperative by design: one house goal and reward, no leaderboard. P1 is one phone, but the data is already an append-only op log (the v1 wire format in pdd/context/household-wire-format.md) so P2's phone-to-phone sync on the home Wi-Fi (Bonjour + TLS-PSK, iPhone and Android) adds no migration. Sage accent; third Lifestyle resident. Sections in a top segmented control (no module bottom bar).", tags: ["household","chores","cooperative","op-log","local-first","lifestyle"] },
+  { id: "household-root", label: "HouseholdRootView", type: "screen", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/HouseholdRootView.swift", desc: "Today · All chores · Week. Today (frame 1 minus the pet): the house-goal card, Yours today (rotation turn or claimed, plus what you ticked), Up for grabs with 'I'll do it', Others' turn, Coming up with the next date. All chores grouped by room, swipe to archive. Week: goal card + rounds-per-day bars. Empty state offers a starter board. Ticking celebrates and pays chore XP.", tags: ["screen","segmented","goal","rotation","claim"], shot: "../../ux-research/household-chores/wireframes.png" },
+  { id: "household-editor", label: "ChoreEditorSheet", type: "sheet", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/ChoreEditorSheet.swift", desc: "Add / edit a chore (frame 3): icon, name, room, effort S/M/L, repeats (daily · days · weekly · every N days after it's done · once), who (rotate · one person · up for grabs), archive. An edit writes only the fields that changed (per-field last-writer-wins in P2).", tags: ["sheet","editor","after-done"] },
+  { id: "household-goal-sheet", label: "HouseholdGoalSheet", type: "sheet", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/ChoreEditorSheet.swift", desc: "The week's house goal: a number of chores (rounds, so one chore done twice counts once) and a free-text reward.", tags: ["sheet","goal","cooperative"] },
+  { id: "household-store", label: "HouseholdStore + HouseholdXP", type: "service", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/HouseholdStore.swift", desc: "Thin SwiftData edge: creates the household (you as first member) on first open, appends ops as this phone (per-device seq), replays the log into ChoreBoard on every change. HouseholdXP publishes your credited completions as Progression.Earning values, loaded at launch by RootShell (skipped in the unit-test host) and after a backup restore, so every ledger caller sees the same total.", tags: ["service","swiftdata","xp","observable"] },
+  { id: "chore-board", label: "ChoreBoard / ChoreSchedule / ChoreLog", type: "engine", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/ChoreBoard.swift", desc: "Pure, Foundation-only core. ChoreLog: ChoreOp kinds + the v1 JSON wire format (golden-tested) + version vectors. ChoreBoard.fold: order-independent, idempotent (permutation/duplication tested); per-field LWW, archive sticky, undo retracts ticks/claims; rounds (both people credited, the goal counts once), rotation per completed round, claims until next done, credits for XP. ChoreSchedule: daily / weekdays (via HabitSchedule) / weekly / after-done re-anchoring / once.", tags: ["pure","tested","crdt","wire-format","engine"] },
+  { id: "model-household", label: "Household + HouseholdOpRecord", type: "model", group: "household", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Household/HouseholdModels.swift", desc: "SwiftData: the household (name, this phone's device id, your member id) and one row per op holding its wire JSON verbatim (an op from a newer app survives and can be relayed). The board is never stored. CloudKit-compatible shape; both mirrored in SnappetBackup (HouseholdRow, HouseholdOpRecordRow).", tags: ["@model","op-log","backup"] },
   { id: "m-journal", label: "Journal", type: "module", group: "journal", category: "productivity", platform: "ios+android",
     file: "ios/App/Snappet/Features/Journal/JournalModule.swift", desc: "Quick notes & entries with tags and .searchable filtering.", tags: ["notes","tags","search"] },
   { id: "journal-root", label: "JournalRootView", type: "screen", group: "journal", category: "productivity", platform: "ios",
@@ -1857,6 +1873,18 @@ const links = [
   { source: "wardrobe-settings", target: "ios-backup", type: "navigate", label: "suite backup covers wardrobe" },
 
   // ---- Festival mini-app (festival prompts 01–02) ----
+  { source: "applibrary", target: "m-household", type: "navigate" },
+  { source: "moduleregistry", target: "m-household", type: "contains" },
+  { source: "m-household", target: "household-root", type: "contains" },
+  { source: "household-root", target: "household-editor", type: "present", label: "add / edit chore" },
+  { source: "household-root", target: "household-goal-sheet", type: "present", label: "house goal" },
+  { source: "household-root", target: "household-store", type: "uses" },
+  { source: "household-store", target: "chore-board", type: "uses", label: "fold the op log" },
+  { source: "household-store", target: "model-household", type: "persists" },
+  { source: "chore-board", target: "habit-schedule", type: "uses", label: "weekday rule" },
+  { source: "household-store", target: "progression", type: "feeds", label: "chore XP under the 300/day cap (156)" },
+  { source: "ios-backup", target: "model-household", type: "persists", label: "covered Row (SnappetBackupTests)" },
+  { source: "rootshell", target: "household-store", type: "uses", label: "load chore XP at launch" },
   { source: "applibrary", target: "m-festival", type: "navigate" },
   { source: "moduleregistry", target: "m-festival", type: "contains" },
   { source: "m-festival", target: "festival-root", type: "contains" },

@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Household chores (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+<style>
+  .pet{position:relative;border-radius:22px;overflow:hidden;flex:0 0 auto;margin-bottom:9px;background:linear-gradient(180deg,#24343a,#15181b)}
+  .pet img{display:block;width:62%;margin:-4px auto -26px}
+  .pet .top{position:absolute;left:12px;right:12px;top:10px;display:flex;justify-content:space-between}
+  .pet .top .chip{background:rgba(0,0,0,.35);color:#fff;font-size:10.5px}
+  .pet .info{position:relative;padding:0 13px 11px}
+  .pet .lv{font-size:17px;font-weight:900}
+  .pet .md{font-size:11.5px;font-weight:700;color:#8CE09F}
+  .pet .row2{display:flex;justify-content:space-between;font-size:10.5px;color:rgba(255,255,255,.6);margin:6px 0 4px}
+  .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#5BC074,#8CE09F);border-radius:4px}
+  .bar.e i{background:linear-gradient(90deg,#FF9645,#FFC36B)}
+  .sync{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:750;color:#8CE09F;background:rgba(91,192,116,.14);border-radius:999px;padding:3px 9px}
+  .sync::before{content:"";width:7px;height:7px;border-radius:50%;background:#5BC074}
+  .sync.wait{color:#FFC36B;background:rgba(255,195,107,.14)}
+  .sync.wait::before{background:#FFC36B}
+  .ch{display:flex;align-items:center;gap:10px;background:var(--surface);border-radius:14px;padding:10px 12px;margin-bottom:7px;flex:0 0 auto}
+  .ch .em{font-size:19px;width:26px;text-align:center}
+  .ch .nm{font-size:14px;font-weight:700;line-height:1.2}
+  .ch .st{font-size:11px;color:var(--t2)}
+  .ch .st b{color:var(--ember);font-weight:700}
+  .ch .ck{margin-left:auto;width:26px;height:26px;border-radius:50%;border:2px solid var(--t3);flex:0 0 auto}
+  .ch .ck.on{background:var(--fresh);border-color:var(--fresh);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:900}
+  .ch.done{opacity:.55}
+  .ch.done .nm{text-decoration:line-through}
+  .eff{font-size:9.5px;font-weight:800;border-radius:5px;padding:1px 5px;background:var(--muted);color:var(--t2);margin-left:4px;vertical-align:middle}
+  .av{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#111;flex:0 0 auto}
+  .a1{background:#FF9645}.a2{background:#5AA9FF}.a3{background:#C99BFF}.a4{background:#5BC074}
+  .avs{display:flex}.avs .av{margin-left:-6px;border:2px solid var(--surface)}.avs .av:first-child{margin-left:0}
+  .take{font-size:11.5px;font-weight:750;color:var(--ember);background:rgba(255,150,69,.16);border-radius:999px;padding:4px 10px;margin-left:auto;white-space:nowrap}
+  .tabbar{display:flex;justify-content:space-around;border-top:1px solid var(--hair);padding:7px 0 14px;flex:0 0 auto;background:#17171a}
+  .tabbar div{font-size:9.5px;color:var(--t3);text-align:center;font-weight:650}
+  .tabbar div i{display:block;font-style:normal;font-size:17px;margin-bottom:1px}
+  .tabbar div.on{color:var(--ember)}
+  .goal{background:linear-gradient(135deg,rgba(91,192,116,.22),rgba(90,169,255,.1));border:1px solid rgba(91,192,116,.35);border-radius:18px;padding:11px 12px;margin-bottom:9px;flex:0 0 auto}
+  .goal .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:#8CE09F;text-transform:uppercase}
+  .goal .n{font-size:16px;font-weight:850;margin:2px 0 6px}
+  .share{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:8px 0 6px}
+  .share i{display:block;height:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--t2)}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .legend b{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .dev{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--hair);font-size:13.5px}
+  .dev:last-child{border-bottom:0}
+  .dev .who{font-weight:700}
+  .dev .sm{font-size:11px;color:var(--t2)}
+  .plat{font-size:9.5px;font-weight:800;border-radius:5px;padding:1px 6px;margin-left:5px;vertical-align:middle}
+  .ios{background:rgba(255,255,255,.1);color:#ddd}
+  .and{background:rgba(91,192,116,.18);color:#8CE09F}
+  .radar{height:150px;position:relative;margin:4px 0 8px;flex:0 0 auto}
+  .radar .r{position:absolute;left:50%;top:50%;border:1.5px solid rgba(91,192,116,.25);border-radius:50%;transform:translate(-50%,-50%)}
+  .radar .p{position:absolute;transform:translate(-50%,-50%);text-align:center;font-size:10px;color:var(--t2)}
+  .radar .p .av{width:30px;height:30px;font-size:12px;display:flex;margin:0 auto 2px}
+  .recap{border-radius:22px;padding:16px 15px;background:linear-gradient(160deg,#2a3b33,#1a1c22 60%);border:1px solid rgba(91,192,116,.3);flex:0 0 auto}
+  .recap .big{font-size:40px;font-weight:900;line-height:1;letter-spacing:-1px}
+  .kudo{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.06);border-radius:12px;padding:8px 10px;margin-top:7px;font-size:12px}
+  .la{margin:0 10px 8px;border-radius:22px;background:rgba(20,22,26,.92);padding:12px 14px;color:#fff}
+  .la .t{display:flex;justify-content:space-between;font-size:12px;font-weight:800}
+  .arch{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:22px;max-width:1240px}
+  .arch .box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:16px 18px;font-size:13.5px;color:#c3c7d1}
+  .arch .box h3{margin:0 0 6px;font-size:16px;color:#fff}
+  .arch .box.rec{border-color:rgba(91,192,116,.5);background:rgba(91,192,116,.06)}
+  .arch .box .tg{font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px;vertical-align:middle}
+  .tg.g{background:rgba(91,192,116,.2);color:#8CE09F}.tg.o{background:rgba(255,150,69,.2);color:var(--ember)}.tg.r{background:rgba(255,122,107,.2);color:#ff9b8f}
+  .arch ul{margin:6px 0 0;padding-left:18px}
+  svg.flow text{font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Household: shared chores, together</h1>
+  <p class="sub">A separate mini-app where a household keeps chores on one shared board. Everyone works toward the same goal (cooperative, not a leaderboard). It syncs <b>phone to phone on your home Wi-Fi, with no cloud and no accounts</b>, and works between iPhone and Android.</p>
+  <div class="scopebox"><b>What these screens decide:</b> (1) what the board looks like day to day, (2) how a household is formed and how devices find each other locally, (3) the cooperative moments: a shared house pet, a house goal, a fair-share view, and help/swap. <b>No XP leaderboard, no "who slacked" list.</b> Chores still feed your personal level through the existing XP rules table, under the same daily cap.</div>
+</header>
+
+<div class="wrap">
+
+<h2 class="part">1 · The board <span class="tag">day to day</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span class="title">Flat 4B</span><span class="lnk b">＋</span></div>
+        <div class="segbar"><div class="on">Today</div><div>All chores</div><div>Week</div><div>Household</div></div>
+        <div class="pet">
+          <div class="top"><span class="chip">Sun 4 Oct</span><span class="sync">3 phones · synced 2m ago</span></div>
+          <img src="../progression/buddy/adult.png" alt="">
+          <div class="info">
+            <span class="lv">Biscuit · House Lv 7</span><br><span class="md">Cosy, the house is on top of things</span>
+            <div class="row2"><span>House goal 28 / 40 this week</span><span>🍕 Pizza night</span></div>
+            <div class="bar"><i style="width:70%"></i></div>
+          </div>
+        </div>
+        <div class="sect">Yours today</div>
+        <div class="ch"><span class="em">🍽️</span><div><div class="nm">Dishes <span class="eff">S</span></div><div class="st">Daily · rotates · <b>your turn</b></div></div><div class="ck"></div></div>
+        <div class="ch"><span class="em">🗑️</span><div><div class="nm">Bins out <span class="eff">S</span></div><div class="st">Collection tomorrow 7am</div></div><div class="ck"></div></div>
+        <div class="ch done"><span class="em">🌿</span><div><div class="nm">Water plants <span class="eff">S</span></div><div class="st">Done 8:12</div></div><div class="ck on">✓</div></div>
+        <div class="sect">Up for grabs</div>
+        <div class="ch"><span class="em">🧊</span><div><div class="nm">Clean the fridge <span class="eff">L</span></div><div class="st">Last done 15 days ago</div></div><span class="take">I'll do it</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Today.</b> <span class="new">NEW</span> Sections sit in a <b>top segmented control</b> (no module bottom bar, per the suite rule). The <b>house pet</b> is the hero: one shared creature, built from the 3D buddy, whose mood is the household's chore health. The <b>house goal</b> bar is everyone's combined progress toward a reward the household picked. <b>Yours today</b> first, then <b>Up for grabs</b> (unassigned chores anyone can claim). The sync pill is always visible, so you know your board is current.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span></span><span class="title">This week</span><span></span></div>
+        <div class="segbar"><div>Today</div><div>All chores</div><div class="on">Week</div><div>Household</div></div>
+        <div class="goal">
+          <div class="k">House goal · ends Sun</div>
+          <div class="n">28 of 40 chores → 🍕 Pizza night</div>
+          <div class="bar"><i style="width:70%"></i></div>
+          <div style="font-size:11px;color:var(--t2);margin-top:6px">12 to go · about 2 each</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="name" style="font-size:14px">Fair share</div><span class="pill g">Balanced</span></div>
+          <div class="s">Effort points (S=1 · M=2 · L=3), not chore count</div>
+          <div class="share"><i class="a1" style="width:29%"></i><i class="a2" style="width:27%"></i><i class="a3" style="width:24%"></i><i class="a4" style="width:20%"></i></div>
+          <div class="legend"><span><b class="a1"></b>You 14</span><span><b class="a2"></b>Sam 13</span><span><b class="a3"></b>Jo 12</span><span><b class="a4"></b>Alex 10</span></div>
+        </div>
+        <div class="card">
+          <div class="name" style="font-size:14px">The house this week</div>
+          <div class="weekx" style="display:flex;gap:4px;margin-top:8px">
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">M<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 70%,var(--muted) 70%)"></b>7</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">T<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 50%,var(--muted) 50%)"></b>5</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">W<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 40%,var(--muted) 40%)"></b>4</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">T<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 30%,var(--muted) 30%)"></b>3</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">F<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 20%,var(--muted) 20%)"></b>2</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:var(--t2)">S<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 50%,var(--muted) 50%)"></b>5</div>
+            <div style="flex:1;text-align:center;font-size:9.5px;color:#fff;font-weight:800">S<b style="display:block;height:44px;border-radius:8px;margin:3px 0;background:linear-gradient(0deg,#5BC074 20%,var(--muted) 20%);outline:1.5px dashed rgba(91,192,116,.7);outline-offset:-2px"></b>2</div>
+          </div>
+        </div>
+        <div class="card" style="display:flex;gap:10px;align-items:center">
+          <span style="font-size:20px">🤝</span><div><div class="name" style="font-size:13.5px">Jo asked for help</div><div class="s">Bathroom deep clean · L · Jo's away till Tue</div></div><span class="take">Take it</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Week.</b> <span class="new">NEW</span> The <b>house goal</b> is the only score, and everyone wins it together. <b>Fair share</b> shows each person's share of the <i>effort</i>, so it reads as balance, not a ranking. When it drifts, auto-assign leans the next rotation toward whoever's lighter. <b>Help requests</b> replace nagging: anyone can hand off a chore and anyone can pick it up.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span class="title">All chores</span><span class="lnk b">＋</span></div>
+      </div>
+      <div class="dim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">New chore</span><span class="lnk b">Add</span></div>
+        <div class="group"><div class="row"><span>🧊 Clean the fridge</span></div><div class="row"><span>Room</span><span class="v e">Kitchen ›</span></div></div>
+        <div class="glbl">Effort</div>
+        <div class="segbar"><div>S · 5 min</div><div>M · 20 min</div><div class="on">L · 45 min+</div></div>
+        <div class="glbl">Repeats</div>
+        <div class="group">
+          <div class="row"><span>How</span><span class="v e">Every 14 days after it's done ›</span></div>
+          <div class="chips"><span class="chip">Daily</span><span class="chip">Weekdays</span><span class="chip">Weekly</span><span class="chip on">After done</span><span class="chip">Once</span></div>
+        </div>
+        <div class="glbl">Who does it</div>
+        <div class="segbar"><div>Rotate</div><div>One person</div><div class="on">Up for grabs</div></div>
+        <div class="group">
+          <div class="row"><span>Lean toward lighter share</span><div class="tog on"></div></div>
+          <div class="row"><span>Ask for a photo when done</span><div class="tog"></div></div>
+        </div>
+        <div class="foot">"After done" counts from the last time anyone did it, which suits fridges, sheets and filters better than fixed dates.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Add a chore.</b> <span class="new">NEW</span> Three decisions: <b>effort</b> (powers the fair share and XP), <b>repeats</b> (the "due" logic reuses <code>HabitSchedule</code>, plus a new <b>after done</b> mode), and <b>who</b> (rotate / one person / up for grabs). Photo proof is off by default, because this is a trust-first household.</p>
+  </div>
+</div>
+
+<h2 class="part">2 · Forming a household and syncing locally <span class="tag">no cloud</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Done</span><span class="title">Invite to Flat 4B</span><span></span></div>
+        <div style="text-align:center;font-size:13px;color:var(--t2);margin:4px 10px 4px">Scan with the camera in Snappet, on <b style="color:#fff">iPhone or Android</b></div>
+        <div class="qr" id="qr1"></div>
+        <div style="text-align:center;font-size:12px;color:var(--t3);margin-bottom:10px">Code refreshes in 4:52 · works once</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:rgba(91,192,116,.2)">🔒</span>Carries the household key</span></div>
+          <div class="row"><span class="l"><span class="ic" style="background:rgba(90,169,255,.2)">📶</span>You both need to be on the same Wi-Fi or near each other</span></div>
+          <div class="row"><span class="l"><span class="ic" style="background:rgba(255,150,69,.2)">☁︎</span>Nothing goes to a server</span></div>
+        </div>
+        <div class="foot">The key never leaves the household's phones. Only phones that scanned a code can read or change the board.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Invite.</b> <span class="new">NEW</span> Reuses the Festival <b>QR share</b> pattern. The code holds the <b>household id and a shared secret</b>, which is how a phone proves it belongs when it later finds the others on the network. Short-lived and single-use, so a screenshot is useless later.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span></span><span class="title">Nearby</span><span class="lnk b">Sync now</span></div>
+        <div class="segbar"><div>Today</div><div>All chores</div><div>Week</div><div class="on">Household</div></div>
+        <div class="radar">
+          <div class="r" style="width:60px;height:60px"></div><div class="r" style="width:130px;height:130px"></div><div class="r" style="width:200px;height:200px;border-style:dashed"></div>
+          <div class="p" style="left:50%;top:50%"><span class="av a1">Y</span>You</div>
+          <div class="p" style="left:24%;top:28%"><span class="av a2">S</span>Sam</div>
+          <div class="p" style="left:78%;top:34%"><span class="av a4">A</span>Alex</div>
+          <div class="p" style="left:72%;top:86%;opacity:.4"><span class="av a3">J</span>Jo · away</div>
+        </div>
+        <div class="glbl">Household · 4 phones</div>
+        <div class="group">
+          <div class="dev"><span class="av a2">S</span><div><div class="who">Sam <span class="plat ios">iPhone</span></div><div class="sm">Home Wi-Fi · synced just now</div></div><span class="sync" style="margin-left:auto">✓</span></div>
+          <div class="dev"><span class="av a4">A</span><div><div class="who">Alex <span class="plat and">Android</span></div><div class="sm">Home Wi-Fi · synced just now</div></div><span class="sync" style="margin-left:auto">✓</span></div>
+          <div class="dev"><span class="av a3">J</span><div><div class="who">Jo <span class="plat ios">iPhone</span></div><div class="sm">Last seen Fri · 3 of Jo's changes reached you via Sam</div></div><span class="sync wait" style="margin-left:auto">Fri</span></div>
+        </div>
+        <div class="foot">Changes travel from phone to phone. If Jo syncs with Sam, then Sam syncs with you, you get Jo's changes too, even if you never meet.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Household and devices.</b> <span class="new">NEW</span> Honest status per phone, with a <b>platform badge</b> (iPhone and Android on the same board). The key idea: <b>changes are relayed</b>. Every phone keeps the full log and passes along what it has, so the household stays consistent without a server, just eventually rather than instantly.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span class="title">Flat 4B</span><span class="lnk b">＋</span></div>
+        <div class="segbar"><div class="on">Today</div><div>All chores</div><div>Week</div><div>Household</div></div>
+        <div class="card" style="background:rgba(255,195,107,.1);border:1px solid rgba(255,195,107,.3)">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="sync wait">2 changes waiting</span><span style="font-size:11px;color:var(--t2)">Away from home</span></div>
+          <div class="s" style="margin-top:6px;color:#e8dcc5">Your ticks are saved on this phone. They'll reach the house when you're back on the home Wi-Fi or next to someone from the household.</div>
+        </div>
+        <div class="sect">Yours today</div>
+        <div class="ch done"><span class="em">🍽️</span><div><div class="nm">Dishes <span class="eff">S</span></div><div class="st">Done 12:40 · not shared yet</div></div><div class="ck on">✓</div></div>
+        <div class="ch done"><span class="em">🗑️</span><div><div class="nm">Bins out <span class="eff">S</span></div><div class="st">Done 12:41 · not shared yet</div></div><div class="ck on">✓</div></div>
+        <div class="sect">Both of you did it</div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px"><span class="avs"><span class="av a1">Y</span><span class="av a2">S</span></span><div class="name" style="font-size:13.5px">Hoover lounge, done twice</div></div>
+          <div class="s" style="margin-top:4px">You and Sam both ticked it while apart. Both get the credit, and it counts once toward the house goal.</div>
+          <div style="display:flex;gap:6px;margin-top:8px"><span class="btn sm ghost">👏 Thank Sam</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Offline and "conflicts".</b> <span class="new">NEW</span> Everything works offline, and ticks queue up. When two people do the same chore while apart, nobody loses: <b>both get credit, the goal counts it once</b>. Merges are automatic and there's never a "pick a version" dialog. In a cooperative design a duplicate is a happy accident.</p>
+  </div>
+</div>
+
+<h2 class="part">3 · Cooperative moments <span class="tag">gamified, together</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">7</div>
+    <div class="device"><div class="screen lock"><div class="island"></div>
+      <div class="statusbar"><span></span><span>●●● ▮</span></div>
+      <div class="clock">18:04</div><div class="date">Sunday 4 October</div>
+      <div style="flex:1"></div>
+      <div class="la">
+        <div class="t"><span>🧹 Power hour · Flat 4B</span><span style="color:#8CE09F">22:41 left</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="avs"><span class="av a1">Y</span><span class="av a2">S</span><span class="av a4">A</span></span><span style="font-size:12px;color:#ccc">3 cleaning · 9 chores done</span></div>
+        <div class="bar" style="margin-top:8px"><i style="width:62%"></i></div>
+        <div style="font-size:10.5px;color:#aaa;margin-top:4px">Goal for the hour: 15 · Biscuit is getting excited</div>
+      </div>
+      <div class="notif">
+        <div class="hd"><span class="ap">S</span>SNAPPET · now</div>
+        <div class="tt">Sam finished the bathroom 🛁</div>
+        <div class="bd">That was Jo's help request. House goal 31 / 40.</div>
+      </div>
+      <div style="height:30px"></div>
+    </div></div>
+    <p class="caption"><b>Power hour.</b> <span class="new">NEW</span> Someone starts a timed blitz and everyone at home joins. A <b>Live Activity</b> shows the shared count live, because the phones are on the same Wi-Fi and talking to each other. <span class="cost">Limit:</span> without a server, notifications only arrive while the phones are connected (at home, app recently open). There's no real-time "Sam finished X" pinging you at work.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">8</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Close</span><span class="title">Week in the house</span><span class="lnk">Share</span></div>
+        <div class="recap">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#8CE09F">28 SEP – 4 OCT</div>
+          <div class="big" style="margin-top:6px">42 chores</div>
+          <div style="font-size:13px;color:#cfe;margin-top:2px">Goal smashed: 🍕 Pizza night unlocked</div>
+          <img src="../progression/buddy/legend-fired.png" alt="" style="display:block;width:55%;margin:2px auto -14px">
+          <div style="font-size:12.5px;text-align:center;color:#ddd">Biscuit grew to <b>House Lv 8</b></div>
+        </div>
+        <div class="sect">Thank-yous</div>
+        <div class="kudo"><span class="av a2">S</span><span><b>Sam</b> took Jo's bathroom while Jo was away</span></div>
+        <div class="kudo"><span class="av a4">A</span><span><b>Alex</b> finally cleaned the fridge (15 days overdue)</span></div>
+        <div class="kudo"><span class="av a1">Y</span><span><b>You</b> did dishes 6 days in a row</span></div>
+        <div class="kudo" style="background:rgba(91,192,116,.1)"><span style="font-size:16px">⚖️</span><span>Shares stayed within 10% of each other</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Weekly recap.</b> <span class="new">NEW</span> Generated on every phone from the same synced log, so no server is needed. <b>Everyone gets a thank-you line</b> chosen from what they actually did (help taken, overdue rescued, streaks), so the recap celebrates rather than ranks. The pet grows when goals are hit, and there's a shareable card like the Recap feed.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">9</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Household</span><span class="title">Biscuit</span><span></span></div>
+        <div class="pet" style="background:linear-gradient(180deg,#2a2730,#151418)">
+          <div class="top"><span class="chip">House Lv 7</span><span class="chip">🔥 6 weeks</span></div>
+          <img src="../progression/buddy/legend-sleepy.png" alt="" style="width:50%;margin-bottom:-10px">
+          <div class="info"><span class="lv">Feeling neglected</span><br><span class="md" style="color:#e6c55c">3 chores overdue · kitchen's slipping</span></div>
+        </div>
+        <div class="glbl">What would cheer Biscuit up</div>
+        <div class="ch"><span class="em">🍽️</span><div><div class="nm">Dishes <span class="eff">S</span></div><div class="st">Sam's turn · 1 day over</div></div><span class="take">Help</span></div>
+        <div class="ch"><span class="em">🧺</span><div><div class="nm">Laundry <span class="eff">M</span></div><div class="st">Up for grabs · 2 days over</div></div><span class="take">I'll do it</span></div>
+        <div class="glbl">Household</div>
+        <div class="group">
+          <div class="row"><span>⏸ Pause the house (holiday)</span><div class="tog"></div></div>
+          <div class="row"><span>❄︎ Streak freezes</span><span class="v">1 left</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The house pet when things slip.</b> <span class="new">NEW</span> Mood is collective: overdue chores make Biscuit sleepy, never one person's name in red. The fix is framed as <b>"what would cheer it up"</b>, with a <b>Help</b> button on other people's chores. <b>Pause</b> and <b>freezes</b> reuse the progression logic, for when the whole house is away.</p>
+  </div>
+</div>
+
+<h2 class="part">4 · How iPhone ↔ Android talk locally <span class="tag">the engineering bet</span></h2>
+<p class="sub">Multipeer Connectivity is Apple-only and Nearby Share/Quick Share is Android-first, so neither works for both on its own. These do:</p>
+
+<svg class="flow" viewBox="0 0 1240 230" style="width:100%;max-width:1240px;margin-top:18px">
+  <rect x="10" y="40" width="250" height="150" rx="18" fill="#1E1E22" stroke="#34343A"/>
+  <text x="135" y="72" fill="#fff" font-size="17" font-weight="800" text-anchor="middle">iPhone · Snappet</text>
+  <text x="135" y="100" fill="#A6A5A1" font-size="13" text-anchor="middle">NWListener + NWBrowser</text>
+  <text x="135" y="120" fill="#A6A5A1" font-size="13" text-anchor="middle">(Network.framework)</text>
+  <text x="135" y="152" fill="#8CE09F" font-size="13" text-anchor="middle">ChoreLog · op-log CRDT</text>
+  <rect x="980" y="40" width="250" height="150" rx="18" fill="#1E1E22" stroke="#34343A"/>
+  <text x="1105" y="72" fill="#fff" font-size="17" font-weight="800" text-anchor="middle">Android · Snappet</text>
+  <text x="1105" y="100" fill="#A6A5A1" font-size="13" text-anchor="middle">NsdManager + sockets</text>
+  <text x="1105" y="120" fill="#A6A5A1" font-size="13" text-anchor="middle">(or Ktor WebSocket)</text>
+  <text x="1105" y="152" fill="#8CE09F" font-size="13" text-anchor="middle">ChoreLog · same wire format</text>
+  <rect x="380" y="20" width="480" height="58" rx="14" fill="rgba(91,192,116,.1)" stroke="rgba(91,192,116,.5)"/>
+  <text x="620" y="45" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">① Discover: Bonjour / mDNS  "_snappet-home._tcp"</text>
+  <text x="620" y="65" fill="#A6A5A1" font-size="12" text-anchor="middle">TXT record = household id hash (never the key)</text>
+  <rect x="380" y="90" width="480" height="58" rx="14" fill="rgba(90,169,255,.1)" stroke="rgba(90,169,255,.5)"/>
+  <text x="620" y="115" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">② Connect + prove membership: TLS-PSK / Noise</text>
+  <text x="620" y="135" fill="#A6A5A1" font-size="12" text-anchor="middle">pre-shared key = the secret from the invite QR</text>
+  <rect x="380" y="160" width="480" height="58" rx="14" fill="rgba(255,150,69,.1)" stroke="rgba(255,150,69,.5)"/>
+  <text x="620" y="185" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">③ Sync: swap version vectors → send missing ops</text>
+  <text x="620" y="205" fill="#A6A5A1" font-size="12" text-anchor="middle">JSON / CBOR ops · idempotent · order-independent merge</text>
+  <path d="M260 115 H380 M860 115 H980" stroke="#77767A" stroke-width="2" stroke-dasharray="6 5"/>
+</svg>
+
+<div class="arch">
+  <div class="box rec"><h3>A · Bonjour over home Wi-Fi <span class="tg g">Recommended: P2</span></h3>
+    mDNS service discovery plus a TCP/TLS socket. Both OSes support it natively: <code>Network.framework</code> on iOS, <code>NsdManager</code> on Android, with no third-party SDK.
+    <ul><li>✅ Fully cross-platform, standard, well understood</li><li>✅ Household = same home network, which is exactly when chores happen</li><li>⚠️ Needs both on the same Wi-Fi (guest/mesh networks with client isolation block it)</li><li>⚠️ iOS asks for Local Network permission the first time</li></ul></div>
+  <div class="box"><h3>B · Wi-Fi Aware (NAN) <span class="tg o">Later: P4</span></h3>
+    Direct phone-to-phone Wi-Fi, no router. Android 8+ has had it for years; <b>iOS 26 added a public Wi-Fi Aware framework</b> (iPhone 12+) and interop with Android is the stated goal.
+    <ul><li>✅ Works away from home (holiday cabin, no Wi-Fi)</li><li>⚠️ New on iOS, so interop with Android is still being proven in the wild</li><li>⚠️ Not every Android phone supports Aware</li></ul></div>
+  <div class="box"><h3>C · Google Nearby Connections <span class="tg o">Alternative</span></h3>
+    One API on both sides (Swift package + Android), built on BLE + Wi-Fi, so it handles discovery and the radio choice for you.
+    <ul><li>✅ Same mental model on both platforms</li><li>⚠️ iOS↔Android discovery is reported as unreliable; the iOS library is less mature</li><li>⚠️ A Google dependency in an otherwise first-party app</li></ul></div>
+  <div class="box"><h3>D · QR "sneakernet" <span class="tg g">Always-on fallback</span></h3>
+    When nothing else connects, one phone shows a QR of recent ops and the other scans it. Clunky but bulletproof, and it reuses the camera + QR code we already ship.
+    <ul><li>✅ Zero networking, works everywhere</li><li>⚠️ Manual, and limited in size</li></ul></div>
+</div>
+
+<div class="q"><b>The part that matters more than the radio: the data model.</b> Each phone keeps an <b>append-only log of operations</b> (<i>chore created, completed by X at T, reassigned…</i>), each with a unique id and a per-device counter. Syncing means "here's what I've seen, send me what I'm missing". Merging is a pure function of the log, so it's <span class="rec">unit-testable with no device</span>, and the transport (A/B/C/D) is just a pipe behind a <code>HouseholdTransport</code> protocol. The same log format is defined once and implemented in both Swift and Kotlin, checked by shared JSON test vectors.</div>
+<div class="q"><b>Honest limits of no-cloud:</b> iOS won't keep a socket listening in the background, so syncing happens <b>when the app is open</b> (plus opportunistic background refresh). There are no real-time pushes when you're out. If that turns out to matter, CloudKit can later become a <i>second transport</i> for all-iPhone homes without changing the log.</div>
+
+</div>
+<script>
+  // deterministic fake QR
+  (function(){const q=document.getElementById('qr1');let s=7;const r=()=>{s=(s*9301+49297)%233280;return s/233280};
+  for(let y=0;y<21;y++)for(let x=0;x<21;x++){const i=document.createElement('i');
+  const f=(a,b)=>x>=a&&x<a+7&&y>=b&&y<b+7;const fin=f(0,0)||f(14,0)||f(0,14);
+  let on;if(fin){const lx=x<7?x:x-14,ly=y<7?y:y-14;const ax=x>=14?x-14:x,ay=y>=14?y-14:y;on=(ax==0||ax==6||ay==0||ay==6)||(ax>=2&&ax<=4&&ay>=2&&ay<=4);}else on=r()>.5;
+  if(on)i.className='k';q.appendChild(i);}})();
+</script>
+</body>
+</html>

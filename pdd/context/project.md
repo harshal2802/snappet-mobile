@@ -96,7 +96,7 @@ session detail's media list (P5).
 
 🟢 **Now the Snappet daily-app SUITE (P9) — builds + runs on the iOS simulator.** A `TabView` shell
 (Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with modules:
-**Gym Tracker / Kilter / Wardrobe / Festival** (fitness+style+lifestyle), **Pomodoro / Habits / Journal** (productivity),
+**Gym Tracker / Kilter / Wardrobe / Festival / Household** (fitness+style+lifestyle), **Pomodoro / Habits / Journal** (productivity),
 **Tip / Split Expenses / Budget** (finance) — highlight reels are session actions + the weekly cut,
 not a tile (2026-07-15). Every app logs usage to Snappet Core; the Home dashboard aggregates
 historical usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard
@@ -206,6 +206,15 @@ callout), set/festival reels through the SHARED `ReelView`, and the recap rankin
 peak HR. Queued: plan notifications + recommender (04), QR share (05). Device/deploy legs owed:
 hosted fetch once the web PR deploys, watch-HR at a real set, Camera-app round-trip + reel export
 on device. Wireframes: `docs/ux-research/festival/`.
+
+🟢 **Household mini-app (household prompt 01 / 156, 2026-10-04)** — shared chores, worked through
+together: one house goal and reward, no leaderboard (wireframes `docs/ux-research/household-chores/`).
+P1 is one phone (Today · All chores · Week, the chore editor with an "every N days after it's done"
+repeat, rotation / one person / up for grabs, a starter board, chore XP into the buddy's ledger under
+the shared 300/day cap). The data is an **append-only op log** folded by a pure, order-independent
+`ChoreBoard`; its v1 JSON wire format (`pdd/context/household-wire-format.md`) is the contract for P2's
+phone-to-phone sync on the home Wi-Fi (Bonjour + TLS-PSK, iPhone and Android) and P4's Kotlin port.
+Sage accent; third Lifestyle resident. Not yet: sync, the house pet, fair share, widgets, Android.
 
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,
