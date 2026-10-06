@@ -386,6 +386,15 @@ struct ClipsFeedView: View {
             }
         }
 
+        // How each climb went, per Kilter session (prompt 161) — the session's log row per climb.
+        var kilterResults: [UUID: [String: ClipFeedClimbResult]] = [:]
+        for log in kilterLogs {
+            guard let sid = log.sessionId else { continue }
+            let r = ClipFeedClimbResult(status: log.status, attempts: log.attempts)
+            kilterResults[sid, default: [:]][log.climbUUID] =
+                kilterResults[sid]?[log.climbUUID].map { $0.merged(with: r) } ?? r
+        }
+
         let kilterByID = Dictionary(kilterSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let workoutByID = Dictionary(workoutSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
@@ -395,12 +404,13 @@ struct ClipsFeedView: View {
             if let k = kilterByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .kilter,
                     title: k.title ?? "Kilter session", startedAt: k.startedAt, endedAt: k.endedAt,
-                    angle: k.angle), clips: clips))
+                    angle: k.angle), clips: clips, climbResults: kilterResults[sid] ?? [:]))
                 hr[sid] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
             } else if let w = workoutByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .gym,
                     title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
-                    angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips))
+                    angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips,
+                    climbResults: Self.quickSessionClimbResults(w.exercises)))
                 hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).
@@ -408,6 +418,19 @@ struct ClipsFeedView: View {
         return FeedSnapshot(bundles: bundles, climbMeta: climbMeta, exerciseNames: exerciseName,
                             festivalMeta: makeFestivalMeta(workoutByID: workoutByID),
                             hr: hr, tiles: sessionHRTile)
+    }
+
+    /// A Quick Session's climbs → their per-attempt outcomes (prompt 161), keyed like the post group
+    /// (`SessionExercise.id`). Climbs with no logged outcome are left out.
+    private static func quickSessionClimbResults(_ exercises: [SessionExercise]) -> [String: ClipFeedClimbResult] {
+        var out: [String: ClipFeedClimbResult] = [:]
+        for ex in exercises where ex.kind == .climbAttempt {
+            if let r = ClipFeedClimbResult.fromAttempts(
+                ex.sets.map { $0.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:)) }) {
+                out[ex.id.uuidString] = r
+            }
+        }
+        return out
     }
 
     /// media id → festival flavor (festival prompt 03), from denormalized rows only — no pack
@@ -742,6 +765,11 @@ private struct ClipFilterChipStrip: View {
                          on: filter.discipline == .climbs, id: "clips.filter.climbs") {
                         filter.discipline = filter.discipline == .climbs ? .all : .climbs
                     }
+                    // Sends (prompt 161): flashes + sends, Kilter or Quick Session. Stacks like Favorites.
+                    chip("Sends", icon: "checkmark.seal.fill", accent: SnappetColor.perfFresh,
+                         on: filter.sendsOnly, id: "clips.filter.sends") {
+                        filter.sendsOnly.toggle()
+                    }
                     chip("Gym", icon: "figure.strengthtraining.traditional", accent: SnappetColor.workout,
                          on: filter.discipline == .gym, id: "clips.filter.gym") {
                         filter.discipline = filter.discipline == .gym ? .all : .gym
@@ -946,6 +974,7 @@ private struct ClipPostCard: View {
                 HStack(spacing: 6) {
                     Text(post.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     if post.isReel { reelBadge }
+                    if let result = post.climbResult, let word = result.badge { outcomeBadge(result.status, word) }
                     if post.isFromAppleWatch { watchSourceBadge }
                 }
                 Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
@@ -969,6 +998,23 @@ private struct ClipPostCard: View {
         .background(SnappetColor.reels.opacity(0.14), in: Capsule())
         .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
         .accessibilityLabel("Highlight reel")
+    }
+
+    /// How the climb went this session (prompt 161) — FLASH / SENT / PROJECT in the ascent palette the
+    /// session summaries use (`KilterAscentStyle`). A plain attempt gets no badge.
+    private func outcomeBadge(_ status: KilterAscentStatus, _ word: String) -> some View {
+        let tint = KilterAscentStyle.color(status)
+        return HStack(spacing: 3) {
+            Image(systemName: KilterAscentStyle.glyph(status)).font(.system(size: 9, weight: .bold))
+            Text(word.uppercased()).font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(tint.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(tint.opacity(0.5), lineWidth: 1))
+        .fixedSize()
+        .accessibilityIdentifier("clips.post.outcome")
+        .accessibilityLabel(word)
     }
 
     /// The ⌚ "Apple Watch" source chip on a watch-imported post's header (watch-workouts-clips P3).

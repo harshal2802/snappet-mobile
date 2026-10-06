@@ -55,10 +55,52 @@ struct ClipFeedFestivalMeta: Sendable, Equatable {
     var dayLabel: String
 }
 
+/// How a climb went in ONE session (prompt 161) — Kilter: its `KilterLogEntry` row for that session;
+/// Quick Session: the climb exercise's per-attempt `SetLog.climbStatusRaw`. Snapshotted at the store
+/// edge, so the composer stays pure.
+struct ClipFeedClimbResult: Sendable, Equatable {
+    /// The session's best outcome on the climb (flash › sent › project › attempt).
+    var status: KilterAscentStatus
+    /// Logged tries (Kilter `attempts`; Quick Session = attempts with an outcome).
+    var attempts: Int
+    /// Quick Session only: each attempt's outcome by set index, so a clip tagged to a set knows whether
+    /// THAT attempt was the send. Empty for Kilter (attempt timestamps don't map onto clips reliably).
+    var perAttempt: [KilterAscentStatus?] = []
+
+    /// The header badge word, or nil for a plain attempt — a climb you only tried gets no badge (no
+    /// "failed" label on your own feed).
+    var badge: String? { status == .attempt ? nil : status.label }
+
+    static func rank(_ s: KilterAscentStatus) -> Int {
+        switch s {
+        case .flash: return 3
+        case .sent: return 2
+        case .project: return 1
+        case .attempt: return 0
+        }
+    }
+
+    /// Two rows for one climb in one session (legacy duplicates — the logger now accumulates onto one
+    /// row): keep the better outcome and the larger try count.
+    func merged(with other: ClipFeedClimbResult) -> ClipFeedClimbResult {
+        ClipFeedClimbResult(status: Self.rank(other.status) > Self.rank(status) ? other.status : status,
+                            attempts: max(attempts, other.attempts),
+                            perAttempt: perAttempt.isEmpty ? other.perAttempt : perAttempt)
+    }
+
+    /// A Quick Session climb from its attempts' outcomes; nil when none was logged with one.
+    static func fromAttempts(_ statuses: [KilterAscentStatus?]) -> ClipFeedClimbResult? {
+        let logged = statuses.compactMap { $0 }
+        guard let best = logged.max(by: { rank($0) < rank($1) }) else { return nil }
+        return ClipFeedClimbResult(status: best, attempts: logged.count, perAttempt: statuses)
+    }
+}
+
 /// One clip in a post: the media + a derived attempt/set label shown as the overlay chip.
 struct ClipFeedItem: Identifiable, Sendable, Equatable {
     var media: MediaInput
     /// "Attempt 3" (climb) · "Set 3" (gym) · "Clip 2" (untagged, multi) · nil (single untagged clip).
+    /// A Quick Session attempt that was a send reads "Attempt 3 · Sent" (prompt 161).
     var attemptLabel: String?
     var id: UUID { media.id }
 }
@@ -96,6 +138,8 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// post, a ✦ REEL header badge, and no live HR overlay (the scorebug is in the pixels).
     var isReel: Bool = false
     var clips: [ClipFeedItem]
+    /// How the climb went this session (prompt 161) — nil for non-climb posts or a climb with no log.
+    var climbResult: ClipFeedClimbResult? = nil
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double
@@ -132,6 +176,9 @@ enum ClipFeedComposer {
         var meta: ClipFeedSessionMeta
         /// This session's media (videos + photos), already bridged from `SessionMedia`.
         var clips: [MediaInput]
+        /// Climb outcomes this session, by post group key (prompt 161): Kilter `climbUUID`, or a Quick
+        /// Session climb exercise's `SessionExercise.id.uuidString`. Defaulted so existing sites compile.
+        var climbResults: [String: ClipFeedClimbResult] = [:]
     }
 
     /// Compose every session's media into posts, newest capture first.
@@ -216,7 +263,7 @@ enum ClipFeedComposer {
             }
             let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
                 !$0.isReel && festivalMeta[$0.id]?.setKey == nil
-            })
+            }, climbResults: bundle.climbResults)
             guard !bundle.clips.isEmpty else { continue }
             // Resolve a group key → label for FeedMedia.groups (the post's header title).
             let nameFor: (String) -> String = { key in
@@ -235,6 +282,7 @@ enum ClipFeedComposer {
                     first.climbUUID != nil ? .climbing
                     : first.exerciseId != nil ? .strength
                     : .general
+                let result = key == "general" ? nil : bundle.climbResults[key]
                 let items: [ClipFeedItem] = ordered.enumerated().map { i, m in
                     let label: String?
                     // Label must match the clip's BUCKET (groupKey = exerciseId ?? climbUUID ?? "general").
@@ -242,7 +290,17 @@ enum ClipFeedComposer {
                     // `setIndex` (the two are independent optionals on SessionMedia) stays a "Clip N" in its
                     // "general" post instead of a misleading "Set N".
                     if m.climbUUID != nil { label = "Attempt \(i + 1)" }
-                    else if m.exerciseId != nil, let s = m.setIndex { label = "Set \(s + 1)" }
+                    else if m.exerciseId != nil, let s = m.setIndex {
+                        // A Quick Session climb's sets ARE attempts (prompt 161) — name them so, and mark
+                        // the one that sent. A fall gets no suffix.
+                        if let result, !result.perAttempt.isEmpty {
+                            let st = s < result.perAttempt.count ? result.perAttempt[s] : nil
+                            if let st, st.isSend { label = "Attempt \(s + 1) · \(st.label)" }
+                            else { label = "Attempt \(s + 1)" }
+                        } else {
+                            label = "Set \(s + 1)"
+                        }
+                    }
                     else { label = ordered.count > 1 ? "Clip \(i + 1)" : nil }
                     return ClipFeedItem(media: m, attemptLabel: label)
                 }
@@ -262,6 +320,7 @@ enum ClipFeedComposer {
                     sessionEndedAt: meta.endedAt,
                     isFromAppleWatch: meta.isFromAppleWatch,
                     clips: items,
+                    climbResult: result,
                     aspect: postAspect(ordered)))
             }
         }
@@ -304,7 +363,7 @@ enum ClipFeedComposer {
             SessionBundle(meta: bundle.meta, clips: bundle.clips.filter {
                 guard let w = winner[$0.localIdentifier] else { return false }
                 return w.sessionIndex == s && w.clip.id == $0.id
-            })
+            }, climbResults: bundle.climbResults)
         }
     }
 

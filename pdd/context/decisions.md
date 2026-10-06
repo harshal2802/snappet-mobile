@@ -9702,3 +9702,16 @@ stripes, and the panel read as an opaque slab.
   the poster's flat underlay 0.30 → 0.18. Studio tiles change too — it's the default style; the per-tile opacity
   slider is still there. Legibility moves to the text: shadow 0.85 with a radius scaled to the font (a fixed 3px
   vanished at 1080p).
+## 2026-10-06 — Clips: climb outcomes on posts + a Sends chip (prompt 161)
+
+- **Outcome is per SESSION, not per climb**: keyed into each `SessionBundle` (`climbResults`), never through the
+  global `climbMeta` (latest log wins), so a send on Thursday doesn't badge Tuesday's post of the same climb.
+- **Kilter = post-level only.** `attemptTimestamps` exist but a clip's capture window doesn't map reliably onto
+  one tap, so Kilter chips stay clip-index "Attempt N". **Quick Session = per clip too**: a clip is tagged to the
+  set (attempt) it was filmed on, so "Attempt 3 · Sent" is exact. Those climbs' chips now say "Attempt", not "Set".
+- **No badge for a plain attempt.** It's your own feed; "FAILED" on a video isn't useful. Flash / Sent / Project
+  only, in the `KilterAscentStyle` palette the session summaries use.
+- **No rebuild-key change**: outcomes are logged on other screens and the feed rebuilds on every tab entry
+  (`.task` under the system TabView), so hashing every log row on each body pass would buy nothing.
+- Not done: Quick Session climb posts still take the strength glyph/accent (discipline comes from the clip's
+  `climbUUID`); the "Climbs" chip is still Kilter-only.
