@@ -1,0 +1,30 @@
+New: Household. A shared chore board for everyone you live with, synced phone to phone on your home Wi-Fi. No account, no cloud. Find it in Apps → Lifestyle.
+
+GET STARTED
+• Open Household and tap "Start with common chores", or add your own: how much effort (S/M/L), how often (daily, chosen days, weekly, every N days after it's done, once) and who does it (take turns, one person, or up for grabs).
+• Set a weekly house goal and a reward, like "40 chores → pizza night".
+• Your chores earn XP for your training buddy, under the same daily limit as workouts.
+
+TRY IT WITH SOMEONE ELSE (needs two phones with this build)
+• Phone A: Household → Household tab → Invite someone. A code appears; it expires in 5 minutes and works once.
+• Phone B: scan it with the Camera app (or Household → Join a household → Scan). Put in your name and tap Join. You can bring your existing chores along.
+• Both phones need to be on the same Wi-Fi with Snappet open. The first time, iOS asks to find devices on your local network: tap Allow. If you said no, the Household tab shows how to turn it back on.
+• After that, a tick on one phone shows up on the other within seconds while both are open. If one was away, it catches up next time you're both home with the app open. Changes even pass through a third phone.
+
+PLAYING TOGETHER
+• The house pet (top of Today) grows with every chore anyone does. Its mood follows how the house is doing: overdue chores make it sleepy. Tap it to see what would cheer it up, or pause the house for a holiday.
+• Week tab: "Fair share" shows everyone's share of the effort. It's a balance check, not a leaderboard.
+• Long-press one of your chores → "Ask for a hand". Anyone can tap "Take it". When two of you do the same chore, you're both credited and it counts once for the goal, and there's a Thank button.
+• Start a power hour (Today): a 15–60 minute blitz with a countdown on everyone's Lock Screen.
+• At the start of each week, "Week in the house" thanks everyone for something they actually did.
+• Add the Household widget to tick chores off from your Home or Lock Screen. With an Apple Watch, your chores show on the watch app when no workout is running.
+
+KNOWN LIMITS
+• No server: phones only sync while they're on the same Wi-Fi with Snappet open. There are no notifications when someone else finishes a chore.
+• A tick from the widget or the watch is saved straight away but reaches other phones the next time you open Snappet.
+• iPhone only for now.
+
+WHAT WOULD HELP MOST
+• Join a household with a second phone. Did the code scan, did the join work first time, and did ticks show up on the other phone?
+• Was the "find devices on your local network" prompt clear?
+• Run a power hour together. Did the Lock Screen countdown and count look right?
