@@ -58,6 +58,17 @@ import XCTest
                       "the feed's empty state stays after dismissing the offer")
     }
 
+    /// Scroll the feed until `element` exists — posts below the fold aren't created by the lazy stack yet
+    /// (the session headers of prompt 167 pushed the seeded festival post below it).
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval = 15) -> Bool {
+        if element.waitForExistence(timeout: timeout) { return true }
+        for _ in 0..<5 {
+            app.scrollViews["clips.feed"].swipeUp()
+            if element.waitForExistence(timeout: 2) { return true }
+        }
+        return false
+    }
+
     /// Festival prompt 03: the seeded night's auto-tagged clip surfaces in Clips as an
     /// artist·stage post behind the ONE new 🎪 Festival chip. (Poster pixels need real Photos
     /// assets — device-owed; the post card + chip behavior are what the simulator can prove.)
@@ -69,14 +80,17 @@ import XCTest
 
         // The tagged clip composes into an artist · stage post (search would match "Neon" free).
         let title = app.staticTexts["Neon Harbor · Pyramid Stage"]
-        XCTAssertTrue(title.waitForExistence(timeout: 15), "the tagged clip posts as artist · stage")
+        XCTAssertTrue(reveal(title, in: app), "the tagged clip posts as artist · stage")
+        let feed = app.scrollViews["clips.feed"]
+        feed.swipeDown(); feed.swipeDown()                        // back to the chips
 
         // The 🎪 chip narrows the feed to festival posts: the dance session's untagged
-        // session-clips post disappears, the set post stays.
+        // session-clips post disappears, the set post stays. (Counted by post menus — the session's
+        // name is also its header now, prompt 167, so the text alone can't tell the post is gone.)
         let chip = app.buttons["clips.filter.festival"]
         XCTAssertTrue(chip.waitForExistence(timeout: 6), "the one new festival chip exists")
-        let sessionPost = app.staticTexts["Snappet Test Festival"]
-        XCTAssertTrue(sessionPost.waitForExistence(timeout: 6),
+        let menus = app.buttons.matching(identifier: "clips.post.menu")
+        XCTAssertTrue(app.staticTexts["Snappet Test Festival"].waitForExistence(timeout: 6),
                       "the untagged clips still post under the session title")
         // The chip strip scrolls horizontally; the festival chip sits past the fold on a phone once the
         // Sends chip joined it (prompt 161) — swipe the strip like a person would.
@@ -85,15 +99,19 @@ import XCTest
         let screen = app.windows.firstMatch.frame
         for _ in 0..<3 where !screen.contains(chip.frame) { strip.swipeLeft() }
         chip.tap()
-        let gone = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: sessionPost)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 6), .completed,
+        let onePost = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 1"), object: menus)
+        XCTAssertEqual(XCTWaiter().wait(for: [onePost], timeout: 6), .completed,
                        "the festival chip hides non-festival posts")
-        XCTAssertTrue(title.exists, "…and keeps the artist · stage post")
+        XCTAssertTrue(reveal(title, in: app, timeout: 2), "…and keeps the artist · stage post")
 
         // Tapping the active chip clears it — everything returns.
+        feed.swipeDown(); feed.swipeDown()
         chip.tap()
-        XCTAssertTrue(sessionPost.waitForExistence(timeout: 6))
+        // (Not a post count: the second post is below the fold, where the lazy stack hasn't built it.)
+        let results = app.descendants(matching: .any)["clips.filter.results"]
+        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: results)
+        XCTAssertEqual(XCTWaiter().wait(for: [cleared], timeout: 6), .completed, "the filter is off again")
+        XCTAssertFalse(chip.isSelected)
     }
 
     /// Prompt 163: the ✎ Overlay style sheet opens from the toolbar, a change saves on Done, and it's
@@ -133,7 +151,8 @@ import XCTest
         app.tabBars.buttons["Clips"].tap()
 
         let post = app.staticTexts["Neon Harbor · Pyramid Stage"]
-        XCTAssertTrue(post.waitForExistence(timeout: 15))
+        XCTAssertTrue(reveal(post, in: app))
+        app.scrollViews["clips.feed"].swipeDown(); app.scrollViews["clips.feed"].swipeDown()   // back to the top
         // The artist·stage post is the festival-tagged one; open ITS ⋯ menu (the first card's).
         let menus = app.buttons.matching(identifier: "clips.post.menu")
         XCTAssertTrue(menus.firstMatch.waitForExistence(timeout: 6))
@@ -176,5 +195,18 @@ import XCTest
         XCTAssertTrue(app.descendants(matching: .any)["clips.toast"].waitForExistence(timeout: 3),
                       "the toggle confirms what changed")
         toggle.tap()   // leave it off for the other tests' shared defaults
+    }
+
+    /// Prompt 167: posts sit under a session header, and the grid groups covers by month.
+    func testSessionHeadersAndGridMonths() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["clips.session.header"].firstMatch.waitForExistence(timeout: 15),
+                      "the seeded session's posts sit under a session header")
+        app.buttons["clips.grid.button"].tap()
+        XCTAssertTrue(app.staticTexts["clips.grid.month"].firstMatch.waitForExistence(timeout: 6),
+                      "the grid groups covers under a month header")
     }
 }

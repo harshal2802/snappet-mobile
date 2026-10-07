@@ -27,13 +27,29 @@ struct ClipsGridView: View {
                     .accessibilityIdentifier("clips.grid.empty")
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 2) {
-                            ForEach(posts) { post in
-                                cell(post)
-                                    .onTapGesture { onPick(post.id); dismiss() }
+                        // Grouped by month with pinned headers (prompt 167) — the "jump to a month" view.
+                        LazyVGrid(columns: columns, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                            ForEach(ClipFeedSections.months(posts)) { month in
+                                Section {
+                                    ForEach(month.posts) { post in
+                                        cell(post)
+                                            .onTapGesture { onPick(post.id); dismiss() }
+                                    }
+                                } header: {
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(month.title).font(.subheadline.weight(.bold))
+                                            .foregroundStyle(SnappetColor.ink)
+                                            .accessibilityIdentifier("clips.grid.month")
+                                        Spacer()
+                                        Text(month.countLabel).font(.caption.weight(.semibold))
+                                            .foregroundStyle(SnappetColor.textSecondary)
+                                    }
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(SnappetColor.paper.opacity(0.96))
+                                }
                             }
                         }
-                        .padding(2)
+                        .padding(.horizontal, 2)
                     }
                     .accessibilityIdentifier("clips.grid")
                 }

@@ -9773,3 +9773,15 @@ stripes, and the panel read as an opaque slab.
   autoplay on by default changes battery/data behaviour for everyone and is the user's call.
 - The toast names the system reason when autoplay is on but held back (Low Power Mode, Reduce Motion).
 - One toast slot for the feed (`ClipFeedToast`), shared with hide-undo.
+
+## 2026-10-06 — Clips navigation: pinned session headers + month-grouped grid (prompt 167)
+
+- Built overnight with a wireframe made first but not yet reviewed (user asked for everything to review together).
+- **Group, don't collapse**: posts stay as they are; a pinned session header adds the missing date and the session
+  identity. Collapsing a session into one card was the bigger change and is left as an option.
+- **"Jump to a month" lives in the grid** (month sections, pinned headers), not a new feed control — the grid already
+  jumps to a post.
+- Sections are built from the VISIBLE posts each body pass (O(n), rare — the feed body doesn't re-run per swipe,
+  prompt 97), so filters and search group their results too.
+- UI-test gotcha: the header pushes later posts below the lazy stack's realised area — tests scroll to them
+  (`reveal`) instead of expecting them to exist.
