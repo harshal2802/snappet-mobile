@@ -78,6 +78,12 @@ import XCTest
         let sessionPost = app.staticTexts["Snappet Test Festival"]
         XCTAssertTrue(sessionPost.waitForExistence(timeout: 6),
                       "the untagged clips still post under the session title")
+        // The chip strip scrolls horizontally; the festival chip sits past the fold on a phone once the
+        // Sends chip joined it (prompt 161) — swipe the strip like a person would.
+        let strip = app.scrollViews["clips.filter.chips"]
+        // (Frame check, not `isHittable` — that throws for an element outside the screen.)
+        let screen = app.windows.firstMatch.frame
+        for _ in 0..<3 where !screen.contains(chip.frame) { strip.swipeLeft() }
         chip.tap()
         let gone = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: sessionPost)

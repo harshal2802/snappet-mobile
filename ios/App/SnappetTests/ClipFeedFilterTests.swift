@@ -197,4 +197,21 @@ final class ClipFeedFilterTests: XCTestCase {
         f.reelsOnly = true
         XCTAssertEqual(ids(f.apply(sample + [clipPost, reelPost]) { _ in true }), ["fr"])
     }
+
+    // MARK: Sends (prompt 161)
+
+    func testSendsOnlyKeepsFlashesAndSendsAndStacks() {
+        var sent = post(id: "s", kind: .kilter, title: "Crux", subtitle: "Tue")
+        sent.climbResult = .init(status: .sent, attempts: 3)
+        var flash = post(id: "f", kind: .gym, title: "Yellow", subtitle: "Bouldering")
+        flash.climbResult = .init(status: .flash, attempts: 1)
+        var project = post(id: "p", kind: .kilter, title: "Roof", subtitle: "Tue")
+        project.climbResult = .init(status: .project, attempts: 8)
+        var f = ClipFeedFilter()
+        f.sendsOnly = true
+        XCTAssertTrue(f.isActive)
+        XCTAssertEqual(ids(f.apply(sample + [sent, flash, project]) { _ in false }), ["s", "f"])
+        f.discipline = .climbs
+        XCTAssertEqual(ids(f.apply(sample + [sent, flash, project]) { _ in false }), ["s"])
+    }
 }

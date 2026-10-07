@@ -407,4 +407,64 @@ final class ClipFeedComposerTests: XCTestCase {
                                              exerciseName: { _ in "Bench" })
         XCTAssertEqual(with, without)
     }
+
+    // MARK: - Climb outcomes (prompt 161)
+
+    /// A Kilter post carries THAT session's result for the climb — a send in one session doesn't leak
+    /// into another session's post of the same climb.
+    func testKilterPostCarriesItsSessionsClimbResult() {
+        let tue = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Tue", startedAt: start, angle: 40)
+        let thu = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Thu",
+                                      startedAt: start.addingTimeInterval(86_400 * 2), angle: 40)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: tue, clips: [video(10, climb: "crux", asset: "tue")],
+                             climbResults: ["crux": .init(status: .project, attempts: 5)]),
+                       .init(meta: thu, clips: [video(10, climb: "crux", asset: "thu")],
+                             climbResults: ["crux": .init(status: .sent, attempts: 2)])],
+            climbMeta: [:], exerciseName: { _ in "?" })
+        XCTAssertEqual(posts.first { $0.sessionID == tue.id }?.climbResult?.status, .project)
+        XCTAssertEqual(posts.first { $0.sessionID == thu.id }?.climbResult?.status, .sent)
+        XCTAssertEqual(posts.first { $0.sessionID == thu.id }?.climbResult?.badge, "Sent")
+        // Kilter attempt chips stay clip-index labels — no per-clip outcome is claimed.
+        XCTAssertEqual(posts.first?.clips.first?.attemptLabel, "Attempt 1")
+    }
+
+    /// A Quick Session climb's sets ARE attempts: the chips say so, and the attempt that sent is marked.
+    func testQuickSessionClimbLabelsAttemptsAndMarksTheSend() throws {
+        let climb = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Bouldering", startedAt: start)
+        let result = try XCTUnwrap(ClipFeedClimbResult.fromAttempts([.attempt, .attempt, .sent]))
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [video(10, exercise: climb, set: 0),
+                                              video(40, exercise: climb, set: 2)],
+                             climbResults: [climb.uuidString: result])],
+            climbMeta: [:], exerciseName: { _ in "Yellow Overhang" })
+        let post = try XCTUnwrap(posts.first)
+        XCTAssertEqual(post.climbResult?.status, .sent)
+        XCTAssertEqual(post.climbResult?.attempts, 3)
+        XCTAssertEqual(post.clips.map(\.attemptLabel), ["Attempt 1", "Attempt 3 · Sent"])
+    }
+
+    /// A non-climb gym exercise (no result) keeps its "Set N" chips and no result.
+    func testStrengthExerciseKeepsSetLabelsAndNoResult() {
+        let bench = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Push", startedAt: start)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [video(10, exercise: bench, set: 1)])],
+            climbMeta: [:], exerciseName: { _ in "Bench" })
+        XCTAssertNil(posts.first?.climbResult)
+        XCTAssertEqual(posts.first?.clips.first?.attemptLabel, "Set 2")
+    }
+
+    func testResultRankingMergeAndBadge() {
+        XCTAssertNil(ClipFeedClimbResult.fromAttempts([nil, nil]))
+        XCTAssertEqual(ClipFeedClimbResult.fromAttempts([.attempt, .flash, nil])?.status, .flash)
+        XCTAssertEqual(ClipFeedClimbResult.fromAttempts([.attempt, .flash, nil])?.attempts, 2)
+        let merged = ClipFeedClimbResult(status: .sent, attempts: 3)
+            .merged(with: .init(status: .project, attempts: 6))
+        XCTAssertEqual(merged.status, .sent)       // the better outcome wins
+        XCTAssertEqual(merged.attempts, 6)         // the larger try count wins
+        XCTAssertNil(ClipFeedClimbResult(status: .attempt, attempts: 4).badge)   // a try gets no badge
+        XCTAssertEqual(ClipFeedClimbResult(status: .flash, attempts: 1).badge, "Flash")
+    }
 }
