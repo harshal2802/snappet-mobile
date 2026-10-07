@@ -89,6 +89,8 @@ struct ClipsFeedView: View {
     /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
     @State private var overlayStore = ClipOverlayStyleStore()
     @State private var showStyle = false
+    /// The clips just hidden — drives the "Undo" toast for a few seconds (prompt 164).
+    @State private var hiddenUndo: Set<UUID>?
     /// Optional search + chip filter (prompt 107) — pure value state; `.searchable` binds `query`,
     /// the chip strip binds the rest. Session-scoped by design (resets on relaunch, like IG search).
     @State private var filter = ClipFeedFilter()
@@ -122,7 +124,9 @@ struct ClipsFeedView: View {
         // filter returns `posts` untouched and never consults the reaction store (so no extra SwiftUI
         // dependency is registered). With `favoritesOnly` on, reading `reactions` here is deliberate:
         // toggling a heart live-updates the filtered feed.
-        let visible = filter.apply(posts, isFavorite: reactions.isFavorite)
+        // Hidden clips leave the feed (prompt 164) — or, behind the Hidden chip, are all it shows.
+        let unhidden = ClipFeedFilter.withHidden(posts, hidden: reactions.hiddenIDs, showHidden: filter.showHidden)
+        let visible = filter.apply(unhidden, isFavorite: reactions.isFavorite)
         return NavigationStack {
             Group {
                 if posts.isEmpty {
@@ -156,13 +160,14 @@ struct ClipsFeedView: View {
                                 // posts (pure, cheap) once this week has ≥2 video clips; opens the
                                 // shared reel builder on the stitched week.
                                 if let offer = WeeklyHighlights.offer(
-                                        posts: posts, week: WeeklyHighlights.week(containing: .now)) {
+                                        posts: ClipFeedFilter.withHidden(posts, hidden: reactions.hiddenIDs, showHidden: false),
+                                        week: WeeklyHighlights.week(containing: .now)) {
                                     WeeklyReelHeroCard(offer: offer)
                                 }
                                 // Filter chips — visible, not buried in a toolbar glyph (the #264 lesson);
                                 // scrolls away with content so browsing costs no vertical space. Hidden
                                 // while the search field is up (one control in charge at a time).
-                                ClipFilterChipStrip(filter: $filter)
+                                ClipFilterChipStrip(filter: $filter, hiddenCount: reactions.hiddenIDs.count)
                                 if filter.isActive {
                                     resultLine(visible: visible.count, total: posts.count)
                                 }
@@ -177,7 +182,9 @@ struct ClipsFeedView: View {
                                                      payloads: cachedPayloads,
                                                      autoplayActive: autoplayActive,
                                                      contentWidth: feedGeo.size.width,
-                                                     style: overlayStore.style)
+                                                     style: overlayStore.style,
+                                                     showingHidden: filter.showHidden,
+                                                     onHide: hide, onUnhide: { reactions.unhide($0) })
                                             .id(post.id)
                                             // Warm the posters just below the fold (prompt 134). A poster
                                             // costs 70–120 ms and used to START loading only when its cell
@@ -227,6 +234,24 @@ struct ClipsFeedView: View {
                 }
             }
             .background(SnappetColor.paper)
+            // "Hidden from Clips · Undo" (prompt 164) — the safety net for a non-destructive hide.
+            .overlay(alignment: .bottom) {
+                if let ids = hiddenUndo {
+                    HStack(spacing: 12) {
+                        Text(ids.count == 1 ? "Clip hidden from Clips" : "\(ids.count) clips hidden from Clips")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        Button("Undo") { reactions.unhide(ids); hiddenUndo = nil }
+                            .font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.brand)
+                            .accessibilityIdentifier("clips.hide.undo")
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 11)
+                    .background(.black.opacity(0.85), in: Capsule())
+                    .padding(.bottom, 14)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityIdentifier("clips.hide.toast")
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: hiddenUndo)
             // Build the cached feed on first appearance and ONLY when the underlying @Query data changes —
             // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
             // Composition runs on a background task; data-driven rebuilds debounce so a burst of saves
@@ -271,6 +296,19 @@ struct ClipsFeedView: View {
                 // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
                 ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
             }
+        }
+    }
+
+    // MARK: Hide from Clips (prompt 164)
+
+    /// Hide `ids` (non-destructive), stop playback if one of them was playing, offer Undo for 4s.
+    private func hide(_ ids: Set<UUID>) {
+        playback.playing = nil
+        reactions.hide(ids)
+        hiddenUndo = ids
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if hiddenUndo == ids { hiddenUndo = nil }
         }
     }
 
@@ -787,6 +825,8 @@ private struct WeeklyReelHeroCard: View {
 /// with anything. Tapping an active chip turns it off.
 private struct ClipFilterChipStrip: View {
     @Binding var filter: ClipFeedFilter
+    /// Clips hidden from Clips (prompt 164) — the Hidden chip appears only when there are some.
+    let hiddenCount: Int
     @Environment(\.isSearching) private var isSearching
 
     var body: some View {
@@ -827,6 +867,13 @@ private struct ClipFilterChipStrip: View {
                     chip("Photos", icon: "photo", accent: SnappetColor.brand,
                          on: filter.kind == .photos, id: "clips.filter.photos") {
                         filter.kind = filter.kind == .photos ? .all : .photos
+                    }
+                    // Where hidden clips live (prompt 164): last, and only when there's something hidden.
+                    if hiddenCount > 0 || filter.showHidden {
+                        chip("Hidden · \(hiddenCount)", icon: "eye.slash", accent: SnappetColor.textSecondary,
+                             on: filter.showHidden, id: "clips.filter.hidden") {
+                            filter.showHidden.toggle()
+                        }
                     }
                 }
                 .padding(.horizontal, SnappetSpacing.lg)
@@ -903,6 +950,10 @@ private struct ClipPostCard: View {
     let contentWidth: CGFloat
     /// The user's default HR tile + title (prompt 163).
     let style: ClipOverlayStyle
+    /// The feed is showing hidden clips (prompt 164) → the ⋯ menu offers Unhide instead of Hide.
+    let showingHidden: Bool
+    let onHide: (Set<UUID>) -> Void
+    let onUnhide: (Set<UUID>) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -1132,6 +1183,22 @@ private struct ClipPostCard: View {
                 Button { editAllClips() } label: { Label("Edit all · \(editableClipIDs.count)", systemImage: "rectangle.stack") }
             }
             Button { goToSession() } label: { Label("Go to session", systemImage: "arrow.up.forward.square") }
+            // Hide from Clips (prompt 164) — non-destructive: the clip stays in the session and Photos.
+            Divider()
+            let all = Set(post.clips.map(\.media.id))
+            if showingHidden {
+                Button { onUnhide([currentClip.media.id]) } label: { Label("Unhide this clip", systemImage: "eye") }
+                    .accessibilityIdentifier("clips.post.unhide")
+                if all.count > 1 {
+                    Button { onUnhide(all) } label: { Label("Unhide all \(all.count)", systemImage: "eye") }
+                }
+            } else {
+                Button { onHide([currentClip.media.id]) } label: { Label("Hide this clip from Clips", systemImage: "eye.slash") }
+                    .accessibilityIdentifier("clips.post.hide")
+                if all.count > 1 {
+                    Button { onHide(all) } label: { Label("Hide post (\(all.count) clips)", systemImage: "eye.slash") }
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 18, weight: .semibold))

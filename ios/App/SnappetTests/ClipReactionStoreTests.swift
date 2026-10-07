@@ -128,4 +128,26 @@ final class ClipReactionStoreTests: XCTestCase {
         XCTAssertEqual(ClipFavorites.mediaID(fromContentId: ClipFavorites.contentId(for: id)), id)
         XCTAssertNil(ClipFavorites.mediaID(fromContentId: "recap-card-1"))
     }
+
+    // MARK: Hide from Clips (prompt 164)
+
+    func testHideUnhideIsBackedUpAndSeparateFromFavorites() throws {
+        let ctx = try makeContext()
+        let s = store(ctx)
+        let a = UUID(), b = UUID()
+        s.toggle(post("p", [item(a)]))                       // a favorite on the same clip
+        s.hide([a, b])
+        XCTAssertTrue(s.isHidden(a) && s.isHidden(b))
+        XCTAssertEqual(s.favoriteCount, 1, "hiding doesn't touch favorites")
+
+        let file = try SnappetBackup.decode(SnappetBackup.encode(SnappetBackup.snapshot(of: ctx)))
+        let restored = try makeContext()
+        try SnappetBackup.restore(file, into: restored)
+        XCTAssertEqual(store(restored).hiddenIDs, [a, b])
+
+        s.unhide([a])
+        XCTAssertFalse(s.isHidden(a))
+        XCTAssertEqual(store(ctx).hiddenIDs, [b], "persisted")
+        XCTAssertEqual(store(ctx).favoriteCount, 1)
+    }
 }
