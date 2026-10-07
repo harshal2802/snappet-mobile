@@ -9766,3 +9766,10 @@ stripes, and the panel read as an opaque slab.
 - **Relative phrases are parsed out first** (today, yesterday, this/last week, this/last month) and become ranges on
   the post's capture time, using the user's calendar (first weekday from the locale).
 - Date words come from locale formatters (month, weekday, year, "d MMM"/"MMM d"), so non-English month names work.
+
+## 2026-10-06 — Clips autoplay: labelled, and it explains itself; still off by default (prompt 166)
+
+- The review offered two fixes: a clearer control, or default ON. Chose the clearer control only — turning
+  autoplay on by default changes battery/data behaviour for everyone and is the user's call.
+- The toast names the system reason when autoplay is on but held back (Low Power Mode, Reduce Motion).
+- One toast slot for the feed (`ClipFeedToast`), shared with hide-undo.

@@ -89,8 +89,9 @@ struct ClipsFeedView: View {
     /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
     @State private var overlayStore = ClipOverlayStyleStore()
     @State private var showStyle = false
-    /// The clips just hidden — drives the "Undo" toast for a few seconds (prompt 164).
-    @State private var hiddenUndo: Set<UUID>?
+    /// The feed's one transient message (prompt 164 hide-undo · prompt 166 autoplay) — a few seconds,
+    /// then gone. One slot, so two toasts never stack.
+    @State private var toast: ClipFeedToast?
     /// Optional search + chip filter (prompt 107) — pure value state; `.searchable` binds `query`,
     /// the chip strip binds the rest. Session-scoped by design (resets on relaunch, like IG search).
     @State private var filter = ClipFeedFilter()
@@ -234,24 +235,27 @@ struct ClipsFeedView: View {
                 }
             }
             .background(SnappetColor.paper)
-            // "Hidden from Clips · Undo" (prompt 164) — the safety net for a non-destructive hide.
+            // Transient feedback (prompt 164 "Hidden · Undo", prompt 166 autoplay on/off).
             .overlay(alignment: .bottom) {
-                if let ids = hiddenUndo {
+                if let t = toast {
                     HStack(spacing: 12) {
-                        Text(ids.count == 1 ? "Clip hidden from Clips" : "\(ids.count) clips hidden from Clips")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                        Button("Undo") { reactions.unhide(ids); hiddenUndo = nil }
-                            .font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.brand)
-                            .accessibilityIdentifier("clips.hide.undo")
+                        Text(t.message).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            .multilineTextAlignment(.leading)
+                        if let ids = t.undoHidden {
+                            Button("Undo") { reactions.unhide(ids); toast = nil }
+                                .font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.brand)
+                                .accessibilityIdentifier("clips.hide.undo")
+                        }
                     }
                     .padding(.horizontal, 16).padding(.vertical, 11)
                     .background(.black.opacity(0.85), in: Capsule())
+                    .padding(.horizontal, SnappetSpacing.lg)
                     .padding(.bottom, 14)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .accessibilityIdentifier("clips.hide.toast")
+                    .accessibilityIdentifier(t.undoHidden != nil ? "clips.hide.toast" : "clips.toast")
                 }
             }
-            .animation(.easeOut(duration: 0.2), value: hiddenUndo)
+            .animation(.easeOut(duration: 0.2), value: toast)
             // Build the cached feed on first appearance and ONLY when the underlying @Query data changes —
             // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
             // Composition runs on a background task; data-driven rebuilds debounce so a burst of saves
@@ -276,12 +280,24 @@ struct ClipsFeedView: View {
                             .accessibilityLabel("Overlay style")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        // Autoplay-on-scroll toggle (prompt 90) — opt-in, off by default.
-                        Button { autoplayEnabled.toggle() } label: {
-                            Image(systemName: autoplayEnabled ? "play.circle.fill" : "play.slash")
+                        // Autoplay-on-scroll (prompt 90) — opt-in, off by default. Prompt 166: a LABELLED
+                        // control (the bare play.slash glyph didn't read as "autoplay") + a toast saying
+                        // what changed.
+                        Button(action: toggleAutoplay) {
+                            HStack(spacing: 4) {
+                                Image(systemName: autoplayEnabled ? "play.fill" : "pause.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Autoplay").font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(autoplayEnabled ? SnappetColor.brand : SnappetColor.textSecondary)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(autoplayEnabled ? SnappetColor.brand.opacity(0.14) : SnappetColor.surfaceMuted,
+                                        in: Capsule())
                         }
+                        .buttonStyle(.plain)
                         .accessibilityIdentifier("clips.autoplay.toggle")
-                        .accessibilityLabel(autoplayEnabled ? "Turn off autoplay" : "Turn on autoplay")
+                        .accessibilityLabel("Autoplay")
+                        .accessibilityValue(autoplayEnabled ? "On" : "Off")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showGrid = true } label: { Image(systemName: "square.grid.3x3") }
@@ -305,11 +321,28 @@ struct ClipsFeedView: View {
     private func hide(_ ids: Set<UUID>) {
         playback.playing = nil
         reactions.hide(ids)
-        hiddenUndo = ids
+        show(ClipFeedToast(message: ids.count == 1 ? "Clip hidden from Clips" : "\(ids.count) clips hidden from Clips",
+                           undoHidden: ids))
+    }
+
+    /// Show `t` for a few seconds (a newer toast replaces it).
+    private func show(_ t: ClipFeedToast) {
+        toast = t
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
-            if hiddenUndo == ids { hiddenUndo = nil }
+            try? await Task.sleep(for: .seconds(t.undoHidden != nil ? 4 : 2.5))
+            if toast == t { toast = nil }
         }
+    }
+
+    // MARK: Autoplay (prompt 166)
+
+    /// Flip autoplay and SAY what happened — including when the system is holding it back, so "on" never
+    /// silently does nothing.
+    private func toggleAutoplay() {
+        autoplayEnabled.toggle()
+        show(ClipFeedToast(message: ClipAutoplayCopy.message(
+            enabled: autoplayEnabled, reduceMotion: reduceMotion,
+            lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)))
     }
 
     // MARK: Overlay style (prompt 163)
