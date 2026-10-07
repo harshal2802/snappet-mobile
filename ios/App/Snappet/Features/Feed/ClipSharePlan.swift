@@ -33,22 +33,23 @@ enum ClipSharePlan {
         var duration: Double
         /// The clip's HR window samples (window-local) + the resolved tile, slotted over the whole render.
         var hr: PlacedClipHR
-        /// The post's lower-third ("V5 Crimp Line · 6C · 40° · Attempt 2"), or nil when there's no name.
-        var caption: String?
+        /// The title at the user's style (prompt 163), or nil when it's off / says nothing.
+        var title: ClipOverlayStyle.TitleText?
+        /// Where the tile + title go and how the title looks — the same style the post draws with.
+        var style: ClipOverlayStyle = .builtIn
     }
 
     static func offer(for clip: MediaInput, payload: ClipHROverlay.Payload?) -> Offer {
         guard clip.kind == "video" else { return .none }
         // A reel / baked clip plays raw everywhere — sharing it raw IS sharing the burned version.
         if clip.isReel || clip.isBaked { return .raw }
-        return plan(clip: clip, payload: payload, title: "", detail: "", attemptLabel: nil) == nil
-            ? .raw : .burnedAndRaw
+        return plan(clip: clip, payload: payload, title: nil) == nil ? .raw : .burnedAndRaw
     }
 
     /// The burned render for `clip`, or nil when there's nothing to burn (photo, reel, baked, no HR,
     /// or a payload whose tile resolves to nothing — the same `resolveTile` gate the export uses).
     static func plan(clip: MediaInput, payload: ClipHROverlay.Payload?,
-                     title: String, detail: String, attemptLabel: String?) -> Plan? {
+                     title: ClipOverlayStyle.TitleText?, style: ClipOverlayStyle = .builtIn) -> Plan? {
         guard clip.kind == "video", !clip.isReel, !clip.isBaked,
               let payload, let tile = payload.values.resolveTile(payload.tile) else { return nil }
         let played = ClipHROverlay.playedRange(clip)
@@ -58,38 +59,7 @@ enum ClipSharePlan {
                     duration: played.span,
                     hr: PlacedClipHR(startSec: 0, durationSec: played.span,
                                      samples: payload.values.samples, tile: tile),
-                    caption: caption(title: title, detail: detail, attemptLabel: attemptLabel))
-    }
-
-    /// The poster's name overlay flattened to one line: title · detail · attempt chip, blanks dropped.
-    static func caption(title: String, detail: String, attemptLabel: String?) -> String? {
-        let parts = [title, detail, attemptLabel ?? ""]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// The poster draws the tile as a BAND, not at the tile's stored geometry: the full card width (minus
-    /// 12pt padding) × 96pt — about 4.2:1 on a phone. The share burns it in that same shape and inset, so
-    /// the video matches the post. The template's own default box (scorebug 0.92 × 0.27 of a portrait
-    /// frame ≈ 1.9:1) laid the hero out far taller than the post and overran its column (2026-10-06).
-    static let posterBandAspect = 4.2
-    /// The poster's 12pt inset as a fraction of the card width.
-    static let posterInsetFraction = 12.0 / 418.0
-
-    /// `tile` re-placed as the poster's bottom band on a `canvas`-sized render.
-    static func posterBand(_ tile: ResolvedHRTile, canvas: CGSize) -> ResolvedHRTile {
-        guard canvas.width > 0, canvas.height > 0 else { return tile }
-        let inset = posterInsetFraction
-        let widthPx = canvas.width * (1 - 2 * inset)
-        let heightFrac = min(0.45, (widthPx / posterBandAspect) / canvas.height)
-        let bottomInsetFrac = canvas.width * inset / canvas.height
-        var t = tile
-        t.centerX = 0.5
-        t.width = 1 - 2 * inset
-        t.height = heightFrac
-        t.centerY = 1 - bottomInsetFrac - heightFrac / 2
-        return t
+                    title: title, style: style)
     }
 
     /// Re-slot the plan's HR tile over the duration the render ACTUALLY inserted (the asset can be a

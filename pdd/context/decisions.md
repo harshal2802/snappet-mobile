@@ -9730,3 +9730,21 @@ stripes, and the panel read as an opaque slab.
 - **One-time legacy move after a non-empty compose**, then the UserDefaults key is removed. Legacy ids that
   match no current post were already orphaned and are dropped.
 - Rows for a deleted clip are left behind (harmless; nothing reads them).
+
+## 2026-10-06 — Clips overlay style: one backed-up default for tile + title (prompt 163)
+
+- **Precedence: Studio session tile → user default → built-in scorebug.** The default never overrides a session the
+  user styled by hand. The built-in default reproduces today's look exactly (tested), so nothing changes until
+  the sheet is used.
+- **Stored as one SwiftData row holding JSON** (user: "backed up"). A blob, not columns, so the style can grow
+  without migrations; the decode is forward-compatible (missing fields default, new title parts append OFF).
+  Reset deletes the row rather than writing the built-in, so a backup says "no custom default".
+- **Posts place tiles by design, not by the tile's stored geometry.** Bands (Broadcast, HR Trace) span the card at
+  4.2:1; card designs get a readable box; HUD Pill hugs the trailing edge. The share uses the same sizes scaled to
+  the video width (`placed`), so post ⇄ video match for every design.
+- **Title = two groups, not free lines.** Name + outcome form the big line, everything else the small line, order
+  inside each group is the user's. It matches the wireframe and avoids per-part line settings. The chip look keeps
+  the attempt as its own white chip (today's look); plain folds it in. "Attempt 3 · Sent" drops its "· Sent" when
+  the Outcome part is on, so it isn't said twice.
+- **One SwiftUI drawing (`ClipOverlayChrome`)** for the poster and the sheet preview, so the preview can't lie.
+- The ✎ button shows only when the feed has posts (like the grid/autoplay buttons).

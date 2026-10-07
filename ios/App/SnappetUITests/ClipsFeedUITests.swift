@@ -95,4 +95,32 @@ import XCTest
         chip.tap()
         XCTAssertTrue(sessionPost.waitForExistence(timeout: 6))
     }
+
+    /// Prompt 163: the ✎ Overlay style sheet opens from the toolbar, a change saves on Done, and it's
+    /// still there when the sheet reopens (persisted, not view state).
+    func testOverlayStyleSheetSavesTheDefault() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+
+        let button = app.buttons["clips.style.button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15), "the ✎ Overlay style button is in the toolbar")
+        button.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["clips.style.preview"].waitForExistence(timeout: 6))
+
+        app.segmentedControls["clips.style.tabs"].buttons["Title"].tap()
+        let show = app.switches["clips.style.showTitle"]
+        XCTAssertTrue(show.waitForExistence(timeout: 4))
+        XCTAssertEqual(show.value as? String, "1")
+        show.switches.firstMatch.tap()
+        XCTAssertEqual(show.value as? String, "0")
+        app.buttons["clips.style.done"].tap()
+
+        XCTAssertTrue(button.waitForExistence(timeout: 6))
+        button.tap()
+        app.segmentedControls["clips.style.tabs"].buttons["Title"].tap()
+        XCTAssertTrue(show.waitForExistence(timeout: 4))
+        XCTAssertEqual(show.value as? String, "0", "the saved default survives reopening the sheet")
+    }
 }

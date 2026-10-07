@@ -203,6 +203,9 @@ final class ReelExporter: Sendable {
         var maxHR: Double?
         var restHR: Double?
         var clipName: String? = nil
+        /// The tile to burn — the user's Clips overlay default (prompt 163). `nil` keeps the built-in
+        /// `.feedClipScorebug`, as does a tile that would draw nothing with this session's data.
+        var tile: HRTile? = nil
     }
 
     func export(_ plan: ReelPlan) async throws -> URL {
@@ -240,7 +243,8 @@ final class ReelExporter: Sendable {
                                          maxHR: hrOverlay.maxHR,
                                          restHR: hrOverlay.restHR)
             // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
-            if let tile = values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR)),
+            if let tile = hrOverlay.tile.flatMap({ values.resolveTile($0) })
+                    ?? values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR)),
                let tool = StudioOverlays.makeAnimationTool(
                     overlays: [], canvas: mvc.renderSize,
                     totalDuration: composition.duration.seconds,
