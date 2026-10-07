@@ -9674,3 +9674,31 @@ Non-obvious calls:
   test; Bonjour covers the home), and notifications for others' chores (could only fire while the app is open,
   where the board already updates live).
 
+
+## 2026-10-06 — Clips: one-tap "Share with heart rate" (prompt 160)
+
+- **The burned share is the primary ⋯ share**; "Share original clip" keeps the raw lane (prompt 87). Reels and
+  baked clips only offer "Share clip": their HR is already in the pixels, and a second option would double-draw.
+- **WYSIWYG by reuse, not by a second derivation**: the render burns the SAME `ClipHROverlay.Payload` the poster
+  draws (its window samples + `resolveTile`), over the SAME kept range the feed plays. A custom Studio tile
+  therefore shares as customised. One `PlacedClipHR` slotted across the whole render.
+- **Its own one-clip composition, not ReelExporter**: ReelExporter only burns the session-wide `.feedClipScorebug`
+  over a whole reel, and its asset resolution is private. The clip lane needs the asset's real duration to clamp
+  the approximate stored `durationSec` before inserting the range (`ClipSharePlan.clamped`).
+- **Caption at the top of the frame** (the Studio climb-name lower-third style, y = 0.1) because the scorebug's
+  default sits at the bottom (centerY 0.80). A user's custom tile placed at the top could collide — not handled.
+- Simulator renders passthrough without the overlay (no encoder), like ReelExporter.
+
+## 2026-10-06 — HR tile: lighter glass, scaled text shadows, poster-shaped share band (prompt 160 follow-up)
+
+Device feedback on the first Share-with-heart-rate render: the tile "looks weird" — "BPM" ran under the zone
+stripes, and the panel read as an opaque slab.
+- **The share burns the tile in the POSTER's band shape** (card width × 96pt ≈ 4.2:1, 12pt inset), not the
+  template's stored box (scorebug 0.92 × 0.27 ≈ 1.9:1 on portrait). The layout's hero font scales with height
+  and its column with width, so the taller box overran. Same shape ⇒ the video matches the post.
+- **The export text now shrinks to fit its column** (`StudioOverlays.shrinkToFit`, floor 0.5) — the twin of
+  `HRTileView`'s `minimumScaleFactor(0.5)`, which is why the preview never overlapped. Fixes Studio exports too.
+- **Lighter default glass everywhere** (user: "by default ... a little more transparent"): fill 0.72 → 0.50, and
+  the poster's flat underlay 0.30 → 0.18. Studio tiles change too — it's the default style; the per-tile opacity
+  slider is still there. Legibility moves to the text: shadow 0.85 with a radius scaled to the font (a fixed 3px
+  vanished at 1080p).
