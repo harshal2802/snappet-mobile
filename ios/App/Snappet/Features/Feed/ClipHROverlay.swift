@@ -79,7 +79,9 @@ enum ClipHROverlay {
         // export/editor gate the same way via `resolveTile`. Otherwise fall back to the scorebug, so a
         // no-data custom tile (e.g. only kcal/HRV enabled with no chart) can't render an empty glass panel.
         let chosen: HRTile
-        if let tile, values.resolveTile(tile) != nil { chosen = tile }
+        // `wouldDraw` = the resolveTile gate without building segments — this runs for EVERY clip on every
+        // feed compose (prompt 163 made the tile explicit for all of them), so the full resolve cost 5.7 s.
+        if let tile, values.wouldDraw(tile) { chosen = tile }
         else { chosen = .feedClipScorebug(restHR: restHR) }
         return Payload(tile: chosen, values: values)
     }

@@ -9785,3 +9785,15 @@ stripes, and the panel read as an opaque slab.
   prompt 97), so filters and search group their results too.
 - UI-test gotcha: the header pushes later posts below the lazy stack's realised area — tests scroll to them
   (`reveal`) instead of expecting them to exist.
+
+## 2026-10-06 — Clips: never resolve a whole tile just to ask if it draws (prompt 169)
+
+- Device probe after the 160–168 merge: feed compose 5.7 s (was ~0.43 s). Prompt 163 made every clip's tile
+  explicit, and `ClipHROverlay.make` gated it with `resolveTile` (segments: up to 60 readings per animated stat) for
+  all 1,771 clips. `HROverlayValues.wouldDraw` gives the identical answer by stopping at the first reading
+  (equivalence unit-tested). Compose back to 411 ms; first card 0.6 s.
+- Rule: on per-clip/per-post paths, never call a "build everything" API to get a yes/no — add the cheap twin and
+  test the two agree.
+- Measured, not guessed (the 2026-09-23 lesson held: the probe found a cause I hadn't predicted). The probe lived on
+  an unmerged diag branch; downgrading to a pre-163 build for an A/B was rejected because the schema had gained a
+  model (risk to the user's store).

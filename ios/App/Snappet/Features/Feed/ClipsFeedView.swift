@@ -261,7 +261,9 @@ struct ClipsFeedView: View {
             // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
             // Composition runs on a background task; data-driven rebuilds debounce so a burst of saves
             // (the aspect backfill) coalesces into one recompute (prompt 106).
-            .task { rebuildFeed() }
+            // Re-entering the tab with posts already showing: let the tab switch land first, then refresh in
+            // the background (the compose is off-main, but its 100 ms snapshot isn't — Clips perf 2026-10-06).
+            .task { rebuildFeed(debounce: !cachedPosts.isEmpty, delay: .milliseconds(600)) }
             .onChange(of: feedKey) { _, _ in rebuildFeed(debounce: true) }
             // A saved overlay style re-composes every payload with the new default tile (prompt 163).
             .onChange(of: overlayStore.style) { _, _ in rebuildFeed() }
@@ -648,11 +650,11 @@ struct ClipsFeedView: View {
     /// rebuild; the first appearance builds immediately so the feed paints without an artificial delay.
     /// `Task.detached` (not a nonisolated-async hop) so the compose is off-main regardless of the
     /// language mode's isolation-inheritance default.
-    private func rebuildFeed(debounce: Bool = false) {
+    private func rebuildFeed(debounce: Bool = false, delay: Duration = .milliseconds(200)) {
         rebuildTask?.cancel()
         rebuildTask = Task { @MainActor in
             if debounce {
-                try? await Task.sleep(for: .milliseconds(200))
+                try? await Task.sleep(for: delay)
                 guard !Task.isCancelled else { return }
             }
             overlayStore.attach(context)   // re-read the saved style (picks up a restore)
