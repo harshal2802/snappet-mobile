@@ -12,11 +12,6 @@ import Foundation
 // searching/filtering costs nothing and registers no extra SwiftUI dependencies.
 struct ClipFeedFilter: Equatable, Sendable {
 
-    /// Climbs / Gym / 🎪 Festival — one value ⇒ the chips are mutually exclusive by construction
-    /// (selecting one deselects the other), matching the Kilter browse chips. Climbs/Gym map to
-    /// `ClipFeedPost.kind`; Festival maps to `post.discipline == .festival` (festival posts ride a
-    /// gym-kind dance session, so kind alone can't tell them apart — festival prompt 03).
-    enum Discipline: String, Sendable { case all, climbs, gym, festival }
 
     /// Videos / Photos — a post matches when ANY of its clips is that kind. Posts stay whole: the filter
     /// decides which POSTS show, never which clips within one, so the carousel, attempt labels, and
@@ -24,7 +19,10 @@ struct ClipFeedFilter: Equatable, Sendable {
     enum MediaKind: String, Sendable { case all, videos, photos }
 
     var query: String = ""
-    var discipline: Discipline = .all
+    /// One ACTIVITY at a time (prompt 170): Climbing · Strength · Cardio · Dance · Mobility · Festival · Other,
+    /// matched against the post's resolved activity (`ClipActivity`) — so a Quick Session climb or a climbing
+    /// workout imported from Health is Climbing, not "Gym". nil = all. Mutually exclusive by construction.
+    var activity: ClipFeedPost.Discipline? = nil
     var kind: MediaKind = .all
     var favoritesOnly: Bool = false
     /// Show only posted highlight reels (highlights P2). Stacks with the other chips, like Favorites.
@@ -40,7 +38,7 @@ struct ClipFeedFilter: Equatable, Sendable {
     /// Whether anything narrows the feed — drives the "N of M posts · Clear" line, the no-match state,
     /// and the fast path (inactive ⇒ `apply` returns the input untouched).
     var isActive: Bool {
-        !trimmedQuery.isEmpty || discipline != .all || kind != .all || favoritesOnly || reelsOnly || sendsOnly
+        !trimmedQuery.isEmpty || activity != nil || kind != .all || favoritesOnly || reelsOnly || sendsOnly
             || showHidden
     }
 
@@ -74,14 +72,7 @@ struct ClipFeedFilter: Equatable, Sendable {
             if favoritesOnly, !isFavorite(post) { return false }
             if reelsOnly, !post.isReel { return false }
             if sendsOnly, post.climbResult?.status.isSend != true { return false }
-            switch discipline {
-            case .all: break
-            case .climbs: if post.kind != .kilter { return false }
-            // A festival post's session IS a gym-kind WorkoutSession — exclude it from Gym so the
-            // two chips partition cleanly (a dance set is not a workout post).
-            case .gym: if post.kind != .gym || post.discipline == .festival { return false }
-            case .festival: if post.discipline != .festival { return false }
-            }
+            if let activity, post.discipline != activity { return false }
             switch kind {
             case .all: break
             case .videos: if !post.clips.contains(where: { $0.media.kind == "video" }) { return false }

@@ -40,7 +40,8 @@ enum ClipFeedSections {
                 // as Festival if ANY of its posts is a festival set.
                 if post.discipline == .festival, last.discipline != .festival {
                     out[out.count - 1].discipline = .festival
-                    out[out.count - 1].detail = detail(post, dayLabel: day.string(from: post.sessionStartedAt))
+                    out[out.count - 1].detail = detail(post, dayLabel: day.string(from: post.sessionStartedAt),
+                                                       activity: .festival)
                 }
                 continue
             }
@@ -48,20 +49,22 @@ enum ClipFeedSections {
             let base = post.sessionID.uuidString
             let id = out.contains { $0.id == base } ? "\(base)#\(out.count)" : base
             out.append(ClipFeedSection(id: id, title: post.sessionTitle.isEmpty ? post.subtitle : post.sessionTitle,
-                                       detail: detail(post, dayLabel: day.string(from: post.sessionStartedAt)),
-                                       kind: post.kind, discipline: post.discipline,
+                                       detail: detail(post, dayLabel: day.string(from: post.sessionStartedAt),
+                                                      activity: post.discipline == .festival ? .festival : post.sessionActivity),
+                                       kind: post.kind,
+                                       discipline: post.discipline == .festival ? .festival : post.sessionActivity,
                                        isFromAppleWatch: post.isFromAppleWatch, posts: [post]))
         }
         return out
     }
 
-    /// "Tue 30 Sep · Kilter · 40°" / "Sat 27 Sep · Gym" / "Fri 12 Sep · Festival" / "… · Apple Watch".
-    static func detail(_ post: ClipFeedPost, dayLabel: String) -> String {
+    /// Prompt 170: names the session's ACTIVITY (Climbing / Strength / Cardio / …), "Kilter" for a board
+    /// session, plus its angle and an Apple Watch marker — "Sat 27 Sep · Climbing · Apple Watch".
+    static func detail(_ post: ClipFeedPost, dayLabel: String, activity: ClipFeedPost.Discipline) -> String {
         var parts = [dayLabel]
-        if post.isFromAppleWatch { parts.append("Apple Watch") }
-        else if post.discipline == .festival { parts.append("Festival") }
-        else { parts.append(post.kind == .kilter ? "Kilter" : "Gym") }
+        parts.append(post.kind == .kilter ? "Kilter" : activity.label)
         if let a = post.sessionAngle { parts.append("\(a)°") }
+        if post.isFromAppleWatch { parts.append("Apple Watch") }
         return parts.joined(separator: " · ")
     }
 

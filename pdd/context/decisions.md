@@ -9797,3 +9797,18 @@ stripes, and the panel read as an opaque slab.
 - Measured, not guessed (the 2026-09-23 lesson held: the probe found a cause I hadn't predicted). The probe lived on
   an unmerged diag branch; downgrading to a pre-163 build for an A/B was rejected because the schema had gained a
   model (risk to the user's store).
+
+## 2026-10-07 — Clips filters follow the ACTIVITY, not the app that recorded it (prompt 170)
+
+- The Climbs chip matched Kilter board sessions only and "Gym" was a catch-all, so a climbing workout imported from
+  Google Health (most of the user's climbs) showed under Gym with a dumbbell. Every post now resolves an activity
+  (`ClipActivity`) from the best evidence: festival → Kilter → the tagged exercise's discipline → the session (Health
+  workout-type label, else most common exercise activity).
+- **Hangboard (timed holds) is Strength** — the user's call (offered: Climbing / Strength / own chip).
+- **Chips only for activities you have** — the user's call; the selected chip always stays visible so it can be
+  cleared. Sends sits right after Climbing.
+- Health imports are classified by the label the importer stored (`HealthKitService.label`, a closed set); a unit test
+  maps every label so a new HK type can't silently fall into Other. Storing the raw HK type on the session would be
+  cleaner — a follow-up if labels ever become user-editable.
+- UI-test lesson: a "count == 1" assertion on a lazy list can pass vacuously (the 2nd post was never realised) —
+  assert a filter's effect via the "N of M posts" line instead.

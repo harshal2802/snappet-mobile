@@ -18,6 +18,7 @@ final class ClipFeedSectionsTests: XCTestCase {
                              clips: [], aspect: ClipFeedComposer.defaultAspect)
         p.sessionTitle = title
         p.sessionAngle = kind == .kilter ? angle : nil
+        p.sessionActivity = kind == .kilter ? .climbing : .strength
         return p
     }
 
@@ -38,7 +39,7 @@ final class ClipFeedSectionsTests: XCTestCase {
         XCTAssertTrue(s[0].detail?.hasSuffix(" · Kilter · 40°") == true, s[0].detail ?? "")
         XCTAssertEqual(s[0].countLabel, "2 posts")
         XCTAssertTrue(s[1].detail?.hasPrefix("Sat 26") == true, s[1].detail ?? "")
-        XCTAssertTrue(s[1].detail?.hasSuffix(" · Gym") == true, s[1].detail ?? "")
+        XCTAssertTrue(s[1].detail?.hasSuffix(" · Strength") == true, s[1].detail ?? "")
         XCTAssertEqual(s[1].countLabel, "1 post")
     }
 

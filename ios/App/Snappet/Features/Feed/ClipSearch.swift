@@ -57,7 +57,8 @@ struct ClipSearch {
 
     /// Everything a post can be found by, in one string (case/diacritic-insensitive matching).
     func haystack(_ post: ClipFeedPost) -> String {
-        var parts = [post.title, post.subtitle, post.overlayDetail, post.sessionTitle]
+        var parts = [post.title, post.subtitle, post.overlayDetail, post.sessionTitle,
+                     post.discipline.label, post.sessionActivity.label]          // "climbing", "cardio" (prompt 170)
         if let r = post.climbResult {
             parts.append(r.status.label)                                    // Flash / Sent / Project / Attempt
             if r.status.isSend { parts.append("sent send sends") }          // "sent" finds flashes too

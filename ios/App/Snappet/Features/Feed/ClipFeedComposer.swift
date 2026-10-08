@@ -107,7 +107,8 @@ struct ClipFeedItem: Identifiable, Sendable, Equatable {
 
 /// One Clips-feed post = all of one exercise's / one climb's clips in a session.
 struct ClipFeedPost: Identifiable, Sendable, Equatable {
-    enum Discipline: String, Sendable, Equatable { case climbing, strength, festival, general }
+    /// The ACTIVITY the post was (prompt 170 — `ClipActivity` resolves it). `general` reads "Other".
+    enum Discipline: String, Sendable, Equatable, Hashable { case climbing, strength, cardio, dance, mobility, festival, general }
 
     /// Stable across reloads: `groupKey@sessionID` (same climb in two sessions ⇒ two posts).
     var id: String
@@ -144,6 +145,9 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     var sessionTitle: String = ""
     /// The Kilter board angle of the session (prompt 167 — the session header's "· 40°"); nil for gym.
     var sessionAngle: Int? = nil
+    /// The whole SESSION's activity (prompt 170) — the session header's label; a post's own `discipline`
+    /// can differ (a climb exercise inside a mixed Quick Session).
+    var sessionActivity: Discipline = .general
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double
@@ -183,6 +187,11 @@ enum ClipFeedComposer {
         /// Climb outcomes this session, by post group key (prompt 161): Kilter `climbUUID`, or a Quick
         /// Session climb exercise's `SessionExercise.id.uuidString`. Defaulted so existing sites compile.
         var climbResults: [String: ClipFeedClimbResult] = [:]
+        /// Activity per tagged exercise, keyed like the post group (`SessionExercise.id.uuidString`) — prompt 170.
+        var exerciseActivity: [String: ClipFeedPost.Discipline] = [:]
+        /// The session's own activity (Health import label / dominant exercise / festival night) — the
+        /// activity of its untagged clips and reels. nil → Kilter = climbing, else other. Prompt 170.
+        var sessionActivity: ClipFeedPost.Discipline? = nil
     }
 
     /// Compose every session's media into posts, newest capture first.
@@ -204,6 +213,9 @@ enum ClipFeedComposer {
         var out: [ClipFeedPost] = []
         for bundle in sessions where !bundle.clips.isEmpty {
             let meta = bundle.meta
+            // Prompt 170: a Kilter board session is climbing; otherwise the session's own activity.
+            let sessionActivity: ClipFeedPost.Discipline =
+                meta.kind == .kilter ? .climbing : (bundle.sessionActivity ?? .general)
             // Posted highlight reels (highlights P2) get their OWN post each — never grouped into a
             // set/climb carousel: a reel is a finished cut of the session, not another attempt clip.
             let reels = bundle.clips.filter(\.isReel)
@@ -217,8 +229,7 @@ enum ClipFeedComposer {
                     sessionID: meta.id,
                     kind: meta.kind,
                     moduleID: meta.kind == .kilter ? "kilter" : "workout-log",
-                    discipline: fest != nil ? .festival
-                        : meta.kind == .kilter ? .climbing : .strength,
+                    discipline: fest != nil ? .festival : sessionActivity,
                     title: reel.reelTitle ?? "Highlights",
                     subtitle: fest.map { "\($0.festivalName) · \($0.dayLabel)" }
                         ?? subtitle(meta: meta, climb: nil),
@@ -233,6 +244,7 @@ enum ClipFeedComposer {
                     clips: [ClipFeedItem(media: reel, attemptLabel: nil)],
                     sessionTitle: sessionName(meta),
                     sessionAngle: meta.angle,
+                    sessionActivity: sessionActivity,
                     aspect: postAspect([reel])))
             }
             // Festival-tagged clips (festival prompt 03) leave the exercise grouping and become
@@ -267,11 +279,13 @@ enum ClipFeedComposer {
                     clips: items,
                     sessionTitle: sessionName(meta),
                     sessionAngle: meta.angle,
+                    sessionActivity: sessionActivity,
                     aspect: postAspect(ordered)))
             }
             let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
                 !$0.isReel && festivalMeta[$0.id]?.setKey == nil
-            }, climbResults: bundle.climbResults)
+            }, climbResults: bundle.climbResults, exerciseActivity: bundle.exerciseActivity,
+               sessionActivity: bundle.sessionActivity)
             guard !bundle.clips.isEmpty else { continue }
             // Resolve a group key → label for FeedMedia.groups (the post's header title).
             let nameFor: (String) -> String = { key in
@@ -286,10 +300,12 @@ enum ClipFeedComposer {
                 guard let first = ordered.first else { continue }
                 let key = FeedMedia.groupKey(first)
                 let climb = climbMeta[key]
+                // Prompt 170: board climb → climbing; a tagged exercise → ITS activity (a climb inside a mixed
+                // Quick Session is climbing, a run is cardio); untagged clips → the session's activity.
                 let discipline: ClipFeedPost.Discipline =
                     first.climbUUID != nil ? .climbing
-                    : first.exerciseId != nil ? .strength
-                    : .general
+                    : first.exerciseId != nil ? (bundle.exerciseActivity[key] ?? .strength)
+                    : sessionActivity
                 let result = key == "general" ? nil : bundle.climbResults[key]
                 let items: [ClipFeedItem] = ordered.enumerated().map { i, m in
                     let label: String?
@@ -331,6 +347,7 @@ enum ClipFeedComposer {
                     climbResult: result,
                     sessionTitle: sessionName(meta),
                     sessionAngle: meta.angle,
+                    sessionActivity: sessionActivity,
                     aspect: postAspect(ordered)))
             }
         }
@@ -373,7 +390,8 @@ enum ClipFeedComposer {
             SessionBundle(meta: bundle.meta, clips: bundle.clips.filter {
                 guard let w = winner[$0.localIdentifier] else { return false }
                 return w.sessionIndex == s && w.clip.id == $0.id
-            }, climbResults: bundle.climbResults)
+            }, climbResults: bundle.climbResults, exerciseActivity: bundle.exerciseActivity,
+               sessionActivity: bundle.sessionActivity)
         }
     }
 

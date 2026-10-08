@@ -83,12 +83,12 @@ final class ClipFeedFilterTests: XCTestCase {
     // MARK: chips
 
     func testDisciplineClimbs() {
-        var f = ClipFeedFilter(); f.discipline = .climbs
+        var f = ClipFeedFilter(); f.activity = .climbing
         XCTAssertEqual(ids(f.apply(sample) { _ in true }), ["a", "b"])
     }
 
     func testDisciplineGym() {
-        var f = ClipFeedFilter(); f.discipline = .gym
+        var f = ClipFeedFilter(); f.activity = .strength
         XCTAssertEqual(ids(f.apply(sample) { _ in true }), ["c", "d"])
     }
 
@@ -112,21 +112,21 @@ final class ClipFeedFilterTests: XCTestCase {
     func testFiltersStack() {
         var f = ClipFeedFilter()
         f.favoritesOnly = true
-        f.discipline = .gym
+        f.activity = .strength
         f.kind = .videos
         XCTAssertEqual(ids(f.apply(sample) { _ in true }), ["c"])
     }
 
     func testQueryStacksWithChips() {
         var f = ClipFeedFilter()
-        f.discipline = .climbs
+        f.activity = .climbing
         f.query = "orange"
         XCTAssertEqual(ids(f.apply(sample) { _ in true }), ["b"])
     }
 
     func testClearedResetsEverything() {
         var f = ClipFeedFilter()
-        f.query = "x"; f.discipline = .gym; f.kind = .photos; f.favoritesOnly = true
+        f.query = "x"; f.activity = .strength; f.kind = .photos; f.favoritesOnly = true
         f.reelsOnly = true
         XCTAssertTrue(f.isActive)
         f = .cleared
@@ -152,7 +152,7 @@ final class ClipFeedFilterTests: XCTestCase {
         gymReel.isReel = true
         var f = ClipFeedFilter()
         f.reelsOnly = true
-        f.discipline = .climbs
+        f.activity = .climbing
         XCTAssertEqual(ids(f.apply(sample + [kilterReel, gymReel]) { _ in true }), ["kr"])
     }
 
@@ -169,7 +169,7 @@ final class ClipFeedFilterTests: XCTestCase {
     func testFestivalChipShowsOnlyFestivalPosts() {
         let fred = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
         var f = ClipFeedFilter()
-        f.discipline = .festival
+        f.activity = .festival
         XCTAssertEqual(ids(f.apply(sample + [fred]) { _ in true }), ["f1"])
     }
 
@@ -177,7 +177,7 @@ final class ClipFeedFilterTests: XCTestCase {
         // The dance session IS a gym-kind WorkoutSession — but a dance set is not a workout post.
         let fred = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
         var f = ClipFeedFilter()
-        f.discipline = .gym
+        f.activity = .strength
         XCTAssertEqual(ids(f.apply(sample + [fred]) { _ in true }), ["c", "d"])
     }
 
@@ -193,7 +193,7 @@ final class ClipFeedFilterTests: XCTestCase {
         let clipPost = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
         let reelPost = festivalPost(id: "fr", title: "Fred again.. · Pyramid Stage", isReel: true)
         var f = ClipFeedFilter()
-        f.discipline = .festival
+        f.activity = .festival
         f.reelsOnly = true
         XCTAssertEqual(ids(f.apply(sample + [clipPost, reelPost]) { _ in true }), ["fr"])
     }
@@ -211,7 +211,7 @@ final class ClipFeedFilterTests: XCTestCase {
         f.sendsOnly = true
         XCTAssertTrue(f.isActive)
         XCTAssertEqual(ids(f.apply(sample + [sent, flash, project]) { _ in false }), ["s", "f"])
-        f.discipline = .climbs
+        f.activity = .climbing
         XCTAssertEqual(ids(f.apply(sample + [sent, flash, project]) { _ in false }), ["s"])
     }
 
