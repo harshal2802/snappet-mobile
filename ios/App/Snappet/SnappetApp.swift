@@ -65,7 +65,11 @@ struct SnappetApp: App {
                         // The Clips "Connect Apple Health" offer's asked/dismissed flag
                         // (highlights P5) — cleared so the card's presence is deterministic
                         // across UI-test runs (a prior run's dismiss would otherwise stick).
-                        ClipsHealthOffer.resolvedKey] {
+                        ClipsHealthOffer.resolvedKey,
+                        // Clips autoplay (prompt 90/166): a run that ends with it ON leaves warm video
+                        // surfaces (and their playhead timers) mounted in every later test, so the app never
+                        // idles after a scroll — the festival test stalled minutes per swipe. Off every run.
+                        "clips.autoplay"] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

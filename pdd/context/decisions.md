@@ -9812,3 +9812,12 @@ stripes, and the panel read as an opaque slab.
   cleaner — a follow-up if labels ever become user-editable.
 - UI-test lesson: a "count == 1" assertion on a lazy list can pass vacuously (the 2nd post was never realised) —
   assert a filter's effect via the "N of M posts" line instead.
+
+## 2026-10-09 — Clips: festival + artist, and dynamic festival filters (prompt 171)
+
+- **The artist comes from the Festival app's tags, never guessed in Clips.** Untagged night clips say so ("Not
+  matched to an artist yet") and offer **Tag artist**, which opens the Festival app's own review sheet — one place
+  decides matches. (Offered a "best guess Artist?" option; the user chose the explicit action.)
+- **Festival chips are per festival, then per artist** (user's pick): the strip stays short however big the lineup;
+  the artist row only lists artists you have matched clips of, plus "Untagged (N)" as the to-do pile.
+- Festival is exclusive with the activity chips (one "what" at a time) and no longer an activity chip itself.

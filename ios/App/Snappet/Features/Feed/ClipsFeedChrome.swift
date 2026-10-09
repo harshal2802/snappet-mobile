@@ -215,10 +215,22 @@ struct ClipFilterChipStrip: View {
     /// The activities present in the feed, in chip order (prompt 170) — plus the selected one, so a chip
     /// that filtered everything away can still be turned off.
     let activities: [ClipFeedPost.Discipline]
+    /// One chip per festival you have clips from (prompt 171) — replaces the generic Festival chip.
+    let festivals: [ClipFestivalChips.Festival]
+    /// The selected festival's artists (matched clips) + its unmatched count — the second row.
+    let artistRow: (artists: [String], untagged: Int)?
     @Environment(\.isSearching) private var isSearching
 
     var body: some View {
         if !isSearching {
+            VStack(alignment: .leading, spacing: 8) {
+                mainRow
+                if filter.festivalPack != nil, let row = artistRow { artistChips(row) }
+            }
+        }
+    }
+
+    private var mainRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     chip("Favorites", icon: "heart.fill", accent: SnappetColor.brand,
@@ -235,6 +247,7 @@ struct ClipFilterChipStrip: View {
                         chip(a.label, icon: a.symbol, accent: a.accent,
                              on: filter.activity == a, id: "clips.filter.\(a.rawValue)") {
                             filter.activity = filter.activity == a ? nil : a
+                            filter.festivalPack = nil; filter.festivalArtist = nil   // one "what" at a time
                         }
                         if a == .climbing {
                             // Sends (prompt 161): flashes + sends, Kilter or Quick Session. Stacks like Favorites.
@@ -242,6 +255,16 @@ struct ClipFilterChipStrip: View {
                                  on: filter.sendsOnly, id: "clips.filter.sends") {
                                 filter.sendsOnly.toggle()
                             }
+                        }
+                    }
+                    // Festivals (prompt 171): one chip each; picking one opens its artist row below.
+                    ForEach(festivals) { f in
+                        chip(f.name, icon: "music.mic", accent: SnappetColor.festival,
+                             on: filter.festivalPack == f.packID, id: "clips.filter.festival") {
+                            let on = filter.festivalPack == f.packID
+                            filter.festivalPack = on ? nil : f.packID
+                            filter.festivalArtist = nil
+                            filter.activity = nil
                         }
                     }
                     chip("Videos", icon: "play.rectangle", accent: SnappetColor.brand,
@@ -263,7 +286,32 @@ struct ClipFilterChipStrip: View {
                 .padding(.horizontal, SnappetSpacing.lg)
             }
             .accessibilityIdentifier("clips.filter.chips")
+    }
+
+    /// The selected festival's artists — All · each artist you have matched clips of · Untagged (N).
+    private func artistChips(_ row: (artists: [String], untagged: Int)) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                chip("All", icon: "music.note.list", accent: SnappetColor.festival,
+                     on: filter.festivalArtist == nil, id: "clips.filter.artist.all") {
+                    filter.festivalArtist = nil
+                }
+                ForEach(row.artists, id: \.self) { a in
+                    chip(a, icon: "music.mic", accent: SnappetColor.festival,
+                         on: filter.festivalArtist == .artist(a), id: "clips.filter.artist") {
+                        filter.festivalArtist = filter.festivalArtist == .artist(a) ? nil : .artist(a)
+                    }
+                }
+                if row.untagged > 0 {
+                    chip("Untagged · \(row.untagged)", icon: "questionmark.circle", accent: SnappetColor.textSecondary,
+                         on: filter.festivalArtist == .untagged, id: "clips.filter.artist.untagged") {
+                        filter.festivalArtist = filter.festivalArtist == .untagged ? nil : .untagged
+                    }
+                }
+            }
+            .padding(.horizontal, SnappetSpacing.lg)
         }
+        .accessibilityIdentifier("clips.filter.artists")
     }
 
     private func chip(_ label: String, icon: String, accent: Color, on: Bool,
