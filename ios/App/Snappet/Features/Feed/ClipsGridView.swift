@@ -85,7 +85,11 @@ struct ClipsGridView: View {
     @State private var selection: Set<String>?
     @State private var shareItems: GridShareItems?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+    /// 3 or 5 columns — pinch to switch (prompt 176), remembered per device.
+    @AppStorage("clips.grid.columns") private var columnCount = 3
+    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 2), count: columnCount) }
+    /// The month the scrubber finger is on (prompt 176) — drives the bubble.
+    @State private var scrubbing: String?
     private let calendar = Calendar.current
 
     var body: some View {
@@ -103,8 +107,10 @@ struct ClipsGridView: View {
                         .accessibilityIdentifier("clips.grid.empty")
                     }
                 } else {
+                    GeometryReader { viewport in
                     ScrollViewReader { proxy in
                         ScrollView {
+                          VStack(spacing: 0) {
                             chipStrip
                             // Grouped by month with pinned headers (prompt 167) — the "jump to a month" view.
                             LazyVGrid(columns: columns, spacing: 2, pinnedViews: [.sectionHeaders]) {
@@ -128,13 +134,36 @@ struct ClipsGridView: View {
                                 }
                             }
                             .padding(.horizontal, 2)
+                          }
+                          // Pinch to switch 3 ⇄ 5 columns (prompt 176). The content is at least a screen tall with a
+                          // hit shape, so a pinch anywhere — even below a short month — reaches the gesture.
+                          .frame(minHeight: viewport.size.height, alignment: .top)
+                          .contentShape(Rectangle())
+                          .simultaneousGesture(MagnifyGesture().onEnded { value in
+                              let next = ClipGridModel.columns(afterPinch: value.magnification, current: columnCount)
+                              if next != columnCount { withAnimation(.snappy) { columnCount = next } }
+                          })
                         }
                         .accessibilityIdentifier("clips.grid")
+                        .overlay(alignment: .trailing) { scrubber(months) }
+                        .overlay(alignment: .trailing) {
+                            if let scrubbing {
+                                Text(scrubbing).font(.subheadline.weight(.heavy))
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                                    .padding(.trailing, 44)
+                                    .transition(.opacity)
+                                    .accessibilityIdentifier("clips.grid.scrubBubble")
+                            }
+                        }
                         .onChange(of: scrollTarget) { _, target in
                             guard let target else { return }
-                            withAnimation { proxy.scrollTo(target, anchor: .top) }
+                            // Scrubbing jumps instantly (an animation per month would lag the finger).
+                            if scrubbing != nil { proxy.scrollTo(target, anchor: .top) }
+                            else { withAnimation { proxy.scrollTo(target, anchor: .top) } }
                             scrollTarget = nil
                         }
+                    }
                     }
                 }
             }
@@ -149,6 +178,19 @@ struct ClipsGridView: View {
                             selection = selection == nil ? [] : nil
                         }
                         .accessibilityIdentifier("clips.grid.select")
+                    }
+                }
+                // Column count (prompt 176): a visible 3 ⇄ 5 toggle — pinch does the same, but a button is
+                // discoverable, accessible, and works where a pinch inside the scroll view isn't recognised.
+                ToolbarItem(placement: .topBarTrailing) {
+                    if selection == nil, !posts.isEmpty {
+                        Button {
+                            withAnimation(.snappy) { columnCount = columnCount == 3 ? 5 : 3 }
+                        } label: {
+                            Image(systemName: columnCount == 3 ? "square.grid.3x3" : "square.grid.4x3.fill")
+                        }
+                        .accessibilityIdentifier("clips.grid.columns")
+                        .accessibilityLabel(columnCount == 3 ? "Show more per row" : "Show bigger covers")
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -348,6 +390,46 @@ struct ClipsGridView: View {
         }
     }
 
+    // MARK: Month scrubber (prompt 176)
+
+    /// Month labels down the trailing edge; drag along them to fly through months (like Photos). Shown once
+    /// there are a few months to fly through.
+    @ViewBuilder private func scrubber(_ months: [ClipGridModel.Month]) -> some View {
+        if months.count >= 3 {
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    ForEach(Array(months.enumerated()), id: \.element.id) { i, m in
+                        Text(ClipGridModel.scrubberLabel(m, previous: i > 0 ? months[i - 1] : nil, calendar: calendar))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(scrubbing == m.title ? SnappetColor.brand : SnappetColor.textSecondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(width: 34)
+                .background(.ultraThinMaterial.opacity(scrubbing == nil ? 0 : 1), in: Capsule())
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        guard let i = ClipGridModel.monthIndex(atFraction: g.location.y / max(1, geo.size.height),
+                                                               count: months.count) else { return }
+                        let m = months[i]
+                        if scrubbing != m.title {
+                            scrubbing = m.title
+                            if let first = m.posts.first { scrollTarget = first.id }
+                        }
+                    }
+                    .onEnded { _ in withAnimation(.easeOut(duration: 0.25)) { scrubbing = nil } })
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(width: 34)
+            .padding(.vertical, 120)
+            .padding(.trailing, 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Month scrubber")
+            .accessibilityIdentifier("clips.grid.scrubber")
+        }
+    }
+
     // MARK: Month header
 
     private func monthHeader(_ month: ClipGridModel.Month) -> some View {
@@ -416,6 +498,7 @@ struct ClipsGridView: View {
                             .allowsHitTesting(false)
                         HStack(alignment: .bottom, spacing: 4) {
                             Text(post.title).font(.caption2.weight(.bold)).foregroundStyle(.white).lineLimit(1)
+                                .accessibilityIdentifier("clips.grid.cell.title")
                             Spacer(minLength: 0)
                             if let f = first, f.media.kind == "video",
                                let d = ClipGridModel.durationLabel(ClipHROverlay.playedRange(f.media).span) {
@@ -442,6 +525,8 @@ struct ClipsGridView: View {
             }
             .clipped()
             .contentShape(Rectangle())
+            // `.contain` keeps the title's own identifier reachable under the cover's (the habit.row precedent).
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("clips.grid.cell")
     }
 

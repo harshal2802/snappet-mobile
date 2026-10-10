@@ -9837,3 +9837,13 @@ stripes, and the panel read as an opaque slab.
   A month condenses to highlight moments (`trimToHighlights`); hand-picked clips play in full.
 - The grid shows the feed's chip strip on the SAME filter binding (not a second filter) — the grid is a view of the
   feed, never a different set of posts.
+
+## 2026-10-10 — Clips grid: scrubber + pinch; persisted UI state is reset for UI tests (prompts 175–176)
+
+- Select mode's Share sends each pick's FIRST video raw (one file per post) — burning HR into many clips at once would
+  be minutes of export; per-clip HR share stays in long-press.
+- Every persisted Clips view preference (`clips.autoplay`, `clips.grid.columns`) is cleared on a UI-test launch: a run
+  that ends with a non-default value silently changes the next test's starting state (both bit us this week).
+- Grid covers use `.accessibilityElement(children: .contain)` so the title's own identifier survives the cover's.
+- Column count has a visible toolbar toggle as well as pinch: a gesture-only control is undiscoverable and can't be
+  verified in the simulator (synthetic pinch inside a ScrollView isn't recognised).
