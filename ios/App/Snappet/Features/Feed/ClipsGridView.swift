@@ -18,6 +18,43 @@ struct ClipGridChips {
     var artistRow: (artists: [String], untagged: Int)?
 }
 
+/// What a long-pressed cover can do (prompt 174) — supplied by the feed, which owns the data each action needs.
+struct ClipGridActions {
+    var isFavorite: (ClipFeedPost) -> Bool
+    var toggleFavorite: (ClipFeedPost) -> Void
+    var hide: (ClipFeedPost) -> Void
+    var goToSession: (ClipFeedPost) -> Void
+    /// The fullscreen viewer's inputs — nil when the post has nothing to play.
+    var fullscreen: (ClipFeedPost) -> ClipGridFullscreen?
+    /// "Share with heart rate" for the post's first video — nil when there's no HR to burn.
+    var sharePlan: (ClipFeedPost) -> ClipSharePlan.Plan?
+    /// Whether "Edit in Studio" applies (a non-reel video), and the project + clips to open it with.
+    var canEdit: (ClipFeedPost) -> Bool
+    var studio: (ClipFeedPost) -> (project: StudioProject, focus: UUID?, visible: Set<UUID>)?
+}
+
+struct ClipGridFullscreen: Identifiable {
+    let id = UUID()
+    var clips: [MediaInput]
+    var series: [HRPoint]
+    var maxHR: Double
+    var restHR: Double?
+    var title: String
+    var tile: HRTile?
+}
+
+private struct GridStudio: Identifiable {
+    let id = UUID()
+    let project: StudioProject
+    let focus: UUID?
+    let visible: Set<UUID>
+}
+
+private struct GridShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 struct ClipsGridView: View {
     let posts: [ClipFeedPost]
     /// Per-clip HR payloads (media id → payload) — a cover's peak ♥ and the month's peak.
@@ -26,11 +63,19 @@ struct ClipsGridView: View {
     /// The feed's filter — shared, so a chip tapped here filters the feed too.
     var filter: Binding<ClipFeedFilter>? = nil
     var chips: ClipGridChips? = nil
+    /// Long-press actions (prompt 174); nil → covers only jump to the feed.
+    var actions: ClipGridActions? = nil
     /// The picked post id → the feed scrolls to it.
     let onPick: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @State private var scrollTarget: String?
+    @State private var fullscreen: ClipGridFullscreen?
+    @State private var studio: GridStudio?
+    @State private var shareItem: GridShareItem?
+    @State private var preparingShare = false
+    @State private var shareFailed = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
     private let calendar = Calendar.current
@@ -61,6 +106,7 @@ struct ClipsGridView: View {
                                             cell(post)
                                                 .id(post.id)
                                                 .onTapGesture { onPick(post.id); dismiss() }
+                                                .contextMenu { menu(post) } preview: { preview(post) }
                                         }
                                     } header: {
                                         monthHeader(month)
@@ -86,6 +132,92 @@ struct ClipsGridView: View {
             }
             // "✦ Make reel" for a month (prompt 173) — the shared reel builder over that month's sessions.
             .navigationDestination(for: ClipsReelRoute.self) { route in WeeklyReelHostView(scope: route.scope) }
+        }
+        // Long-press destinations (prompt 174).
+        .fullScreenCover(item: $fullscreen) { f in
+            MediaBrowserView.clipsViewer(clips: f.clips, startIndex: 0, hrSeries: f.series, maxHR: f.maxHR,
+                                         restHR: f.restHR, nameFor: { _ in f.title }, tile: f.tile)
+        }
+        .fullScreenCover(item: $studio) { s in
+            StudioEditorView(project: s.project, context: context, focusClipMediaID: s.focus,
+                             visibleClipMediaIDs: s.visible)
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: [item.url], onComplete: { _, _ in try? FileManager.default.removeItem(at: item.url) })
+        }
+        .overlay {
+            if preparingShare {
+                ProgressView("Preparing…").padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .alert("Couldn’t prepare this clip", isPresented: $shareFailed) {
+            Button("OK", role: .cancel) {}
+        } message: { Text("The clip couldn’t be exported to share. Try again from the post’s ⋯ menu.") }
+    }
+
+    // MARK: Long-press (prompt 174)
+
+    @ViewBuilder private func menu(_ post: ClipFeedPost) -> some View {
+        Button { onPick(post.id); dismiss() } label: { Label("Open in feed", systemImage: "arrow.up.forward") }
+            .accessibilityIdentifier("clips.grid.menu.open")
+        if let actions {
+            if actions.fullscreen(post) != nil {
+                Button { fullscreen = actions.fullscreen(post) } label: { Label("Play fullscreen", systemImage: "play.fill") }
+                    .accessibilityIdentifier("clips.grid.menu.fullscreen")
+            }
+            let fav = actions.isFavorite(post)
+            Button { actions.toggleFavorite(post) } label: {
+                Label(fav ? "Unfavorite" : "Favorite", systemImage: fav ? "heart.slash" : "heart")
+            }
+            .accessibilityIdentifier(fav ? "clips.grid.menu.unfavorite" : "clips.grid.menu.favorite")
+            if actions.sharePlan(post) != nil {
+                Button { share(post) } label: { Label("Share with heart rate", systemImage: "heart.text.square") }
+            }
+            if actions.canEdit(post) {
+                Button {
+                    if let s = actions.studio(post) { studio = GridStudio(project: s.project, focus: s.focus, visible: s.visible) }
+                } label: { Label("Edit in Studio", systemImage: "slider.horizontal.3") }
+            }
+            Button { dismiss(); actions.goToSession(post) } label: {
+                Label("Go to session", systemImage: "arrow.up.forward.square")
+            }
+            .accessibilityIdentifier("clips.grid.menu.session")
+            Button(role: .destructive) { actions.hide(post) } label: {
+                Label("Hide from Clips", systemImage: "eye.slash")
+            }
+            .accessibilityIdentifier("clips.grid.menu.hide")
+        }
+    }
+
+    /// The long-press preview: the cover, big, with what it is.
+    private func preview(_ post: ClipFeedPost) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            if let first = post.clips.first {
+                ClipThumbnail(localIdentifier: first.media.localIdentifier, kind: first.media.kind,
+                              size: CGSize(width: 320, height: 320))
+            } else {
+                Color.black
+            }
+            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.title).font(.headline.weight(.heavy)).foregroundStyle(.white)
+                Text(post.overlayDetail.isEmpty ? post.subtitle : post.overlayDetail)
+                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+            }
+            .padding(12)
+        }
+        .overlay(alignment: .topLeading) { badges(post).padding(8) }
+        .frame(width: 320, height: 320)
+    }
+
+    private func share(_ post: ClipFeedPost) {
+        guard let actions, let plan = actions.sharePlan(post), !preparingShare else { return }
+        preparingShare = true
+        Task { @MainActor in
+            let url = await ClipShareService.exportWithHeartRate(plan)
+            preparingShare = false
+            if let url { shareItem = GridShareItem(url: url) } else { shareFailed = true }
         }
     }
 
