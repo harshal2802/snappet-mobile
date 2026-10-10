@@ -59,8 +59,9 @@ struct ClipPostCard: View {
     let showingHidden: Bool
     let onHide: (Set<UUID>) -> Void
     let onUnhide: (Set<UUID>) -> Void
-    /// "Tag artist" (prompt 171) — set only for a festival post not matched to an artist yet.
-    let onTagArtist: (() -> Void)?
+    /// "Tag artist" (prompt 171) — set only for a festival post not matched to an artist yet. Called with the
+    /// clip on screen, so the review opens on exactly that clip (prompt 172).
+    let onTagArtist: ((UUID) -> Void)?
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -275,7 +276,7 @@ struct ClipPostCard: View {
                 Button { editAllClips() } label: { Label("Edit all · \(editableClipIDs.count)", systemImage: "rectangle.stack") }
             }
             if let onTagArtist {
-                Button(action: onTagArtist) { Label("Tag artist…", systemImage: "music.mic") }
+                Button { onTagArtist(currentClip.media.id) } label: { Label("Tag artist…", systemImage: "music.mic") }
                     .accessibilityIdentifier("clips.post.tagArtist")
             }
             Button { goToSession() } label: { Label("Go to session", systemImage: "arrow.up.forward.square") }
@@ -417,7 +418,7 @@ struct ClipPostCard: View {
             Spacer(minLength: 0)
             // "Tag artist" (prompt 171): a festival clip not matched to a set yet — one tap to the review.
             if let onTagArtist {
-                Button(action: onTagArtist) {
+                Button { onTagArtist(currentClip.media.id) } label: {
                     Label("Tag artist", systemImage: "music.mic")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(SnappetColor.festival)

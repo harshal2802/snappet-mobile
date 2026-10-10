@@ -14,6 +14,10 @@ struct FestivalTagReviewView: View {
     let pack: FestivalPack
     /// Land on this poster day when it has clips (set detail passes its own day).
     var initialDay: String?
+    /// The clips the user came from (Clips "Tag artist", prompt 172) — the one they were looking at first.
+    /// Pinned in a highlighted "From Clips" card at the top, on their day, editable whatever their state
+    /// (needs-you, auto-tagged, marked "Not from a set", or no set at that time).
+    var focusMediaIDs: [UUID] = []
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
@@ -25,11 +29,14 @@ struct FestivalTagReviewView: View {
     @State private var selectedDay: String?
     /// The row whose Change › dialog is up.
     @State private var changing: UUID?
+    /// The clip whose "Pick another set…" list is up (prompt 172).
+    @State private var pickingFor: UUID?
 
-    init(lineup: FestivalLineup, pack: FestivalPack, initialDay: String? = nil) {
+    init(lineup: FestivalLineup, pack: FestivalPack, initialDay: String? = nil, focusMediaIDs: [UUID] = []) {
         self.lineup = lineup
         self.pack = pack
         self.initialDay = initialDay
+        self.focusMediaIDs = focusMediaIDs
         let packID = lineup.packID
         _tags = Query(filter: #Predicate<FestivalClipTag> { $0.packID == packID })
     }
@@ -65,17 +72,26 @@ struct FestivalTagReviewView: View {
             }
         }
         .task { await refresh(discover: true) }
+        .sheet(item: Binding(get: { pickingFor.map(PickTarget.init) }, set: { pickingFor = $0?.id })) { t in
+            setPicker(for: t.id)
+        }
     }
+
+    private struct PickTarget: Identifiable { let id: UUID }
 
     // MARK: - Content
 
     private func content(_ snap: FestivalTagSync.Snapshot) -> some View {
         let day = selectedDay ?? defaultDay(snap)
         let dayIDs = mediaIDs(on: day, snap)
-        let needs = snap.needsYou.filter { dayIDs.contains($0) }
-        let autos = autoRows(on: dayIDs)
+        // Prompt 172: the clips the user came from are pinned up top, and not repeated in the lists below.
+        let focus = focusMediaIDs.filter { snap.stamps[$0] != nil }
+        let focusSet = Set(focus)
+        let needs = snap.needsYou.filter { dayIDs.contains($0) && !focusSet.contains($0) }
+        let autos = autoRows(on: dayIDs).filter { !focusSet.contains($0.mediaID) }
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if !focus.isEmpty { focusCard(focus, snap: snap) }
                 dayChips(snap)
                 summary(day: day, clipCount: dayIDs.count, autoCount: autos.count,
                         needsYouCount: needs.count)
@@ -288,6 +304,112 @@ struct FestivalTagReviewView: View {
             }
     }
 
+    // MARK: - From Clips (prompt 172)
+
+    /// The highlighted card for the clip(s) the user tapped "Tag artist" on.
+    private func focusCard(_ ids: [UUID], snap: FestivalTagSync.Snapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "play.square.stack").font(.caption2.weight(.bold))
+                Text(ids.count == 1 ? "THE CLIP YOU TAPPED" : "FROM CLIPS · \(ids.count) CLIPS")
+                    .font(.caption2.weight(.bold)).kerning(1)
+            }
+            .foregroundStyle(SnappetColor.festival)
+            ForEach(ids, id: \.self) { focusRow($0, snap: snap) }
+        }
+        .padding(12)
+        .background(SnappetColor.festival.opacity(0.08), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md).strokeBorder(SnappetColor.festival, lineWidth: 2))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("festival.review.focus")
+    }
+
+    private func focusRow(_ mediaID: UUID, snap: FestivalTagSync.Snapshot) -> some View {
+        let tag = tags.first { $0.mediaID == mediaID }
+        let assignment = snap.assignments[mediaID]
+        let state: String = {
+            if let tag, tag.isResolved { return "Tagged · \(tag.artist)" }
+            if tag?.source == FestivalTagging.TagSource.none { return "Marked “Not from a set”" }
+            if let a = assignment, let set = a.set {
+                return "Best guess · \(set.artist) \(FestivalTagging.percentLabel(a.confidence))"
+            }
+            return "No set playing at this time"
+        }()
+        return HStack(spacing: 10) {
+            FestivalClipThumb(localIdentifier: snap.clipInfo[mediaID]?.localIdentifier,
+                              isVideo: snap.clipInfo[mediaID]?.isVideo ?? true)
+            VStack(alignment: .leading, spacing: 2) {
+                if let stamp = snap.stamps[mediaID] {
+                    Text(FestivalSchedule.timeLabel(stamp.captureDate, offsetSeconds: pack.utcOffsetSeconds))
+                        .font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
+                }
+                Text(state).font(.subheadline.weight(.semibold)).lineLimit(2)
+            }
+            Spacer(minLength: 6)
+            Button("Change ›") { changing = mediaID }
+                .font(.caption.weight(.bold))
+                .tint(SnappetColor.festival)
+                .accessibilityIdentifier("festival.review.focus.change")
+                .confirmationDialog("Which set is this clip from?",
+                                    isPresented: Binding(get: { changing == mediaID },
+                                                         set: { if !$0 { changing = nil } }),
+                                    titleVisibility: .visible) {
+                    if let assignment {
+                        ForEach(FestivalTagging.candidates(for: assignment)) { set in
+                            Button("\(set.artist) · \(set.stage)") { resolve(mediaID, to: set) }
+                        }
+                    }
+                    Button("Pick another set…") { pickingFor = mediaID }
+                    Button("Not from a set", role: .destructive) {
+                        FestivalTagSync.resolveNotASet(mediaID: mediaID, packID: lineup.packID, context: context)
+                        Task { await refresh(discover: false) }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
+        }
+        .padding(10)
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+    }
+
+    private func resolve(_ mediaID: UUID, to set: FestivalSet) {
+        FestivalTagSync.resolve(mediaID: mediaID, to: set, packID: lineup.packID, context: context)
+        Task { await refresh(discover: false) }
+    }
+
+    /// Every set of the clip's day, nearest the moment it was filmed first (prompt 172).
+    private func setPicker(for mediaID: UUID) -> some View {
+        let capture = snapshot?.stamps[mediaID]?.captureDate ?? .now
+        let day = pack.days.first { d in
+            d.window(utcOffsetSeconds: pack.utcOffsetSeconds)?.contains(capture) == true
+        }
+        let sets = FestivalTagging.setsByProximity(day?.allSets ?? pack.allSets, to: capture)
+        return NavigationStack {
+            List(sets) { set in
+                Button {
+                    resolve(mediaID, to: set)
+                    pickingFor = nil
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(set.artist).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
+                            Text("\(set.stage) · \(FestivalSchedule.timeLabel(set.start, offsetSeconds: pack.utcOffsetSeconds))–"
+                                 + FestivalSchedule.timeLabel(set.end, offsetSeconds: pack.utcOffsetSeconds))
+                                .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                        }
+                        Spacer()
+                        if set.start <= capture && capture <= set.end {
+                            Text("PLAYING THEN").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.festival)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("festival.review.pick.set")
+            }
+            .navigationTitle("Pick the set")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { pickingFor = nil } } }
+        }
+    }
+
     // MARK: - Derivation helpers (thin — the day math is the pack's)
 
     private func refresh(discover: Bool) async {
@@ -312,6 +434,11 @@ struct FestivalTagReviewView: View {
     }
 
     private func defaultDay(_ snap: FestivalTagSync.Snapshot) -> String? {
+        // From Clips (prompt 172): the day of the clip the user tapped.
+        if let first = focusMediaIDs.first(where: { snap.stamps[$0] != nil }),
+           let day = pack.days.map(\.date).first(where: { mediaIDs(on: $0, snap).contains(first) }) {
+            return day
+        }
         if let initialDay, !mediaIDs(on: initialDay, snap).isEmpty { return initialDay }
         let days = daysWithClips(snap)
         // The day that needs the user most, else the latest day with clips.

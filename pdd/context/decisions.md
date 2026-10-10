@@ -9821,3 +9821,11 @@ stripes, and the panel read as an opaque slab.
 - **Festival chips are per festival, then per artist** (user's pick): the strip stays short however big the lineup;
   the artist row only lists artists you have matched clips of, plus "Untagged (N)" as the to-do pile.
 - Festival is exclusive with the activity chips (one "what" at a time) and no longer an activity chip itself.
+
+## 2026-10-10 — "Tag artist" pins the tapped clip; any clip can pick any set (prompt 172)
+
+- Deep-linking into a list view must land on the item: the review now opens on the tapped clip's day with that clip
+  pinned in a highlighted card, rather than scrolling/highlighting inside the day lists (the clip may not be in them).
+- A clip marked "Not from a set" was unreachable from the review — the pinned card makes every state editable.
+- "Pick another set…" orders the day's sets by distance from the filmed moment, so the right artist is near the top
+  even when the matcher had no candidate.

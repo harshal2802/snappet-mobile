@@ -317,7 +317,7 @@ struct ClipsFeedView: View {
             // "Tag artist" (prompt 171): the Festival app's own review for that festival — confirming a
             // match writes a FestivalClipTag, which the feed key picks up, so the post becomes an artist post.
             .sheet(item: $tagReview) { t in
-                FestivalTagReviewView(lineup: t.lineup, pack: t.pack)
+                FestivalTagReviewView(lineup: t.lineup, pack: t.pack, focusMediaIDs: t.focus)
                     .presentationDetents([.large])
             }
             .sheet(isPresented: $showStyle) {
@@ -361,14 +361,16 @@ struct ClipsFeedView: View {
 
     /// The "Tag artist" action for a festival post with no artist yet — nil when the post isn't one, or its
     /// lineup isn't installed any more (nothing to review against).
-    private func tagArtistAction(for post: ClipFeedPost) -> (() -> Void)? {
+    private func tagArtistAction(for post: ClipFeedPost) -> ((UUID) -> Void)? {
         guard let f = post.festival, f.artist == nil,
               festivalLineups.contains(where: { $0.packID == f.packID }) else { return nil }
-        return {
+        return { tapped in
             playback.playing = nil
             guard let lineup = festivalLineups.first(where: { $0.packID == f.packID }),
                   let pack = lineup.pack() else { return }
-            tagReview = FestivalReviewTarget(lineup: lineup, pack: pack)
+            // The clip on screen first, then the rest of the post (prompt 172) — the review pins them up top.
+            let focus = [tapped] + post.clips.map(\.media.id).filter { $0 != tapped }
+            tagReview = FestivalReviewTarget(lineup: lineup, pack: pack, focus: focus)
         }
     }
 
@@ -786,5 +788,7 @@ struct ClipsFeedView: View {
 struct FestivalReviewTarget: Identifiable {
     let lineup: FestivalLineup
     let pack: FestivalPack
+    /// The post's clips, the one on screen first (prompt 172).
+    var focus: [UUID] = []
     var id: String { lineup.packID }
 }
