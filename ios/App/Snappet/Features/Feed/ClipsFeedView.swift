@@ -89,6 +89,8 @@ struct ClipsFeedView: View {
     /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
     @State private var overlayStore = ClipOverlayStyleStore()
     @State private var showStyle = false
+    /// The festival whose tag review is open from a post's "Tag artist" (prompt 171).
+    @State private var tagReview: FestivalReviewTarget?
     /// The feed's one transient message (prompt 164 hide-undo · prompt 166 autoplay) — a few seconds,
     /// then gone. One slot, so two toasts never stack.
     @State private var toast: ClipFeedToast?
@@ -170,7 +172,10 @@ struct ClipsFeedView: View {
                                 // scrolls away with content so browsing costs no vertical space. Hidden
                                 // while the search field is up (one control in charge at a time).
                                 ClipFilterChipStrip(filter: $filter, hiddenCount: reactions.hiddenIDs.count,
-                                                    activities: activityChips(unhidden))
+                                                    activities: activityChips(unhidden),
+                                                    festivals: ClipFestivalChips.festivals(in: unhidden),
+                                                    artistRow: filter.festivalPack.map {
+                                                        ClipFestivalChips.artists(in: unhidden, packID: $0) })
                                 if filter.isActive {
                                     resultLine(visible: visible.count, total: posts.count)
                                 }
@@ -309,6 +314,12 @@ struct ClipsFeedView: View {
                     }
                 }
             }
+            // "Tag artist" (prompt 171): the Festival app's own review for that festival — confirming a
+            // match writes a FestivalClipTag, which the feed key picks up, so the post becomes an artist post.
+            .sheet(item: $tagReview) { t in
+                FestivalTagReviewView(lineup: t.lineup, pack: t.pack)
+                    .presentationDetents([.large])
+            }
             .sheet(isPresented: $showStyle) {
                 ClipOverlayStyleSheet(store: overlayStore, preview: stylePreviewInput)
             }
@@ -330,18 +341,35 @@ struct ClipsFeedView: View {
                      contentWidth: width,
                      style: overlayStore.style,
                      showingHidden: filter.showHidden,
-                     onHide: hide, onUnhide: { reactions.unhide($0) })
+                     onHide: hide, onUnhide: { reactions.unhide($0) },
+                     onTagArtist: tagArtistAction(for: post))
             .id(post.id)
     }
 
     /// The activity chips to show (prompt 170): the activities present in the (non-hidden) feed, plus the
     /// selected one so it can always be turned off.
     private func activityChips(_ posts: [ClipFeedPost]) -> [ClipFeedPost.Discipline] {
-        var present = ClipActivity.present(in: posts)
+        // Festival is offered per festival (prompt 171), not as one activity chip.
+        var present = ClipActivity.present(in: posts).filter { $0 != .festival }
         if let a = filter.activity, !present.contains(a) {
             present = ClipActivity.chipOrder.filter { present.contains($0) || $0 == a }
         }
         return present
+    }
+
+    // MARK: Tag artist (prompt 171)
+
+    /// The "Tag artist" action for a festival post with no artist yet — nil when the post isn't one, or its
+    /// lineup isn't installed any more (nothing to review against).
+    private func tagArtistAction(for post: ClipFeedPost) -> (() -> Void)? {
+        guard let f = post.festival, f.artist == nil,
+              festivalLineups.contains(where: { $0.packID == f.packID }) else { return nil }
+        return {
+            playback.playing = nil
+            guard let lineup = festivalLineups.first(where: { $0.packID == f.packID }),
+                  let pack = lineup.pack() else { return }
+            tagReview = FestivalReviewTarget(lineup: lineup, pack: pack)
+        }
     }
 
     // MARK: Hide from Clips (prompt 164)
@@ -531,8 +559,11 @@ struct ClipsFeedView: View {
         let kilterByID = Dictionary(kilterSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let workoutByID = Dictionary(workoutSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
-        /// Festival nights (sessions with an "I'm here" attendance row) — their untagged clips read as festival.
+        /// Festival nights (sessions with an "I'm here" attendance row) — their untagged clips read as festival,
+        /// titled by the festival + day (prompt 171).
         let festivalSessionIDs = Set(festivalAttendance.map(\.sessionID))
+        let festivalNights = makeFestivalNights(workoutByID: Dictionary(workoutSessions.map { ($0.id, $0) },
+                                                                        uniquingKeysWith: { a, _ in a }))
         var bundles: [ClipFeedComposer.SessionBundle] = []
         var hr: [UUID: ClipFeedHR] = [:]
         for (sid, clips) in bySession {
@@ -555,7 +586,8 @@ struct ClipsFeedView: View {
                     title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
                     angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips,
                     climbResults: Self.quickSessionClimbResults(w.exercises),
-                    exerciseActivity: exerciseActivity, sessionActivity: sessionActivity))
+                    exerciseActivity: exerciseActivity, sessionActivity: sessionActivity,
+                    festivalNight: festivalNights[sid]))
                 hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).
@@ -574,6 +606,23 @@ struct ClipsFeedView: View {
                 ex.sets.map { $0.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:)) }) {
                 out[ex.id.uuidString] = r
             }
+        }
+        return out
+    }
+
+    /// session id → its festival (name, day; artist nil) for every festival night (prompt 171).
+    private func makeFestivalNights(workoutByID: [UUID: WorkoutSession]) -> [UUID: ClipFeedPostFestival] {
+        guard !festivalLineups.isEmpty else { return [:] }
+        let lineupByPack = Dictionary(festivalLineups.map { ($0.packID, $0) }, uniquingKeysWith: { a, _ in a })
+        var out: [UUID: ClipFeedPostFestival] = [:]
+        for a in festivalAttendance {
+            guard out[a.sessionID] == nil, let lineup = lineupByPack[a.packID],
+                  let session = workoutByID[a.sessionID] else { continue }
+            out[a.sessionID] = ClipFeedPostFestival(
+                packID: lineup.packID, name: lineup.name,
+                dayLabel: FestivalTagging.posterWeekday(for: session.startedAt,
+                                                        utcOffsetSeconds: lineup.utcOffsetSeconds),
+                artist: nil)
         }
         return out
     }
@@ -600,7 +649,8 @@ struct ClipsFeedView: View {
                 stage: tag.stage,
                 festivalName: lineup.name,
                 dayLabel: FestivalTagging.posterWeekday(for: capturedAt,
-                                                        utcOffsetSeconds: lineup.utcOffsetSeconds))
+                                                        utcOffsetSeconds: lineup.utcOffsetSeconds),
+                packID: lineup.packID)
         }
         // Festival-session reels: sessionID → packID via the attendance rows.
         let packBySession = Dictionary(festivalAttendance.map { ($0.sessionID, $0.packID) },
@@ -614,7 +664,8 @@ struct ClipsFeedView: View {
                 setKey: nil, artist: nil, stage: nil,
                 festivalName: lineup.name,
                 dayLabel: FestivalTagging.posterWeekday(for: session.startedAt,
-                                                        utcOffsetSeconds: lineup.utcOffsetSeconds))
+                                                        utcOffsetSeconds: lineup.utcOffsetSeconds),
+                packID: lineup.packID)
         }
         return out
     }
@@ -729,4 +780,11 @@ struct ClipsFeedView: View {
                    uniquingKeysWith: { a, _ in a })
     }
 
+}
+
+/// The festival whose tag review a post opened (prompt 171).
+struct FestivalReviewTarget: Identifiable {
+    let lineup: FestivalLineup
+    let pack: FestivalPack
+    var id: String { lineup.packID }
 }

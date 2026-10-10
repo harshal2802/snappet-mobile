@@ -23,6 +23,12 @@ struct ClipFeedFilter: Equatable, Sendable {
     /// matched against the post's resolved activity (`ClipActivity`) — so a Quick Session climb or a climbing
     /// workout imported from Health is Climbing, not "Gym". nil = all. Mutually exclusive by construction.
     var activity: ClipFeedPost.Discipline? = nil
+    /// One FESTIVAL (its pack id) — prompt 171: a chip per festival you have clips from. Exclusive with
+    /// `activity` (one "what" at a time); the chip strip enforces it.
+    var festivalPack: String? = nil
+    /// Inside a festival: one artist, or the clips not matched to an artist yet.
+    enum ArtistPick: Equatable, Sendable { case artist(String), untagged }
+    var festivalArtist: ArtistPick? = nil
     var kind: MediaKind = .all
     var favoritesOnly: Bool = false
     /// Show only posted highlight reels (highlights P2). Stacks with the other chips, like Favorites.
@@ -38,7 +44,7 @@ struct ClipFeedFilter: Equatable, Sendable {
     /// Whether anything narrows the feed — drives the "N of M posts · Clear" line, the no-match state,
     /// and the fast path (inactive ⇒ `apply` returns the input untouched).
     var isActive: Bool {
-        !trimmedQuery.isEmpty || activity != nil || kind != .all || favoritesOnly || reelsOnly || sendsOnly
+        !trimmedQuery.isEmpty || activity != nil || festivalPack != nil || kind != .all || favoritesOnly || reelsOnly || sendsOnly
             || showHidden
     }
 
@@ -73,6 +79,14 @@ struct ClipFeedFilter: Equatable, Sendable {
             if reelsOnly, !post.isReel { return false }
             if sendsOnly, post.climbResult?.status.isSend != true { return false }
             if let activity, post.discipline != activity { return false }
+            if let pack = festivalPack {
+                guard post.festival?.packID == pack else { return false }
+                switch festivalArtist {
+                case .artist(let a)?: if post.festival?.artist != a { return false }
+                case .untagged?: if post.festival?.artist != nil { return false }
+                case nil: break
+                }
+            }
             switch kind {
             case .all: break
             case .videos: if !post.clips.contains(where: { $0.media.kind == "video" }) { return false }

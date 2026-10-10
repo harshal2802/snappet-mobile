@@ -62,7 +62,9 @@ enum ClipFeedSections {
     /// session, plus its angle and an Apple Watch marker — "Sat 27 Sep · Climbing · Apple Watch".
     static func detail(_ post: ClipFeedPost, dayLabel: String, activity: ClipFeedPost.Discipline) -> String {
         var parts = [dayLabel]
-        parts.append(post.kind == .kilter ? "Kilter" : activity.label)
+        // A festival night names its festival (prompt 171), not the generic "Festival".
+        parts.append(post.kind == .kilter ? "Kilter"
+                     : activity == .festival ? (post.festival?.name ?? activity.label) : activity.label)
         if let a = post.sessionAngle { parts.append("\(a)°") }
         if post.isFromAppleWatch { parts.append("Apple Watch") }
         return parts.joined(separator: " · ")

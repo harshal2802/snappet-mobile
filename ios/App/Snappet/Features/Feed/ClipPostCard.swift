@@ -59,6 +59,8 @@ struct ClipPostCard: View {
     let showingHidden: Bool
     let onHide: (Set<UUID>) -> Void
     let onUnhide: (Set<UUID>) -> Void
+    /// "Tag artist" (prompt 171) — set only for a festival post not matched to an artist yet.
+    let onTagArtist: (() -> Void)?
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -272,6 +274,10 @@ struct ClipPostCard: View {
             if editableClipIDs.count > 1 {
                 Button { editAllClips() } label: { Label("Edit all · \(editableClipIDs.count)", systemImage: "rectangle.stack") }
             }
+            if let onTagArtist {
+                Button(action: onTagArtist) { Label("Tag artist…", systemImage: "music.mic") }
+                    .accessibilityIdentifier("clips.post.tagArtist")
+            }
             Button { goToSession() } label: { Label("Go to session", systemImage: "arrow.up.forward.square") }
             // Hide from Clips (prompt 164) — non-destructive: the clip stays in the session and Photos.
             Divider()
@@ -405,10 +411,25 @@ struct ClipPostCard: View {
     }
 
     private var meta: some View {
-        Text("\(post.clipCount) clip\(post.clipCount == 1 ? "" : "s") · \(post.captureAt.formatted(.relative(presentation: .named)))")
-            .font(.caption).foregroundStyle(SnappetColor.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SnappetSpacing.lg)
+        HStack(spacing: 8) {
+            Text("\(post.clipCount) clip\(post.clipCount == 1 ? "" : "s") · \(post.captureAt.formatted(.relative(presentation: .named)))")
+                .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+            Spacer(minLength: 0)
+            // "Tag artist" (prompt 171): a festival clip not matched to a set yet — one tap to the review.
+            if let onTagArtist {
+                Button(action: onTagArtist) {
+                    Label("Tag artist", systemImage: "music.mic")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(SnappetColor.festival)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(SnappetColor.festival.opacity(0.14), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("clips.post.tagArtistButton")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SnappetSpacing.lg)
     }
 
     // MARK: ⋯ actions — reuse the existing Studio + session-detail entry points
