@@ -169,7 +169,8 @@ struct ClipsFeedView: View {
                                 // Filter chips — visible, not buried in a toolbar glyph (the #264 lesson);
                                 // scrolls away with content so browsing costs no vertical space. Hidden
                                 // while the search field is up (one control in charge at a time).
-                                ClipFilterChipStrip(filter: $filter, hiddenCount: reactions.hiddenIDs.count)
+                                ClipFilterChipStrip(filter: $filter, hiddenCount: reactions.hiddenIDs.count,
+                                                    activities: activityChips(unhidden))
                                 if filter.isActive {
                                     resultLine(visible: visible.count, total: posts.count)
                                 }
@@ -331,6 +332,16 @@ struct ClipsFeedView: View {
                      showingHidden: filter.showHidden,
                      onHide: hide, onUnhide: { reactions.unhide($0) })
             .id(post.id)
+    }
+
+    /// The activity chips to show (prompt 170): the activities present in the (non-hidden) feed, plus the
+    /// selected one so it can always be turned off.
+    private func activityChips(_ posts: [ClipFeedPost]) -> [ClipFeedPost.Discipline] {
+        var present = ClipActivity.present(in: posts)
+        if let a = filter.activity, !present.contains(a) {
+            present = ClipActivity.chipOrder.filter { present.contains($0) || $0 == a }
+        }
+        return present
     }
 
     // MARK: Hide from Clips (prompt 164)
@@ -520,6 +531,8 @@ struct ClipsFeedView: View {
         let kilterByID = Dictionary(kilterSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let workoutByID = Dictionary(workoutSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
+        /// Festival nights (sessions with an "I'm here" attendance row) — their untagged clips read as festival.
+        let festivalSessionIDs = Set(festivalAttendance.map(\.sessionID))
         var bundles: [ClipFeedComposer.SessionBundle] = []
         var hr: [UUID: ClipFeedHR] = [:]
         for (sid, clips) in bySession {
@@ -529,10 +542,20 @@ struct ClipsFeedView: View {
                     angle: k.angle), clips: clips, climbResults: kilterResults[sid] ?? [:]))
                 hr[sid] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
             } else if let w = workoutByID[sid] {
+                // What the workout actually WAS (prompt 170): per tagged exercise, and for the whole
+                // session — a festival night, a Health import by its workout type, else the most common
+                // exercise activity.
+                let exerciseActivity = Dictionary(w.exercises.map { ($0.id.uuidString, ClipActivity.forExercise($0.discipline)) },
+                                                  uniquingKeysWith: { a, _ in a })
+                let sessionActivity: ClipFeedPost.Discipline =
+                    festivalSessionIDs.contains(sid) ? .festival
+                    : w.isImportedFromHealth ? ClipActivity.forImportLabel(w.routineName)
+                    : ClipActivity.dominant(Array(exerciseActivity.values))
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .gym,
                     title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
                     angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips,
-                    climbResults: Self.quickSessionClimbResults(w.exercises)))
+                    climbResults: Self.quickSessionClimbResults(w.exercises),
+                    exerciseActivity: exerciseActivity, sessionActivity: sessionActivity))
                 hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).

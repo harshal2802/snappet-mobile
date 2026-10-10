@@ -170,16 +170,11 @@ struct WeeklyReelHeroCard: View {
 struct ClipSessionHeader: View {
     let section: ClipFeedSection
 
-    private var accent: Color {
-        if section.isFromAppleWatch { return SnappetColor.perfFresh }
-        if section.discipline == .festival { return SnappetColor.festival }
-        return section.kind == .kilter ? SnappetColor.kilter : SnappetColor.workout
-    }
-    private var glyph: String {
-        if section.isFromAppleWatch { return "applewatch" }
-        if section.discipline == .festival { return "music.mic" }
-        return section.kind == .kilter ? "figure.climbing" : "figure.strengthtraining.traditional"
-    }
+    /// The session's ACTIVITY drives glyph + accent (prompt 170) — an imported climbing workout reads as a
+    /// climb, not a dumbbell.
+    private var activity: ClipFeedPost.Discipline { section.discipline ?? .general }
+    private var accent: Color { activity.accent }
+    private var glyph: String { activity.symbol }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -207,7 +202,8 @@ struct ClipSessionHeader: View {
 
 // MARK: - Filter chip strip (prompt 107)
 
-/// The Clips filter chips: ♥ Favorites · Climbs · Gym · Videos · Photos. Visible above the feed (the
+/// The Clips filter chips: ♥ Favorites · Reels · the activities you have (Climbing + Sends, Strength,
+/// Cardio, Dance, Mobility, Festival, Other — prompt 170) · Videos · Photos · Hidden. Visible above the feed (the
 /// #264 lesson — filters people can SEE get used), scrolls away with content, and hides entirely while
 /// the search field is up (one control in charge at a time; matches the wireframe). Discipline and
 /// media-kind pairs are mutually exclusive by construction (one enum value each); Favorites stacks
@@ -216,6 +212,9 @@ struct ClipFilterChipStrip: View {
     @Binding var filter: ClipFeedFilter
     /// Clips hidden from Clips (prompt 164) — the Hidden chip appears only when there are some.
     let hiddenCount: Int
+    /// The activities present in the feed, in chip order (prompt 170) — plus the selected one, so a chip
+    /// that filtered everything away can still be turned off.
+    let activities: [ClipFeedPost.Discipline]
     @Environment(\.isSearching) private var isSearching
 
     var body: some View {
@@ -230,24 +229,20 @@ struct ClipFilterChipStrip: View {
                          on: filter.reelsOnly, id: "clips.filter.reels") {
                         filter.reelsOnly.toggle()
                     }
-                    chip("Climbs", icon: "figure.climbing", accent: SnappetColor.kilter,
-                         on: filter.discipline == .climbs, id: "clips.filter.climbs") {
-                        filter.discipline = filter.discipline == .climbs ? .all : .climbs
-                    }
-                    // Sends (prompt 161): flashes + sends, Kilter or Quick Session. Stacks like Favorites.
-                    chip("Sends", icon: "checkmark.seal.fill", accent: SnappetColor.perfFresh,
-                         on: filter.sendsOnly, id: "clips.filter.sends") {
-                        filter.sendsOnly.toggle()
-                    }
-                    chip("Gym", icon: "figure.strengthtraining.traditional", accent: SnappetColor.workout,
-                         on: filter.discipline == .gym, id: "clips.filter.gym") {
-                        filter.discipline = filter.discipline == .gym ? .all : .gym
-                    }
-                    // The ONE festival chip (festival prompt 03) — the wireframe's 🎪, in the
-                    // strip's SF-symbol grammar with the module's UV-orchid accent.
-                    chip("Festival", icon: "music.mic", accent: SnappetColor.festival,
-                         on: filter.discipline == .festival, id: "clips.filter.festival") {
-                        filter.discipline = filter.discipline == .festival ? .all : .festival
+                    // Activity chips (prompt 170) — only activities you HAVE posts for, in a fixed order;
+                    // one at a time. Sends rides right after Climbing (it's a climbing outcome).
+                    ForEach(activities, id: \.self) { a in
+                        chip(a.label, icon: a.symbol, accent: a.accent,
+                             on: filter.activity == a, id: "clips.filter.\(a.rawValue)") {
+                            filter.activity = filter.activity == a ? nil : a
+                        }
+                        if a == .climbing {
+                            // Sends (prompt 161): flashes + sends, Kilter or Quick Session. Stacks like Favorites.
+                            chip("Sends", icon: "checkmark.seal.fill", accent: SnappetColor.perfFresh,
+                                 on: filter.sendsOnly, id: "clips.filter.sends") {
+                                filter.sendsOnly.toggle()
+                            }
+                        }
                     }
                     chip("Videos", icon: "play.rectangle", accent: SnappetColor.brand,
                          on: filter.kind == .videos, id: "clips.filter.videos") {
@@ -287,5 +282,23 @@ struct ClipFilterChipStrip: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+// MARK: - Activity accents (prompt 170)
+
+extension ClipFeedPost.Discipline {
+    /// The activity's colour — existing tokens: climbing = Kilter amber, strength = Workout orange,
+    /// cardio = blue, dance = purple, mobility = teal, festival = orchid, other = brand.
+    var accent: Color {
+        switch self {
+        case .climbing: return SnappetColor.kilter
+        case .strength: return SnappetColor.workout
+        case .cardio: return SnappetColor.budget
+        case .dance: return SnappetColor.journal
+        case .mobility: return SnappetColor.tip
+        case .festival: return SnappetColor.festival
+        case .general: return SnappetColor.brand
+        }
     }
 }

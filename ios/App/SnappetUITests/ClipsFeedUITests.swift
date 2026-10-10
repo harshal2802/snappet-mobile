@@ -84,34 +84,29 @@ import XCTest
         let feed = app.scrollViews["clips.feed"]
         feed.swipeDown(); feed.swipeDown()                        // back to the chips
 
-        // The 🎪 chip narrows the feed to festival posts: the dance session's untagged
-        // session-clips post disappears, the set post stays. (Counted by post menus — the session's
-        // name is also its header now, prompt 167, so the text alone can't tell the post is gone.)
+        // Activity chips (prompt 170): the night is a FESTIVAL session ("I'm here" attendance), so its
+        // untagged clips are festival too — the strip offers Festival and no Climbing/Strength chips (there
+        // are no such posts), and the Festival chip keeps BOTH of the night's posts.
         let chip = app.buttons["clips.filter.festival"]
-        XCTAssertTrue(chip.waitForExistence(timeout: 6), "the one new festival chip exists")
-        let menus = app.buttons.matching(identifier: "clips.post.menu")
-        XCTAssertTrue(app.staticTexts["Snappet Test Festival"].waitForExistence(timeout: 6),
-                      "the untagged clips still post under the session title")
-        // The chip strip scrolls horizontally; the festival chip sits past the fold on a phone once the
-        // Sends chip joined it (prompt 161) — swipe the strip like a person would.
+        XCTAssertTrue(chip.waitForExistence(timeout: 6), "the Festival activity chip exists")
+        XCTAssertFalse(app.buttons["clips.filter.climbing"].exists, "no climbing posts → no Climbing chip")
+        XCTAssertFalse(app.buttons["clips.filter.strength"].exists, "no strength posts → no Strength chip")
         let strip = app.scrollViews["clips.filter.chips"]
         // (Frame check, not `isHittable` — that throws for an element outside the screen.)
         let screen = app.windows.firstMatch.frame
         for _ in 0..<3 where !screen.contains(chip.frame) { strip.swipeLeft() }
         chip.tap()
-        let onePost = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 1"), object: menus)
-        XCTAssertEqual(XCTWaiter().wait(for: [onePost], timeout: 6), .completed,
-                       "the festival chip hides non-festival posts")
-        XCTAssertTrue(reveal(title, in: app, timeout: 2), "…and keeps the artist · stage post")
+        let results = app.descendants(matching: .any)["clips.filter.results"]
+        XCTAssertTrue(results.waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["2 of 2 posts"].waitForExistence(timeout: 4),
+                      "both of the festival night's posts are Festival")
+        XCTAssertTrue(reveal(title, in: app, timeout: 2), "…including the artist · stage post")
 
-        // Tapping the active chip clears it — everything returns.
+        // Tapping the active chip clears it.
         feed.swipeDown(); feed.swipeDown()
         chip.tap()
-        // (Not a post count: the second post is below the fold, where the lazy stack hasn't built it.)
-        let results = app.descendants(matching: .any)["clips.filter.results"]
         let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: results)
         XCTAssertEqual(XCTWaiter().wait(for: [cleared], timeout: 6), .completed, "the filter is off again")
-        XCTAssertFalse(chip.isSelected)
     }
 
     /// Prompt 163: the ✎ Overlay style sheet opens from the toolbar, a change saves on Done, and it's

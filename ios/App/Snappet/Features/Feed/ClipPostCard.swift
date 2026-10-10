@@ -78,17 +78,9 @@ struct ClipPostCard: View {
     @State private var fullscreen: ClipFullscreen?
 
     private var accent: Color {
-        // A posted reel reads as a REEL first (reels-coral), whatever session it came from.
-        if post.isReel { return SnappetColor.reels }
-        // Apple Watch imports get the perf-green source tint (a data/state hue, not a wayfinding accent)
-        // so they read as "from your watch" regardless of the underlying discipline (watch-workouts-clips P3).
-        if post.isFromAppleWatch { return SnappetColor.perfFresh }
-        switch post.discipline {
-        case .climbing: return SnappetColor.kilter
-        case .strength: return SnappetColor.workout
-        case .festival: return SnappetColor.festival
-        case .general: return SnappetColor.brand
-        }
+        // A posted reel reads as a REEL first (reels-coral), whatever session it came from. Otherwise the
+        // post's ACTIVITY (prompt 170) — the ⌚ source badge in the header carries "from your watch".
+        post.isReel ? SnappetColor.reels : post.discipline.accent
     }
 
     /// Adaptive tile height (prompt 92): the full-bleed card width ÷ the post's clamped aspect, so the
@@ -244,14 +236,7 @@ struct ClipPostCard: View {
     }
 
     private var glyph: String {
-        if post.isReel { return "sparkles.tv" }
-        if post.isFromAppleWatch { return "applewatch" }
-        switch post.discipline {
-        case .climbing: return "figure.climbing"
-        case .strength: return "figure.strengthtraining.traditional"
-        case .festival: return "music.mic"
-        case .general: return "sparkles"
-        }
+        post.isReel ? "sparkles.tv" : post.discipline.symbol
     }
 
     private var optionsMenu: some View {
