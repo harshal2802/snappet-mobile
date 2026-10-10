@@ -286,6 +286,29 @@ struct HROverlayValues {
     /// RR for HRV, empty HR). Placement is NOT stored here: the pure `HRTileLayout` derives every slot
     /// from the template + the tile rect. Returns `nil` when the tile would draw nothing (no metric with
     /// data **and** no chart). Pure + `Sendable`.
+    /// Whether `resolveTile(tile)` would return a tile — the SAME answer, without building any segments
+    /// (Clips perf, 2026-10-06). `resolveTile` runs up to 60 readings per animated metric to build its
+    /// segments; the Clips feed only needs "would this draw anything?" for every clip (1,771 on a real
+    /// library), which made the feed's compose 5.7 s on device. A chart draws on its own; otherwise the
+    /// first reading found for any enabled metric settles it. Equivalence is unit-tested.
+    func wouldDraw(_ tile: HRTile) -> Bool {
+        if tile.showChart { return true }
+        for entry in tile.entries where entry.on {
+            var el = HROverlayElement(metric: entry.metric, colorHex: entry.colorHex)
+            el.live = entry.live
+            el.animated = entry.animated
+            guard el.isAnimated else {
+                if reading(for: el, atFraction: el.isLive ? chartFraction(forVideoFraction: 0) : 0.0) != nil { return true }
+                continue
+            }
+            let n = 60
+            for i in 0..<n where reading(for: el, atFraction: chartFraction(forVideoFraction: Double(i) / Double(n - 1))) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
     func resolveTile(_ tile: HRTile) -> ResolvedHRTile? {
         let resolved: [ResolvedTileMetric] = tile.entries.filter(\.on).compactMap { entry in
             var el = HROverlayElement(metric: entry.metric, colorHex: entry.colorHex)

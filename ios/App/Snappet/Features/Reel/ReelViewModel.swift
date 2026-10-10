@@ -352,8 +352,8 @@ final class ReelViewModel {
         // The user's Clips overlay default (prompt 163), falling back to the built-in scorebug when it
         // would draw nothing — the same fallback the burn applies.
         let styled = styleTile(restHR: wk.restBpm)
-        let tile = values.resolveTile(styled) != nil ? styled : HRTile.feedClipScorebug(restHR: wk.restBpm)
-        guard values.resolveTile(tile) != nil else { return nil }
+        let tile = values.wouldDraw(styled) ? styled : HRTile.feedClipScorebug(restHR: wk.restBpm)
+        guard values.wouldDraw(tile) else { return nil }
         return (tile, values)
     }
 
