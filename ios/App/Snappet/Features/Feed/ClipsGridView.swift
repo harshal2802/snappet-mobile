@@ -55,6 +55,11 @@ private struct GridShareItem: Identifiable {
     let url: URL
 }
 
+private struct GridShareItems: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
 struct ClipsGridView: View {
     let posts: [ClipFeedPost]
     /// Per-clip HR payloads (media id → payload) — a cover's peak ♥ and the month's peak.
@@ -76,6 +81,9 @@ struct ClipsGridView: View {
     @State private var shareItem: GridShareItem?
     @State private var preparingShare = false
     @State private var shareFailed = false
+    /// Select mode (prompt 175): the picked posts' ids; nil = not selecting.
+    @State private var selection: Set<String>?
+    @State private var shareItems: GridShareItems?
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
     private let calendar = Calendar.current
@@ -105,8 +113,14 @@ struct ClipsGridView: View {
                                         ForEach(month.posts) { post in
                                             cell(post)
                                                 .id(post.id)
-                                                .onTapGesture { onPick(post.id); dismiss() }
-                                                .contextMenu { menu(post) } preview: { preview(post) }
+                                                .onTapGesture {
+                                                    if selection != nil { toggle(post.id) }   // select mode
+                                                    else { onPick(post.id); dismiss() }
+                                                }
+                                                .overlay(alignment: .bottomTrailing) {
+                                                    if let selection { selectMark(selection.contains(post.id)) }
+                                                }
+                                                .contextMenu { if selection == nil { menu(post) } } preview: { preview(post) }
                                         }
                                     } header: {
                                         monthHeader(month)
@@ -125,11 +139,28 @@ struct ClipsGridView: View {
                 }
             }
             .background(SnappetColor.paper)
-            .navigationTitle("All clips")
+            .navigationTitle(selection.map { "\($0.count) selected" } ?? "All clips")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                // Select mode (prompt 175): Select ⇄ Cancel on the left; Done ⇄ All on the right.
+                ToolbarItem(placement: .topBarLeading) {
+                    if actions != nil, !posts.isEmpty {
+                        Button(selection == nil ? "Select" : "Cancel") {
+                            selection = selection == nil ? [] : nil
+                        }
+                        .accessibilityIdentifier("clips.grid.select")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if selection != nil {
+                        Button("All") { selection = Set(posts.map(\.id)) }
+                            .accessibilityIdentifier("clips.grid.selectAll")
+                    } else {
+                        Button("Done") { dismiss() }
+                    }
+                }
             }
+            .safeAreaInset(edge: .bottom) { if let selection { selectBar(selection) } }
             // "✦ Make reel" for a month (prompt 173) — the shared reel builder over that month's sessions.
             .navigationDestination(for: ClipsReelRoute.self) { route in WeeklyReelHostView(scope: route.scope) }
         }
@@ -145,6 +176,11 @@ struct ClipsGridView: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url], onComplete: { _, _ in try? FileManager.default.removeItem(at: item.url) })
         }
+        .sheet(item: $shareItems) { items in
+            ShareSheet(items: items.urls, onComplete: { _, _ in
+                for u in items.urls { try? FileManager.default.removeItem(at: u) }
+            })
+        }
         .overlay {
             if preparingShare {
                 ProgressView("Preparing…").padding(20)
@@ -154,6 +190,80 @@ struct ClipsGridView: View {
         .alert("Couldn’t prepare this clip", isPresented: $shareFailed) {
             Button("OK", role: .cancel) {}
         } message: { Text("The clip couldn’t be exported to share. Try again from the post’s ⋯ menu.") }
+    }
+
+    // MARK: Select mode (prompt 175)
+
+    private func toggle(_ id: String) {
+        guard var s = selection else { return }
+        if s.contains(id) { s.remove(id) } else { s.insert(id) }
+        selection = s
+    }
+
+    private func selectMark(_ on: Bool) -> some View {
+        ZStack {
+            Circle().fill(on ? SnappetColor.brand : .black.opacity(0.3))
+            Circle().strokeBorder(.white, lineWidth: 1.5)
+            if on { Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white) }
+        }
+        .frame(width: 20, height: 20)
+        .padding(5)
+        .allowsHitTesting(false)
+        .accessibilityIdentifier(on ? "clips.grid.selected" : "clips.grid.unselected")
+    }
+
+    /// Favorite · ✦ Make reel · Share · Hide for the picked posts.
+    private func selectBar(_ picked: Set<String>) -> some View {
+        let none = picked.isEmpty
+        let allFav = reactions.map { r in ClipGridModel.allFavorite(picked, in: posts, isFavorite: r.isFavorite) } ?? false
+        return HStack {
+            barButton(allFav ? "Unfavorite" : "Favorite", allFav ? "heart.slash" : "heart", id: "clips.grid.bulk.favorite") {
+                guard let actions else { return }
+                for p in posts where picked.contains(p.id) && actions.isFavorite(p) == allFav { actions.toggleFavorite(p) }
+            }
+            NavigationLink(value: ClipsReelRoute(scope: .clips(ClipGridModel.mediaIDs(of: picked, in: posts)))) {
+                barLabel("Make reel", "sparkles", hot: true)
+            }
+            .accessibilityIdentifier("clips.grid.bulk.reel")
+            barButton("Share", "square.and.arrow.up", id: "clips.grid.bulk.share") { shareMany(picked) }
+            barButton("Hide", "eye.slash", id: "clips.grid.bulk.hide") {
+                guard let actions else { return }
+                for p in posts where picked.contains(p.id) { actions.hide(p) }
+                selection = []
+            }
+        }
+        .disabled(none)
+        .opacity(none ? 0.45 : 1)
+        .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
+        .background(.bar)
+    }
+
+    private func barButton(_ title: String, _ icon: String, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { barLabel(title, icon, hot: false) }
+            .accessibilityIdentifier(id)
+    }
+
+    private func barLabel(_ title: String, _ icon: String, hot: Bool) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 17, weight: .semibold))
+            Text(title).font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(hot ? SnappetColor.reels : SnappetColor.ink)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Share the picked posts' videos (one per post, raw) in one share sheet.
+    private func shareMany(_ picked: Set<String>) {
+        let ids = ClipGridModel.shareables(of: picked, in: posts)
+        guard !preparingShare else { return }
+        guard !ids.isEmpty else { shareFailed = true; return }
+        preparingShare = true
+        Task { @MainActor in
+            var urls: [URL] = []
+            for id in ids { if let u = await ClipShareService.exportForSharing(localIdentifier: id) { urls.append(u) } }
+            preparingShare = false
+            if urls.isEmpty { shareFailed = true } else { shareItems = GridShareItems(urls: urls) }
+        }
     }
 
     // MARK: Long-press (prompt 174)
