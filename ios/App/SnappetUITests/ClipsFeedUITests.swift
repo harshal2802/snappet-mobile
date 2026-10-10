@@ -204,4 +204,22 @@ import XCTest
         XCTAssertTrue(app.staticTexts["clips.grid.month"].firstMatch.waitForExistence(timeout: 6),
                       "the grid groups covers under a month header")
     }
+
+    /// Prompt 172: "Tag artist" opens the Festival review ON the clip you tapped — pinned in a highlighted
+    /// "From Clips" card at the top, not lost in the day's list.
+    func testTagArtistOpensReviewOnTheTappedClip() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let tag = app.buttons["clips.post.tagArtistButton"].firstMatch
+        XCTAssertTrue(reveal(tag, in: app), "the festival night's unmatched post offers Tag artist")
+        // It sits at the bottom of the post — scroll until it's actually on screen before tapping.
+        let screen = app.windows.firstMatch.frame.insetBy(dx: 0, dy: 100)
+        for _ in 0..<4 where !screen.contains(tag.frame) { app.scrollViews["clips.feed"].swipeUp(velocity: .slow) }
+        tag.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["festival.review.focus"].waitForExistence(timeout: 15),
+                      "the review pins the tapped clip in the From Clips card")
+        XCTAssertTrue(app.buttons["festival.review.focus.change"].firstMatch.exists)
+    }
 }

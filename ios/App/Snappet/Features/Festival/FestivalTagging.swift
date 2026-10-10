@@ -120,6 +120,17 @@ enum FestivalTagging {
     /// The sets a Change › dialog offers for an assignment: the assignment's own evidence first
     /// (proposed set, gap neighbours, every live candidate), deduped, in start order. The dialog
     /// appends "Not from a set" itself — that's a resolution, not a candidate.
+    /// Every set in `sets`, the ones nearest the moment you filmed first (0 = playing then; else minutes
+    /// before its start / after its end) — the "Pick another set…" list, so any clip can be tagged to any
+    /// artist, not only to the matcher's candidates (Clips "Tag artist", prompt 172).
+    static func setsByProximity(_ sets: [FestivalSet], to capture: Date) -> [FestivalSet] {
+        func gap(_ s: FestivalSet) -> TimeInterval {
+            capture < s.start ? s.start.timeIntervalSince(capture)
+                : capture > s.end ? capture.timeIntervalSince(s.end) : 0
+        }
+        return sets.sorted { (gap($0), $0.start, $0.artist) < (gap($1), $1.start, $1.artist) }
+    }
+
     static func candidates(for assignment: FestivalSetMatcher.Assignment) -> [FestivalSet] {
         var sets: [FestivalSet] = []
         if let set = assignment.set { sets.append(set) }

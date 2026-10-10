@@ -80,4 +80,19 @@ final class ClipFestivalChipsTests: XCTestCase {
         XCTAssertEqual(s.count, 1)
         XCTAssertTrue(s[0].detail?.hasSuffix("· Lost Lands 2026") == true, s[0].detail ?? "")
     }
+
+    // MARK: Tag artist → "Pick another set…" (prompt 172)
+
+    /// Any clip can be tagged to any artist: the day's sets, the one playing when you filmed first, then by
+    /// how close each was to that moment.
+    func testSetsByProximityPutsWhatWasPlayingFirst() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        func set(_ a: String, _ startMin: Double, _ endMin: Double) -> FestivalSet {
+            FestivalSet(artist: a, start: t0.addingTimeInterval(startMin * 60), end: t0.addingTimeInterval(endMin * 60))
+        }
+        let sets = [set("Early", 0, 60), set("Playing", 90, 150), set("Next", 160, 220), set("Late", 300, 360)]
+        let capture = t0.addingTimeInterval(120 * 60)                  // inside "Playing"
+        XCTAssertEqual(FestivalTagging.setsByProximity(sets, to: capture).map(\.artist),
+                       ["Playing", "Next", "Early", "Late"])            // 0, 40, 60, 180 min away
+    }
 }
