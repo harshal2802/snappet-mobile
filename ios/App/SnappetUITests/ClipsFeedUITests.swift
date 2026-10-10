@@ -222,4 +222,21 @@ import XCTest
                       "the review pins the tapped clip in the From Clips card")
         XCTAssertTrue(app.buttons["festival.review.focus.change"].firstMatch.exists)
     }
+
+    /// Prompt 173: the grid's month header summarises the month, shows the day strip, and offers a month reel.
+    func testGridMonthHeaderSummaryDayStripAndReel() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let grid = app.buttons["clips.grid.button"]
+        XCTAssertTrue(grid.waitForExistence(timeout: 15))
+        grid.tap()
+        XCTAssertTrue(app.staticTexts["clips.grid.month"].firstMatch.waitForExistence(timeout: 6))
+        XCTAssertTrue(app.descendants(matching: .any)["clips.grid.dayStrip"].firstMatch.exists)
+        let reel = app.buttons["clips.grid.monthReel"].firstMatch
+        XCTAssertTrue(reel.exists, "the month offers ✦ Make reel")
+        reel.tap()
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 10), "the reel builder opens")
+    }
 }

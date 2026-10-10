@@ -325,7 +325,14 @@ struct ClipsFeedView: View {
             }
             .sheet(isPresented: $showGrid) {
                 // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
-                ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
+                // The same posts, chips and filter as the feed (prompt 173) — the grid and the feed agree.
+                ClipsGridView(posts: visible, payloads: cachedPayloads, reactions: reactions, filter: $filter,
+                              chips: ClipGridChips(hiddenCount: reactions.hiddenIDs.count,
+                                                   activities: activityChips(unhidden),
+                                                   festivals: ClipFestivalChips.festivals(in: unhidden),
+                                                   artistRow: filter.festivalPack.map {
+                                                       ClipFestivalChips.artists(in: unhidden, packID: $0) }),
+                              onPick: { scrollTarget = $0 })
             }
         }
     }

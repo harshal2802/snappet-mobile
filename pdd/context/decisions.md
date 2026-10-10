@@ -9829,3 +9829,11 @@ stripes, and the panel read as an opaque slab.
 - A clip marked "Not from a set" was unreachable from the review — the pinned card makes every state editable.
 - "Pick another set…" orders the day's sets by distance from the filmed moment, so the right artist is near the top
   even when the matcher had no candidate.
+
+## 2026-10-10 — Clips grid: one reel host for week / month / picked clips (prompts 173–176)
+
+- The weekly reel's stitch works for ANY set of sessions, so `ReelSource.collection` + `WeeklyReelHostView(scope:)`
+  serve the week (hero), a month (grid header) and hand-picked clips (select mode) — one builder, one export path.
+  A month condenses to highlight moments (`trimToHighlights`); hand-picked clips play in full.
+- The grid shows the feed's chip strip on the SAME filter binding (not a second filter) — the grid is a view of the
+  feed, never a different set of posts.
