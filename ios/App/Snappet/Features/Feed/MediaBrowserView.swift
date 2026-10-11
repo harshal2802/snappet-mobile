@@ -191,11 +191,8 @@ struct ClipThumbnail: View {
         //     first pixel, which is what made scrolling feel like it was lagging behind.
         guard exactFrame else {
             let thumb = await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
-            // Decode OFF the main thread before it's shown — otherwise the bitmap decodes lazily on main the
-            // first time it's drawn, a 40–70 ms hitch per cover while the grid scrolls (device probe 2026-10-10).
-            let ready = await thumb?.byPreparingForDisplay() ?? thumb
             guard !Task.isCancelled else { return }
-            if let ready { image = ready; loadedKey = key }
+            if let thumb { image = thumb; loadedKey = key }
             return
         }
 
