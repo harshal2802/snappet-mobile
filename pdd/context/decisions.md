@@ -9849,3 +9849,20 @@ stripes, and the panel read as an opaque slab.
   verified in the simulator (synthetic pinch inside a ScrollView isn't recognised).
 - (2026-10-10 follow-up) Grid column switches never animate the relayout (it lagged); the month scrubber is a
   Photos-style handle that only appears while scrolling — a permanent column of month labels read as clutter.
+
+## 2026-10-10 — Clips grid moves to UICollectionView for a Photos-style zoom (prompt 177)
+
+- **SwiftUI LazyVGrid can't do a smooth column-count change.** Changing the column count re-laid out the whole grid
+  on main in one pass (370–620 ms, measured). The grid is now a custom `UICollectionViewLayout` over pure geometry
+  (`ClipGridGeometry`), and a zoom interpolates each visible cover's frame between two levels. Covers are UIKit,
+  because resizing hosted SwiftUI every frame is the expensive part. The rich month header stays SwiftUI.
+- **The scroll offset moves with the zoom** (offsets interpolate along with the frames), so the cover under the
+  fingers stays put. `anchoredOffset` is the pure, tested part.
+- **Never write UserDefaults during an interaction on a screen presented over an `@AppStorage` view.** SwiftUI's
+  AppStorage re-evaluates its view on ANY defaults change, so saving the zoom level mid-pinch re-ran the whole Clips
+  feed body behind the sheet (about 120 ms, every pinch). Keep it in `@State` and save on close.
+- **Interpolated layouts should only return elements inside the requested rect**, so cells entering during a zoom are
+  created a few per frame rather than all on the first frame. Expensive supplementary views (hosted SwiftUI) that a
+  zoom will need stay alive at alpha 0.
+- Year is a 9-across mosaic (wireframe option A), not Photos-style year cards: covers keep flowing between levels,
+  where cards would force a cross-fade.
