@@ -37,6 +37,27 @@ enum AssetPosterLoader {
         }
     }
 
+    /// Thumbnails already handed to Photos' cache (deduped; cleared wholesale past a few screens' worth).
+    private static var warmedThumbs: Set<String> = []
+
+    /// Warm Photos' thumbnail cache for covers about to scroll into view (the Clips grid, 2026-10-10 perf).
+    /// Same target size + options as `poster(...)`, so the later request is a cache hit.
+    static func warmThumbnails(_ ids: [String], pointSize: CGSize) {
+        let new = ids.filter { !warmedThumbs.contains($0) }
+        guard !new.isEmpty else { return }
+        if warmedThumbs.count > 400 { warmedThumbs.removeAll() }
+        warmedThumbs.formUnion(new)
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: new, options: nil)
+        var assets: [PHAsset] = []
+        result.enumerateObjects { a, _, _ in assets.append(a) }
+        guard !assets.isEmpty else { return }
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = false
+        manager.startCachingImages(for: assets, targetSize: CGSize(width: pointSize.width * 3, height: pointSize.height * 3),
+                                   contentMode: .aspectFill, options: options)
+    }
+
     /// Frame-0 posters are big — a full-tile 3× baked bitmap is ~10 MB — so an unbounded dictionary held
     /// ~500 MB for a 50-video session and never let go (memory-pressure / jetsam risk, prompt 106).
     /// `NSCache` is byte-cost-bounded and evicts automatically under system memory pressure; a re-request

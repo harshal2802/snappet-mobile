@@ -147,6 +147,9 @@ struct ClipThumbnail: View {
     /// The poster timestamp (seconds into the asset) — a Studio-trimmed clip passes its kept-range
     /// start (prompt 116) so the still equals the first frame the trimmed player displays.
     var posterTime: Double = 0
+    /// `false` = the cheap Photos thumbnail only, never the exact frame-0 decode (70–120 ms a video). The grid
+    /// uses it (2026-10-10 perf): the exact frame only matters where a poster hands over to the playing video.
+    var exactFrame: Bool = true
     @State private var image: UIImage?
     /// The (identifier, time) the current `image` was loaded for — so an enabled-flag flip doesn't
     /// re-decode a loaded poster, but a re-trim (new `posterTime`) does.
@@ -186,6 +189,13 @@ struct ClipThumbnail: View {
         //     it. The exact frame is what makes the poster→video handoff invisible when the clip
         //     actually plays, and it still arrives long before a tap — but it no longer gates the
         //     first pixel, which is what made scrolling feel like it was lagging behind.
+        guard exactFrame else {
+            let thumb = await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
+            guard !Task.isCancelled else { return }
+            if let thumb { image = thumb; loadedKey = key }
+            return
+        }
+
         if kind == "video",
            let cached = AssetPosterLoader.cachedFrameZero(localIdentifier: localIdentifier, at: posterTime) {
             image = cached
