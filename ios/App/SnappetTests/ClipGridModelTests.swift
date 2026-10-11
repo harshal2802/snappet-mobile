@@ -80,10 +80,5 @@ final class ClipGridModelTests: XCTestCase {
         XCTAssertEqual(ClipGridModel.columns(afterPinch: 1.5, current: 5), 3)
         XCTAssertEqual(ClipGridModel.columns(afterPinch: 1.0, current: 5), 5)
 
-        let posts = [post("a", session: UUID(), day: 3, month: 1), post("b", session: UUID(), day: 3, month: 12)]
-        var p2 = posts[1]; p2.sessionStartedAt = cal.date(from: DateComponents(year: 2025, month: 12, day: 3))!
-        let months = ClipGridModel.months([posts[0], p2], peak: { _ in nil }, calendar: cal, locale: Locale(identifier: "en_US"))
-        XCTAssertEqual(ClipGridModel.scrubberLabel(months[0], previous: nil, calendar: cal, locale: Locale(identifier: "en_US")), "Jan ’26")
-        XCTAssertEqual(ClipGridModel.scrubberLabel(months[1], previous: months[0], calendar: cal, locale: Locale(identifier: "en_US")), "Dec ’25")
     }
 }

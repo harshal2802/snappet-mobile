@@ -90,6 +90,15 @@ struct ClipsGridView: View {
     private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 2), count: columnCount) }
     /// The month the scrubber finger is on (prompt 176) — drives the bubble.
     @State private var scrubbing: String?
+    /// Where the grid is scrolled, 0 (top) … 1 (bottom) — the handle rides here (2026-10-10 rework).
+    @State private var scrollFraction: Double = 0
+    /// The handle shows while you scroll or drag it, then fades (Photos' fast-scroll grammar).
+    @State private var handleVisible = false
+    @State private var hideToken = 0
+    /// While dragging, the handle follows the finger instead of the scroll position.
+    @State private var dragFraction: Double?
+    /// One column switch per pinch — it switches as the pinch crosses the threshold, not on release.
+    @State private var pinchSwitched = false
     private let calendar = Calendar.current
 
     var body: some View {
@@ -139,23 +148,25 @@ struct ClipsGridView: View {
                           // hit shape, so a pinch anywhere — even below a short month — reaches the gesture.
                           .frame(minHeight: viewport.size.height, alignment: .top)
                           .contentShape(Rectangle())
-                          .simultaneousGesture(MagnifyGesture().onEnded { value in
-                              let next = ClipGridModel.columns(afterPinch: value.magnification, current: columnCount)
-                              if next != columnCount { withAnimation(.snappy) { columnCount = next } }
-                          })
+                          // Switch as soon as the pinch crosses the threshold (not on release), without animating the
+                          // whole grid's re-layout — that animation was the lag (2026-10-10 device feedback).
+                          .simultaneousGesture(MagnifyGesture()
+                              .onChanged { value in
+                                  guard !pinchSwitched else { return }
+                                  let next = ClipGridModel.columns(afterPinch: value.magnification, current: columnCount)
+                                  if next != columnCount { pinchSwitched = true; setColumns(next) }
+                              }
+                              .onEnded { _ in pinchSwitched = false })
                         }
                         .accessibilityIdentifier("clips.grid")
-                        .overlay(alignment: .trailing) { scrubber(months) }
-                        .overlay(alignment: .trailing) {
-                            if let scrubbing {
-                                Text(scrubbing).font(.subheadline.weight(.heavy))
-                                    .padding(.horizontal, 12).padding(.vertical, 8)
-                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                                    .padding(.trailing, 44)
-                                    .transition(.opacity)
-                                    .accessibilityIdentifier("clips.grid.scrubBubble")
-                            }
+                        .onScrollGeometryChange(for: Double.self) { g in
+                            let range = g.contentSize.height - g.containerSize.height
+                            return range > 0 ? min(1, max(0, g.contentOffset.y / range)) : 0
+                        } action: { _, f in scrollFraction = f }
+                        .onScrollPhaseChange { _, phase in
+                            if phase != .idle { showHandle() } else { scheduleHide() }
                         }
+                        .overlay(alignment: .trailing) { scrubber(months) }
                         .onChange(of: scrollTarget) { _, target in
                             guard let target else { return }
                             // Scrubbing jumps instantly (an animation per month would lag the finger).
@@ -185,7 +196,7 @@ struct ClipsGridView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if selection == nil, !posts.isEmpty {
                         Button {
-                            withAnimation(.snappy) { columnCount = columnCount == 3 ? 5 : 3 }
+                            setColumns(columnCount == 3 ? 5 : 3)
                         } label: {
                             Image(systemName: columnCount == 3 ? "square.grid.3x3" : "square.grid.4x3.fill")
                         }
@@ -390,43 +401,86 @@ struct ClipsGridView: View {
         }
     }
 
-    // MARK: Month scrubber (prompt 176)
+    // MARK: Month scrubber (prompt 176 · reworked 2026-10-10)
 
-    /// Month labels down the trailing edge; drag along them to fly through months (like Photos). Shown once
-    /// there are a few months to fly through.
+    /// Switch columns instantly with a light tap (no re-layout animation — it lagged on a big grid).
+    private func setColumns(_ n: Int) {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { columnCount = n }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func showHandle() {
+        hideToken += 1
+        if !handleVisible { withAnimation(.easeOut(duration: 0.15)) { handleVisible = true } }
+    }
+
+    private func scheduleHide() {
+        hideToken += 1
+        let token = hideToken
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard token == hideToken, dragFraction == nil else { return }
+            withAnimation(.easeOut(duration: 0.3)) { handleVisible = false }
+        }
+    }
+
+    /// A Photos-style fast-scroll handle: a small pill on the trailing edge that appears while you scroll,
+    /// rides your position in the grid, and can be dragged to fly through months (a bubble names the month).
+    /// Replaces the column of month labels (user: "looks pretty weird"). Shown once there are 3+ months.
     @ViewBuilder private func scrubber(_ months: [ClipGridModel.Month]) -> some View {
         if months.count >= 3 {
             GeometryReader { geo in
-                VStack(spacing: 0) {
-                    ForEach(Array(months.enumerated()), id: \.element.id) { i, m in
-                        Text(ClipGridModel.scrubberLabel(m, previous: i > 0 ? months[i - 1] : nil, calendar: calendar))
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(scrubbing == m.title ? SnappetColor.brand : SnappetColor.textSecondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                let handleH: CGFloat = 44
+                let travel = max(1, geo.size.height - handleH)
+                let y = (dragFraction ?? scrollFraction) * travel
+                ZStack(alignment: .topTrailing) {
+                    Color.clear.allowsHitTesting(false)
+                    if let scrubbing {
+                        Text(scrubbing).font(.subheadline.weight(.heavy))
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                            .offset(x: -44, y: y + handleH / 2 - 18)
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("clips.grid.scrubBubble")
                     }
+                    Capsule()
+                        .fill(.regularMaterial)
+                        .overlay(Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(SnappetColor.ink))
+                        .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                        .frame(width: 28, height: handleH)
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+                        .contentShape(Rectangle().inset(by: -10))
+                        .offset(x: -4, y: y)
+                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("clipsGridTrack"))
+                            .onChanged { g in
+                                showHandle()
+                                let f = min(1, max(0, (g.location.y - handleH / 2) / travel))
+                                dragFraction = f
+                                guard let i = ClipGridModel.monthIndex(atFraction: f, count: months.count) else { return }
+                                let m = months[i]
+                                if scrubbing != m.title {
+                                    scrubbing = m.title
+                                    UISelectionFeedbackGenerator().selectionChanged()
+                                    if let first = m.posts.first { scrollTarget = first.id }
+                                }
+                            }
+                            .onEnded { _ in
+                                dragFraction = nil
+                                withAnimation(.easeOut(duration: 0.2)) { scrubbing = nil }
+                                scheduleHide()
+                            })
+                        .accessibilityLabel("Fast scroll by month")
+                        .accessibilityIdentifier("clips.grid.scrubber")
                 }
-                .frame(width: 34)
-                .background(.ultraThinMaterial.opacity(scrubbing == nil ? 0 : 1), in: Capsule())
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { g in
-                        guard let i = ClipGridModel.monthIndex(atFraction: g.location.y / max(1, geo.size.height),
-                                                               count: months.count) else { return }
-                        let m = months[i]
-                        if scrubbing != m.title {
-                            scrubbing = m.title
-                            if let first = m.posts.first { scrollTarget = first.id }
-                        }
-                    }
-                    .onEnded { _ in withAnimation(.easeOut(duration: 0.25)) { scrubbing = nil } })
-                .frame(maxHeight: .infinity, alignment: .center)
+                .coordinateSpace(name: "clipsGridTrack")
             }
-            .frame(width: 34)
-            .padding(.vertical, 120)
-            .padding(.trailing, 2)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Month scrubber")
-            .accessibilityIdentifier("clips.grid.scrubber")
+            .frame(width: 220)
+            .padding(.vertical, 16)
+            .opacity(handleVisible || dragFraction != nil ? 1 : 0)
+            .allowsHitTesting(handleVisible || dragFraction != nil)
         }
     }
 

@@ -9847,3 +9847,5 @@ stripes, and the panel read as an opaque slab.
 - Grid covers use `.accessibilityElement(children: .contain)` so the title's own identifier survives the cover's.
 - Column count has a visible toolbar toggle as well as pinch: a gesture-only control is undiscoverable and can't be
   verified in the simulator (synthetic pinch inside a ScrollView isn't recognised).
+- (2026-10-10 follow-up) Grid column switches never animate the relayout (it lagged); the month scrubber is a
+  Photos-style handle that only appears while scrolling — a permanent column of month labels read as clutter.

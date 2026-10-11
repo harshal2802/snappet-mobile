@@ -99,15 +99,4 @@ extension ClipGridModel {
     static func columns(afterPinch scale: Double, current: Int) -> Int {
         scale < 0.8 ? 5 : scale > 1.25 ? 3 : current
     }
-
-    /// A scrubber label: "Oct", or "Jan ’26" where the year changes (and on the first label).
-    static func scrubberLabel(_ month: Month, previous: Month?, calendar: Calendar = .current,
-                              locale: Locale = .current) -> String {
-        let f = DateFormatter(); f.locale = locale; f.calendar = calendar; f.timeZone = calendar.timeZone
-        f.setLocalizedDateFormatFromTemplate("MMM")
-        let name = f.string(from: month.interval.start)
-        let year = calendar.component(.year, from: month.interval.start)
-        let prevYear = previous.map { calendar.component(.year, from: $0.interval.start) }
-        return prevYear == nil || prevYear != year ? "\(name) ’\(String(year % 100))" : name
-    }
 }

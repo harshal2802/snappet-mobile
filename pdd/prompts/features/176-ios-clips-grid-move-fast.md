@@ -25,3 +25,12 @@
       a persisted 5-column state from a prior run — caught once the test-launch reset existed). Device check owed.
 - [x] Scrubber mapping / labels / pinch thresholds unit-tested.
 - [ ] Device: scrubbing through a year of months; pinch feel.
+
+## Follow-up (device feedback, 2026-10-10): "pinch feels little laggy … month slider looks pretty weird"
+
+- **Pinch** now switches the moment it crosses the threshold (not on release), with a light haptic and NO re-layout
+  animation — the animated relayout of the whole grid was the lag. (Thumbnails were not reloading: `ClipThumbnail`
+  keys its load on the clip + poster time, not its size — checked before changing anything.)
+- **Scrubber** is now a Photos-style handle: a small pill on the trailing edge that appears while you scroll
+  (fades 1.5 s after), rides the scroll position, and drags through months with a bubble + selection haptic. The
+  column of month labels (and `ClipGridModel.scrubberLabel`) is gone.
