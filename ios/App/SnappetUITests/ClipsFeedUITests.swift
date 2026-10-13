@@ -239,4 +239,24 @@ import XCTest
         reel.tap()
         XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 10), "the reel builder opens")
     }
+
+    /// Prompt 174: long-pressing a grid cover offers the post's actions; Favorite toggles and sticks.
+    func testGridLongPressActions() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let grid = app.buttons["clips.grid.button"]
+        XCTAssertTrue(grid.waitForExistence(timeout: 15))
+        grid.tap()
+        let cover = app.descendants(matching: .any).matching(identifier: "clips.grid.cell").firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 6))
+        cover.press(forDuration: 1.2)
+        for item in ["open", "favorite", "session", "hide"] {
+            XCTAssertTrue(app.buttons["clips.grid.menu.\(item)"].waitForExistence(timeout: 4), "long-press offers \(item)")
+        }
+        app.buttons["clips.grid.menu.favorite"].tap()
+        cover.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["clips.grid.menu.unfavorite"].waitForExistence(timeout: 4), "the favourite stuck")
+    }
 }

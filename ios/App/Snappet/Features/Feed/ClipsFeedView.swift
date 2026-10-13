@@ -60,6 +60,8 @@ struct ClipsFeedView: View {
     /// `health.requestAuthorization()` then `reconcileWatchWorkouts()` — the ONE place Clips may
     /// request Health access (the launch-path request was tried and reverted; decisions.md).
     @Environment(AppModel.self) private var app
+    /// "Go to session" from a long-pressed grid cover (prompt 174).
+    @Environment(SuiteRouter.self) private var router
 
     @Query private var allMedia: [SessionMedia]
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var kilterSessions: [KilterSession]
@@ -332,6 +334,7 @@ struct ClipsFeedView: View {
                                                    festivals: ClipFestivalChips.festivals(in: unhidden),
                                                    artistRow: filter.festivalPack.map {
                                                        ClipFestivalChips.artists(in: unhidden, packID: $0) }),
+                              actions: gridActions,
                               onPick: { scrollTarget = $0 })
             }
         }
@@ -362,6 +365,44 @@ struct ClipsFeedView: View {
             present = ClipActivity.chipOrder.filter { present.contains($0) || $0 == a }
         }
         return present
+    }
+
+    // MARK: Grid long-press (prompt 174)
+
+    /// Everything a long-pressed grid cover can do — built from the same caches + style the posts use, so the
+    /// grid's share / fullscreen / Studio are the post's own.
+    private var gridActions: ClipGridActions {
+        ClipGridActions(
+            isFavorite: { reactions.isFavorite($0) },
+            toggleFavorite: { reactions.toggle($0) },
+            hide: { hide(Set($0.clips.map(\.media.id))) },
+            goToSession: { post in
+                router.open(module: post.moduleID)
+                if post.kind == .kilter { router.push(KilterSessionRoute(id: post.sessionID)) }
+                else { router.push(SessionRoute(id: post.sessionID)) }
+            },
+            fullscreen: { post in
+                guard post.clips.contains(where: { $0.media.kind == "video" }) else { return nil }
+                let hr = cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
+                return ClipGridFullscreen(clips: post.clips.map(\.media), series: hr.series, maxHR: hr.maxHR,
+                                          restHR: hr.restHR, title: post.title,
+                                          tile: overlayStore.style.tile(sessionTile: cachedHRTiles[post.sessionID],
+                                                                        restHR: hr.restHR))
+            },
+            sharePlan: { post in
+                guard let item = post.clips.first(where: { $0.media.kind == "video" }) else { return nil }
+                let style = overlayStore.style
+                return ClipSharePlan.plan(clip: item.media, payload: cachedPayloads[item.media.id],
+                                          title: style.titleText(post.titleValues(for: item)), style: style)
+            },
+            canEdit: { $0.clips.contains { $0.media.kind == "video" && !$0.media.isReel } },
+            studio: { post in
+                let ids = post.clips.filter { $0.media.kind == "video" && !$0.media.isReel }.map(\.media.id)
+                guard !ids.isEmpty else { return nil }
+                let project = StudioEntry.resolveProject(forSessionID: post.sessionID, title: post.title,
+                                                         media: allMedia, context: context)
+                return (project, ids.first, Set(ids))
+            })
     }
 
     // MARK: Tag artist (prompt 171)
