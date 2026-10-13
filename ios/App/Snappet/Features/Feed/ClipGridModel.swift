@@ -63,3 +63,25 @@ enum ClipGridModel {
         return "\(s / 60):" + String(format: "%02d", s % 60)
     }
 }
+
+// MARK: - Select mode (prompt 175)
+
+extension ClipGridModel {
+    /// The clips a selection covers (every clip of every selected post), for "✦ Make reel" and Hide.
+    static func mediaIDs(of selected: Set<String>, in posts: [ClipFeedPost]) -> Set<UUID> {
+        Set(posts.filter { selected.contains($0.id) }.flatMap { $0.clips.map(\.media.id) })
+    }
+
+    /// The videos to share: each selected post's FIRST video (one file per post keeps the share sheet sane).
+    static func shareables(of selected: Set<String>, in posts: [ClipFeedPost]) -> [String] {
+        posts.filter { selected.contains($0.id) }
+            .compactMap { $0.clips.first { $0.media.kind == "video" && !$0.media.isReel }?.media.localIdentifier
+                ?? $0.clips.first { $0.media.kind == "video" }?.media.localIdentifier }
+    }
+
+    /// Whether the bulk heart should UN-favourite: only when every selected post already is a favourite.
+    static func allFavorite(_ selected: Set<String>, in posts: [ClipFeedPost], isFavorite: (ClipFeedPost) -> Bool) -> Bool {
+        let picked = posts.filter { selected.contains($0.id) }
+        return !picked.isEmpty && picked.allSatisfy(isFavorite)
+    }
+}

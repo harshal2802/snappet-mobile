@@ -259,4 +259,27 @@ import XCTest
         cover.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["clips.grid.menu.unfavorite"].waitForExistence(timeout: 4), "the favourite stuck")
     }
+
+    /// Prompt 175: select covers, then act on them together.
+    func testGridSelectModeBulkHide() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let grid = app.buttons["clips.grid.button"]
+        XCTAssertTrue(grid.waitForExistence(timeout: 15))
+        grid.tap()
+        let select = app.buttons["clips.grid.select"]
+        XCTAssertTrue(select.waitForExistence(timeout: 6))
+        select.tap()
+        let cover = app.descendants(matching: .any).matching(identifier: "clips.grid.cell").firstMatch
+        cover.tap()
+        XCTAssertTrue(app.navigationBars["1 selected"].waitForExistence(timeout: 4))
+        app.buttons["clips.grid.selectAll"].tap()
+        XCTAssertTrue(app.navigationBars["2 selected"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["clips.grid.bulk.reel"].exists, "✦ Make reel from the picks")
+        app.buttons["clips.grid.bulk.hide"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["clips.grid.empty"].waitForExistence(timeout: 6),
+                      "both picked posts hidden")
+    }
 }

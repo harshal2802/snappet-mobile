@@ -45,4 +45,26 @@ final class ClipGridModelTests: XCTestCase {
         XCTAssertNil(ClipGridModel.durationLabel(nil))
         XCTAssertNil(ClipGridModel.durationLabel(0.2))
     }
+
+    // MARK: select mode (prompt 175)
+
+    private func clip(_ kind: String, reel: Bool = false) -> ClipFeedItem {
+        var m = MediaInput(id: UUID(), kind: kind, offsetSec: 0, durationSec: 5, exerciseId: nil, setIndex: nil,
+                           climbUUID: nil, localIdentifier: "L-\(UUID().uuidString.prefix(4))")
+        if reel { m.reelTitle = "R" }
+        return ClipFeedItem(media: m, attemptLabel: nil)
+    }
+
+    func testSelectionCoversClipsSharesFirstVideoAndBulkHeart() {
+        var a = post("a", session: UUID(), day: 1); a.clips = [clip("photo"), clip("video"), clip("video")]
+        var b = post("b", session: UUID(), day: 2); b.clips = [clip("photo")]
+        var c = post("c", session: UUID(), day: 3); c.clips = [clip("video")]
+        let posts = [a, b, c]
+        XCTAssertEqual(ClipGridModel.mediaIDs(of: ["a", "b"], in: posts), Set((a.clips + b.clips).map(\.media.id)))
+        XCTAssertEqual(ClipGridModel.shareables(of: ["a", "b", "c"], in: posts),
+                       [a.clips[1].media.localIdentifier, c.clips[0].media.localIdentifier])   // photo-only post skipped
+        XCTAssertTrue(ClipGridModel.allFavorite(["a", "c"], in: posts, isFavorite: { $0.id != "b" }))
+        XCTAssertFalse(ClipGridModel.allFavorite(["a", "b"], in: posts, isFavorite: { $0.id != "b" }))
+        XCTAssertFalse(ClipGridModel.allFavorite([], in: posts, isFavorite: { _ in true }))
+    }
 }
