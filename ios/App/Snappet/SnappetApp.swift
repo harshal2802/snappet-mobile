@@ -69,7 +69,10 @@ struct SnappetApp: App {
                         // Clips autoplay (prompt 90/166): a run that ends with it ON leaves warm video
                         // surfaces (and their playhead timers) mounted in every later test, so the app never
                         // idles after a scroll — the festival test stalled minutes per swipe. Off every run.
-                        "clips.autoplay"] {
+                        "clips.autoplay",
+                        // The Clips grid's pinch column count (prompt 176) — a run that ends at 5 columns
+                        // would make the next run's pinch-in a no-op.
+                        "clips.grid.columns"] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

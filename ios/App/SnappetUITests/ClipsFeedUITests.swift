@@ -282,4 +282,26 @@ import XCTest
         XCTAssertTrue(app.descendants(matching: .any)["clips.grid.empty"].waitForExistence(timeout: 6),
                       "both picked posts hidden")
     }
+
+    /// Prompt 176: the toolbar toggle switches 3 ⇄ 5 columns (pinch does the same on device; XCUITest's synthetic
+    /// pinch isn't recognised inside the scroll view, so the button is what's tested).
+    func testGridColumnToggle() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let gridButton = app.buttons["clips.grid.button"]
+        XCTAssertTrue(gridButton.waitForExistence(timeout: 15))
+        gridButton.tap()
+        // The 2nd cover's name starts further left when the grid has more (narrower) columns.
+        let second = app.staticTexts.matching(identifier: "clips.grid.cell.title").element(boundBy: 1)
+        XCTAssertTrue(second.waitForExistence(timeout: 6))
+        let x3 = second.frame.minX
+        app.buttons["clips.grid.columns"].tap()
+        let five = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in second.frame.minX < x3 * 0.8 }, object: nil)
+        XCTAssertEqual(XCTWaiter().wait(for: [five], timeout: 4), .completed, "→ 5 columns")
+        app.buttons["clips.grid.columns"].tap()
+        let three = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(second.frame.minX - x3) < 4 }, object: nil)
+        XCTAssertEqual(XCTWaiter().wait(for: [three], timeout: 4), .completed, "→ back to 3 columns")
+    }
 }
