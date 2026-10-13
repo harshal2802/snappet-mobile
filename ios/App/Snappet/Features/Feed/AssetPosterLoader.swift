@@ -21,10 +21,38 @@ import AVFoundation
 enum AssetPosterLoader {
     private static let manager = PHCachingImageManager()
 
+    // MARK: Asset lookup — off the main thread, cached (Clips grid perf, 2026-10-10)
+    //
+    // `PHAsset.fetchAssets(withLocalIdentifiers:)` is a synchronous library query; on a big library it costs
+    // milliseconds, and the grid ran it ON MAIN for every cover appearing and every warm batch — the residual
+    // 50–100 ms scroll hitches after the grid rework. Lookups now run detached and are cached by identifier.
+
+    private static var assetCache: [String: PHAsset] = [:]
+
+    /// A non-Sendable PHAsset carried across the detached lookup (produced and consumed once).
+    private struct AssetBox: @unchecked Sendable { let assets: [String: PHAsset] }
+
+    /// The assets for `ids`, from the cache or one detached batch query.
+    static func assets(_ ids: [String]) async -> [String: PHAsset] {
+        var out: [String: PHAsset] = [:]
+        var missing: [String] = []
+        for id in ids { if let a = assetCache[id] { out[id] = a } else { missing.append(id) } }
+        guard !missing.isEmpty else { return out }
+        let box = await Task.detached(priority: .userInitiated) { () -> AssetBox in
+            var found: [String: PHAsset] = [:]
+            PHAsset.fetchAssets(withLocalIdentifiers: missing, options: nil)
+                .enumerateObjects { a, _, _ in found[a.localIdentifier] = a }
+            return AssetBox(assets: found)
+        }.value
+        if assetCache.count > 3000 { assetCache.removeAll() }   // a bound, not an LRU — cheap and enough
+        assetCache.merge(box.assets) { a, _ in a }
+        out.merge(box.assets) { a, _ in a }
+        return out
+    }
+
     /// - Parameter pointSize: the on-screen point size; the request targets 3× for Retina sharpness.
     static func poster(localIdentifier: String, pointSize: CGSize) async -> UIImage? {
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = assets.firstObject else { return nil }
+        guard let asset = await assets([localIdentifier])[localIdentifier] else { return nil }
         let target = CGSize(width: pointSize.width * 3, height: pointSize.height * 3)
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat      // single callback (no degraded pass)
@@ -34,6 +62,27 @@ enum AssetPosterLoader {
                                  contentMode: .aspectFill, options: options) { img, _ in
                 continuation.resume(returning: img)
             }
+        }
+    }
+
+    /// Thumbnails already handed to Photos' cache (deduped; cleared wholesale past a few screens' worth).
+    private static var warmedThumbs: Set<String> = []
+
+    /// Warm Photos' thumbnail cache for covers about to scroll into view (the Clips grid, 2026-10-10 perf).
+    /// Same target size + options as `poster(...)`, so the later request is a cache hit.
+    static func warmThumbnails(_ ids: [String], pointSize: CGSize) {
+        let new = ids.filter { !warmedThumbs.contains($0) }
+        guard !new.isEmpty else { return }
+        if warmedThumbs.count > 400 { warmedThumbs.removeAll() }
+        warmedThumbs.formUnion(new)
+        Task { @MainActor in
+            let found = Array(await assets(new).values)              // off-main lookup (see `assets`)
+            guard !found.isEmpty else { return }
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = false
+            manager.startCachingImages(for: found, targetSize: CGSize(width: pointSize.width * 3, height: pointSize.height * 3),
+                                       contentMode: .aspectFill, options: options)
         }
     }
 

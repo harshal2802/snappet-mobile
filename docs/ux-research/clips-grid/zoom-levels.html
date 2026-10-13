@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clips grid zoom levels</title><style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values; Clips is media-dark) */
+    --coral:#FF7A6B; --amber:#F59E0B; --green:#5BC074; --blue:#4FB3D9;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1a1424,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 70px}
+  header.page{padding:48px 28px 8px;max-width:2100px;margin:0 auto}
+  h1.title{font-size:36px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb3a8 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:15px;max-width:1250px;margin:0 0 8px} .sub b{color:#fff}
+  .wrap{max-width:2100px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 30px;align-items:flex-start;margin-top:22px}
+  .step{width:316px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 9px;border-radius:17px;
+    background:var(--coral);color:#2a0f0a;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .stepnum.alt{background:var(--blue);color:#06202b}
+  .caption{margin:12px 4px 0;font-size:13px;color:#b8bcc6} .caption b{color:#fff} .caption .new{color:var(--coral);font-weight:700}
+  .arrow{align-self:center;font-size:13px;color:#8d8f99;width:70px;text-align:center}
+  .arrow b{display:block;font-size:26px;color:var(--coral)}
+  .device{width:316px;height:680px;border-radius:48px;background:#000;padding:10px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset}
+  .screen{width:100%;height:100%;border-radius:38px;overflow:hidden;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{flex:none;height:40px;display:flex;align-items:center;justify-content:space-between;padding:10px 24px 0;font-size:13px;font-weight:650}
+  .navbar{flex:none;padding:4px 14px 8px;display:flex;align-items:center;justify-content:space-between;font-size:15px}
+  .navbar .t{font-weight:700} .navbar .l,.navbar .r{color:var(--coral);font-size:14px}
+  .seg{flex:none;margin:0 14px 8px;display:flex;background:var(--muted);border-radius:9px;padding:2px;font-size:12px;font-weight:650}
+  .seg span{flex:1;text-align:center;padding:5px 0;color:var(--t2);border-radius:7px} .seg .on{background:#3a3a41;color:#fff}
+  .body{flex:1;overflow:hidden;position:relative}
+  .mh{position:sticky;top:0;padding:8px 10px 6px;background:rgba(18,18,20,.94);border-bottom:1px solid var(--hair)}
+  .mh .n{font-size:15px;font-weight:800} .mh .s{font-size:11px;color:var(--t2)}
+  .grid{display:grid;gap:2px;padding:2px}
+  .c{aspect-ratio:1;border-radius:1px;position:relative;overflow:hidden}
+  .c i{position:absolute;left:3px;top:3px;font-style:normal;font-size:7px;font-weight:900;padding:0 3px;border-radius:5px;background:var(--green);color:#fff}
+  .yh{display:flex;align-items:baseline;gap:8px;padding:12px 10px 6px}
+  .yh .n{font-size:22px;font-weight:800;letter-spacing:-.02em} .yh .s{font-size:11px;color:var(--t2)}
+  .ml{grid-column:1/-1;font-size:9.5px;font-weight:700;color:var(--t2);padding:4px 2px 1px;letter-spacing:.04em}
+  .ycard{margin:10px 12px 12px;border-radius:16px;overflow:hidden;position:relative;height:208px}
+  .ycard .over{position:absolute;inset:auto 0 0 0;padding:14px;background:linear-gradient(transparent,rgba(0,0,0,.75))}
+  .ycard .n{font-size:26px;font-weight:800} .ycard .s{font-size:11.5px;color:#ddd}
+  .ycard .mos{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
+  .pinch{position:absolute;width:70px;height:70px;border:2px dashed rgba(255,122,107,.8);border-radius:50%;left:50%;top:42%;transform:translate(-50%,-50%)}
+  .tabbar{flex:none;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:8px 8px 22px;font-size:10px;color:#8a8a90}
+  .tabbar .on{color:var(--coral)}
+  .notes{margin-top:30px;max-width:1250px;color:#c4c6cf;font-size:14px}
+  .notes h3{color:#fff;margin:18px 0 6px;font-size:16px} .notes li{margin:3px 0}
+</style></head><body>
+<header class="page wrap">
+  <h1 class="title">Clips grid — zoom levels (Photos-style)</h1>
+  <p class="sub">One pinch continuum, like Photos: <b>3 columns → 5 columns (months) → Year</b>. The covers stay under your
+  fingers and slide into each new layout as you pinch, they don't jump when you let go. Steps 1 and 2 already exist; <b>step 3 is new — pick A or B.</b></p>
+</header>
+<div class="wrap"><div class="gallery" id="g"></div>
+<div class="notes">
+  <h3>How the transition behaves (all levels)</h3>
+  <ul>
+    <li><b>Follows the finger</b> — every cover moves and resizes in step with the pinch, not after you let go.</li>
+    <li><b>Anchored</b> — the cover under your fingers stays under them, and everything else moves around it.</li>
+    <li><b>Settles</b> — when you let go it finishes or springs back depending on how far you pinched and how fast, with a light tap of haptic feedback when the level changes.</li>
+    <li><b>Year → tap</b> — tapping in the year view zooms back into the month around what you tapped, like Photos.</li>
+    <li>The segmented control (<b>Year · Months · All</b>) gives the same levels without pinching, and the UI tests use it.</li>
+  </ul>
+  <h3>A vs B</h3>
+  <ul>
+    <li><b>A · Year mosaic</b>: 9 tiny covers per row under a big year title, with small month labels. Continuous with the other levels (the covers just keep shrinking), so the pinch feels seamless. Recommended.</li>
+    <li><b>B · Year cards</b>: one card per year (like Photos' Years tab) with a mosaic of the year's best covers. Prettier, but the pinch from Months <i>cross-fades</i> into cards instead of the covers flowing into place.</li>
+  </ul>
+</div></div>
+<script>
+const hues=[["#5BC074","#1c2a20"],["#FF7A6B","#2a1a18"],["#4FB3D9","#14222a"],["#F59E0B","#2a2112"],["#9D82F0","#1f1a2a"],["#5d6678","#1b1d22"]];
+let seed=7;const rnd=()=>{seed=(seed*9301+49297)%233280;return seed/233280};
+function cell(badge){const h=hues[Math.floor(rnd()*hues.length)];
+  return `<div class="c" style="background:radial-gradient(60% 50% at ${30+rnd()*40}% ${40+rnd()*30}%,${h[0]}88,transparent 70%),linear-gradient(160deg,${h[1]},#0d0e11)">${badge&&rnd()<.18?'<i>SENT</i>':''}</div>`}
+function cells(n,b){let s="";for(let i=0;i<n;i++)s+=cell(b);return s}
+function screen(seg,inner,extra=""){return `<div class="device"><div class="screen">
+ <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+ <div class="navbar"><span class="l">Select</span><span class="t">All clips</span><span class="r">▦</span></div>
+ <div class="seg">${["Year","Months","All"].map(s=>`<span class="${s==seg?'on':''}">${s}</span>`).join("")}</div>
+ <div class="body">${inner}${extra}</div>
+ <div class="tabbar"><span>Home</span><span class="on">Clips</span><span>Train</span><span>Kilter</span><span>More</span></div></div></div>`}
+const month=(n,s,cols,count,b)=>`<div class="mh"><div class="n">${n}</div><div class="s">${s}</div></div><div class="grid" style="grid-template-columns:repeat(${cols},1fr)">${cells(count,b)}</div>`;
+const s1=screen("All",month("October 2026","9 sessions · 14 sends · peak 178",3,15,true)+month("September 2026","12 sessions · 20 sends",3,6,true),'<div class="pinch"></div>');
+const s2=screen("Months",month("October 2026","9 sessions · 14 sends · peak 178",5,30,true)+month("September 2026","12 sessions · 20 sends",5,25,true),'<div class="pinch"></div>');
+function yearA(y,s,months){let g="";months.forEach(([m,n])=>{g+=`<div class="ml">${m}</div>`+cells(n,false)});
+  return `<div class="yh"><span class="n">${y}</span><span class="s">${s}</span></div><div class="grid" style="grid-template-columns:repeat(9,1fr);gap:1px">${g}</div>`}
+const s3a=screen("Year",yearA("2026","412 clips · 96 sessions",[["OCT",22],["SEP",36],["AUG",45],["JUL",54],["JUN",27]])+yearA("2025","188 clips",[["DEC",18],["NOV",27]]));
+function yc(y,s){return `<div class="ycard"><div class="mos">${cells(16,false)}</div><div class="over"><div class="n">${y}</div><div class="s">${s}</div></div></div>`}
+const s3b=screen("Year",yc("2026","412 clips · 96 sessions · 140 sends")+yc("2025","188 clips · 41 sessions"));
+const g=document.getElementById("g");
+g.innerHTML=`
+<div class="step"><div class="stepnum">1</div>${s1}<p class="caption"><b>All · 3 columns</b> (today). Pinch in ↘</p></div>
+<div class="arrow"><b>⇢</b>pinch in</div>
+<div class="step"><div class="stepnum">2</div>${s2}<p class="caption"><b>Months · 5 columns</b> (today). Pinch in again ↘</p></div>
+<div class="arrow"><b>⇢</b>pinch in</div>
+<div class="step"><div class="stepnum">3 A</div>${s3a}<p class="caption"><span class="new">NEW · A — Year mosaic.</span> 9 per row, year title + totals, small month labels. Covers keep shrinking into place. <b>Recommended.</b></p></div>
+<div class="step"><div class="stepnum alt">3 B</div>${s3b}<p class="caption"><span class="new">NEW · B — Year cards.</span> One card per year with a cover mosaic, like Photos' Years tab. Tap → that year's months.</p></div>`;
+</script></body></html>

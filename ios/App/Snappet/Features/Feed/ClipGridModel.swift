@@ -94,9 +94,40 @@ extension ClipGridModel {
         guard count > 0, fraction.isFinite else { return nil }
         return min(count - 1, max(0, Int((min(1, max(0, fraction)) * Double(count)).rounded(.down))))
     }
+}
 
-    /// Pinch: in (< 0.8) → the dense 5-column grid, out (> 1.25) → 3 columns; in between keeps `current`.
-    static func columns(afterPinch scale: Double, current: Int) -> Int {
-        scale < 0.8 ? 5 : scale > 1.25 ? 3 : current
+// MARK: - Year level (2026-10-10, wireframe docs/ux-research/clips-grid/zoom-levels.png — option A)
+
+extension ClipGridModel {
+    /// One year of the year mosaic: "2026 · 412 clips · 96 sessions".
+    struct Year: Equatable {
+        var id: String                   // "yyyy"
+        var title: String                // "2026"
+        var clips: Int
+        var sessions: Int
+        var summary: String {
+            "\(clips) clip\(clips == 1 ? "" : "s") · \(sessions) session\(sessions == 1 ? "" : "s")"
+        }
+    }
+
+    /// The years the months fall in, by year id ("yyyy" — a month id's prefix).
+    static func years(_ months: [Month]) -> [String: Year] {
+        var out: [String: Year] = [:]
+        var sessions: [String: Set<UUID>] = [:]
+        for m in months {
+            let y = String(m.id.prefix(4))
+            out[y, default: Year(id: y, title: y, clips: 0, sessions: 0)].clips += m.posts.reduce(0) { $0 + $1.clipCount }
+            sessions[y, default: []].formUnion(m.posts.map(\.sessionID))
+        }
+        for (y, s) in sessions { out[y]?.sessions = s.count }
+        return out
+    }
+
+    /// The year mosaic's small month label — "OCT".
+    static func shortMonth(_ month: Month, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let f = DateFormatter()
+        f.locale = locale; f.calendar = calendar; f.timeZone = calendar.timeZone
+        f.setLocalizedDateFormatFromTemplate("MMM")
+        return f.string(from: month.interval.start).uppercased(with: locale)
     }
 }

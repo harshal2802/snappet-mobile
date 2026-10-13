@@ -70,15 +70,11 @@ final class ClipGridModelTests: XCTestCase {
 
     // MARK: move fast (prompt 176)
 
-    func testScrubberMappingPinchAndLabels() {
+    func testScrubberMapping() {
         XCTAssertEqual(ClipGridModel.monthIndex(atFraction: 0, count: 4), 0)
         XCTAssertEqual(ClipGridModel.monthIndex(atFraction: 0.49, count: 4), 1)
         XCTAssertEqual(ClipGridModel.monthIndex(atFraction: 1, count: 4), 3)          // bottom edge = last month
         XCTAssertEqual(ClipGridModel.monthIndex(atFraction: -2, count: 4), 0)          // past the ends clamps
         XCTAssertNil(ClipGridModel.monthIndex(atFraction: 0.5, count: 0))
-        XCTAssertEqual(ClipGridModel.columns(afterPinch: 0.6, current: 3), 5)
-        XCTAssertEqual(ClipGridModel.columns(afterPinch: 1.5, current: 5), 3)
-        XCTAssertEqual(ClipGridModel.columns(afterPinch: 1.0, current: 5), 5)
-
     }
 }
