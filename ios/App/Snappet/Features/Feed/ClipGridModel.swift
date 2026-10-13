@@ -1,0 +1,65 @@
+import Foundation
+
+// MARK: - Clips grid — months you can read and act on (prompt 173, pure)
+//
+// The explore grid (▦) grouped covers by month (prompt 167) and a tap jumped to the post. Prompt 173 makes each
+// month a summary you can act on — sessions · sends · peak HR, a day strip of the days you trained (tap a day to
+// jump to it), and "✦ Make reel" for the month — and each cover tell you what it is at a glance (video length,
+// SENT/FLASH, ✦ REEL, peak ♥, favourite). Wireframes: docs/ux-research/clips-grid/. Unit-tested.
+
+enum ClipGridModel {
+
+    struct Month: Identifiable, Equatable {
+        var id: String                       // "yyyy-MM"
+        var title: String                    // "October 2026"
+        var interval: DateInterval           // the calendar month — the month reel's scope
+        var posts: [ClipFeedPost]
+        var sessions: Int
+        var sends: Int
+        var peakHR: Int?
+        /// Day-of-month → how many posts that day (the day strip).
+        var postsByDay: [Int: Int]
+        var daysInMonth: Int
+
+        /// "9 sessions · 14 sends · peak 178" — parts with nothing to say drop out.
+        var summary: String {
+            var parts = ["\(sessions) session\(sessions == 1 ? "" : "s")"]
+            if sends > 0 { parts.append("\(sends) send\(sends == 1 ? "" : "s")") }
+            if let peakHR { parts.append("peak \(peakHR)") }
+            return parts.joined(separator: " · ")
+        }
+
+        /// The first post captured on `day`, newest-first like the feed — the day strip's jump target.
+        func firstPost(onDay day: Int, calendar: Calendar) -> ClipFeedPost? {
+            posts.first { calendar.component(.day, from: $0.sessionStartedAt) == day }
+        }
+    }
+
+    /// Months newest first. `peak` gives a post's peak HR (from its clips' overlay payloads).
+    static func months(_ posts: [ClipFeedPost], peak: (ClipFeedPost) -> Double?,
+                       calendar: Calendar = .current, locale: Locale = .current) -> [Month] {
+        ClipFeedSections.months(posts, calendar: calendar, locale: locale).compactMap { section in
+            guard let first = section.posts.first,
+                  let interval = calendar.dateInterval(of: .month, for: first.sessionStartedAt) else { return nil }
+            let days = calendar.range(of: .day, in: .month, for: first.sessionStartedAt)?.count ?? 31
+            var byDay: [Int: Int] = [:]
+            for p in section.posts { byDay[calendar.component(.day, from: p.sessionStartedAt), default: 0] += 1 }
+            let peaks = section.posts.compactMap(peak)
+            return Month(id: section.id, title: section.title, interval: interval, posts: section.posts,
+                         sessions: Set(section.posts.map(\.sessionID)).count,
+                         sends: section.posts.filter { $0.climbResult?.status.isSend == true }.count,
+                         peakHR: peaks.max().map { Int($0.rounded()) },
+                         postsByDay: byDay, daysInMonth: days)
+        }
+    }
+
+    /// The day strip's shade for a day: 0 = nothing, 1–3 = more posts.
+    static func dayLevel(_ count: Int) -> Int { count <= 0 ? 0 : count == 1 ? 1 : count <= 3 ? 2 : 3 }
+
+    /// A cover's video length, "0:24" / "1:05" — nil for photos or unknown durations.
+    static func durationLabel(_ seconds: Double?) -> String? {
+        guard let seconds, seconds.isFinite, seconds >= 0.5 else { return nil }
+        let s = Int(seconds.rounded())
+        return "\(s / 60):" + String(format: "%02d", s % 60)
+    }
+}

@@ -117,6 +117,22 @@ enum WeeklyHighlights {
 }
 
 extension ReelSource {
+    /// A reel over ANY collection of sessions (prompt 173/175 — the Clips grid's month reel and "make a
+    /// reel from these clips"): the same stitched-workout pipeline as the week. A month condenses to
+    /// highlight moments; hand-picked clips (`trimToHighlights: false`) play in full.
+    static func collection(sessions: [WeeklyHighlights.SessionInput], id: String, title: String,
+                           postTitle: String, start: Date, trimToHighlights: Bool) -> ReelSource? {
+        guard let stitched = WeeklyHighlights.stitchedWorkout(sessions: sessions),
+              let latest = sessions.max(by: { $0.startedAt < $1.startedAt }) else { return nil }
+        var source = ReelSource(id: id, activity: stitched.workout.activity, title: title, start: start,
+                                makeWorkout: { _, _ in stitched.workout })
+        source.boostWindows = stitched.boostWindows
+        source.trimToHighlights = trimToHighlights
+        source.postSessionID = latest.id
+        source.postTitle = postTitle
+        return source
+    }
+
     /// The Weekly Highlight Reel source: the stitched week as ONE workout, cut with TRIMMED
     /// highlight windows (`trimToHighlights`) so seven days condense into moments — unlike a
     /// session reel, which plays clips full-length. Posts into Clips under the week's most recent
