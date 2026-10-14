@@ -75,9 +75,19 @@ struct ActivityClipsSheet: View {
     @State private var untagged = 0
     @State private var loaded = false
     @State private var viewing: CarouselViewerBox?
+    /// FIRST / PR per session (prompt 180) and the Timeline / PRs filter.
+    @State private var badges: [UUID: ActivityProgressReel.Badge] = [:]
+    @State private var prsOnly = false
+    @State private var comparing = false
+    @State private var reelScope: ClipsReelScope?
+    /// Expanded to full height when the reel builder is pushed — it needs the room.
+    @State private var detent: PresentationDetent = .medium
 
     private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
     private var allClips: [ActivityClip] { groups.flatMap(\.clips) }
+    private var shownGroups: [ActivitySessionGroup] { prsOnly ? groups.filter { badges[$0.sessionID] != nil } : groups }
+    /// Videos, oldest → newest — what Compare and the progress reel work over.
+    private var videos: [ActivityClip] { ActivityProgressReel.pick(allClips, rule: .all, badges: badges) }
     /// "4 clips · 4 sessions · 1 untagged" — the sheet at a glance (and a stable UI-test anchor, since
     /// the grid itself is lazy).
     private var summaryLine: String {
@@ -97,7 +107,15 @@ struct ActivityClipsSheet: View {
                             .font(.footnote).foregroundStyle(.secondary)
                             .accessibilityIdentifier("activity.clips.summary")
                     }
-                    ForEach(groups) { group in section(group) }
+                    if !badges.isEmpty {
+                        Picker("Show", selection: $prsOnly) {
+                            Text("Timeline").tag(false)
+                            Text("PRs ★").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("activity.clips.filter")
+                    }
+                    ForEach(shownGroups) { group in section(group) }
                     if untagged > 0 {
                         Label("\(untagged) more \(untagged == 1 ? "clip" : "clips") from these sessions \(untagged == 1 ? "isn't" : "aren't") tagged to an exercise. Tag them from the session's detail to see them here.",
                               systemImage: "tag")
@@ -107,6 +125,7 @@ struct ActivityClipsSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
+            .safeAreaInset(edge: .bottom) { if videos.count >= 2 { actionBar } }
             .overlay {
                 if loaded && groups.isEmpty {
                     ContentUnavailableView("No past clips", systemImage: "video.slash",
@@ -121,12 +140,15 @@ struct ActivityClipsSheet: View {
                     Button("Done") { dismiss() }.accessibilityIdentifier("activity.clips.done")
                 }
             }
+            .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
+            .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
             .fullScreenCover(item: $viewing) { box in
                 ActivityClipViewer(clips: allClips, startIndex: box.value,
                                    sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
+        .onChange(of: reelScope) { _, scope in if scope != nil { detent = .large } }
         .accessibilityIdentifier("activity.clips.sheet")
         .task {
             guard !loaded else { return }
@@ -136,6 +158,9 @@ struct ActivityClipsSheet: View {
                                                distanceUnit: distanceUnit)
             untagged = ActivityMediaIndex.untaggedCount(for: target.key, history: history, media: media,
                                                         excludingSession: excludingSession)
+            if let dashboard = ActivityDashboard.make(key: target.key, history: history, media: media, unit: unit) {
+                badges = ActivityProgressReel.badges(dashboard)
+            }
             loaded = true
         }
     }
@@ -154,11 +179,41 @@ struct ActivityClipsSheet: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], alignment: .leading, spacing: 10) {
                 ForEach(group.clips) { clip in
-                    Button { open(clip) } label: { ActivityClipTile(clip: clip) }
+                    Button { open(clip) } label: { ActivityClipTile(clip: clip, badge: badges[clip.sessionID]) }
                         .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    /// Compare + Progress reel (prompt 180).
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Button { comparing = true } label: {
+                Label("Compare", systemImage: "rectangle.split.2x1").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("activity.clips.compare")
+            Menu {
+                ForEach(ActivityProgressReel.Rule.allCases) { rule in
+                    Button(rule.label) { makeReel(rule) }
+                        .accessibilityIdentifier("activity.reel.\(rule.rawValue)")
+                }
+            } label: {
+                Label("Progress reel", systemImage: "sparkles").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(SnappetColor.brand)
+            .accessibilityIdentifier("activity.clips.reel")
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func makeReel(_ rule: ActivityProgressReel.Rule) {
+        let picks = ActivityProgressReel.pick(allClips, rule: rule, badges: badges)
+        guard !picks.isEmpty else { return }
+        reelScope = ActivityProgressReel.scope(for: picks, title: target.title)
     }
 
     private func open(_ clip: ActivityClip) {
@@ -169,11 +224,20 @@ struct ActivityClipsSheet: View {
 /// One grid tile: the poster + the set stamp and HR under it.
 struct ActivityClipTile: View {
     let clip: ActivityClip
+    var badge: ActivityProgressReel.Badge? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             ClipThumbnail(localIdentifier: clip.media.localIdentifier, kind: clip.media.kindRaw,
                           size: CGSize(width: 76, height: 100), exactFrame: false)
+                .overlay(alignment: .topLeading) {
+                    if let badge {
+                        Text(badge.label).font(.system(size: 9, weight: .heavy))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .foregroundStyle(.white).background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: 5))
+                            .padding(5)
+                    }
+                }
             Text(clip.setSummary ?? "Whole exercise")
                 .font(.caption2.weight(.semibold)).monospacedDigit().lineLimit(1)
             if let bpm = clip.avgBPM {

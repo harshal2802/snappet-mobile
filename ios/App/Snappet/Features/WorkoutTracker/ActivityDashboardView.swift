@@ -25,6 +25,8 @@ struct ActivityDashboardView: View {
     @State private var selected: UUID?
     @State private var viewing: ViewerRequest?
     @State private var showingAllClips = false
+    @State private var comparing = false
+    @State private var reelScope: ClipsReelScope?
 
     private struct ViewerRequest: Identifiable {
         let id = UUID()
@@ -34,6 +36,8 @@ struct ActivityDashboardView: View {
 
     private var accent: Color { dashboard?.discipline.accent ?? SnappetColor.workout }
     private var allClips: [ActivityClip] { groups.flatMap(\.clips) }
+    private var badges: [UUID: ActivityProgressReel.Badge] { dashboard.map(ActivityProgressReel.badges) ?? [:] }
+    private var videos: [ActivityClip] { ActivityProgressReel.pick(allClips, rule: .all, badges: badges) }
 
     var body: some View {
         ScrollView {
@@ -70,6 +74,8 @@ struct ActivityDashboardView: View {
             ActivityClipViewer(clips: req.clips, startIndex: req.start,
                                sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
         }
+        .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
+        .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
         .sheet(isPresented: $showingAllClips) {
             ActivityClipsSheet(target: ActivityClipsTarget(key: key, title: title), history: history, unit: unit)
         }
@@ -181,9 +187,25 @@ struct ActivityDashboardView: View {
                     }
                 }
             }
-            Button("See all clips") { showingAllClips = true }
-                .font(.caption.weight(.semibold))
-                .accessibilityIdentifier("activity.dashboard.allClips")
+            HStack(spacing: 16) {
+                Button("See all clips") { showingAllClips = true }
+                    .accessibilityIdentifier("activity.dashboard.allClips")
+                Spacer()
+                if videos.count >= 2 {
+                    Button("Compare") { comparing = true }
+                        .accessibilityIdentifier("activity.dashboard.compare")
+                    Menu("Progress reel") {
+                        ForEach(ActivityProgressReel.Rule.allCases) { rule in
+                            Button(rule.label) {
+                                let picks = ActivityProgressReel.pick(allClips, rule: rule, badges: badges)
+                                if !picks.isEmpty { reelScope = ActivityProgressReel.scope(for: picks, title: title) }
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("activity.dashboard.reel")
+                }
+            }
+            .font(.caption.weight(.semibold))
         }
         .accessibilityIdentifier("activity.dashboard.clips")
     }

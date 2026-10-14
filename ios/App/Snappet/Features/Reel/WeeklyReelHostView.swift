@@ -11,6 +11,9 @@ enum ClipsReelScope: Hashable {
     case week
     case month(DateInterval, title: String)
     case clips(Set<UUID>)
+    /// One activity's progress reel (prompt 180): these clips, oldest → newest, played in full, each with its
+    /// burned "date · set" caption (keyed by `localIdentifier`).
+    case progress(Set<UUID>, title: String, captions: [String: String])
 }
 
 /// Pushes the shared reel builder for a scope — from the Clips grid.
@@ -58,6 +61,13 @@ struct WeeklyReelHostView: View {
             return ReelSource.collection(sessions: inputs, id: "picked-\(ids.count)-\(ids.hashValue)",
                                          title: "Your picks", postTitle: "My picks — Highlights",
                                          start: inputs.map(\.startedAt).min() ?? .now, trimToHighlights: false)
+        case .progress(let ids, let title, let captions):
+            // Full clips (every pick must appear — it's a timeline, not a best-of), stitched oldest → newest.
+            var source = ReelSource.collection(sessions: inputs, id: "progress-\(ids.count)-\(ids.hashValue)",
+                                               title: "\(title) — Progress", postTitle: "\(title) — Progress",
+                                               start: inputs.map(\.startedAt).min() ?? .now, trimToHighlights: false)
+            source?.segmentCaptions = captions
+            return source
         }
     }
 
@@ -70,10 +80,15 @@ struct WeeklyReelHostView: View {
             switch scope {
             case .week: return WeeklyHighlights.week(containing: .now)
             case .month(let i, _): return i
-            case .clips: return nil                                  // any day — the picks decide
+            case .clips, .progress: return nil                       // any day — the picks decide
             }
         }()
-        let picked: Set<UUID>? = { if case .clips(let ids) = scope { return ids }; return nil }()
+        let picked: Set<UUID>? = {
+            switch scope {
+            case .clips(let ids), .progress(let ids, _, _): return ids
+            default: return nil
+            }
+        }()
         let rows = media.filter { !$0.isReel && (picked?.contains($0.id) ?? true) }
         let bySession = Dictionary(grouping: rows, by: \.sessionID)
         func inScope(_ d: Date) -> Bool { interval?.contains(d) ?? true }

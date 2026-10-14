@@ -67,6 +67,26 @@ final class ClipPlaybackController {
         isPlaying = player.rate != 0
     }
 
+    /// Explicit play / pause (Then vs Now drives two controllers in lockstep, prompt 180).
+    func play() {
+        guard let player else { return }
+        if currentTime >= duration - 0.05 { seek(toFraction: 0) }
+        player.play()
+        isPlaying = true
+    }
+
+    func pause() {
+        player?.pause()
+        isPlaying = false
+    }
+
+    /// Playback speed (slow-mo form check, prompt 180): `defaultRate` is what `play()` resumes at.
+    func setRate(_ rate: Float) {
+        guard let player else { return }
+        player.defaultRate = rate
+        if player.rate != 0 { player.rate = rate }
+    }
+
     func toggleMute() {
         guard let player else { return }
         player.isMuted.toggle()
