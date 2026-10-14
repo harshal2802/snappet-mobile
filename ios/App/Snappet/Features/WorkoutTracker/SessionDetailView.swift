@@ -61,6 +61,7 @@ struct SessionDetailView: View {
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
     @Environment(\.modelContext) private var context
+    @Environment(SuiteRouter.self) private var router
     private let mediaLibrary = MediaLibraryService()
 
     // The type-adaptive recap header (E2) — shared with the post-Finish summary via `SessionRecap`.
@@ -119,7 +120,8 @@ struct SessionDetailView: View {
                                 onRemove: { pendingRemoval = $0 },
                                 onOpenStudio: { studio = $0 },
                                 pastClipCounts: pastClipCounts,
-                                onOpenPastClips: { pastClipsFor = $0 })
+                                onOpenPastClips: { pastClipsFor = $0 },
+                                onOpenDashboard: { router.push($0) })
         }
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
@@ -444,6 +446,8 @@ private struct SessionMediaSection: View {
     /// Past clips per activity elsewhere in history + the parent-hosted sheet opener (prompt 178).
     let pastClipCounts: [ActivityKey: Int]
     let onOpenPastClips: (ActivityClipsTarget) -> Void
+    /// Push the activity's dashboard (prompt 179).
+    let onOpenDashboard: (ActivityRoute) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -471,8 +475,10 @@ private struct SessionMediaSection: View {
          onRemove: @escaping (SessionMedia) -> Void,
          onOpenStudio: @escaping (StudioPresentation) -> Void,
          pastClipCounts: [ActivityKey: Int] = [:],
-         onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in }) {
+         onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in },
+         onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in }) {
         self.pastClipCounts = pastClipCounts
+        self.onOpenDashboard = onOpenDashboard
         self.onOpenPastClips = onOpenPastClips
         self.session = session
         self.resolver = resolver
@@ -541,6 +547,18 @@ private struct SessionMediaSection: View {
                     HStack {
                         Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                         Spacer()
+                        if let key = ActivityKey.of(ex) {
+                            Button {
+                                onOpenDashboard(ActivityRoute(
+                                    key: key, title: resolver.name(for: ex.exerciseId, override: ex.displayName)))
+                            } label: {
+                                Image(systemName: "chart.xyaxis.line").font(.caption.weight(.bold))
+                                    .foregroundStyle(SnappetColor.workout)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("activity.openDashboard")
+                            .accessibilityLabel("Progress")
+                        }
                         if let key = ActivityKey.of(ex), let count = pastClipCounts[key], count > 0 {
                             PastClipsChip(count: count) {
                                 onOpenPastClips(ActivityClipsTarget(
