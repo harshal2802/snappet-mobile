@@ -52,6 +52,14 @@ private struct AdaptiveItemDetail: View {
                 }
             }
 
+            // The whole discipline's progress — every climb / run / timed effort (prompt 181).
+            Section {
+                NavigationLink(value: ActivityRoute(key: .discipline(item.discipline), title: item.discipline.label)) {
+                    Label("View progress", systemImage: "chart.xyaxis.line")
+                }
+                .accessibilityIdentifier("library.viewProgress")
+            }
+
             ForEach(Array(metadata.enumerated()), id: \.offset) { _, row in
                 Section(row.title) {
                     ForEach(row.lines, id: \.self) { Text($0).font(.callout) }

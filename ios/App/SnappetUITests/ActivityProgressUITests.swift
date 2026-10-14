@@ -23,6 +23,9 @@ final class ActivityProgressUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
+    /// Let a swipe's deceleration finish — a tap on a still-scrolling view only stops the scroll.
+    private func settle() { Thread.sleep(forTimeInterval: 1) }
+
     private func openGymTracker() {
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
@@ -48,6 +51,7 @@ final class ActivityProgressUITests: XCTestCase {
 
         let chip = any("activity.pastClips")
         for _ in 0..<6 where !chip.isHittable { app.swipeUp() }
+        settle()
         XCTAssertTrue(chip.waitForExistence(timeout: 4), "a past-clips chip on the bench header")
         XCTAssertTrue(chip.label.contains("4 past clips"), chip.label)
         snap("01-detail-chip")
@@ -68,6 +72,7 @@ final class ActivityProgressUITests: XCTestCase {
         let routine = app.staticTexts["Push Day"].firstMatch
         // The seeded routine sits under the starter routines — scroll until it's on screen.
         for _ in 0..<6 where !(routine.exists && routine.isHittable) { app.swipeUp() }
+        settle()
         XCTAssertTrue(routine.waitForExistence(timeout: 6))
         routine.tap()
         let start = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Start'")).firstMatch
@@ -93,6 +98,7 @@ final class ActivityProgressUITests: XCTestCase {
 
         let open = any("activity.openDashboard")
         for _ in 0..<6 where !(open.exists && open.isHittable) { app.swipeUp() }
+        settle()
         XCTAssertTrue(open.waitForExistence(timeout: 4), "a progress button on the bench header")
         open.tap()
 
@@ -131,6 +137,7 @@ final class ActivityProgressUITests: XCTestCase {
         row.tap()
         let chip = any("activity.pastClips")
         for _ in 0..<6 where !(chip.exists && chip.isHittable) { app.swipeUp() }
+        settle()
         chip.tap()
         XCTAssertTrue(any("activity.clips.tile").waitForExistence(timeout: 6))
 
@@ -174,5 +181,73 @@ final class ActivityProgressUITests: XCTestCase {
         let reelTitle = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS 'Progress' OR identifier == 'Highlights'")).firstMatch
         XCTAssertTrue(reelTitle.waitForExistence(timeout: 10) || any("weeklyReel.empty").exists, "the reel builder opened")
         snap("10-reel")
+    }
+
+    func testEffortCardAndGhostCompare() {
+        openGymTracker()
+        // Strength: the bench dashboard reads HR at the repeated load.
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Push Day'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        let open = any("activity.openDashboard")
+        for _ in 0..<6 where !(open.exists && open.isHittable) { app.swipeUp() }
+        settle()
+        open.tap()
+        XCTAssertTrue(any("activity.dashboard.effort").waitForExistence(timeout: 6), "the effort card")
+        snap("11-effort")
+
+        // Ghost mode in Then vs Now.
+        let compare = any("activity.dashboard.compare")
+        for _ in 0..<3 where !(compare.exists && compare.isHittable) { app.swipeUp() }
+        settle()
+        compare.tap()
+        let go = any("activity.comparePicker.go")
+        XCTAssertTrue(go.waitForExistence(timeout: 6), "Compare asks which two clips first")
+        go.tap()
+        XCTAssertTrue(any("activity.compare.ghost").waitForExistence(timeout: 6))
+        any("activity.compare.ghost").tap()
+        XCTAssertTrue(app.staticTexts["Ghost on"].waitForExistence(timeout: 3))
+        snap("12-ghost")
+        any("activity.compare.close").tap()
+        any("activity.comparePicker.cancel").tap()
+    }
+
+    func testClimbDashboardAndClimbingOverview() {
+        openGymTracker()
+        // A named climb's dashboard from its session (the seed's newest Bouldering has a filmed V5) …
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Bouldering'")).firstMatch
+        _ = row.waitForExistence(timeout: 4)
+        for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp() }
+        settle()
+        XCTAssertTrue(row.exists)
+        row.tap()
+        let open = app.buttons.matching(identifier: "activity.openDashboard").firstMatch
+        for _ in 0..<6 where !(open.exists && open.isHittable) { app.swipeUp() }
+        settle()
+        XCTAssertTrue(open.exists, "a progress button on a climb header")
+        open.tap()
+        XCTAssertTrue(any("activity.dashboard.kpis").waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["Hardest send"].exists)
+        snap("14-climb")
+
+        // … up to all climbing, whose climbs list drills back into one climb.
+        let allClimbing = any("activity.dashboard.allClimbing")
+        for _ in 0..<6 where !(allClimbing.exists && allClimbing.isHittable) { app.swipeUp() }
+        Thread.sleep(forTimeInterval: 1)
+        allClimbing.tap()
+        XCTAssertTrue(app.navigationBars["Climbing"].waitForExistence(timeout: 6))
+        let climbRow = any("activity.dashboard.climb")
+        for _ in 0..<6 where !(climbRow.exists && climbRow.isHittable) { app.swipeUp() }
+        settle()
+        XCTAssertTrue(climbRow.exists, "the named climbs list")
+        snap("13-climbing")
+        Thread.sleep(forTimeInterval: 1)
+        climbRow.tap()
+        XCTAssertTrue(any("activity.dashboard.allClimbing").waitForExistence(timeout: 6) || app.staticTexts["Hardest send"].exists,
+                      "a climb row opens that climb's dashboard")
     }
 }
