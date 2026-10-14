@@ -14,11 +14,37 @@ struct ActivityKey: Hashable, Sendable {
     /// The activity a session entity belongs to, or `nil` when it has no cross-session identity — an
     /// UNNAMED ad-hoc entity (an unnamed climb is just "a climb"; grouping every unnamed climb together
     /// would mix different routes into one "progress" strip).
+    ///
+    /// A CLIMB is identified by its name whenever it has one, even under a shared library id like
+    /// `climb.boulder` (prompt 181): every climb logged from the library shares that id, so the id alone would
+    /// lump different routes together. An unnamed library climb falls back to the id.
     static func of(_ ex: SessionExercise) -> ActivityKey? {
-        guard ex.exerciseId.hasPrefix("adhoc-") else { return ActivityKey(exerciseId: ex.exerciseId, nameKey: "") }
         let name = normalize(ex.displayName ?? "")
-        guard !name.isEmpty else { return nil }
-        return ActivityKey(exerciseId: ex.exerciseId, nameKey: name)
+        if ex.exerciseId.hasPrefix("adhoc-") {
+            guard !name.isEmpty else { return nil }
+            return ActivityKey(exerciseId: ex.exerciseId, nameKey: name)
+        }
+        if ex.discipline == .climb, !name.isEmpty { return ActivityKey(exerciseId: ex.exerciseId, nameKey: name) }
+        return ActivityKey(exerciseId: ex.exerciseId, nameKey: "")
+    }
+
+    /// A whole DISCIPLINE as one activity ("Climbing", "Running" — prompt 181): matches every entity of it.
+    static func discipline(_ d: WorkoutDiscipline) -> ActivityKey {
+        ActivityKey(exerciseId: disciplinePrefix + d.rawValue, nameKey: "")
+    }
+
+    private static let disciplinePrefix = "discipline:"
+
+    /// The discipline this key spans, or `nil` for a single activity.
+    var disciplineScope: WorkoutDiscipline? {
+        guard exerciseId.hasPrefix(Self.disciplinePrefix) else { return nil }
+        return WorkoutDiscipline(rawValue: String(exerciseId.dropFirst(Self.disciplinePrefix.count)))
+    }
+
+    /// Whether a session entity belongs to this activity.
+    func matches(_ ex: SessionExercise) -> Bool {
+        if let d = disciplineScope { return ex.discipline == d }
+        return ActivityKey.of(ex) == self
     }
 
     static func normalize(_ name: String) -> String {
@@ -101,7 +127,7 @@ enum ActivityMediaIndex {
         var groups: [ActivitySessionGroup] = []
         for session in history where session.id != excludingSession {
             guard let rows = byMedia[session.id] else { continue }
-            let entities = session.exercises.filter { ActivityKey.of($0) == key }
+            let entities = session.exercises.filter { key.matches($0) }
             guard !entities.isEmpty else { continue }
             let entityByID = Dictionary(entities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let clips: [ActivityClip] = rows
@@ -127,7 +153,7 @@ enum ActivityMediaIndex {
     static func untaggedCount(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
                               excludingSession: UUID? = nil) -> Int {
         let sessionIDs = Set(history.filter { s in
-            s.id != excludingSession && s.exercises.contains { ActivityKey.of($0) == key }
+            s.id != excludingSession && s.exercises.contains { key.matches($0) }
         }.map(\.id))
         return media.filter { !$0.isReel && $0.assignedExerciseID == nil && sessionIDs.contains($0.sessionID) }.count
     }

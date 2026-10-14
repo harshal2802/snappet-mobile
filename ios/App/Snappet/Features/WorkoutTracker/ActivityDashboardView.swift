@@ -21,6 +21,9 @@ struct ActivityDashboardView: View {
     @Environment(\.modelContext) private var context
     @State private var dashboard: ActivityDashboard?
     @State private var groups: [ActivitySessionGroup] = []
+    /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
+    @State private var effort: ActivityInsights.Effort?
+    @State private var climbs: [ActivityInsights.ClimbSummary] = []
     @State private var loaded = false
     @State private var selected: UUID?
     @State private var viewing: ViewerRequest?
@@ -45,8 +48,16 @@ struct ActivityDashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     kpiRow(d)
                     chartCard(d)
+                    if let effort { effortCard(effort) }
                     if !allClips.isEmpty { clipsCard }
+                    if !climbs.isEmpty { climbsCard }
                     recordsCard(d)
+                    if d.discipline == .climb, key.disciplineScope == nil {
+                        NavigationLink(value: ActivityRoute(key: .discipline(.climb), title: "Climbing")) {
+                            Label("All climbing", systemImage: "figure.climbing").font(.subheadline.weight(.semibold))
+                        }
+                        .accessibilityIdentifier("activity.dashboard.allClimbing")
+                    }
                     frequencyCard(d)
                 }
                 .padding(16)
@@ -68,6 +79,8 @@ struct ActivityDashboardView: View {
             dashboard = ActivityDashboard.make(key: key, history: history, media: media, unit: unit)
             groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
                                                distanceUnit: unit == .lb ? .mi : .km)
+            effort = ActivityInsights.effort(key: key, history: history, unit: unit)
+            if key.disciplineScope == .climb { climbs = ActivityInsights.climbs(history: history, media: media) }
             loaded = true
         }
         .fullScreenCover(item: $viewing) { req in
@@ -179,8 +192,12 @@ struct ActivityDashboardView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 ClipThumbnail(localIdentifier: clip.media.localIdentifier, kind: clip.media.kindRaw,
                                               size: CGSize(width: 64, height: 84), exactFrame: false)
-                                Text(clip.sessionDate, format: .dateTime.day().month(.abbreviated))
-                                    .font(.caption2).foregroundStyle(.secondary)
+                                // A climb's attempt reads better by outcome ("V5 · Sent") than by date.
+                                Group {
+                                    if dashboard?.discipline == .climb, let s = clip.setSummary { Text(s) }
+                                    else { Text(clip.sessionDate, format: .dateTime.day().month(.abbreviated)) }
+                                }
+                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(width: 64, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -207,7 +224,55 @@ struct ActivityDashboardView: View {
             }
             .font(.caption.weight(.semibold))
         }
+        .accessibilityElement(children: .contain)   // keeps the buttons' own identifiers
         .accessibilityIdentifier("activity.dashboard.clips")
+    }
+
+    private func effortCard(_ e: ActivityInsights.Effort) -> some View {
+        let delta = e.change
+        let trailing = delta == 0 ? "steady" : "\(delta > 0 ? "+" : "−")\(abs(delta)) bpm\(e.fitter ? " · fitter" : "")"
+        return card(e.title, trailing: trailing) {
+            Chart(e.points) { p in
+                LineMark(x: .value("Date", p.date), y: .value("bpm", p.bpm))
+                    .foregroundStyle(SnappetColor.perfHard).interpolationMethod(.monotone)
+                PointMark(x: .value("Date", p.date), y: .value("bpm", p.bpm))
+                    .foregroundStyle(SnappetColor.perfHard).symbolSize(20)
+            }
+            .chartYScale(domain: .automatic(includesZero: false))
+            .frame(height: 90)
+            Text(e.referenceKg != nil
+                 ? "The same weight costing fewer beats means you're fitter."
+                 : "Average peak heart rate across your sets each session.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("activity.dashboard.effort")
+    }
+
+    /// The named climbs inside a climbing overview — each opens its own dashboard (prompt 181).
+    private var climbsCard: some View {
+        card("Climbs", trailing: "\(climbs.count)") {
+            ForEach(climbs.prefix(15)) { c in
+                NavigationLink(value: ActivityRoute(key: c.key, title: c.name)) {
+                    HStack(spacing: 10) {
+                        Text(c.grade ?? "–").font(.caption.weight(.heavy)).monospacedDigit()
+                            .frame(width: 34, height: 26)
+                            .background(SnappetColor.kilter.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(c.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Text("\(c.attempts) \(c.attempts == 1 ? "attempt" : "attempts") · \(c.sessions) \(c.sessions == 1 ? "session" : "sessions")\(c.clipCount > 0 ? " · \(c.clipCount) \(c.clipCount == 1 ? "clip" : "clips")" : "")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(c.sent ? "Sent ✓" : "Project").font(.caption.weight(.bold))
+                            .foregroundStyle(c.sent ? SnappetColor.perfFresh : SnappetColor.kilter)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("activity.dashboard.climb")
+            }
+        }
     }
 
     private func recordsCard(_ d: ActivityDashboard) -> some View {

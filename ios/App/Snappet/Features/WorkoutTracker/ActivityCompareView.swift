@@ -21,6 +21,8 @@ struct ActivityCompareView: View {
     @State private var left = ClipPlaybackController()
     @State private var right = ClipPlaybackController()
     @State private var slow = false
+    /// Ghost mode (prompt 181): "then" laid over "now" at 40 % — works when the camera stood in the same spot.
+    @State private var ghost = false
     @State private var fractionL: Double = 1
     @State private var fractionR: Double = 1
 
@@ -43,11 +45,22 @@ struct ActivityCompareView: View {
             }
             .padding(.horizontal, 16)
 
-            HStack(spacing: 6) {
-                if let l = leftClip { side(l, controller: left, fraction: $fractionL, muted: true, select: { leftID = $0 }) }
-                if let r = rightClip { side(r, controller: right, fraction: $fractionR, muted: false, select: { rightID = $0 }) }
+            Group {
+                if ghost, let l = leftClip, let r = rightClip {
+                    ZStack {
+                        side(r, controller: right, fraction: $fractionR, muted: false, select: { rightID = $0 })
+                        side(l, controller: left, fraction: $fractionL, muted: true, select: { leftID = $0 }, showsLabel: false)
+                            .opacity(0.4).allowsHitTesting(false)
+                    }
+                    .padding(.horizontal, 40)
+                } else {
+                    HStack(spacing: 6) {
+                        if let l = leftClip { side(l, controller: left, fraction: $fractionL, muted: true, select: { leftID = $0 }) }
+                        if let r = rightClip { side(r, controller: right, fraction: $fractionR, muted: false, select: { rightID = $0 }) }
+                    }
+                    .padding(.horizontal, 6)
+                }
             }
-            .padding(.horizontal, 6)
             // `.contain` so the sides' Change buttons keep their own identifiers.
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("activity.compare")
@@ -63,26 +76,28 @@ struct ActivityCompareView: View {
     }
 
     private func side(_ clip: ActivityClip, controller: ClipPlaybackController, fraction: Binding<Double>,
-                      muted: Bool, select: @escaping (UUID) -> Void) -> some View {
+                      muted: Bool, select: @escaping (UUID) -> Void, showsLabel: Bool = true) -> some View {
         ClipMediaSurface(clip: clip.media.mediaInput, isActive: true, payload: nil, fraction: fraction,
                          background: .black, muted: muted, controller: controller, fill: true)
             .id(clip.id)
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(clip.sessionDate, format: .dateTime.day().month(.abbreviated).year())
-                        .font(.caption.weight(.bold))
-                    if let s = clip.setSummary { Text(s).font(.caption2) }
-                    if let bpm = clip.avgBPM { Text("♥ \(bpm)").font(.caption2) }
+                if showsLabel {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(clip.sessionDate, format: .dateTime.day().month(.abbreviated).year())
+                            .font(.caption.weight(.bold))
+                        if let s = clip.setSummary { Text(s).font(.caption2) }
+                        if let bpm = clip.avgBPM { Text("♥ \(bpm)").font(.caption2) }
+                    }
+                    .foregroundStyle(.white).monospacedDigit()
+                    .padding(6).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(6)
                 }
-                .foregroundStyle(.white).monospacedDigit()
-                .padding(6).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-                .padding(6)
             }
             // A visible way to swap this side — the old tap-the-date menu was undiscoverable.
             .overlay(alignment: .bottom) {
-                Menu {
+                if showsLabel { Menu {
                     ForEach(clips) { c in
                         Button(ActivityProgressReel.caption(c)) { select(c.id) }
                     }
@@ -94,7 +109,7 @@ struct ActivityCompareView: View {
                         .overlay(Capsule().strokeBorder(.white.opacity(0.3)))
                 }
                 .padding(.bottom, 10)
-                .accessibilityIdentifier("activity.compare.change")
+                .accessibilityIdentifier("activity.compare.change") }
             }
     }
 
@@ -114,6 +129,8 @@ struct ActivityCompareView: View {
                 left.setRate(slow ? 0.5 : 1); right.setRate(slow ? 0.5 : 1)
             }
             .accessibilityIdentifier("activity.compare.speed")
+            control(symbol: "circle.lefthalf.filled", label: ghost ? "Ghost on" : "Ghost") { ghost.toggle() }
+                .accessibilityIdentifier("activity.compare.ghost")
         }
         .foregroundStyle(.white)
     }

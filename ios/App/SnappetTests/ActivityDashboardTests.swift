@@ -102,6 +102,7 @@ final class ActivityDashboardTests: XCTestCase {
         XCTAssertEqual(d.metric, .hardestSend)
         XCTAssertEqual(d.points.map(\.label), ["V3", "V4"])
         XCTAssertEqual(d.records.first?.value, "V4")
+        XCTAssertEqual(d.kpis.first?.detail, "▲ from V3", "grades are ranks, not percentages")
     }
 
     // MARK: - Frequency

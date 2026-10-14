@@ -9902,3 +9902,14 @@ stripes, and the panel read as an opaque slab.
 - (2026-10-14 follow-up, user feedback) **Compare asks which two clips first** (`ActivityComparePicker`, first + latest
   pre-picked, a third pick replaces the oldest pick, older plays as "Then"). The original tap-the-date menu for swapping
   a side was undiscoverable — each side now has a visible "Change" button.
+
+## 2026-10-13 — Effort, climbing overview, ghost compare (prompt 181)
+
+- **"Fitter" is only claimed like-for-like**: peak HR at the load lifted in the most sessions (≥ 2), and only for a
+  ≥ 3 bpm drop. Without a repeated load the card shows average peak per set, worded neutrally — a lower peak at a
+  different load proves nothing.
+- **A climb with a name is identified by its name even under a shared library id** (`climb.boulder`); before this,
+  every library boulder was one "activity". An unnamed library climb still falls back to the id.
+- A whole discipline is an `ActivityKey` too (`discipline:<raw>`, `matches(_:)`), so the dashboard, clips and
+  reels work unchanged for "Climbing" / "Running" / "Timed".
+- Hardest-send improvement reads "▲ from V3", never a percentage of grade difficulty.

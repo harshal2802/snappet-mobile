@@ -81,7 +81,7 @@ struct ActivityDashboard: Equatable, Sendable {
         var sessions: [(WorkoutSession, [SessionExercise])] = []
         for s in history where !s.isActive {
             let ents = s.exercises.filter { ex in
-                ActivityKey.of(ex) == key && ex.sets.contains { $0.completedAt != nil }
+                key.matches(ex) && ex.sets.contains { $0.completedAt != nil }
             }
             if !ents.isEmpty { sessions.append((s, ents)) }
         }
@@ -193,8 +193,12 @@ struct ActivityDashboard: Equatable, Sendable {
             let change = firstValue != 0 ? (best.value - firstValue) / firstValue : 0
             let improved = metric.higherIsBetter ? change > 0.0001 : change < -0.0001
             let pct = Int((abs(change) * 100).rounded())
+            // A grade is a rank, not a quantity — "▲ 67%" would be meaningless; say where it started.
+            let detail: String? = !improved ? nil
+                : metric == .hardestSend ? points.first.map { "▲ from \($0.label)" }
+                : pct > 0 ? "▲ \(pct)%" : nil
             out.append(KPI(title: metric == .pace ? "Best pace" : metric.title, value: best.label,
-                           detail: improved && pct > 0 ? "▲ \(pct)%" : nil, improving: improved))
+                           detail: detail, improving: improved))
         }
         // Frequency over the last 8 weeks.
         let recent = weeks.suffix(8).reduce(0, +)
