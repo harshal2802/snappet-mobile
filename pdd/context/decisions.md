@@ -9877,3 +9877,14 @@ stripes, and the panel read as an opaque slab.
   live player.
 - Each clip in the cross-session viewer draws ITS OWN session's HR (`ClipHROverlay` per clip), never a shared series.
 - Untagged (General) clips are not guessed into an activity; the sheet only reports how many exist in those sessions.
+
+## 2026-10-13 — Activity dashboard (prompt 179)
+
+- **The hero metric is chosen by discipline**, not configurable: est. 1RM (Epley) for weighted strength, max reps for
+  bodyweight-only, hardest SENT grade for climbs (attempts never count), longest hold for timed, pace for runs
+  (the only lower-is-better metric; the chart's y-axis is reversed so "up" is always better).
+- `ProgressRoute` renders the new dashboard and `ExerciseProgressView` is deleted: two progress screens for one
+  exercise would drift.
+- Records that were set in a filmed session show that session's clip and play it; un-filmed records are plain rows
+  (a disabled button rendered greyed out and read as broken).
+- A logged weight is shown as typed in its own unit (67.5 kg stays 67.5), matching the prompt-146 rule.

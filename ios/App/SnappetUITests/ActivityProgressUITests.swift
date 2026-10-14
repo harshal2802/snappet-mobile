@@ -82,4 +82,43 @@ final class ActivityProgressUITests: XCTestCase {
         assertSheetShowsFourBenchClips()
         snap("05-pager-sheet")
     }
+
+    func testDashboardFromSessionDetail() {
+        openGymTracker()
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Push Day'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+
+        let open = any("activity.openDashboard")
+        for _ in 0..<6 where !(open.exists && open.isHittable) { app.swipeUp() }
+        XCTAssertTrue(open.waitForExistence(timeout: 4), "a progress button on the bench header")
+        open.tap()
+
+        XCTAssertTrue(any("activity.dashboard.kpis").waitForExistence(timeout: 6), "KPI tiles")
+        XCTAssertTrue(any("activity.dashboard.chart").exists, "the hero chart")
+        XCTAssertTrue(app.staticTexts["Est. 1RM"].exists)
+        XCTAssertTrue(any("activity.dashboard.clips").exists, "the clips filmstrip")
+        // Tapping near the first (filmed) point selects it and offers its clip.
+        any("activity.dashboard.chart").coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.5)).tap()
+        XCTAssertTrue(any("activity.dashboard.playSelected").waitForExistence(timeout: 3), "Play clip for a filmed point")
+        snap("06-dashboard-top")
+        any("activity.dashboard.playSelected").tap()
+        XCTAssertTrue(any("activity.clips.viewer").waitForExistence(timeout: 6))
+        any("activity.clips.close").tap()
+        app.swipeUp()
+        XCTAssertTrue(any("activity.dashboard.frequency").waitForExistence(timeout: 3))
+        snap("07-dashboard-bottom")
+        // The first-session record was filmed (the seed's oldest Push Day) → it plays.
+        let first = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'activity.dashboard.record' AND label CONTAINS 'First session'")).firstMatch
+        XCTAssertTrue(first.exists)
+        // Let the swipe's deceleration finish — a tap on a still-scrolling view only stops the scroll.
+        _ = app.wait(for: .runningForeground, timeout: 1.5)
+        Thread.sleep(forTimeInterval: 1)
+        first.tap()
+        XCTAssertTrue(any("activity.clips.viewer").waitForExistence(timeout: 6), "the record's clip plays")
+        any("activity.clips.close").tap()
+    }
 }

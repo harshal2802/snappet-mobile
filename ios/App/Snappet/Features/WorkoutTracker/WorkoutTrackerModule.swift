@@ -190,9 +190,15 @@ struct WorkoutHomeView: View {
                                   history: history.filter { $0.id != s.id }, schedule: routine?.schedule)
             }
         }
+        // The per-activity dashboard (activity progress P2, prompt 179): the library/dashboard "progress"
+        // entry (`ProgressRoute`, a catalog exercise) and `ActivityRoute` (any activity, e.g. a named climb
+        // from a session's detail) render the same screen. It replaced `ExerciseProgressView`.
         .navigationDestination(for: ProgressRoute.self) { route in
-            ExerciseProgressView(exerciseId: route.exerciseId, resolver: resolver,
-                                 history: history, unit: unit)
+            ActivityDashboardView(key: ActivityKey(exerciseId: route.exerciseId, nameKey: ""),
+                                  title: resolver.name(for: route.exerciseId), history: history, unit: unit)
+        }
+        .navigationDestination(for: ActivityRoute.self) { route in
+            ActivityDashboardView(key: route.key, title: route.title, history: history, unit: unit)
         }
         // Smart workout planning (workout-redesign E7): the pure WorkoutRecommender + per-muscle
         // WorkoutHistoryStats fed by the @MainActor resolver join, surfaced as an editable draft.
