@@ -53,6 +53,10 @@ struct SessionDetailView: View {
     /// discipline-adaptive text fields editing `drafts`; Save parses them back into the session, Cancel discards.
     @State private var editingSets = false
     @State private var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft] = [:]
+    /// Past clips per activity in the OTHER sessions (activity progress P1, prompt 178) + the open sheet,
+    /// hosted here on the List (a stable host) like `studio`.
+    @State private var pastClipCounts: [ActivityKey: Int] = [:]
+    @State private var pastClipsFor: ActivityClipsTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
@@ -113,7 +117,9 @@ struct SessionDetailView: View {
                                 sport: sport, category: dominantCategory,
                                 setDrafts: $setDrafts, keypadFocus: $keypadFocused,
                                 onRemove: { pendingRemoval = $0 },
-                                onOpenStudio: { studio = $0 })
+                                onOpenStudio: { studio = $0 },
+                                pastClipCounts: pastClipCounts,
+                                onOpenPastClips: { pastClipsFor = $0 })
         }
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
@@ -160,6 +166,14 @@ struct SessionDetailView: View {
             StudioEditorView(project: p.project, context: context,
                              focusClipMediaID: p.focusClipMediaID,
                              visibleClipMediaIDs: p.visibleClipMediaIDs)
+        }
+        .sheet(item: $pastClipsFor) { target in
+            ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
+        }
+        .task {
+            pastClipCounts = ActivityMediaIndex.counts(history: history,
+                                                       media: ActivityMediaStore.snapshot(context: context),
+                                                       excludingSession: session.id)
         }
     }
 
@@ -427,6 +441,9 @@ private struct SessionMediaSection: View {
     /// present from a stable host, not a flattened Group). This is the same reason the old per-clip
     /// editor sheet was hosted on the parent.
     let onOpenStudio: (StudioPresentation) -> Void
+    /// Past clips per activity elsewhere in history + the parent-hosted sheet opener (prompt 178).
+    let pastClipCounts: [ActivityKey: Int]
+    let onOpenPastClips: (ActivityClipsTarget) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -452,7 +469,11 @@ private struct SessionMediaSection: View {
          setDrafts: Binding<[SessionSetEditing.Key: SessionSetEditing.Draft]>,
          keypadFocus: FocusState<Bool>.Binding,
          onRemove: @escaping (SessionMedia) -> Void,
-         onOpenStudio: @escaping (StudioPresentation) -> Void) {
+         onOpenStudio: @escaping (StudioPresentation) -> Void,
+         pastClipCounts: [ActivityKey: Int] = [:],
+         onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in }) {
+        self.pastClipCounts = pastClipCounts
+        self.onOpenPastClips = onOpenPastClips
         self.session = session
         self.resolver = resolver
         self.unit = unit
@@ -517,7 +538,17 @@ private struct SessionMediaSection: View {
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
                     }
                 } header: {
-                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                    HStack {
+                        Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        Spacer()
+                        if let key = ActivityKey.of(ex), let count = pastClipCounts[key], count > 0 {
+                            PastClipsChip(count: count) {
+                                onOpenPastClips(ActivityClipsTarget(
+                                    key: key, title: resolver.name(for: ex.exerciseId, override: ex.displayName)))
+                            }
+                            .textCase(nil)
+                        }
+                    }
                 }
             }
             if !generalMedia.isEmpty {

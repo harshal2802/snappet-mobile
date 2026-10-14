@@ -63,6 +63,12 @@ struct FreeformPlayerView: View {
     @State private var historyFor: HistoryTarget?
     /// The catalog exercise a guide (photos + how-to) drawer is open for.
     @State private var guideFor: GuideTarget?
+    /// Past clips per activity across history (activity progress P1, prompt 178) — computed ONCE per
+    /// presentation (history is fixed for the live session), so the ~1 Hz re-render only does a lookup.
+    @State private var pastClipCounts: [ActivityKey: Int] = [:]
+    @State private var pastClipsLoaded = false
+    /// The activity whose past-clips sheet is open.
+    @State private var pastClipsFor: ActivityClipsTarget?
     /// The exercise whose page shows the rest-morph hero while a rest runs (set by `startRest`).
     @State private var restExerciseID: UUID?
     /// The armed rest total, for the rest ring's progress fraction.
@@ -324,11 +330,21 @@ struct FreeformPlayerView: View {
         .sheet(item: $guideFor) { target in
             GuideDrawer(exercise: target.exercise)
         }
+        // Every past clip of this activity (activity progress P1) — without leaving the set.
+        .sheet(item: $pastClipsFor) { target in
+            ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
+        }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
             recomputeClimbStats()
             rebuildPreviousClimbs()
+            if !pastClipsLoaded {
+                pastClipsLoaded = true
+                pastClipCounts = ActivityMediaIndex.counts(history: history,
+                                                           media: ActivityMediaStore.snapshot(context: context),
+                                                           excludingSession: session.id)
+            }
             pushLiveActivity()
             // The rest ticker is torn down whenever this screen disappears (a full-screen cover, the
             // finish summary's Keep going); a rest that survived that must restart its display refresh
@@ -822,6 +838,12 @@ struct FreeformPlayerView: View {
                 }
             } else {
                 planRow(ex)
+            }
+            if let key = ActivityKey.of(ex), let count = pastClipCounts[key], count > 0 {
+                PastClipsChip(count: count) {
+                    pastClipsFor = ActivityClipsTarget(key: key,
+                                                       title: resolver.name(for: ex.exerciseId, override: ex.displayName))
+                }
             }
         }
     }

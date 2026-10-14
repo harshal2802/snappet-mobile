@@ -9866,3 +9866,14 @@ stripes, and the panel read as an opaque slab.
   zoom will need stay alive at alpha 0.
 - Year is a 9-across mosaic (wireframe option A), not Photos-style year cards: covers keep flowing between levels,
   where cards would force a cross-fade.
+
+## 2026-10-12 — Activity progress: past clips of an activity (prompt 178)
+
+- **An activity's identity is `exerciseId`, plus the normalized display name for `adhoc-*` entities** (case- and
+  whitespace-insensitive — looser than `lastSessionSets`' exact match, so "Blue crimp" and "blue crimp " are one
+  climb). An UNNAMED ad-hoc entity has no identity and gets no chip: grouping every unnamed climb would mix routes.
+- "Past" excludes the current session (live or detail) — its own clips are already on the page.
+- Counts are computed once per presentation from a one-shot fetch, not an `@Query` of all media inside the 1 Hz
+  live player.
+- Each clip in the cross-session viewer draws ITS OWN session's HR (`ClipHROverlay` per clip), never a shared series.
+- Untagged (General) clips are not guessed into an activity; the sheet only reports how many exist in those sessions.

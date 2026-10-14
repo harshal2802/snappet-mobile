@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activity Progress Ideation</title>
+<style>
+:root{
+  --brand:#FF5A4D; --ink:#1A1A1E; --paper:#FBFAF8; --surface:#FFFFFF; --muted:#F2F1EE;
+  --hair:#E7E5E1; --text2:#6B6A66; --workout:#F2761E; --kilter:#B45309; --habits:#3F9D55;
+  --journal:#7C5CD6; --budget:#2A7DE1; --hard:#E5483D;
+  --glass:#16161a; --glass2:#232329; --glassText:#F4F3F1; --glassText2:#A6A5A1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --brand:#FF7A6B; --ink:#F4F3F1; --paper:#121214; --surface:#1E1E22; --muted:#26262B;
+    --hair:#34343A; --text2:#A6A5A1; --workout:#FF9645; --kilter:#F59E0B; --habits:#5BC074;
+    --journal:#9D82F0; --budget:#589BF2; --hard:#FF6A5C;
+  }
+}
+:root[data-theme="dark"]{
+  --brand:#FF7A6B; --ink:#F4F3F1; --paper:#121214; --surface:#1E1E22; --muted:#26262B;
+  --hair:#34343A; --text2:#A6A5A1; --workout:#FF9645; --kilter:#F59E0B; --habits:#5BC074;
+  --journal:#9D82F0; --budget:#589BF2; --hard:#FF6A5C;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:34px;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:22px;margin:56px 0 6px;letter-spacing:-.01em}
+h2 .num{color:var(--workout);margin-right:8px}
+.lede{color:var(--text2);max-width:760px;margin:0}
+.sub{color:var(--text2);margin:0 0 22px;max-width:780px}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--muted);padding:1px 5px;border-radius:5px}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--muted);color:var(--text2)}
+
+/* data flow */
+.flow{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap}
+.node{flex:1 1 170px;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:14px}
+.node b{display:block;font-size:14px}
+.node small{color:var(--text2);font-size:12.5px;display:block;margin-top:4px}
+.node.new{border:2px dashed var(--workout)}
+.node.out{background:color-mix(in srgb,var(--workout) 10%,var(--surface))}
+.arrow{align-self:center;color:var(--text2);font-size:20px}
+.callout{margin-top:14px;background:color-mix(in srgb,var(--habits) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--habits) 40%,transparent);border-radius:12px;padding:12px 14px;font-size:14px}
+
+/* phones */
+.row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.screen{flex:0 0 auto;width:300px}
+.screen h3{font-size:15px;margin:12px 0 2px}
+.screen p{font-size:13px;color:var(--text2);margin:0}
+.phone{width:300px;height:620px;border-radius:44px;padding:10px;background:#0b0b0d;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.scr{width:100%;height:100%;border-radius:35px;overflow:hidden;position:relative;background:var(--paper);color:var(--ink);font-size:13px}
+.scr.dark{background:var(--glass);color:var(--glassText)}
+.status{height:38px;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:12px;font-weight:600}
+.island{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:90px;height:24px;background:#000;border-radius:14px}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px}
+.nav .t{font-weight:700;font-size:16px}
+.nav .a{color:var(--workout);font-size:13px}
+.pad{padding:0 14px}
+
+/* thumbs */
+.th{border-radius:8px;position:relative;overflow:hidden;aspect-ratio:3/4;background:linear-gradient(135deg,#5a6b7d,#2c3440)}
+.th.v::after{content:"▶";position:absolute;right:5px;bottom:3px;color:#fff;font-size:9px;opacity:.9}
+.th.a{background:linear-gradient(160deg,#c07a4a,#6d3a22)}
+.th.b{background:linear-gradient(160deg,#4f7a5c,#1f3a2b)}
+.th.c{background:linear-gradient(160deg,#7464a8,#2e2650)}
+.th.d{background:linear-gradient(160deg,#a85b5b,#4a2020)}
+.th.e{background:linear-gradient(160deg,#5b8fa8,#1d3a4a)}
+.th .fig{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);width:26%;height:46%;border-radius:40% 40% 10% 10%;background:rgba(255,255,255,.22)}
+.th .bar{position:absolute;left:12%;right:12%;top:38%;height:3px;background:rgba(255,255,255,.55);border-radius:2px}
+.prbadge{position:absolute;left:5px;top:5px;background:var(--brand);color:#fff;font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:5px;letter-spacing:.03em}
+
+/* pager mock */
+.pagerHead{padding:2px 16px 0;display:flex;justify-content:space-between;color:var(--glassText2);font-size:11.5px}
+.exName{font-size:24px;font-weight:800;padding:6px 16px 0;letter-spacing:-.01em}
+.last{padding:2px 16px;color:var(--glassText2);font-size:12px}
+.chipRow{display:flex;gap:8px;padding:12px 16px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:var(--glass2);font-size:12px;font-weight:600}
+.chip.hot{background:color-mix(in srgb,var(--workout) 28%,var(--glass2));color:#FFD3B0;outline:2px solid var(--workout);outline-offset:2px}
+.mini{display:flex;gap:4px}
+.mini .th{width:20px;border-radius:4px}
+.bigStepper{margin:22px 16px 0;background:var(--glass2);border-radius:18px;padding:18px;display:flex;justify-content:space-around;text-align:center}
+.bigStepper b{font-size:30px;display:block}
+.bigStepper span{color:var(--glassText2);font-size:11px}
+.sets{margin:14px 16px;display:flex;gap:6px}
+.sets div{flex:1;height:34px;border-radius:9px;background:var(--glass2);display:grid;place-items:center;font-size:11px;color:var(--glassText2)}
+.sets .done{background:color-mix(in srgb,var(--habits) 40%,var(--glass2));color:#fff}
+.cta{position:absolute;left:16px;right:16px;bottom:26px;height:50px;border-radius:16px;background:var(--workout);color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px}
+
+/* sheet */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:74px;background:var(--paper);color:var(--ink);border-radius:22px 22px 0 0;padding-top:8px}
+.grab{width:36px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 8px}
+.seg{display:flex;background:var(--muted);border-radius:9px;padding:2px;margin:8px 14px}
+.seg span{flex:1;text-align:center;font-size:11.5px;padding:5px 0;border-radius:7px;color:var(--text2)}
+.seg .on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.sess{padding:8px 14px 2px}
+.sess .h{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);margin-bottom:6px}
+.sess .h b{color:var(--ink);font-size:12.5px}
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.stamp{font-size:10px;color:var(--text2);margin-top:3px;line-height:1.25}
+.stamp b{color:var(--ink)}
+.bottomBar{position:absolute;left:12px;right:12px;bottom:22px;display:flex;gap:8px}
+.bottomBar div{flex:1;height:40px;border-radius:12px;background:var(--surface);border:1px solid var(--hair);display:grid;place-items:center;font-size:12px;font-weight:600}
+.bottomBar .primary{background:var(--brand);color:#fff;border:0}
+
+/* compare */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 6px}
+.cmp .th{aspect-ratio:9/16;border-radius:12px}
+.cmp .lab{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.55);color:#fff;padding:3px 7px;border-radius:7px;font-size:10px;line-height:1.3}
+.cmp .lab b{font-size:12px;display:block}
+.scrub{margin:12px 16px 0;height:4px;border-radius:2px;background:var(--glass2);position:relative}
+.scrub::before{content:"";position:absolute;left:0;top:0;bottom:0;width:42%;background:var(--glassText);border-radius:2px}
+.scrub::after{content:"";position:absolute;left:42%;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff;transform:translateX(-50%)}
+.cmpCtl{display:flex;justify-content:space-around;padding:14px 16px;color:var(--glassText2);font-size:11px;text-align:center}
+.cmpCtl b{display:block;color:var(--glassText);font-size:18px}
+.delta{margin:2px 16px;background:var(--glass2);border-radius:14px;padding:10px 12px;font-size:12px;display:flex;justify-content:space-between}
+.delta b{color:#7BE495}
+
+/* dashboard */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px}
+.kpi{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:8px}
+.kpi span{font-size:10px;color:var(--text2);display:block}
+.kpi b{font-size:16px}
+.kpi small{font-size:10px;color:var(--habits);font-weight:600}
+.card{margin:8px 14px;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:10px}
+.card .ct{font-size:12px;font-weight:700;display:flex;justify-content:space-between}
+.card .ct span{font-weight:500;color:var(--text2)}
+.prRow{display:flex;gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--hair);font-size:11.5px}
+.prRow:first-of-type{border-top:0}
+.prRow .th{width:28px;aspect-ratio:1;border-radius:6px;flex:0 0 auto}
+.prRow .r{margin-left:auto;color:var(--text2);font-size:10.5px}
+.heat{display:grid;grid-template-columns:repeat(18,1fr);gap:2px;margin-top:6px}
+.heat i{aspect-ratio:1;border-radius:2px;background:var(--muted)}
+.heat i.l1{background:color-mix(in srgb,var(--workout) 35%,var(--muted))}
+.heat i.l2{background:var(--workout)}
+.tabs{display:flex;gap:6px;padding:4px 14px 6px;overflow:hidden}
+.tabs span{font-size:11px;padding:4px 9px;border-radius:99px;background:var(--muted);color:var(--text2);white-space:nowrap}
+.tabs .on{background:var(--ink);color:var(--paper);font-weight:600}
+svg text{font-family:inherit}
+
+/* discipline table */
+table{border-collapse:collapse;width:100%;background:var(--surface);border:1px solid var(--hair);border-radius:14px;overflow:hidden;font-size:13.5px}
+th,td{padding:10px 12px;text-align:left;border-top:1px solid var(--hair);vertical-align:top}
+th{background:var(--muted);font-size:12px;color:var(--text2);border-top:0}
+tr.hl td{background:color-mix(in srgb,var(--workout) 8%,var(--surface))}
+.tableWrap{overflow-x:auto}
+
+/* roadmap */
+.road{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.step{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:14px;position:relative}
+.step .p{font-weight:800;color:var(--workout);font-size:13px}
+.step b{display:block;margin:2px 0 6px}
+.step ul{margin:0;padding-left:18px;font-size:13px;color:var(--text2)}
+.size{position:absolute;right:12px;top:12px}
+
+/* decisions */
+.dec{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.q{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:14px}
+.q h4{margin:0 0 8px;font-size:15px}
+.opt{display:flex;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid var(--hair)}
+.opt:first-of-type{border-top:0}
+.opt .k{font-weight:700;flex:0 0 18px;color:var(--text2)}
+.opt.rec .k{color:var(--habits)}
+.opt.rec{font-weight:500}
+.tag{font-size:10.5px;font-weight:700;color:var(--habits);margin-left:4px}
+
+.entry{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.ep{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:14px}
+.ep .ic{font-size:22px}
+.ep b{display:block;margin:4px 0}
+.ep p{margin:0;font-size:13px;color:var(--text2)}
+.ep.star{border:2px solid var(--workout)}
+@media (max-width:640px){ h1{font-size:28px} .arrow{transform:rotate(90deg);width:100%;text-align:center} .screen{margin:0 auto} }
+</style>
+</head>
+<body>
+<main>
+  <span class="pill">Ideation · not a spec · 2026-10-12</span>
+  <h1 style="margin-top:10px">Activity progress: past clips + a dashboard for each activity</h1>
+  <p class="lede">For any exercise or climb in a session, see every photo and video you've ever tagged to it, each with that set's numbers. Then give every activity its own dashboard where the chart and the clips are linked.</p>
+
+  <!-- 1 -->
+  <h2><span class="num">01</span>The data is already there</h2>
+  <p class="sub">No schema change. Each clip already knows its session and its exercise, and the exercise's <code>exerciseId</code> stays the same across sessions. One new pure function does the join.</p>
+  <div class="flow">
+    <div class="node"><b>SessionMedia</b><small><code>sessionID</code> + <code>assignedExerciseID</code> + set index + <code>offsetSec</code></small></div>
+    <div class="arrow">→</div>
+    <div class="node"><b>WorkoutSession.exercises</b><small><code>SessionExercise.id</code> → <code>exerciseId</code> (catalog) or <code>adhoc-*</code> + displayName</small></div>
+    <div class="arrow">→</div>
+    <div class="node new"><b>ActivityMediaIndex</b> <span class="pill" style="font-size:10px">new · pure</span><small>Groups history + media by activity. Each clip is stamped with set stats + HR. Unit-tested, no simulator</small></div>
+    <div class="arrow">→</div>
+    <div class="node out"><b>Past clips · Compare · Dashboard · Progress reel</b><small>All read the same index</small></div>
+  </div>
+  <div class="callout">✅ Uses the same matching rule as <code>QuickSessionPager.lastSessionSets</code> (catalog id, or ad-hoc by name). ⚠️ Clips in the <b>General</b> bucket and sessions from before set-assignment existed won't appear unless they get re-tagged.</div>
+
+  <!-- 2 -->
+  <h2><span class="num">02</span>Where you open it</h2>
+  <p class="sub">The same sheet opens from four places. The live pager matters most: you can check your last attempt before you start.</p>
+  <div class="entry">
+    <div class="ep star"><div class="ic">🏋️</div><b>Live pager</b><p>A <code>▶ 14 past clips</code> chip on each exercise page. Opens a sheet and the session keeps running.</p></div>
+    <div class="ep"><div class="ic">📋</div><b>Session detail</b><p>The same chip on each exercise row in a finished session.</p></div>
+    <div class="ep"><div class="ic">🎞️</div><b>Clips feed</b><p>"More from Bench Press" in a post's long-press menu (from prompt 174).</p></div>
+    <div class="ep"><div class="ic">📚</div><b>Library / dashboard</b><p>A filmstrip on the activity dashboard (section 05).</p></div>
+  </div>
+
+  <!-- 3 -->
+  <h2><span class="num">03</span>The past-clips flow</h2>
+  <p class="sub">From the live set, to the history sheet, to a side-by-side compare.</p>
+  <div class="row">
+
+    <!-- A: pager -->
+    <div class="screen">
+      <div class="phone"><div class="scr dark">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="pagerHead"><span>Push Day · 2 of 5</span><span>♥ 128</span></div>
+        <div class="exName">Bench Press</div>
+        <div class="last">Last time: 3×8 @ 72.5 kg</div>
+        <div class="chipRow">
+          <span class="chip hot"><span class="mini"><span class="th v a"></span><span class="th b"></span></span>▶ 14 past clips</span>
+          <span class="chip">ⓘ Guide</span>
+        </div>
+        <div class="bigStepper"><div><b>75</b><span>KG</span></div><div><b>8</b><span>REPS</span></div></div>
+        <div class="sets"><div class="done">✓ 8</div><div class="done">✓ 8</div><div>Set 3</div><div>Set 4</div></div>
+        <div class="cta">Complete set 3</div>
+      </div></div>
+      <h3>A · Chip on the live pager</h3>
+      <p>It shows a count and two tiny thumbnails, and appears only when past clips exist. Tapping it doesn't pause the rest timer.</p>
+    </div>
+
+    <!-- B: sheet -->
+    <div class="screen">
+      <div class="phone"><div class="scr dark">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="nav" style="padding-top:0"><span class="a">Close</span><span class="t">Bench Press</span><span class="a">Select</span></div>
+          <div class="seg"><span class="on">Timeline</span><span>PRs ★</span><span>Grid</span></div>
+          <div class="sess">
+            <div class="h"><b>Today · Push Day</b><span>2 clips</span></div>
+            <div class="strip">
+              <div><div class="th v a"><div class="fig"></div><div class="bar"></div><span class="prbadge">PR</span></div><div class="stamp"><b>75 kg×8</b> · ♥142</div></div>
+              <div><div class="th v a"><div class="fig"></div><div class="bar"></div></div><div class="stamp"><b>75×8</b> · ♥139</div></div>
+            </div>
+          </div>
+          <div class="sess">
+            <div class="h"><b>3 Oct · Push Day</b><span>3 clips</span></div>
+            <div class="strip">
+              <div><div class="th v b"><div class="fig"></div><div class="bar"></div></div><div class="stamp"><b>72.5×8</b> · ♥148</div></div>
+              <div><div class="th b"><div class="fig"></div></div><div class="stamp"><b>72.5×8</b></div></div>
+              <div><div class="th v b"><div class="fig"></div><div class="bar"></div></div><div class="stamp"><b>72.5×6</b> · ♥155</div></div>
+            </div>
+          </div>
+          <div class="sess">
+            <div class="h"><b>12 Mar · Upper</b><span>1 clip</span></div>
+            <div class="strip">
+              <div><div class="th v c"><div class="fig"></div><div class="bar"></div><span class="prbadge">FIRST</span></div><div class="stamp"><b>50×8</b> · ♥151</div></div>
+            </div>
+          </div>
+          <div class="bottomBar"><div>⇆ Compare</div><div class="primary">✦ Progress reel</div></div>
+        </div>
+      </div></div>
+      <h3>B · History sheet</h3>
+      <p>Grouped by session, newest first. Each clip shows <b>that set's numbers and HR</b>, which is what makes it progress and not just footage. PR / FIRST badges come from existing records logic.</p>
+    </div>
+
+    <!-- C: compare -->
+    <div class="screen">
+      <div class="phone"><div class="scr dark">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="nav"><span class="a" style="color:var(--glassText2)">‹ Back</span><span class="t">Then vs Now</span><span class="a">Share</span></div>
+        <div class="cmp">
+          <div class="th v c" style="position:relative"><div class="fig" style="height:40%"></div><div class="bar"></div><div class="lab"><b>12 Mar</b>50 kg × 8 · ♥151</div></div>
+          <div class="th v a" style="position:relative"><div class="fig" style="height:40%"></div><div class="bar"></div><div class="lab"><b>Today</b>75 kg × 8 · ♥142</div></div>
+        </div>
+        <div class="scrub"></div>
+        <div class="cmpCtl"><div><b>⟲</b>Sync start</div><div><b>❚❚</b>Both</div><div><b>½×</b>Speed</div><div><b>◐</b>Ghost</div></div>
+        <div class="delta"><span>7 months</span><span><b>+25 kg</b> · same reps</span><span><b>−9 bpm</b></span></div>
+      </div></div>
+      <h3>C · Then vs Now</h3>
+      <p>Defaults to the first and latest clips, and you can swap in any two. Playback is synced, with slow-mo for a form check. "Ghost" is an opt-in overlay mode for later.</p>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <h2><span class="num">04</span>Four ways to see progress</h2>
+  <p class="sub">Ordered from cheapest to most ambitious.</p>
+  <div class="entry">
+    <div class="ep"><div class="ic">🗂️</div><b>1 · Timeline</b><p>Each clip is labeled with its set and HR. Uses existing data only.</p></div>
+    <div class="ep"><div class="ic">⇆</div><b>2 · Then vs Now</b><p>Two clips side by side, synced. Good for form and smoothness.</p></div>
+    <div class="ep"><div class="ic">★</div><b>3 · PR moments</b><p>The clip from each record (first 80 kg, first V5 send) marked automatically.</p></div>
+    <div class="ep star"><div class="ic">✦</div><b>4 · Progress reel</b><p>One tap: oldest → newest montage with burned captions ("Jan 50 kg → Oct 75 kg"). Reuses <code>ReelView</code>, posts as ✦ REEL.</p></div>
+  </div>
+
+  <!-- 5 -->
+  <h2><span class="num">05</span>Activity dashboard</h2>
+  <p class="sub">Replaces the thin "Your progress" section + <code>ProgressRoute</code>. Chart points with media get a 📷 dot, and <b>tapping a point plays that session's clip</b>.</p>
+  <div class="row">
+
+    <!-- D: strength dashboard -->
+    <div class="screen">
+      <div class="phone"><div class="scr">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="nav"><span class="a">‹ Library</span><span class="t">Bench Press</span><span class="a">⋯</span></div>
+        <div class="kpis">
+          <div class="kpi"><span>Est. 1RM</span><b>93 kg</b><small>▲ 31%</small></div>
+          <div class="kpi"><span>Sessions</span><b>24</b><small>2×/wk</small></div>
+          <div class="kpi"><span>Last done</span><b>Today</b><small>🔥 6 wk</small></div>
+        </div>
+        <div class="card">
+          <div class="ct">Est. 1RM <span>6 mo · 1 y · All</span></div>
+          <svg viewBox="0 0 250 110" width="100%" height="110" aria-label="1RM trend with clip markers">
+            <line x1="0" y1="100" x2="250" y2="100" stroke="var(--hair)"/>
+            <polyline fill="none" stroke="var(--workout)" stroke-width="2.5" stroke-linejoin="round"
+              points="8,88 30,84 52,80 74,82 96,70 118,66 140,60 162,52 184,48 206,38 228,30 244,22"/>
+            <g fill="var(--workout)">
+              <circle cx="30" cy="84" r="2.5"/><circle cx="52" cy="80" r="2.5"/><circle cx="74" cy="82" r="2.5"/>
+              <circle cx="118" cy="66" r="2.5"/><circle cx="140" cy="60" r="2.5"/><circle cx="184" cy="48" r="2.5"/><circle cx="228" cy="30" r="2.5"/>
+            </g>
+            <g>
+              <circle cx="8" cy="88" r="7" fill="var(--surface)" stroke="var(--brand)" stroke-width="2"/><text x="8" y="91" font-size="8" text-anchor="middle">📷</text>
+              <circle cx="96" cy="70" r="7" fill="var(--surface)" stroke="var(--brand)" stroke-width="2"/><text x="96" y="73" font-size="8" text-anchor="middle">📷</text>
+              <circle cx="162" cy="52" r="7" fill="var(--surface)" stroke="var(--brand)" stroke-width="2"/><text x="162" y="55" font-size="8" text-anchor="middle">📷</text>
+              <circle cx="206" cy="38" r="7" fill="var(--surface)" stroke="var(--brand)" stroke-width="2"/><text x="206" y="41" font-size="8" text-anchor="middle">📷</text>
+              <circle cx="244" cy="22" r="9" fill="var(--brand)"/><text x="244" y="25" font-size="9" text-anchor="middle" fill="#fff">▶</text>
+            </g>
+          </svg>
+        </div>
+        <div class="card">
+          <div class="ct">Effort <span>♥ at 70 kg × 8</span></div>
+          <svg viewBox="0 0 250 46" width="100%" height="46">
+            <polyline fill="none" stroke="var(--hard)" stroke-width="2" points="8,10 60,14 110,20 160,26 210,32 244,36"/>
+            <text x="244" y="12" font-size="10" text-anchor="end" fill="var(--habits)" font-weight="700">−11 bpm · fitter</text>
+          </svg>
+        </div>
+        <div class="card">
+          <div class="ct">Records <span>with clips</span></div>
+          <div class="prRow"><span class="th v a"></span>Best set · 75 kg × 8<span class="r">Today</span></div>
+          <div class="prRow"><span class="th v b"></span>Best volume · 1,740 kg<span class="r">3 Oct</span></div>
+          <div class="prRow"><span class="th v c"></span>First session · 50 kg × 8<span class="r">12 Mar</span></div>
+        </div>
+        <div class="card">
+          <div class="ct">Frequency <span>18 wk</span></div>
+          <div class="heat">
+            <i class="l1"></i><i></i><i class="l2"></i><i class="l1"></i><i></i><i class="l2"></i><i class="l2"></i><i></i><i class="l1"></i><i class="l2"></i><i class="l2"></i><i class="l1"></i><i></i><i class="l2"></i><i class="l2"></i><i class="l2"></i><i class="l1"></i><i class="l2"></i>
+          </div>
+        </div>
+      </div></div>
+      <h3>D · Strength dashboard</h3>
+      <p>A 📷 on a chart point means that session has clips, and tapping it plays them. <b>Effort</b> is the insight only Snappet can show: the same load costing fewer beats per minute.</p>
+    </div>
+
+    <!-- E: climb dashboard -->
+    <div class="screen">
+      <div class="phone"><div class="scr">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="nav"><span class="a">‹ Library</span><span class="t">Bouldering</span><span class="a">⋯</span></div>
+        <div class="tabs"><span class="on">Overview</span><span>Projects (3)</span><span>Sends</span><span>Kilter</span></div>
+        <div class="kpis">
+          <div class="kpi"><span>Hardest send</span><b>V5</b><small>▲ from V3</small></div>
+          <div class="kpi"><span>Flash grade</span><b>V3</b><small>▲ 1</small></div>
+          <div class="kpi"><span>Send rate</span><b>41%</b><small>▲ 8%</small></div>
+        </div>
+        <div class="card">
+          <div class="ct">Send pyramid <span>90 days</span></div>
+          <svg viewBox="0 0 250 92" width="100%" height="92">
+            <g font-size="9" fill="var(--text2)">
+              <text x="0" y="14">V5</text><text x="0" y="32">V4</text><text x="0" y="50">V3</text><text x="0" y="68">V2</text><text x="0" y="86">V1</text>
+            </g>
+            <g fill="var(--kilter)">
+              <rect x="105" y="5" width="30" height="12" rx="3"/>
+              <rect x="85" y="23" width="70" height="12" rx="3" opacity=".85"/>
+              <rect x="60" y="41" width="120" height="12" rx="3" opacity=".7"/>
+              <rect x="40" y="59" width="160" height="12" rx="3" opacity=".55"/>
+              <rect x="25" y="77" width="190" height="12" rx="3" opacity=".4"/>
+            </g>
+            <circle cx="140" cy="11" r="6" fill="var(--brand)"/><text x="140" y="14" font-size="7" text-anchor="middle" fill="#fff">▶</text>
+          </svg>
+        </div>
+        <div class="card">
+          <div class="ct">Project · "Blue crimp roof" V5 <span>sent ✓</span></div>
+          <div style="display:flex;gap:4px;margin-top:6px;align-items:flex-end">
+            <div style="flex:1"><div class="th v d" style="aspect-ratio:3/4"><div class="fig"></div></div><div class="stamp">#1 · fell</div></div>
+            <div style="flex:1"><div class="th v d" style="aspect-ratio:3/4"><div class="fig"></div></div><div class="stamp">#4 · fell</div></div>
+            <div style="flex:1"><div class="th v e" style="aspect-ratio:3/4"><div class="fig"></div></div><div class="stamp">#7 · high pt</div></div>
+            <div style="flex:1"><div class="th v e" style="aspect-ratio:3/4"><div class="fig"></div><span class="prbadge">SEND</span></div><div class="stamp"><b>#9 · sent</b></div></div>
+          </div>
+          <div class="stamp" style="margin-top:4px">3 sessions · 9 attempts · ♥ peak 171</div>
+        </div>
+        <div class="card">
+          <div class="ct">Send videos <span>12</span></div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <span class="th v e" style="width:40px"></span><span class="th v d" style="width:40px"></span><span class="th v b" style="width:40px"></span><span class="th v c" style="width:40px"></span><span class="th v a" style="width:40px"></span>
+          </div>
+        </div>
+      </div></div>
+      <h3>E · Climbing dashboard (two levels)</h3>
+      <p>The discipline overview (pyramid, flash grade) <b>plus a page for each climb</b>, so you can follow a project from first attempt to send. The attempt strip is the climber's version of "progress over time".</p>
+    </div>
+
+    <!-- F: progress reel -->
+    <div class="screen">
+      <div class="phone"><div class="scr dark">
+        <div class="island"></div><div class="status"><span>9:41</span><span>●●● 82%</span></div>
+        <div class="nav"><span class="a" style="color:var(--glassText2)">Cancel</span><span class="t">Progress reel</span><span class="a">Post</span></div>
+        <div style="padding:0 30px"><div class="th v a" style="aspect-ratio:9/16;border-radius:16px;position:relative">
+          <div class="fig" style="height:40%"></div><div class="bar"></div>
+          <div style="position:absolute;left:12px;right:12px;top:14px;color:#fff">
+            <div style="font-size:10px;opacity:.8">BENCH PRESS · 7 MONTHS</div>
+            <div style="font-size:22px;font-weight:800;line-height:1.1">Mar 50 kg<br>→ Oct 75 kg</div>
+          </div>
+          <div style="position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.45);border-radius:10px;padding:5px 8px;color:#fff;font-size:10px">♥ 142 · 75 kg × 8</div>
+        </div></div>
+        <div style="display:flex;gap:4px;padding:12px 16px 0">
+          <span class="th c" style="flex:1;aspect-ratio:1"></span><span class="th b" style="flex:1;aspect-ratio:1"></span><span class="th b" style="flex:1;aspect-ratio:1"></span><span class="th a" style="flex:1;aspect-ratio:1;outline:2px solid #fff"></span>
+        </div>
+        <div class="chipRow" style="justify-content:center"><span class="chip">PRs only</span><span class="chip hot">One per month</span><span class="chip">All</span></div>
+      </div></div>
+      <h3>F · Progress reel</h3>
+      <p>Picks clips by rule (PRs only / one per month / all), burns in the date + numbers, and plays through the shared <code>ReelView</code> with HR glass. It's the shareable payoff.</p>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <h2><span class="num">06</span>What the dashboard shows for each discipline</h2>
+  <p class="sub">Same layout every time. The hero metric and records change with the discipline.</p>
+  <div class="tableWrap"><table>
+    <tr><th>Section</th><th>Strength</th><th>Climb</th><th>Timed / hangboard</th><th>Run</th></tr>
+    <tr><td><b>Hero chart</b></td><td>Est. 1RM · top set · volume</td><td>Send pyramid · attempts-to-send</td><td>Hold time × load</td><td>Pace · distance</td></tr>
+    <tr><td><b>Records</b></td><td>Best set, best volume</td><td>Hardest send, flash grade</td><td>Max hang, max load</td><td>Fastest pace, longest</td></tr>
+    <tr class="hl"><td><b>Effort (HR)</b> ★</td><td>♥ at the same load over time</td><td>♥ per attempt / send</td><td>♥ recovery between reps</td><td>♥ at the same pace</td></tr>
+    <tr><td><b>Frequency</b></td><td colspan="4">Calendar heatmap · "last done" · streak</td></tr>
+    <tr><td><b>Media</b></td><td>Filmstrip + PR clips</td><td>Project attempt strips + send videos</td><td>Filmstrip</td><td>Photos (route shots)</td></tr>
+  </table></div>
+
+  <!-- 7 -->
+  <h2><span class="num">07</span>Decisions to make</h2>
+  <p class="sub">My recommendation is marked in green.</p>
+  <div class="dec">
+    <div class="q"><h4>What counts as "an activity" for climbing?</h4>
+      <div class="opt"><span class="k">A</span>The discipline only (all bouldering)</div>
+      <div class="opt"><span class="k">B</span>Each specific climb only (Kilter problem / named gym climb)</div>
+      <div class="opt rec"><span class="k">C</span>Both: the discipline dashboard, with a page for each climb inside it<span class="tag">REC</span></div>
+    </div>
+    <div class="q"><h4>Untagged (General) clips</h4>
+      <div class="opt"><span class="k">A</span>Show only what's already tagged</div>
+      <div class="opt rec"><span class="k">B</span>Show tagged clips + a "3 untagged clips from these sessions, tag them?" nudge<span class="tag">REC</span></div>
+      <div class="opt"><span class="k">C</span>Auto-guess by time and mark them "suggested"</div>
+    </div>
+    <div class="q"><h4>Where the dashboard lives</h4>
+      <div class="opt"><span class="k">A</span>Expand <code>ExerciseDetailView</code>'s progress section in place</div>
+      <div class="opt rec"><span class="k">B</span>Its own <code>ActivityRoute</code>: tapping an exercise name anywhere opens it, and the library detail links to it<span class="tag">REC</span></div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <h2><span class="num">08</span>Suggested order (one prompt = one PR each)</h2>
+  <div class="road">
+    <div class="step"><span class="pill size">S</span><span class="p">P1</span><b>Index + Past clips sheet</b><ul><li>Pure <code>ActivityMediaIndex</code> + tests</li><li>Chip on pager + session detail</li><li>Timeline sheet (screen B)</li></ul></div>
+    <div class="step"><span class="pill size">M</span><span class="p">P2</span><b>Activity dashboard</b><ul><li><code>ActivityRoute</code>, chart for each discipline</li><li>Records + frequency</li><li>Chart point ↔ clip link</li></ul></div>
+    <div class="step"><span class="pill size">M</span><span class="p">P3</span><b>Compare + PRs + reel</b><ul><li>Then vs Now synced player</li><li>PR badges on clips</li><li>Progress reel via <code>ReelView</code></li></ul></div>
+    <div class="step"><span class="pill size">L</span><span class="p">P4</span><b>Insights + stretch</b><ul><li>Effort (HR-at-load) card</li><li>Climb project pages</li><li>Ghost overlay (opt-in)</li></ul></div>
+  </div>
+</main>
+</body>
+</html>
