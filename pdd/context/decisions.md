@@ -9888,3 +9888,17 @@ stripes, and the panel read as an opaque slab.
 - Records that were set in a filmed session show that session's clip and play it; un-filmed records are plain rows
   (a disabled button rendered greyed out and read as broken).
 - A logged weight is shown as typed in its own unit (67.5 kg stays 67.5), matching the prompt-146 rule.
+
+## 2026-10-13 — Then vs Now, PR moments, progress reel (prompt 180)
+
+- **A PR is a session whose hero metric strictly beats every earlier one** (ties aren't PRs); the oldest session is
+  FIRST. Direction follows the metric, so a faster pace is a PR.
+- **Burned captions are timed from what the exporter actually inserted**, not from the plan: a clip that fails to
+  load is skipped during composition and would shift every later caption.
+- The progress reel plays picked clips in FULL, oldest → newest (`trimToHighlights: false`): it's a timeline, so every
+  pick must appear; HR-ranked trimming would drop some.
+- Captions are export-only (like every Studio text overlay); the preview shows the clips without them.
+- Then vs Now mutes the left ("then") clip so two audio tracks don't fight.
+- (2026-10-14 follow-up, user feedback) **Compare asks which two clips first** (`ActivityComparePicker`, first + latest
+  pre-picked, a third pick replaces the oldest pick, older plays as "Then"). The original tap-the-date menu for swapping
+  a side was undiscoverable — each side now has a visible "Change" button.

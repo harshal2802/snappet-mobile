@@ -121,4 +121,58 @@ final class ActivityProgressUITests: XCTestCase {
         XCTAssertTrue(any("activity.clips.viewer").waitForExistence(timeout: 6), "the record's clip plays")
         any("activity.clips.close").tap()
     }
+
+    func testPRFilterCompareAndProgressReel() {
+        openGymTracker()
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Push Day'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        let chip = any("activity.pastClips")
+        for _ in 0..<6 where !(chip.exists && chip.isHittable) { app.swipeUp() }
+        chip.tap()
+        XCTAssertTrue(any("activity.clips.tile").waitForExistence(timeout: 6))
+
+        // PR filter: the seed's bench rises every other session, so the filmed sessions are FIRST/PR moments.
+        XCTAssertTrue(any("activity.clips.filter").exists, "the Timeline / PRs filter")
+        XCTAssertTrue(app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'activity.clips.tile' AND label BEGINSWITH 'PR'")).firstMatch.exists,
+                      "a PR badge on the newest filmed session")
+        app.segmentedControls.buttons["PRs ★"].tap()
+        snap("08-prs")
+        app.segmentedControls.buttons["Timeline"].tap()
+
+        // Then vs Now.
+        // Compare first asks which two clips — first + latest are pre-picked; picking a third swaps one out.
+        any("activity.clips.compare").tap()
+        let go = any("activity.comparePicker.go")
+        XCTAssertTrue(go.waitForExistence(timeout: 6), "the clip picker")
+        let picks = app.descendants(matching: .any).matching(identifier: "activity.comparePicker.clip")
+        XCTAssertEqual(picks.matching(NSPredicate(format: "selected == true")).count, 2, "first + latest pre-picked")
+        let unpicked = picks.matching(NSPredicate(format: "selected == false")).firstMatch
+        XCTAssertTrue(unpicked.exists)
+        let newLabel = unpicked.label               // `unpicked` is a live query — pin the clip by its label
+        unpicked.tap()
+        XCTAssertEqual(picks.matching(NSPredicate(format: "selected == true")).count, 2, "still a pair")
+        XCTAssertTrue(picks.matching(NSPredicate(format: "label CONTAINS %@", newLabel)).firstMatch.isSelected,
+                      "the new pick is in the pair")
+        snap("08b-picker")
+        go.tap()
+        XCTAssertTrue(any("activity.compare.delta").waitForExistence(timeout: 6), "the compare footer")
+        XCTAssertTrue(any("activity.compare.change").exists, "a visible Change button")
+        snap("09-compare")
+        any("activity.compare.speed").tap()
+        any("activity.compare.close").tap()
+        any("activity.comparePicker.cancel").tap()
+
+        // Progress reel → the shared reel builder.
+        any("activity.clips.reel").tap()
+        let all = app.buttons["All"]
+        XCTAssertTrue(all.waitForExistence(timeout: 3))
+        all.tap()
+        let reelTitle = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS 'Progress' OR identifier == 'Highlights'")).firstMatch
+        XCTAssertTrue(reelTitle.waitForExistence(timeout: 10) || any("weeklyReel.empty").exists, "the reel builder opened")
+        snap("10-reel")
+    }
 }

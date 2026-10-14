@@ -33,6 +33,9 @@ struct ReelSource {
     /// `true` = plan TRIMMED highlight windows instead of full-length clips — the Weekly Highlight
     /// Reel's montage style (P4). Session reels keep today's uncapped full-length behavior.
     var trimToHighlights = false
+    /// Burned per-clip captions, keyed by media id (`localIdentifier`) — the progress reel's
+    /// "15 Sep · 60 kg × 8" (prompt 180). Export-only, like every Studio text overlay. Empty = none.
+    var segmentCaptions: [String: String] = [:]
 
 }
 
@@ -392,7 +395,8 @@ final class ReelViewModel {
                                          maxHR: wk.maxBpm, restHR: wk.restBpm,
                                          tile: styleTile(restHR: wk.restBpm))
                 : nil
-            let url = try await exporter.export(plan, hrOverlay: overlay, renderAspect: format.aspect)
+            let url = try await exporter.export(plan, hrOverlay: overlay, renderAspect: format.aspect,
+                                                captions: source.segmentCaptions)
             exportedDuration = plan.totalDuration
             // Survivors are positive signal — kept + exported are logged HERE, after success,
             // so a failed attempt doesn't re-log `.kept` on every retry (review fix): both

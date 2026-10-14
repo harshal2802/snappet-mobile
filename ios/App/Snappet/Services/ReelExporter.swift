@@ -55,6 +55,19 @@ final class ReelExporter: Sendable {
     /// `export`) so the in-app preview shows the SAME framing the export will ship (WYSIWYG).
     func makeComposition(for plan: ReelPlan, renderAspect: Double? = nil) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
+        let built = try await makePlacedComposition(for: plan, renderAspect: renderAspect)
+        return (built.composition, built.videoComposition)
+    }
+
+    /// A built composition plus where each segment actually landed on the output timeline — a segment that
+    /// fails to load is skipped, so burned per-clip captions (prompt 180) must time from THIS, not the plan.
+    struct PlacedComposition: @unchecked Sendable {
+        let composition: AVMutableComposition
+        let videoComposition: AVVideoComposition?
+        let placements: [ActivityProgressReel.Placement]
+    }
+
+    func makePlacedComposition(for plan: ReelPlan, renderAspect: Double? = nil) async throws -> PlacedComposition {
         let renderable = plan.segments.filter {
             ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
         }
@@ -73,6 +86,7 @@ final class ReelExporter: Sendable {
         var cursor = CMTime.zero
         var inserted = 0
         var layouts: [SegmentLayout] = []
+        var placements: [ActivityProgressReel.Placement] = []
 
         // Iterate segments IN ORDER so photos interleave with videos correctly.
         for seg in renderable {
@@ -87,6 +101,8 @@ final class ReelExporter: Sendable {
                 do {
                     try vTrack?.insertTimeRange(range, of: src, at: cursor)
                     layouts.append(await layout(for: src, start: cursor))
+                    placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
+                                            durationSec: dur.seconds))
                     cursor = cursor + dur
                     inserted += 1
                 } catch { continue }   // skip a bad photo clip, keep the reel
@@ -106,6 +122,8 @@ final class ReelExporter: Sendable {
                     aTrack = track
                     try? track?.insertTimeRange(range, of: srcA, at: cursor)
                 }
+                placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
+                                        durationSec: range.duration.seconds))
                 cursor = cursor + range.duration
                 inserted += 1
             }
@@ -116,7 +134,8 @@ final class ReelExporter: Sendable {
                                                               layouts: layouts,
                                                               totalDuration: composition.duration,
                                                               renderAspect: renderAspect)
-        return (composition, videoComposition)
+        return PlacedComposition(composition: composition, videoComposition: videoComposition,
+                                 placements: placements)
     }
 
     /// Capture a segment's oriented size + transform from its source video track.
@@ -217,8 +236,12 @@ final class ReelExporter: Sendable {
     /// (no mutable composition / no resolvable tile / no tool) silently exports WITHOUT the overlay — the
     /// share offer never crashes or blocks on the overlay being renderable.
     /// `renderAspect` forces the share-format canvas (see `makeComposition`); `nil` = native.
-    func export(_ plan: ReelPlan, hrOverlay: HROverlay?, renderAspect: Double? = nil) async throws -> URL {
-        let (composition, videoComposition) = try await makeComposition(for: plan, renderAspect: renderAspect)
+    /// `captions` (media id → text) burns one caption over each segment for its span (the progress reel,
+    /// prompt 180); empty = none.
+    func export(_ plan: ReelPlan, hrOverlay: HROverlay?, renderAspect: Double? = nil,
+                captions: [String: String] = [:]) async throws -> URL {
+        let built = try await makePlacedComposition(for: plan, renderAspect: renderAspect)
+        let composition = built.composition, videoComposition = built.videoComposition
         var exportVideoComposition = videoComposition
 
         // The iOS **Simulator** has no usable H.264 video encoder: any re-encoding export
@@ -237,18 +260,24 @@ final class ReelExporter: Sendable {
         #else
         let presetName = AVAssetExportPresetHighestQuality
         // The HR scorebug is burned in via an `AVVideoCompositionCoreAnimationTool` (offline-render-only).
-        if let hrOverlay, let mvc = videoComposition as? AVMutableVideoComposition {
-            let values = HROverlayValues(samples: hrOverlay.hrSeries,
-                                         durationSec: composition.duration.seconds,
-                                         maxHR: hrOverlay.maxHR,
-                                         restHR: hrOverlay.restHR)
-            // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
-            if let tile = hrOverlay.tile.flatMap({ values.resolveTile($0) })
-                    ?? values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR)),
+        if let mvc = videoComposition as? AVMutableVideoComposition {
+            let captionOverlays = ActivityProgressReel.captionOverlays(placements: built.placements,
+                                                                       captions: captions)
+            var tile: ResolvedHRTile?
+            if let hrOverlay {
+                let values = HROverlayValues(samples: hrOverlay.hrSeries,
+                                             durationSec: composition.duration.seconds,
+                                             maxHR: hrOverlay.maxHR,
+                                             restHR: hrOverlay.restHR)
+                // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
+                tile = hrOverlay.tile.flatMap({ values.resolveTile($0) })
+                    ?? values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR))
+            }
+            if tile != nil || !captionOverlays.isEmpty,
                let tool = StudioOverlays.makeAnimationTool(
-                    overlays: [], canvas: mvc.renderSize,
+                    overlays: captionOverlays, canvas: mvc.renderSize,
                     totalDuration: composition.duration.seconds,
-                    hrSamples: hrOverlay.hrSeries, hrTile: tile) {
+                    hrSamples: hrOverlay?.hrSeries ?? [], hrTile: tile) {
                 mvc.animationTool = tool
                 exportVideoComposition = mvc
             }
