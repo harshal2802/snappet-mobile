@@ -47,17 +47,23 @@ final class ActivityMediaIndexTests: XCTestCase {
     func testCatalogExerciseKeyIgnoresDisplayName() {
         var ex = bench([])
         ex.displayName = "My bench"
-        XCTAssertEqual(ActivityKey.of(ex), benchKey)
+        XCTAssertEqual(ActivityKey.plain(ex), benchKey)
+    }
+
+    private func timed(_ name: String?) -> SessionExercise {
+        SessionExercise(exerciseId: "adhoc-duration", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+                        sets: [], displayName: name, kindRaw: SetKind.duration.rawValue)
     }
 
     func testAdhocKeyNormalizesName() {
-        XCTAssertEqual(ActivityKey.of(climb("  Blue   Crimp ", statuses: [])),
-                       ActivityKey.of(climb("blue crimp", statuses: [])))
+        XCTAssertEqual(ActivityKey.plain(timed("  Max   Hangs ")), ActivityKey.plain(timed("max hangs")))
     }
 
     func testUnnamedAdhocHasNoIdentity() {
-        XCTAssertNil(ActivityKey.of(climb(nil, statuses: [])))
-        XCTAssertNil(ActivityKey.of(climb("   ", statuses: [])))
+        XCTAssertNil(ActivityKey.plain(timed(nil)))
+        XCTAssertNil(ActivityKey.plain(timed("   ")))
+        XCTAssertNil(ActivityKey.plain(climb("Blue crimp", statuses: [])), "climbs only get keys from ActivityIdentity")
+        XCTAssertNil(ActivityIdentity(sessions: []).key(for: climb(nil, statuses: [])), "a bare climb has no identity")
     }
 
     // MARK: - Grouping
@@ -110,7 +116,7 @@ final class ActivityMediaIndexTests: XCTestCase {
         let s2 = session([send, other], daysAgo: 1, name: "Bouldering")
         let media = [clip(s1, first, set: 0), clip(s2, send, set: 1), clip(s2, other, set: 0)]
 
-        let key = ActivityKey.of(first)!
+        let key = ActivityIdentity(sessions: [s1, s2]).key(for: first)!
         let groups = ActivityMediaIndex.groups(for: key, history: [s1, s2], media: media, unit: .kg, distanceUnit: .km)
         XCTAssertEqual(groups.flatMap(\.clips).count, 2)
         XCTAssertEqual(groups[0].clips[0].setSummary, "V5 · Sent")

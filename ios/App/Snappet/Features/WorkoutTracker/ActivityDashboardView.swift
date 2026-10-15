@@ -23,7 +23,7 @@ struct ActivityDashboardView: View {
     @State private var groups: [ActivitySessionGroup] = []
     /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
     @State private var effort: ActivityInsights.Effort?
-    @State private var climbs: [ActivityInsights.ClimbSummary] = []
+    @State private var climbs: [LibraryCatalog.Row] = []
     @State private var loaded = false
     @State private var selected: UUID?
     @State private var viewing: ViewerRequest?
@@ -80,7 +80,11 @@ struct ActivityDashboardView: View {
             groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
                                                distanceUnit: unit == .lb ? .mi : .km)
             effort = ActivityInsights.effort(key: key, history: history, unit: unit)
-            if key.disciplineScope == .climb { climbs = ActivityInsights.climbs(history: history, media: media) }
+            if key.disciplineScope == .climb {
+                let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
+                                               unit: unit, title: LibraryCatalog.fallbackTitle)
+                climbs = LibraryCatalog.sorted(all.filter { $0.discipline == .climb }, by: .recent)
+            }
             loaded = true
         }
         .fullScreenCover(item: $viewing) { req in
@@ -253,21 +257,8 @@ struct ActivityDashboardView: View {
     private var climbsCard: some View {
         card("Climbs", trailing: "\(climbs.count)") {
             ForEach(climbs.prefix(15)) { c in
-                NavigationLink(value: ActivityRoute(key: c.key, title: c.name)) {
-                    HStack(spacing: 10) {
-                        Text(c.grade ?? "–").font(.caption.weight(.heavy)).monospacedDigit()
-                            .frame(width: 34, height: 26)
-                            .background(SnappetColor.kilter.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(c.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                            Text("\(c.attempts) \(c.attempts == 1 ? "attempt" : "attempts") · \(c.sessions) \(c.sessions == 1 ? "session" : "sessions")\(c.clipCount > 0 ? " · \(c.clipCount) \(c.clipCount == 1 ? "clip" : "clips")" : "")")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(c.sent ? "Sent ✓" : "Project").font(.caption.weight(.bold))
-                            .foregroundStyle(c.sent ? SnappetColor.perfFresh : SnappetColor.kilter)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
+                NavigationLink(value: ActivityRoute(key: c.key, title: c.title)) {
+                    LibraryYoursRow(row: c, unit: unit)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("activity.dashboard.climb")

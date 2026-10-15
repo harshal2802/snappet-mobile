@@ -1,97 +1,246 @@
 import SwiftUI
 import SwiftData
 
-/// **The workout Library** (workout-redesign E3) — replaces the flat, strength-only "Exercises" browser
-/// with a library organized by workout **TYPE** (the top spine). A row of discipline chips picks the active
-/// facet; the faceted filter **swaps its facets by the active discipline**; a "Recent across all types"
-/// band surfaces the cross-discipline win (a climb beside a bench press); and each row deep-links to the
-/// discipline-adaptive detail. Reached as a section of the workout app (lives inside the App Library's
-/// `NavigationStack` — no stack of its own), mirroring the old `ExerciseBrowserView`.
+/// **The workout Library** — **Yours | Explore** (Library redesign L1, prompt 183; was the catalog-only E3 library).
+///
+/// - **Yours**: every activity you've logged — lifts, climbs (per gym-reset set), runs, holds — from session history
+///   via the pure `LibraryCatalog`, with usage and a headline number, sortable per discipline (Most used by
+///   default; remembered per discipline). Tapping one opens its progress dashboard (`ActivityRoute`).
+/// - **Explore**: the catalog (bundled + custom strength, timed protocols, climb/run templates) with the
+///   discipline-swapping facets, unchanged from E3.
+///
+/// With no history yet the Library opens on Explore (a new user has nothing of their own); an explicit choice
+/// is remembered. Lives inside the App Library's `NavigationStack` — no stack of its own.
 struct WorkoutLibraryView: View {
     let resolver: ExerciseResolver
     let history: [WorkoutSession]
     let unit: WeightUnit
     let open: (LibraryItem) -> Void
-    let openSession: (UUID) -> Void
+    /// One of your activities → its dashboard.
+    let openActivity: (ActivityRoute) -> Void
 
-    /// Saved timed exercises, newest-used first — folded into the timed discipline + recents ordering.
+    enum Mode: String { case yours, explore }
+
+    /// Saved timed exercises, newest-used first — folded into the timed discipline of Explore.
     @Query(sort: \TimedExerciseCatalog.lastUsedAt, order: .reverse) private var timed: [TimedExerciseCatalog]
 
+    /// `""` = automatic (Yours when you have history, else Explore); otherwise the user's explicit choice.
+    @AppStorage("library.mode") private var modeRaw = ""
+    /// Per-discipline sort, "all=mostUsed;climb=best" (prompt 183) — one string because @AppStorage can't hold a map.
+    @AppStorage("library.sorts") private var sortsRaw = ""
+    /// Per-discipline count unit ("dance=efforts"), same encoding — what a row's number means (Days by default).
+    @AppStorage("library.counts") private var countsRaw = ""
     @State private var query = ""
     /// `nil` ⇒ the "All types" facet.
     @State private var discipline: WorkoutDiscipline?
     @State private var facets = LibraryFacets()
     @State private var showingFilters = false
+    @State private var climbFilter: LibraryCatalog.ClimbFilter = .all
+    /// Your activities — rebuilt when history changes (never in `body`: it scans every session).
+    @State private var yours: [LibraryCatalog.Row] = []
 
+    private var mode: Mode {
+        Mode(rawValue: modeRaw) ?? (history.contains { !$0.isActive } ? .yours : .explore)
+    }
     private var allItems: [LibraryItem] { resolver.library(timed: timed) }
-    private var disciplines: [WorkoutDiscipline] { LibraryBuilder.disciplines(in: allItems) }
+    private var disciplines: [WorkoutDiscipline] {
+        mode == .yours ? WorkoutDiscipline.allCases.filter { d in yours.contains { $0.discipline == d } }
+                       : LibraryBuilder.disciplines(in: allItems)
+    }
     private var results: [LibraryItem] {
         LibraryBuilder.apply(allItems, query: query, discipline: discipline, facets: facets)
     }
-    /// Cross-discipline recents — the same pure selector the dashboard's feed uses.
-    private var recents: [RecentSessions.Row] { RecentSessions.rows(history: history, unit: unit, limit: 4) }
+    private var sort: LibraryCatalog.Sort {
+        let saved = Self.parseSorts(sortsRaw)[discipline?.rawValue ?? "all"].flatMap(LibraryCatalog.Sort.init)
+        return saved.flatMap { LibraryCatalog.sorts(for: discipline).contains($0) ? $0 : nil } ?? .mostUsed
+    }
+    private var countUnit: LibraryCatalog.CountUnit {
+        Self.parseSorts(countsRaw)[discipline?.rawValue ?? "all"].flatMap(LibraryCatalog.CountUnit.init) ?? .days
+    }
+    private var yoursShown: [LibraryCatalog.Row] {
+        LibraryCatalog.sorted(LibraryCatalog.filter(yours, query: query, discipline: discipline,
+                                                    climbFilter: discipline == .climb ? climbFilter : .all),
+                              by: sort)
+    }
 
     var body: some View {
         List {
+            Picker("Library", selection: Binding(get: { mode }, set: { modeRaw = $0.rawValue })) {
+                Text("Yours").tag(Mode.yours)
+                Text("Explore").tag(Mode.explore)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("library.mode")
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 2, trailing: 12))
+
             disciplineChipBar
 
-            // "Recent across all types" — only on the default (no search, no facet) view so it doesn't
-            // fight the filtered results the user is actively narrowing.
-            if query.isEmpty && facets.isEmpty && !recents.isEmpty {
-                Section("Recent across all types") {
-                    ForEach(recents) { row in
-                        Button { openSession(row.id) } label: { LibraryRecentRow(row: row) }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("library.recent")
-                    }
-                }
-            }
-
-            if !facets.isEmpty {
-                Section {
-                    Button(role: .destructive) { facets.clear() } label: {
-                        Label("Clear \(facets.activeCount) filter\(facets.activeCount == 1 ? "" : "s")",
-                              systemImage: "xmark.circle")
-                    }
-                }
-            }
-
-            Section {
-                ForEach(results) { item in
-                    Button { open(item) } label: { LibraryItemRow(item: item) }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("exerciseRow")
-                }
-            } header: {
-                Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
-            }
+            if mode == .yours { yoursSection } else { exploreSection }
         }
         .listStyle(.plain)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: searchPrompt)
         .overlay {
-            if results.isEmpty {
+            if mode == .explore && results.isEmpty {
                 ContentUnavailableView.search(text: query.isEmpty ? "—" : query)
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showingFilters = true } label: {
-                    Label("Filters", systemImage: facets.isEmpty
-                          ? "line.3.horizontal.decrease.circle"
-                          : "line.3.horizontal.decrease.circle.fill")
+            if mode == .explore {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingFilters = true } label: {
+                        Label("Filters", systemImage: facets.isEmpty
+                              ? "line.3.horizontal.decrease.circle"
+                              : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    // No facets apply to "All types" → the sheet would be empty; hide the entry.
+                    .disabled(discipline == nil)
+                    .accessibilityIdentifier("library.filters")
                 }
-                // No facets apply to "All types" → the sheet would be empty; hide the entry.
-                .disabled(discipline == nil)
-                .accessibilityIdentifier("library.filters")
             }
         }
         .sheet(isPresented: $showingFilters) {
             LibraryFilterSheet(discipline: discipline ?? .strength, facets: $facets)
         }
+        .task(id: history.count) { rebuildYours() }
+        .onChange(of: modeRaw) { _, _ in
+            // A discipline that has nothing in the other tab would leave an empty list behind the chip.
+            if let d = discipline, !disciplines.contains(d) { discipline = nil }
+        }
+    }
+
+    // MARK: - Yours
+
+    @ViewBuilder private var yoursSection: some View {
+        let rows = yoursShown
+        Section {
+            if yours.isEmpty {
+                VStack(spacing: 10) {
+                    Text("Nothing logged yet").font(.headline)
+                    Text("Everything you log in a session — lifts, climbs, runs, holds — shows up here with how often you do it.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Explore the catalog") { modeRaw = Mode.explore.rawValue }
+                        .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                        .accessibilityIdentifier("library.yours.explore")
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+                .listRowSeparator(.hidden)
+            } else if rows.isEmpty {
+                Text("Nothing matches.").foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { row in
+                    Button { openActivity(ActivityRoute(key: row.key, title: row.title)) } label: {
+                        LibraryYoursRow(row: row, unit: unit, count: countUnit)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("library.yours.row")
+                }
+            }
+        } header: {
+            if !yours.isEmpty { yoursHeader(count: rows.count) }
+        }
+    }
+
+    private func yoursHeader(count: Int) -> some View {
+        HStack {
+            Text(countLabel(count)).font(.caption).foregroundStyle(.secondary).textCase(nil)
+            Spacer()
+            Menu {
+                Picker("Sort by", selection: Binding(get: { sort }, set: { setSort($0) })) {
+                    ForEach(LibraryCatalog.sorts(for: discipline)) { s in
+                        Text(s.label(for: discipline)).tag(s)
+                    }
+                }
+                Picker("Count by", selection: Binding(get: { countUnit }, set: { setCount($0) })) {
+                    ForEach(LibraryCatalog.CountUnit.allCases) { u in Text(u.label(for: discipline)).tag(u) }
+                }
+                if discipline == .climb {
+                    Picker("Show", selection: $climbFilter) {
+                        Text("All climbs").tag(LibraryCatalog.ClimbFilter.all)
+                        Text("Projects only").tag(LibraryCatalog.ClimbFilter.projects)
+                        Text("Sent only").tag(LibraryCatalog.ClimbFilter.sent)
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(sort.label(for: discipline))
+                    Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+                }
+                .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout).textCase(nil)
+            }
+            .accessibilityIdentifier("library.sort")
+        }
+    }
+
+    private func countLabel(_ n: Int) -> String {
+        switch discipline {
+        case .climb?:
+            let sent = yoursShown.filter { $0.climb?.sent == true }.count
+            return "\(n) \(n == 1 ? "climb" : "climbs") · \(sent) sent"
+        case let d?: return "\(n) \(d.label.lowercased())"
+        case nil: return "\(n) \(n == 1 ? "activity" : "activities")"
+        }
+    }
+
+    private func rebuildYours() {
+        let identity = ActivityIdentity(sessions: history)
+        yours = LibraryCatalog.yours(history: history, identity: identity, unit: unit) { ex in
+            ex.discipline == .strength && !ex.exerciseId.hasPrefix("adhoc-")
+                ? resolver.name(for: ex.exerciseId, override: ex.displayName)
+                : LibraryCatalog.fallbackTitle(ex)
+        }
+    }
+
+    private func setSort(_ s: LibraryCatalog.Sort) {
+        var map = Self.parseSorts(sortsRaw)
+        map[discipline?.rawValue ?? "all"] = s.rawValue
+        sortsRaw = map.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ";")
+    }
+
+    private func setCount(_ u: LibraryCatalog.CountUnit) {
+        var map = Self.parseSorts(countsRaw)
+        map[discipline?.rawValue ?? "all"] = u.rawValue
+        countsRaw = map.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ";")
+    }
+
+    static func parseSorts(_ raw: String) -> [String: String] {
+        Dictionary(raw.split(separator: ";").compactMap { pair -> (String, String)? in
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            return kv.count == 2 ? (kv[0], kv[1]) : nil
+        }, uniquingKeysWith: { _, b in b })
+    }
+
+    // MARK: - Explore
+
+    @ViewBuilder private var exploreSection: some View {
+        Section {
+            ForEach(results) { item in
+                Button { open(item) } label: { LibraryItemRow(item: item) }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("exerciseRow")
+            }
+        } header: {
+            Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
+        }
+        if !facets.isEmpty {
+            Section {
+                Button(role: .destructive) { facets.clear() } label: {
+                    Label("Clear \(facets.activeCount) filter\(facets.activeCount == 1 ? "" : "s")",
+                          systemImage: "xmark.circle")
+                }
+            }
+        }
     }
 
     private var searchPrompt: String {
+        if mode == .yours {
+            switch discipline {
+            case .climb?: return "Search your climbs"
+            case .run?: return "Search your runs"
+            default: return "Search your activities"
+            }
+        }
         switch discipline {
         case .strength?: return "Search exercises or muscles"
         case .climb?:    return "Search climbs"
@@ -125,6 +274,7 @@ struct WorkoutLibraryView: View {
             withAnimation(SnappetMotion.quick) {
                 discipline = d
                 facets.keepOnly(d)   // drop now-irrelevant facets so a stale filter never hides everything
+                if d != .climb { climbFilter = .all }
             }
         } label: {
             HStack(spacing: 5) {
@@ -139,6 +289,82 @@ struct WorkoutLibraryView: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("library.chip.\(d?.rawValue ?? "all")")
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// One of YOUR activities (prompt 183): a climb shows its grade badge, type · gym · set date and its outcome; anything
+/// else its discipline glyph and headline number. The trailing column is how much you do it (sessions · last done).
+/// The whole row is the tap target (prompt 182).
+struct LibraryYoursRow: View {
+    let row: LibraryCatalog.Row
+    let unit: WeightUnit
+    /// What the trailing count means (prompt 183 follow-up) — days unless the user picked otherwise.
+    var count: LibraryCatalog.CountUnit = .days
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let c = row.climb {
+                Text(c.grade ?? "–").font(.caption.weight(.heavy)).monospacedDigit()
+                    .foregroundStyle(SnappetColor.kilter)
+                    .frame(width: 36, height: 30)
+                    .background(SnappetColor.kilter.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
+            } else {
+                Image(systemName: row.discipline.symbol)
+                    .font(.title3).foregroundStyle(row.discipline.accent)
+                    .frame(width: 36, height: 30)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title).font(.headline).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let c = row.climb {
+                    Text(statusLabel(c)).font(.caption.weight(.bold))
+                        .foregroundStyle(c.sent ? SnappetColor.perfFresh : SnappetColor.kilter)
+                    Text(LibraryCatalog.countLabel(row, count))
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text(LibraryCatalog.countLabel(row, count)).font(.subheadline.weight(.bold)).monospacedDigit()
+                    Text(Self.ago(row.lastDate)).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+
+    private var subtitle: String {
+        if let c = row.climb {
+            var parts = [c.type.label]
+            if let gym = c.gym, !gym.isEmpty { parts.append(gym) }
+            parts.append("set \(c.setStart.formatted(.dateTime.day().month(.abbreviated)))" + (c.isReset ? " · reset" : ""))
+            parts.append("\(c.attempts) \(c.attempts == 1 ? "attempt" : "attempts")")
+            return parts.joined(separator: " · ")
+        }
+        return [row.discipline.label, row.headline].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func statusLabel(_ c: LibraryCatalog.Row.Climb) -> String {
+        switch c.status {
+        case .flash?: return "Flash"
+        case .sent?: return c.type.statusLabel(.sent)
+        case nil: return "Not tried"
+        default: return "Project"
+        }
+    }
+
+    /// "today", "yesterday", "5d ago", "3w ago", then the date.
+    static func ago(_ d: Date, now: Date = .now) -> String {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: now)).day ?? 0
+        switch days {
+        case ..<1: return "today"
+        case 1: return "yesterday"
+        case 2..<14: return "\(days)d ago"
+        case 14..<60: return "\(days / 7)w ago"
+        default: return d.formatted(.dateTime.day().month(.abbreviated))
+        }
     }
 }
 
@@ -171,36 +397,6 @@ struct LibraryItemRow: View {
         // title/subtitle (every climb/run starter) left the empty middle and right of the row dead — tapping a
         // climb "did nothing" unless you hit the text.
         .contentShape(Rectangle())
-    }
-}
-
-/// A cross-discipline recents row: a discipline accent edge-bar + glyph + the type-adaptive ≤3 facts + an
-/// optional PR pill. Mirrors the dashboard's recent-session card (`RecentSessions.Row`), compacted for a List.
-private struct LibraryRecentRow: View {
-    let row: RecentSessions.Row
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(row.discipline.accent).frame(width: 4, height: 38)
-            Image(systemName: row.discipline.symbol)
-                .font(.title3).foregroundStyle(row.discipline.accent).frame(width: 26)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(row.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    if row.isPR {
-                        Text("PR").font(.caption2.weight(.bold))
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(SnappetColor.brand.opacity(0.16), in: Capsule())
-                            .foregroundStyle(SnappetColor.brand)
-                    }
-                }
-                Text(row.facts.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())   // whole row is the tap target (see `LibraryItemRow`)
     }
 }
 

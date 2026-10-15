@@ -9921,3 +9921,23 @@ stripes, and the panel read as an opaque slab.
   strength rows worked by accident. Any new plain-styled list row with a Spacer needs the same.
 - SF Symbol names are not checked by the compiler — a typo renders nothing. `ClimbTypeSymbolTests` guards the climb
   and discipline symbols.
+
+## 2026-10-14 — Library "Yours" and one climb identity with a reset window (prompt 183)
+
+- **A climb's identity = base + set window.** Base: name + gym when named, else grade + gym + wall + colour; a bare
+  grade has no identity. Gyms reset climbs every 3–4 weeks (user), so logs of the same base more than **28 days** apart
+  are different climbs; inside the window they stay one (a multi-session project isn't split by session dates). This
+  supersedes prompt 181's name-only rule and is the ONLY climb identity (`ActivityIdentity`; `ActivityKey.of` removed
+  so nothing bypasses it). The re-log picker (`PreviousClimb`) still uses its own finer key — aligning it is L4.
+- The library id is not part of a climb's identity: the same climb logged from the Library or "Add a climb" is one.
+- "Most used" = sessions in the last 90 days, then all-time, then recency — an old favourite you stopped doing sinks.
+- With no history the Library opens on Explore; Yours is the default once there's anything of yours. The UI-test
+  launch clears `library.mode` / `library.sorts` (the clips-prefs rule from prompts 175–176).
+- (2026-10-14 follow-up, user) **Festival sets are one Library activity per festival, named after the festival** (the
+  night's session name). All sets share the id `festival-set`, so they had collapsed into ONE row titled with the last
+  artist ("ALLDAT: Crankdat B2B …", 32×). A set is a one-off, so per-artist rows would be noise; per-festival rows show
+  nights attended and total time danced.
+- (2026-10-14 follow-up, user: "it counts each set as a repeat — misleading, make it customizable") **Library counts
+  are DAYS by default** (5 am → 5 am, so a 1 am set stays on its night), with a per-discipline **Count by** choice
+  (Days · Sessions · Sets — "Attempts" for climbs, "Legs" for runs), remembered in `library.counts`. **Most used ranks
+  on active days**, never sessions: ending a festival night after every set made one night look like a dozen.

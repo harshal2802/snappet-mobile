@@ -77,11 +77,13 @@ struct ActivityDashboard: Equatable, Sendable {
 
     /// `nil` when the activity was never done in a completed session.
     static func make(key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
-                     unit: WeightUnit, now: Date = .now, calendar: Calendar = .current) -> ActivityDashboard? {
+                     unit: WeightUnit, now: Date = .now, calendar: Calendar = .current,
+                     identity: ActivityIdentity? = nil) -> ActivityDashboard? {
+        let ids = identity ?? ActivityIdentity(sessions: history)
         var sessions: [(WorkoutSession, [SessionExercise])] = []
         for s in history where !s.isActive {
             let ents = s.exercises.filter { ex in
-                key.matches(ex) && ex.sets.contains { $0.completedAt != nil }
+                ids.matches(key, ex) && ex.sets.contains { $0.completedAt != nil }
             }
             if !ents.isEmpty { sessions.append((s, ents)) }
         }

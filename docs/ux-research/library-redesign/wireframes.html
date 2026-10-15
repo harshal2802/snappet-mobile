@@ -1,0 +1,461 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Library redesign · Wireframes</title><style>
+  :root{
+    /* SnappetColor dark tokens */
+    --coral:#FF7A6B; --amber:#F59E0B; --ember:#FF9645; --green:#5BC074; --blue:#589BF2; --violet:#9D82F0; --red:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1d1610,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:2100px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc9a1 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2{font-size:24px;margin:48px 0 6px;font-weight:800;letter-spacing:-.01em;color:#fff}
+  h2 .n{color:var(--ember);margin-right:8px}
+  .sub{color:#b2b3bd;font-size:15.5px;max-width:1250px;margin:0 0 10px}
+  .sub b{color:#fff}
+  .wrap{max-width:2100px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:22px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 8px;border-radius:17px;
+    background:var(--ember);color:#2a1205;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,150,69,.4)}
+  .stepnum.alt{background:#4a4a52;color:#fff;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .new{color:var(--ember);font-weight:700}
+  .rec{display:inline-block;font-size:11px;font-weight:800;color:#06210f;background:var(--green);border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+
+  /* tables / panels */
+  table{border-collapse:collapse;width:100%;max-width:1400px;font-size:14px;margin-top:14px}
+  th,td{padding:9px 12px;border-top:1px solid #2a2b31;text-align:left;vertical-align:top}
+  th{color:#9da0aa;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-top:0}
+  td b{color:#fff} td .bad{color:var(--red)} td .ok{color:var(--green)}
+  .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;max-width:1500px;margin-top:16px}
+  .panel{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:16px 18px}
+  .panel h4{margin:0 0 10px;font-size:15.5px;color:#fff}
+  .opt{display:flex;gap:10px;font-size:13.5px;padding:7px 0;border-top:1px solid #26272d;color:#c9cbd3}
+  .opt:first-of-type{border-top:0}
+  .opt .k{font-weight:800;color:#8d909a;flex:0 0 16px}
+  .opt.r{color:#fff} .opt.r .k{color:var(--green)}
+  .phase{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:14px 16px}
+  .phase .p{color:var(--ember);font-weight:800;font-size:13px} .phase b{display:block;margin:2px 0 6px;color:#fff}
+  .phase ul{margin:0;padding-left:18px;font-size:13px;color:#b8bcc6}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{flex:none;height:44px;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{flex:none;padding:4px 14px 6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .navbar .t{font-size:17px;font-weight:700}
+  .navbar .big{font-size:28px;font-weight:800;letter-spacing:-.02em}
+  .circ{width:32px;height:32px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ember)}
+  .seg{flex:none;margin:4px 14px 8px;display:flex;background:var(--muted);border-radius:9px;padding:2px}
+  .seg span{flex:1;text-align:center;font-size:12px;padding:5px 0;border-radius:7px;color:var(--t2);font-weight:600}
+  .seg .on{background:#3a3a42;color:#fff}
+  .search{flex:none;margin:0 14px 8px;background:var(--muted);border-radius:11px;padding:8px 11px;font-size:13px;color:#7d7d84}
+  .chips{flex:none;display:flex;gap:7px;padding:0 14px 8px;overflow:hidden}
+  .chip{flex:none;padding:6px 11px;border-radius:999px;font-size:12px;font-weight:650;background:var(--muted);color:var(--t2);white-space:nowrap}
+  .chip.on{background:rgba(255,150,69,.16);color:var(--ember);box-shadow:0 0 0 1px rgba(255,150,69,.45) inset}
+  .chip.climb.on{background:rgba(245,158,11,.16);color:var(--amber);box-shadow:0 0 0 1px rgba(245,158,11,.45) inset}
+  .chip.new{box-shadow:0 0 0 2px var(--ember)}
+  .bar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:2px 16px 6px;font-size:11.5px;color:var(--t2)}
+  .sortbtn{color:var(--ember);font-weight:700;font-size:12px}
+  .sortbtn.new{background:rgba(255,150,69,.14);border-radius:8px;padding:3px 8px;box-shadow:0 0 0 1.5px var(--ember)}
+  .sect{flex:none;padding:8px 16px 4px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#8a8a92;text-transform:uppercase;display:flex;justify-content:space-between}
+  .sect a{color:var(--ember);text-transform:none;letter-spacing:0;font-weight:700}
+  .list{flex:none;margin:0 12px;background:var(--surface);border-radius:14px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 11px;border-top:1px solid #2a2a30;font-size:13px}
+  .row:first-child{border-top:0}
+  .glyph{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+  .g-str{background:rgba(255,150,69,.15);color:var(--ember)} .g-clm{background:rgba(245,158,11,.15);color:var(--amber)}
+  .g-run{background:rgba(88,155,242,.15);color:var(--blue)} .g-tim{background:rgba(255,106,92,.15);color:var(--red)}
+  .g-dan{background:rgba(157,130,240,.15);color:var(--violet)}
+  .grade{width:34px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:rgba(245,158,11,.16);color:var(--amber);flex:none}
+  .rt{flex:1;min-width:0}
+  .rt .a{font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rt .b{font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rr{text-align:right;font-size:10.5px;color:var(--t2);flex:none}
+  .rr b{display:block;color:var(--ink);font-size:11.5px}
+  .sent{color:var(--green);font-weight:800} .proj{color:var(--amber);font-weight:800}
+  .pill{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:99px;background:rgba(91,192,116,.15);color:var(--green);margin-left:4px}
+  .pin{color:var(--ember);font-size:10px;margin-left:3px}
+  .done{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:99px;background:rgba(255,150,69,.15);color:var(--ember);margin-left:4px}
+  .hl{box-shadow:0 0 0 2px var(--ember) inset;border-radius:14px}
+  .tabbar{margin-top:auto;flex:none;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:8px 8px 22px}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:#8a8a90}
+  .tab.on{color:var(--coral)} .tab .ic{font-size:17px}
+  .menu{position:absolute;right:14px;width:212px;background:rgba(44,44,50,.97);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.6);z-index:20;overflow:hidden;font-size:13px}
+  .menu div{padding:10px 13px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:first-child{border-top:0}
+  .menu .h{font-size:10.5px;color:#9a9aa2;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:8px 13px}
+  .menu .ck{color:var(--ember)}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:10}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#1c1c20;border-radius:22px 22px 0 0;z-index:15;padding:8px 0 20px}
+  .grab{width:36px;height:5px;border-radius:3px;background:#48484f;margin:0 auto 8px}
+  .kpis{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 12px 8px}
+  .kpi{background:var(--surface);border-radius:11px;padding:7px 8px}
+  .kpi span{font-size:9.5px;color:var(--t2);display:block} .kpi b{font-size:15px} .kpi small{display:block;font-size:9.5px;color:var(--green);font-weight:700}
+  .card{flex:none;margin:0 12px 8px;background:var(--surface);border-radius:14px;padding:9px 11px}
+  .card .ct{font-size:12px;font-weight:700;display:flex;justify-content:space-between}
+  .card .ct span{font-weight:500;color:var(--t2)}
+  .actions{flex:none;display:flex;gap:7px;padding:0 12px 8px}
+  .btn{flex:1;text-align:center;border-radius:12px;padding:9px 0;font-size:12.5px;font-weight:700;background:var(--muted);color:var(--ink)}
+  .btn.p{background:var(--ember);color:#2a1205}
+  .tabs2{flex:none;display:flex;gap:16px;padding:2px 16px 8px;font-size:12.5px;font-weight:650;color:var(--t2)}
+  .tabs2 .on{color:#fff;border-bottom:2px solid var(--ember);padding-bottom:3px}
+  .thumb{width:44px;height:58px;border-radius:7px;background:linear-gradient(160deg,#6d4a2e,#211510);flex:none;position:relative}
+  .thumb::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px}
+  .tag{font-size:9.5px;font-weight:800;color:#2a1205;background:var(--ember);border-radius:5px;padding:1px 5px}
+  .note{font-size:11px;color:var(--t2);padding:0 16px 8px}
+  .fieldrow{display:flex;justify-content:space-between;padding:10px 14px;border-top:1px solid #2a2a30;font-size:13px}
+  .fieldrow:first-child{border-top:0}
+  .fieldrow span{color:var(--t2)}
+  svg text{font-family:inherit}
+</style></head><body>
+
+<header class="page">
+  <h1 class="title">Library redesign</h1>
+  <p class="sub">Today the Library is a <b>catalog</b>: ~870 bundled strength moves, your custom exercises, saved timed protocols, and four
+  climb/run <i>templates</i> — always A–Z. What you actually <b>do</b> (the climbs, runs, holds and lifts you log in sessions) isn't in it,
+  and there's no way to sort by what you use. This redesign makes the Library <b>yours first</b>, keeps the catalog for discovery, and gives
+  every activity one page that ties together its progress, clips and how-to.</p>
+</header>
+
+<div class="wrap">
+
+<!-- 1. Scenarios -->
+<h2><span class="n">01</span>Every scenario the Library has to cover</h2>
+<p class="sub">Left: what you'd want to do. Middle: what happens today. Right: where it lives in the redesign.</p>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Today</th><th>Redesign</th></tr>
+  <tr><td>1</td><td><b>Find something I've done</b> — "that V5 at the gym", "Max hangs", "Riverside 5k"</td><td class="bad">Not in the Library at all (only inside sessions)</td><td><b>Yours</b> tab, per discipline, built from your history</td></tr>
+  <tr><td>2</td><td><b>Sort what I do</b> — most used, recent, A–Z, hardest, best</td><td class="bad">Always A–Z, no control</td><td>Sort menu, remembered per discipline; default <b>Most used</b></td></tr>
+  <tr><td>3</td><td><b>See how I'm doing</b> on one activity</td><td>Separate dashboard reached from session detail</td><td>Tap any of yours → <b>Activity page</b> (progress + clips + how-to)</td></tr>
+  <tr><td>4</td><td><b>Discover</b> something new (muscle, equipment, protocol)</td><td class="ok">Catalog + filters</td><td><b>Explore</b> tab — same catalog/filters, "done 12×" badges on ones you know</td></tr>
+  <tr><td>5</td><td><b>Use it</b> — start a session with it, add it to a routine</td><td>Only via the routine builder</td><td><b>Start</b> / <b>Add to routine</b> buttons on every Activity page</td></tr>
+  <tr><td>6</td><td><b>Create</b> — custom lift, timed protocol, a climb to project, a named run route</td><td>Custom lift only (＋)</td><td>＋ menu: <b>Exercise · Timed · Climb · Run route</b></td></tr>
+  <tr><td>7</td><td><b>Fix my data</b> — typo, duplicates ("Blue crimp" vs "blue crimp roof"), retired gym climb</td><td class="bad">Impossible</td><td><b>Rename · Merge · Hide</b> from the Activity page (rewrites history safely)</td></tr>
+  <tr><td>8</td><td><b>Keep favourites</b> at the top</td><td class="bad">No</td><td><b>Pin</b> — pinned rows lead every sort</td></tr>
+  <tr><td>9</td><td><b>Pick fast mid-workout</b> — Quick Session "Add exercise", routine builder</td><td>Pickers start at the catalog (A–Z)</td><td>Same component: pickers open on <b>Yours · Most used</b>, catalog one tap away</td></tr>
+  <tr><td>10</td><td><b>New user</b> with no history</td><td>Catalog + templates</td><td>Yours shows a short "start here" set (templates + popular moves), Explore unchanged</td></tr>
+  <tr><td>11</td><td><b>Other sources</b> — Kilter board climbs, Apple Watch runs</td><td>Separate modules</td><td>Shown in Yours with a source badge (decision 4)</td></tr>
+</table>
+
+<!-- 2. Layout options -->
+<h2><span class="n">02</span>Three ways to lay it out</h2>
+<p class="sub">Same data, different top-level shape. Shown on the Climbing filter, where the gap is worst today.</p>
+<div class="gallery">
+
+  <!-- Option A -->
+  <div class="step"><span class="stepnum alt">A</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ">＋</span></div>
+      <div class="search">🔍 Search climbs</div>
+      <div class="chips"><span class="chip">All</span><span class="chip">Strength</span><span class="chip climb on">Climbing</span><span class="chip">Running</span></div>
+      <div class="sect">Your climbs · 14 <a>Most used ▾</a></div>
+      <div class="list">
+        <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">Blue crimp roof</div><div class="b">Boulder · Gravity · 9 attempts</div></div><div class="rr"><b class="sent">Sent</b>3 sessions</div></div>
+        <div class="row"><span class="grade">V4</span><div class="rt"><div class="a">Yellow slab</div><div class="b">Boulder · Gravity · 6 attempts</div></div><div class="rr"><b class="proj">Project</b>2 sessions</div></div>
+        <div class="row"><span class="grade">6b</span><div class="rt"><div class="a">Arete line</div><div class="b">Top-rope · Movement</div></div><div class="rr"><b class="sent">Sent</b>1 session</div></div>
+      </div>
+      <div class="sect">Templates</div>
+      <div class="list">
+        <div class="row"><span class="glyph g-clm">🧗</span><div class="rt"><div class="a">Boulder</div><div class="b">Boulder · V0–V8</div></div></div>
+        <div class="row"><span class="glyph g-clm">🧗</span><div class="rt"><div class="a">Top-rope route</div><div class="b">Top-rope · 5.6–5.12</div></div></div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><b>A · One list, yours on top.</b> Smallest change. But in Strength your 12 lifts sit above 870 catalog moves — the
+    catalog becomes a long tail you scroll through, and sorting only applies to the top section.</p>
+  </div>
+
+  <!-- Option B -->
+  <div class="step"><span class="stepnum">B</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ">＋</span></div>
+      <div class="seg"><span class="on">Yours</span><span>Explore</span></div>
+      <div class="search">🔍 Search your climbs</div>
+      <div class="chips"><span class="chip">All</span><span class="chip">Strength</span><span class="chip climb on">Climbing</span><span class="chip">Running</span></div>
+      <div class="bar"><span>14 climbs · 9 sent</span><span class="sortbtn">Most used ▾</span></div>
+      <div class="list">
+        <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">Blue crimp roof <span class="pin">📌</span></div><div class="b">Boulder · Gravity · set 14 Sep · 9 attempts</div></div><div class="rr"><b class="sent">Sent</b>3 sessions</div></div>
+        <div class="row"><span class="grade">V4</span><div class="rt"><div class="a">Yellow slab</div><div class="b">Boulder · Gravity · set 28 Sep</div></div><div class="rr"><b class="proj">Project</b>2 sessions</div></div>
+        <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">Blue crimp roof</div><div class="b">Boulder · Gravity · set 2 Aug · reset</div></div><div class="rr"><b class="proj">Project</b>2 sessions</div></div>
+        <div class="row"><span class="grade">V3</span><div class="rt"><div class="a">Green pinches</div><div class="b">Boulder · Gravity</div></div><div class="rr"><b class="sent">Flash</b>1 session</div></div>
+        <div class="row"><span class="grade">V6</span><div class="rt"><div class="a">Board: Spicy Pringle <span class="pill">KILTER</span></div><div class="b">40° · 12 attempts</div></div><div class="rr"><b class="proj">Project</b>4 sessions</div></div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><b>B · Yours | Explore.</b><span class="rec">RECOMMENDED</span> Two clear jobs: <b>Yours</b> (everything you've logged, sortable, pinnable)
+    and <b>Explore</b> (the catalog + filters). Search and chips are shared. The same two-tab shape works inside the pickers (scenario 9).</p>
+  </div>
+
+  <!-- Option C -->
+  <div class="step"><span class="stepnum alt">C</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="big">Library</span><span class="circ">＋</span></div>
+      <div class="search">🔍 Search everything</div>
+      <div class="sect">Pinned</div>
+      <div style="display:flex;gap:7px;padding:0 12px 6px">
+        <div class="kpi" style="flex:1"><span>Strength</span><b style="font-size:12px">Bench Press</b></div>
+        <div class="kpi" style="flex:1"><span>Climbing</span><b style="font-size:12px">Blue crimp</b></div>
+        <div class="kpi" style="flex:1"><span>Timed</span><b style="font-size:12px">Max hangs</b></div>
+      </div>
+      <div class="sect">Climbing · 14 <a>See all ›</a></div>
+      <div style="display:flex;gap:7px;padding:0 12px 6px">
+        <div class="kpi" style="flex:1"><span>V5 · Sent</span><b style="font-size:12px">Blue crimp</b></div>
+        <div class="kpi" style="flex:1"><span>V4 · Project</span><b style="font-size:12px">Yellow slab</b></div>
+        <div class="kpi" style="flex:1"><span>6b · Sent</span><b style="font-size:12px">Arete line</b></div>
+      </div>
+      <div class="sect">Strength · 12 <a>See all ›</a></div>
+      <div style="display:flex;gap:7px;padding:0 12px 6px">
+        <div class="kpi" style="flex:1"><span>24 sessions</span><b style="font-size:12px">Bench</b></div>
+        <div class="kpi" style="flex:1"><span>18 sessions</span><b style="font-size:12px">Squat</b></div>
+        <div class="kpi" style="flex:1"><span>11 sessions</span><b style="font-size:12px">Pull-up</b></div>
+      </div>
+      <div class="sect">Explore the catalog <a>870 ›</a></div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><b>C · Hub of shelves.</b> Pretty, glanceable, Apple-Fitness-like. But every "See all" is another screen, sorting
+    lives one level down, and it doesn't fit inside a picker — you'd still need B's list underneath.</p>
+  </div>
+</div>
+
+<!-- 3. Recommended flow -->
+<h2><span class="n">03</span>Option B, screen by screen</h2>
+<p class="sub">What's new on each screen is called out in <span style="color:var(--ember);font-weight:700">ember</span>.</p>
+<div class="gallery">
+
+  <!-- 1 Yours · All -->
+  <div class="step"><span class="stepnum">1</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ">＋</span></div>
+      <div class="seg hl"><span class="on">Yours</span><span>Explore</span></div>
+      <div class="search">🔍 Search your activities</div>
+      <div class="chips"><span class="chip on">All</span><span class="chip">Strength</span><span class="chip">Climbing</span><span class="chip">Running</span><span class="chip">Timed</span></div>
+      <div class="bar"><span>41 activities</span><span class="sortbtn new">Most used ▾</span></div>
+      <div class="sect">Pinned</div>
+      <div class="list">
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Bench Press <span class="pin">📌</span></div><div class="b">Strength · e1RM 93 kg ▲</div></div><div class="rr"><b>24×</b>2d ago</div></div>
+        <div class="row"><span class="glyph g-tim">⏱</span><div class="rt"><div class="a">Max hangs <span class="pin">📌</span></div><div class="b">Timed · +11 kg best</div></div><div class="rr"><b>9×</b>4d ago</div></div>
+      </div>
+      <div class="sect">All</div>
+      <div class="list">
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Back Squat</div><div class="b">Strength · 120 kg × 5</div></div><div class="rr"><b>18×</b>3d ago</div></div>
+        <div class="row"><span class="glyph g-clm">🧗</span><div class="rt"><div class="a">Blue crimp roof</div><div class="b">Climbing · V5 · Sent</div></div><div class="rr"><b>3×</b>1d ago</div></div>
+        <div class="row"><span class="glyph g-run">🏃</span><div class="rt"><div class="a">Riverside 5k</div><div class="b">Running · 5:33/km best</div></div><div class="rr"><b>7×</b>5d ago</div></div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Yours</b> is built from your history — every lift, climb, run, hold and dance you've logged.
+    Each row: how many sessions, when last, and the headline number. Pinned rows lead.</p>
+  </div>
+
+  <!-- 2 Sort menu -->
+  <div class="step"><span class="stepnum">2</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ">＋</span></div>
+      <div class="seg"><span class="on">Yours</span><span>Explore</span></div>
+      <div class="search">🔍 Search your climbs</div>
+      <div class="chips"><span class="chip">All</span><span class="chip">Strength</span><span class="chip climb on">Climbing</span><span class="chip">Running</span></div>
+      <div class="bar"><span>14 climbs · 9 sent</span><span class="sortbtn">Most used ▾</span></div>
+      <div class="list" style="opacity:.35">
+        <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">Blue crimp roof</div><div class="b">Boulder · Gravity</div></div></div>
+        <div class="row"><span class="grade">V4</span><div class="rt"><div class="a">Yellow slab</div><div class="b">Boulder · Gravity</div></div></div>
+        <div class="row"><span class="grade">6b</span><div class="rt"><div class="a">Arete line</div><div class="b">Top-rope</div></div></div>
+      </div>
+      <div class="menu" style="top:208px">
+        <div class="h">Sort climbs by</div>
+        <div>Most used <span class="ck">✓</span></div>
+        <div>Recently done</div>
+        <div>Hardest grade</div>
+        <div>Most attempts</div>
+        <div>Name A–Z</div>
+        <div class="h">Show</div>
+        <div>Projects only</div>
+        <div>Sent only</div>
+        <div>This gym · Gravity</div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Sort + quick filters adapt to the discipline.</b> Strength: Most used · Recent · Best e1RM ·
+    Biggest gain · A–Z. Running: Most used · Recent · Fastest · Longest. Timed: Most used · Recent · Longest hold. Remembered per discipline.</p>
+  </div>
+
+  <!-- 3 Explore -->
+  <div class="step"><span class="stepnum">3</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ">＋</span></div>
+      <div class="seg"><span>Yours</span><span class="on">Explore</span></div>
+      <div class="search">🔍 Search exercises or muscles</div>
+      <div class="chips"><span class="chip">All</span><span class="chip on">Strength</span><span class="chip">Climbing</span><span class="chip">Timed</span></div>
+      <div class="chips"><span class="chip">Chest ✕</span><span class="chip">Barbell ✕</span><span class="chip">＋ Filter</span></div>
+      <div class="bar"><span>38 exercises</span><span class="sortbtn">Popular ▾</span></div>
+      <div class="list">
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Bench Press – Medium Grip <span class="done">DONE 24×</span></div><div class="b">Chest · Barbell · Beginner</div></div></div>
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Incline Bench Press</div><div class="b">Chest · Barbell · Intermediate</div></div></div>
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Close-Grip Bench <span class="done">DONE 3×</span></div><div class="b">Triceps · Barbell</div></div></div>
+        <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Floor Press</div><div class="b">Chest · Barbell</div></div></div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><b>Explore</b> is today's catalog + filters, with two changes: active filters show as removable chips,
+    and <span class="new">"DONE 24×"</span> badges mark moves you already know. Climbing/Running explore = the templates + how-to.</p>
+  </div>
+
+  <!-- 4 Activity page -->
+  <div class="step"><span class="stepnum">4</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Blue crimp roof</span><span class="circ">⋯</span></div>
+      <div class="tabs2"><span class="on">Progress</span><span>Clips · 6</span><span>About</span></div>
+      <div class="kpis">
+        <div class="kpi"><span>Status</span><b class="sent">Sent</b><small>on attempt 9</small></div>
+        <div class="kpi"><span>Sessions</span><b>3</b></div>
+        <div class="kpi"><span>Last</span><b>1d ago</b></div>
+      </div>
+      <div class="card"><div class="ct">Attempts <span>3 sessions</span></div>
+        <div style="display:flex;gap:5px;margin-top:6px">
+          <div class="thumb"></div><div class="thumb"></div><div class="thumb"></div><div class="thumb" style="box-shadow:0 0 0 2px var(--green)"></div>
+        </div>
+        <div style="font-size:10px;color:var(--t2);margin-top:4px">#1 fell · #4 fell · #7 high pt · <span class="sent">#9 sent</span></div>
+      </div>
+      <div class="card"><div class="ct">Effort <span>♥ peak per attempt</span></div>
+        <svg viewBox="0 0 280 40" width="100%" height="40"><polyline fill="none" stroke="#FF6A5C" stroke-width="2" points="5,10 70,14 140,20 210,26 275,30"/></svg></div>
+      <div class="actions"><span class="btn p">▶ Log it now</span><span class="btn">＋ Routine</span></div>
+      <div class="note">Boulder · V5 · Gravity · Cave wall · blue tape · set by Sam</div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>One Activity page</b> for everything: the progress dashboard you already have, its clips,
+    and an About tab (how-to, muscles, guide photos for catalog moves; gym/wall/colour/setter for climbs). <b>Log it now</b> starts or adds to a Quick Session.</p>
+  </div>
+
+  <!-- 5 Manage -->
+  <div class="step"><span class="stepnum">5</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Blue crimp roof</span><span class="circ">⋯</span></div>
+      <div class="tabs2"><span class="on">Progress</span><span>Clips · 6</span><span>About</span></div>
+      <div class="kpis" style="opacity:.4"><div class="kpi"><span>Status</span><b>Sent</b></div><div class="kpi"><span>Sessions</span><b>3</b></div><div class="kpi"><span>Last</span><b>1d</b></div></div>
+      <div class="dim"></div>
+      <div class="menu" style="top:82px">
+        <div>📌 Pin to top</div>
+        <div>✎ Rename…</div>
+        <div>⇲ Merge with…</div>
+        <div>✎ Edit grade / gym / wall</div>
+        <div>👁 Hide from Library</div>
+        <div style="color:var(--red)">🗑 Delete (custom only)</div>
+      </div>
+      <div class="sheet" style="height:300px">
+        <div class="grab"></div>
+        <div style="text-align:center;font-weight:700;font-size:14px;padding-bottom:6px">Merge “Blue crimp roof” with…</div>
+        <div class="note">Looks like the same climb under different names:</div>
+        <div class="list">
+          <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">blue crimp</div><div class="b">Gravity · 2 sessions · 4 attempts</div></div><div class="rr" style="color:var(--ember);font-weight:800">✓</div></div>
+          <div class="row"><span class="grade">V5</span><div class="rt"><div class="a">Blue crimp rooof</div><div class="b">Gravity · 1 session</div></div><div class="rr" style="color:var(--ember);font-weight:800">✓</div></div>
+        </div>
+        <div class="actions" style="padding-top:10px"><span class="btn p">Merge 3 sessions</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Fix your data.</b> Rename updates every session it appears in; Merge folds look-alikes
+    (suggested from name similarity) into one; Hide removes a retired gym climb without touching history. Clips and records follow.</p>
+  </div>
+
+  <!-- 6 Create -->
+  <div class="step"><span class="stepnum">6</span>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="navbar"><span class="circ">‹</span><span class="t">Library</span><span class="circ" style="box-shadow:0 0 0 2px var(--ember)">＋</span></div>
+      <div class="seg"><span class="on">Yours</span><span>Explore</span></div>
+      <div class="search">🔍 Search your activities</div>
+      <div class="list" style="opacity:.35"><div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Bench Press</div></div></div><div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Back Squat</div></div></div></div>
+      <div class="menu" style="top:82px">
+        <div class="h">Add to your library</div>
+        <div>🏋 New exercise</div>
+        <div>⏱ New timed protocol</div>
+        <div>🧗 New climb (to project)</div>
+        <div>🏃 New run route</div>
+        <div>💃 New activity (dance, other)</div>
+      </div>
+      <div class="tabbar"><span class="tab"><span class="ic">⌂</span>Home</span><span class="tab"><span class="ic">▶</span>Clips</span><span class="tab"><span class="ic">✦</span>Recap</span><span class="tab on"><span class="ic">▤</span>Apps</span></div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>＋ creates anything.</b> Today only a custom lift. A climb or run route you save before
+    logging it shows in Yours with "not done yet" — so you can plan a project, then "Log it now".</p>
+  </div>
+
+  <!-- 7 Picker -->
+  <div class="step"><span class="stepnum">7</span>
+    <div class="device"><div class="screen" style="background:#0d0d10">
+      <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+      <div style="padding:6px 16px;color:var(--t2);font-size:12px">Push Day · 0:14</div>
+      <div class="dim" style="z-index:1"></div>
+      <div class="sheet" style="top:70px;z-index:2;display:flex;flex-direction:column">
+        <div class="grab"></div>
+        <div class="navbar"><span style="color:var(--ember);font-size:14px">Cancel</span><span class="t">Add exercise</span><span style="color:var(--ember);font-size:14px;font-weight:700">Add 2</span></div>
+        <div class="seg"><span class="on">Yours</span><span>Explore</span></div>
+        <div class="search">🔍 Search</div>
+        <div class="bar"><span>Most used</span><span class="sortbtn">▾</span></div>
+        <div class="list">
+          <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Bench Press</div><div class="b">Last: 4 × 8 @ 75 kg</div></div><div class="rr" style="color:var(--ember);font-size:16px">✓</div></div>
+          <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Incline DB Press</div><div class="b">Last: 3 × 10 @ 26 kg</div></div><div class="rr" style="color:var(--ember);font-size:16px">✓</div></div>
+          <div class="row"><span class="glyph g-str">🏋</span><div class="rt"><div class="a">Cable Fly</div><div class="b">Last: 3 × 12 @ 15 kg</div></div><div class="rr" style="font-size:16px;color:#55555c">○</div></div>
+          <div class="row"><span class="glyph g-tim">⏱</span><div class="rt"><div class="a">Plank</div><div class="b">Last: 1:30</div></div><div class="rr" style="font-size:16px;color:#55555c">○</div></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Every picker is the Library.</b> Quick Session "Add exercise", the routine builder and the
+    timed picker share it — opening on <b>Yours · Most used</b> with "Last:" so mid-workout picking is one tap, not a scroll through 870.</p>
+  </div>
+</div>
+
+<!-- 4. Decisions -->
+<h2><span class="n">04</span>Decisions for you</h2>
+<p class="sub">Green is what I'd pick.</p>
+<div class="panels">
+  <div class="panel"><h4>1 · Layout</h4>
+    <div class="opt"><span class="k">A</span>One list, yours on top</div>
+    <div class="opt r"><span class="k">B</span>Yours | Explore tabs (screens above)</div>
+    <div class="opt"><span class="k">C</span>Hub of shelves</div>
+  </div>
+  <div class="panel"><h4>2 · What makes two climbs "the same"</h4>
+    <div class="opt"><span class="k">A</span>Name only (what the dashboards do since last week)</div>
+    <div class="opt r"><span class="k">B</span>Name + gym when named; grade + gym + wall + colour when unnamed — so "V4 yellow, Cave wall" is a climb too.
+      <b>+ the set window (user, 2026-10-14):</b> gyms reset every 3–4 weeks, so the same name at the same gym after a <b>gap of more than 4 weeks</b>
+      is a NEW climb ("set 14 Sep"). Logs inside the window stay one climb so a multi-session project isn't split. Window adjustable in Settings.</div>
+    <div class="opt"><span class="k">C</span>The full re-log key (type · scale · grade · name · gym · wall · colour) — a regrade would split it</div>
+  </div>
+  <div class="panel"><h4>3 · Where pins, hides, renames and saved-not-done items live</h4>
+    <div class="opt r"><span class="k">A</span>A small new <code>LibraryEntry</code> record per activity (in backup); everything else still derived from history</div>
+    <div class="opt"><span class="k">B</span>Settings-style flags only (no saved-not-done climbs/routes)</div>
+  </div>
+  <div class="panel"><h4>4 · Other sources in Yours</h4>
+    <div class="opt"><span class="k">A</span>Gym Tracker sessions only for now</div>
+    <div class="opt r"><span class="k">B</span>Also Kilter board climbs (badge) — Apple Watch runs later</div>
+    <div class="opt"><span class="k">C</span>Kilter + Apple Watch runs now</div>
+  </div>
+  <div class="panel"><h4>5 · Default sort</h4>
+    <div class="opt r"><span class="k">A</span>Most used (sessions in the last 90 days, then all-time)</div>
+    <div class="opt"><span class="k">B</span>Recently done</div>
+  </div>
+</div>
+
+<!-- 5. Plan -->
+<h2><span class="n">05</span>Suggested order</h2>
+<p class="sub">One prompt = one PR each, wireframe-approved first.</p>
+<div class="panels">
+  <div class="phase"><span class="p">L1</span><b>Yours + sort</b><ul><li>Pure <code>LibraryCatalog</code>: your activities from history (incl. climbs/runs), usage stats</li><li>Yours | Explore, sort menu remembered per discipline</li><li>Unified climb identity (decision 2)</li></ul></div>
+  <div class="phase"><span class="p">L2</span><b>Activity page</b><ul><li>Progress · Clips · About tabs (dashboard + detail merged)</li><li>Log it now · Add to routine</li><li>Explore "DONE n×" badges</li></ul></div>
+  <div class="phase"><span class="p">L3</span><b>Pin · Rename · Merge · Hide</b><ul><li><code>LibraryEntry</code> model + backup</li><li>History-safe rename/merge (rewrites session names, undoable)</li><li>Look-alike suggestions</li></ul></div>
+  <div class="phase"><span class="p">L4</span><b>Create + pickers</b><ul><li>＋ for timed / climb / run route / other</li><li>Quick Session, routine and timed pickers use the Library</li><li>Kilter climbs in Yours (decision 4)</li></ul></div>
+</div>
+
+</div>
+</body></html>
