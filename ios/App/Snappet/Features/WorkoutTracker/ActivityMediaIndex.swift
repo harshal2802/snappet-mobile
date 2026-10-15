@@ -11,20 +11,17 @@ struct ActivityKey: Hashable, Sendable {
     /// Normalized display name for an ad-hoc entity; `""` for a catalog / custom exercise.
     let nameKey: String
 
-    /// The activity a session entity belongs to, or `nil` when it has no cross-session identity — an
-    /// UNNAMED ad-hoc entity (an unnamed climb is just "a climb"; grouping every unnamed climb together
-    /// would mix different routes into one "progress" strip).
-    ///
-    /// A CLIMB is identified by its name whenever it has one, even under a shared library id like
-    /// `climb.boulder` (prompt 181): every climb logged from the library shares that id, so the id alone would
-    /// lump different routes together. An unnamed library climb falls back to the id.
-    static func of(_ ex: SessionExercise) -> ActivityKey? {
+    /// A NON-climb entity's activity, or `nil` when it has no cross-session identity — an UNNAMED ad-hoc entity.
+    /// Climbs return `nil` here on purpose: a climb's identity depends on history (gyms reset — the set window), so
+    /// it only comes from `ActivityIdentity` (prompt 183). Use `ActivityIdentity.key(for:)` everywhere.
+    /// Festival sets likewise: they're keyed per festival, which needs the session (prompt 183 follow-up).
+    static func plain(_ ex: SessionExercise) -> ActivityKey? {
+        guard ex.discipline != .climb, ex.exerciseId != ActivityIdentity.festivalExerciseId else { return nil }
         let name = normalize(ex.displayName ?? "")
         if ex.exerciseId.hasPrefix("adhoc-") {
             guard !name.isEmpty else { return nil }
             return ActivityKey(exerciseId: ex.exerciseId, nameKey: name)
         }
-        if ex.discipline == .climb, !name.isEmpty { return ActivityKey(exerciseId: ex.exerciseId, nameKey: name) }
         return ActivityKey(exerciseId: ex.exerciseId, nameKey: "")
     }
 
@@ -39,12 +36,6 @@ struct ActivityKey: Hashable, Sendable {
     var disciplineScope: WorkoutDiscipline? {
         guard exerciseId.hasPrefix(Self.disciplinePrefix) else { return nil }
         return WorkoutDiscipline(rawValue: String(exerciseId.dropFirst(Self.disciplinePrefix.count)))
-    }
-
-    /// Whether a session entity belongs to this activity.
-    func matches(_ ex: SessionExercise) -> Bool {
-        if let d = disciplineScope { return ex.discipline == d }
-        return ActivityKey.of(ex) == self
     }
 
     static func normalize(_ name: String) -> String {
@@ -106,8 +97,9 @@ enum ActivityMediaIndex {
     /// Every activity's clip count across `history`, skipping `excludingSession` (the live session —
     /// its own clips are already on the page's media shelf). Feeds the pager's "▶ N past clips" chip.
     static func counts(history: [WorkoutSession], media: [ActivityMediaInput],
-                       excludingSession: UUID? = nil) -> [ActivityKey: Int] {
-        let keys = entityKeys(history: history, excludingSession: excludingSession)
+                       excludingSession: UUID? = nil, identity: ActivityIdentity? = nil) -> [ActivityKey: Int] {
+        let keys = entityKeys(history: history, excludingSession: excludingSession,
+                              identity: identity ?? ActivityIdentity(sessions: history))
         var out: [ActivityKey: Int] = [:]
         for m in media where !m.isReel {
             guard let exID = m.assignedExerciseID, let key = keys[EntityRef(sessionID: m.sessionID, exerciseID: exID)]
@@ -121,13 +113,14 @@ enum ActivityMediaIndex {
     /// order. Sessions with no clip of the activity are omitted.
     static func groups(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
                        excludingSession: UUID? = nil, unit: WeightUnit,
-                       distanceUnit: DistanceUnit) -> [ActivitySessionGroup] {
+                       distanceUnit: DistanceUnit, identity: ActivityIdentity? = nil) -> [ActivitySessionGroup] {
+        let ids = identity ?? ActivityIdentity(sessions: history)
         let byMedia = Dictionary(grouping: media.filter { !$0.isReel && $0.assignedExerciseID != nil },
                                  by: \.sessionID)
         var groups: [ActivitySessionGroup] = []
         for session in history where session.id != excludingSession {
             guard let rows = byMedia[session.id] else { continue }
-            let entities = session.exercises.filter { key.matches($0) }
+            let entities = session.exercises.filter { ids.matches(key, $0) }
             guard !entities.isEmpty else { continue }
             let entityByID = Dictionary(entities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let clips: [ActivityClip] = rows
@@ -151,9 +144,10 @@ enum ActivityMediaIndex {
     /// Clips in the General bucket (no exercise) of the sessions that DID include the activity — the
     /// "these might be yours too, tag them" nudge. Reels excluded.
     static func untaggedCount(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
-                              excludingSession: UUID? = nil) -> Int {
+                              excludingSession: UUID? = nil, identity: ActivityIdentity? = nil) -> Int {
+        let ids = identity ?? ActivityIdentity(sessions: history)
         let sessionIDs = Set(history.filter { s in
-            s.id != excludingSession && s.exercises.contains { key.matches($0) }
+            s.id != excludingSession && s.exercises.contains { ids.matches(key, $0) }
         }.map(\.id))
         return media.filter { !$0.isReel && $0.assignedExerciseID == nil && sessionIDs.contains($0.sessionID) }.count
     }
@@ -173,11 +167,12 @@ enum ActivityMediaIndex {
 
     private struct EntityRef: Hashable { let sessionID: UUID; let exerciseID: UUID }
 
-    private static func entityKeys(history: [WorkoutSession], excludingSession: UUID?) -> [EntityRef: ActivityKey] {
+    private static func entityKeys(history: [WorkoutSession], excludingSession: UUID?,
+                                   identity: ActivityIdentity) -> [EntityRef: ActivityKey] {
         var out: [EntityRef: ActivityKey] = [:]
         for session in history where session.id != excludingSession {
             for ex in session.exercises {
-                if let key = ActivityKey.of(ex) { out[EntityRef(sessionID: session.id, exerciseID: ex.id)] = key }
+                if let key = identity.key(for: ex, loggedAt: session.startedAt) { out[EntityRef(sessionID: session.id, exerciseID: ex.id)] = key }
             }
         }
         return out

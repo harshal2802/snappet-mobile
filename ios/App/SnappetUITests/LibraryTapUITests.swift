@@ -20,6 +20,8 @@ final class LibraryTapUITests: XCTestCase {
     }
 
     private func climbRow(_ title: String) -> XCUIElement {
+        // The seeded history makes "Yours" the default tab (prompt 183) — the templates live in Explore.
+        app.segmentedControls.matching(identifier: "library.mode").firstMatch.buttons["Explore"].tap()
         let chip = app.descendants(matching: .any).matching(identifier: "library.chip.climb").firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 6))
         chip.tap()

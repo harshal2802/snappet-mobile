@@ -423,7 +423,7 @@ struct WorkoutHomeView: View {
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
-                               openSession: { id in router.push(SessionRoute(id: id)) })
+                               openActivity: { router.push($0) })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },

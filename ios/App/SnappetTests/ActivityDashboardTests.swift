@@ -94,7 +94,7 @@ final class ActivityDashboardTests: XCTestCase {
             e.climbGradeLabel = grade
             return e
         }
-        let key = ActivityKey(exerciseId: "climb.boulder", nameKey: "")
+        let key = ActivityKey.discipline(.climb)
         let d = try XCTUnwrap(ActivityDashboard.make(
             key: key, history: [session(daysAgo: 9, [climb("V3", .sent), climb("V5", .attempt)]),
                                 session(daysAgo: 1, [climb("V4", .flash)])],

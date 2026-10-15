@@ -67,6 +67,8 @@ struct FreeformPlayerView: View {
     /// presentation (history is fixed for the live session), so the ~1 Hz re-render only does a lookup.
     @State private var pastClipCounts: [ActivityKey: Int] = [:]
     @State private var pastClipsLoaded = false
+    /// Which activity each entity is (prompt 183 — climbs need history + the reset window), built with the counts.
+    @State private var activityIdentity: ActivityIdentity?
     /// The activity whose past-clips sheet is open.
     @State private var pastClipsFor: ActivityClipsTarget?
     /// The exercise whose page shows the rest-morph hero while a rest runs (set by `startRest`).
@@ -341,9 +343,11 @@ struct FreeformPlayerView: View {
             rebuildPreviousClimbs()
             if !pastClipsLoaded {
                 pastClipsLoaded = true
+                let identity = ActivityIdentity(sessions: history + [session])
+                activityIdentity = identity
                 pastClipCounts = ActivityMediaIndex.counts(history: history,
                                                            media: ActivityMediaStore.snapshot(context: context),
-                                                           excludingSession: session.id)
+                                                           excludingSession: session.id, identity: identity)
             }
             pushLiveActivity()
             // The rest ticker is torn down whenever this screen disappears (a full-screen cover, the
@@ -839,7 +843,7 @@ struct FreeformPlayerView: View {
             } else {
                 planRow(ex)
             }
-            if let key = ActivityKey.of(ex), let count = pastClipCounts[key], count > 0 {
+            if let key = activityIdentity?.key(for: ex), let count = pastClipCounts[key], count > 0 {
                 PastClipsChip(count: count) {
                     pastClipsFor = ActivityClipsTarget(key: key,
                                                        title: resolver.name(for: ex.exerciseId, override: ex.displayName))

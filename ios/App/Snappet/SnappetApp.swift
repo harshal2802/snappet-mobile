@@ -75,7 +75,10 @@ struct SnappetApp: App {
                         "clips.autoplay",
                         // The Clips grid's pinch column count (prompt 176) — a run that ends at 5 columns
                         // would make the next run's pinch-in a no-op.
-                        "clips.grid.columns"] {
+                        "clips.grid.columns",
+                        // The Library's Yours/Explore choice + per-discipline sorts (prompt 183) — a run that
+                        // switches to Explore would make the next run open on Explore instead of the default.
+                        "library.mode", "library.sorts", "library.counts"] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

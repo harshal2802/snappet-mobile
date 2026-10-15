@@ -57,6 +57,8 @@ struct SessionDetailView: View {
     /// hosted here on the List (a stable host) like `studio`.
     @State private var pastClipCounts: [ActivityKey: Int] = [:]
     @State private var pastClipsFor: ActivityClipsTarget?
+    /// Which activity each entity is (prompt 183 — climbs need history + the reset window).
+    @State private var activityIdentity: ActivityIdentity?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
@@ -120,6 +122,7 @@ struct SessionDetailView: View {
                                 onRemove: { pendingRemoval = $0 },
                                 onOpenStudio: { studio = $0 },
                                 pastClipCounts: pastClipCounts,
+                                activityIdentity: activityIdentity,
                                 onOpenPastClips: { pastClipsFor = $0 },
                                 onOpenDashboard: { router.push($0) })
         }
@@ -173,9 +176,11 @@ struct SessionDetailView: View {
             ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
         }
         .task {
+            let identity = ActivityIdentity(sessions: history + [session])
+            activityIdentity = identity
             pastClipCounts = ActivityMediaIndex.counts(history: history,
                                                        media: ActivityMediaStore.snapshot(context: context),
-                                                       excludingSession: session.id)
+                                                       excludingSession: session.id, identity: identity)
         }
     }
 
@@ -445,6 +450,7 @@ private struct SessionMediaSection: View {
     let onOpenStudio: (StudioPresentation) -> Void
     /// Past clips per activity elsewhere in history + the parent-hosted sheet opener (prompt 178).
     let pastClipCounts: [ActivityKey: Int]
+    let activityIdentity: ActivityIdentity?
     let onOpenPastClips: (ActivityClipsTarget) -> Void
     /// Push the activity's dashboard (prompt 179).
     let onOpenDashboard: (ActivityRoute) -> Void
@@ -475,9 +481,11 @@ private struct SessionMediaSection: View {
          onRemove: @escaping (SessionMedia) -> Void,
          onOpenStudio: @escaping (StudioPresentation) -> Void,
          pastClipCounts: [ActivityKey: Int] = [:],
+         activityIdentity: ActivityIdentity? = nil,
          onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in },
          onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in }) {
         self.pastClipCounts = pastClipCounts
+        self.activityIdentity = activityIdentity
         self.onOpenDashboard = onOpenDashboard
         self.onOpenPastClips = onOpenPastClips
         self.session = session
@@ -547,7 +555,7 @@ private struct SessionMediaSection: View {
                     HStack {
                         Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                         Spacer()
-                        if let key = ActivityKey.of(ex) {
+                        if let key = activityIdentity?.key(for: ex, loggedAt: session.startedAt) {
                             Button {
                                 onOpenDashboard(ActivityRoute(
                                     key: key, title: resolver.name(for: ex.exerciseId, override: ex.displayName)))
@@ -559,7 +567,8 @@ private struct SessionMediaSection: View {
                             .accessibilityIdentifier("activity.openDashboard")
                             .accessibilityLabel("Progress")
                         }
-                        if let key = ActivityKey.of(ex), let count = pastClipCounts[key], count > 0 {
+                        if let key = activityIdentity?.key(for: ex, loggedAt: session.startedAt),
+                           let count = pastClipCounts[key], count > 0 {
                             PastClipsChip(count: count) {
                                 onOpenPastClips(ActivityClipsTarget(
                                     key: key, title: resolver.name(for: ex.exerciseId, override: ex.displayName)))
