@@ -216,7 +216,7 @@ struct WorkoutLibraryView: View {
     @ViewBuilder private var exploreSection: some View {
         Section {
             ForEach(results) { item in
-                Button { open(item) } label: { LibraryItemRow(item: item) }
+                Button { open(item) } label: { LibraryItemRow(item: item, doneDays: doneDays(item)) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("exerciseRow")
             }
@@ -231,6 +231,18 @@ struct WorkoutLibraryView: View {
                 }
             }
         }
+    }
+
+    /// Days you've done a catalog item (prompt 184 — the "done" badge). A lift by its id; a timed protocol by its
+    /// id (routine-started) or its name (picked in a Quick Session, which logs `adhoc-duration` + the name).
+    private func doneDays(_ item: LibraryItem) -> Int? {
+        var keys = [ActivityKey(exerciseId: item.id, nameKey: "")]
+        if item.discipline == .timed {
+            keys.append(ActivityKey(exerciseId: "adhoc-\(SetKind.duration.rawValue)",
+                                    nameKey: ActivityKey.normalize(item.title)))
+        }
+        let days = keys.compactMap { k in yours.first { $0.key == k }?.days }.max()
+        return days.flatMap { $0 > 0 ? $0 : nil }
     }
 
     private var searchPrompt: String {
@@ -372,6 +384,8 @@ struct LibraryYoursRow: View {
 /// user-created exercises. The accent makes the discipline legible at a glance (the wayfinding axis).
 struct LibraryItemRow: View {
     let item: LibraryItem
+    /// Days you've done it, for the "done" badge in Explore (prompt 184); `nil` = never.
+    var doneDays: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -384,6 +398,13 @@ struct LibraryItemRow: View {
                 Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
+            if let doneDays {
+                Text("Done · \(doneDays) \(doneDays == 1 ? "day" : "days")")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(SnappetColor.workout.opacity(0.15), in: Capsule())
+                    .foregroundStyle(SnappetColor.workout)
+            }
             if item.isCustom {
                 Text("Custom")
                     .font(.caption2.weight(.semibold))

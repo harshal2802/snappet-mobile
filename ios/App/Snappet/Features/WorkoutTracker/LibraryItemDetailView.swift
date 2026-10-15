@@ -15,8 +15,9 @@ struct LibraryItemDetailView: View {
     var body: some View {
         switch item.source {
         case .strength(let ex):
-            // The full, well-tested strength detail (Edit/Delete for custom lives here).
-            ExerciseDetailView(exercise: ex, history: history, unit: unit)
+            // A catalog move opens its Activity page (prompt 184): Progress if you've done it, its how-to on About.
+            ActivityDashboardView(key: ActivityKey(exerciseId: ex.id, nameKey: ""), title: ex.name,
+                                  history: history, unit: unit, catalogExercise: ex)
         case .climb, .run, .timed:
             AdaptiveItemDetail(item: item, history: history, unit: unit)
         }

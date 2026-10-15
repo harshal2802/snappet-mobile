@@ -9941,3 +9941,14 @@ stripes, and the panel read as an opaque slab.
   are DAYS by default** (5 am → 5 am, so a 1 am set stays on its night), with a per-discipline **Count by** choice
   (Days · Sessions · Sets — "Attempts" for climbs, "Legs" for runs), remembered in `library.counts`. **Most used ranks
   on active days**, never sessions: ending a festival night after every set made one night look like a dozen.
+
+## 2026-10-15 — The Activity page (prompt 184)
+
+- **One page per activity, three tabs** (Progress · Clips · About), and every catalog-exercise route lands on it —
+  `ExerciseDetailView` is now just the About content. A never-logged move opens on About.
+- **"Log it now" pops to the Gym Tracker root before handing over.** A view under a pushed page doesn't run its
+  change handlers, and the player is a cover the home presents; the home consumes `pendingQuickLog` on change AND on
+  reappearing. Pop only above path[0] — `popToRoot` would pop the module itself.
+- Log it now / Add to routine start from your LATEST instance (a climb comes back as that climb; a lift plans last
+  time's set count; a routine block prescribes last time's sets × top reps @ top weight). Festival sets can't be
+  logged on their own.
