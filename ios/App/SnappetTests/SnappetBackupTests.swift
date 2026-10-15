@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 43, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 44, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -613,6 +613,9 @@ final class SnappetBackupTests: XCTestCase {
         style.titleLook = .plain
         context.insert(ClipOverlayDefaults(styleData: try! JSONEncoder().encode(style),
                                            updatedAt: Date(timeIntervalSince1970: 1_700_011_800)))
+        // Library pins / hides (prompt 185).
+        context.insert(LibraryEntry(key: ActivityKey(exerciseId: "climb", nameKey: "n:blue crimp|gravity@2026-09-14"),
+                                    isPinned: true, updatedAt: Date(timeIntervalSince1970: 1_700_011_900)))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

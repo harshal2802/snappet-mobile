@@ -15,12 +15,21 @@ struct ActivityRoute: Hashable {
 /// (a catalog move's how-to, or your latest instance's details). **Log it now** / **Add to routine** sit at the
 /// bottom. A catalog move you've never logged opens on About.
 struct ActivityDashboardView: View {
-    let key: ActivityKey
-    let title: String
+    /// The activity — state, because a rename or merge (prompt 185) can move it to a new identity.
+    @State private var key: ActivityKey
+    @State private var title: String
     let history: [WorkoutSession]
     let unit: WeightUnit
     /// The catalog move behind this activity (a strength `exerciseId`), for the About tab's how-to.
     var catalogExercise: Exercise? = nil
+
+    init(key: ActivityKey, title: String, history: [WorkoutSession], unit: WeightUnit, catalogExercise: Exercise? = nil) {
+        _key = State(initialValue: key)
+        _title = State(initialValue: title)
+        self.history = history
+        self.unit = unit
+        self.catalogExercise = catalogExercise
+    }
 
     enum Tab: String { case progress, clips, about }
 
@@ -29,6 +38,29 @@ struct ActivityDashboardView: View {
     @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
     @State private var tab: Tab = .progress
     @State private var toast: String?
+    /// A rename / merge that can still be undone from the toast (prompt 185).
+    @State private var undo: UndoStep?
+    @State private var renaming = false
+    @State private var newName = ""
+    /// The merge sheet's payload — `sheet(item:)`, because an isPresented sheet reading separate state shows stale
+    /// (empty) content when the body never reads that state.
+    @State private var mergeRequest: MergeRequest?
+    /// Bumped after a rename / merge rewrote history, so the page reloads.
+    @State private var revision = 0
+    @State private var tabChosen = false
+    @Query private var entries: [LibraryEntry]
+
+    private struct MergeRequest: Identifiable {
+        let id = UUID()
+        let target: LibraryCatalog.Row
+        let candidates: [LibraryCatalog.Row]
+    }
+
+    private struct UndoStep {
+        let changes: [LibraryMaintenance.Change]
+        let key: ActivityKey
+        let title: String
+    }
     @State private var dashboard: ActivityDashboard?
     @State private var groups: [ActivitySessionGroup] = []
     /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
@@ -82,11 +114,21 @@ struct ActivityDashboardView: View {
             }
         }
         .background(SnappetColor.paper)
-        .safeAreaInset(edge: .bottom) { if tab != .clips && ActivityLauncher.canLaunch(key) { actionBar } }
+        .safeAreaInset(edge: .bottom) { bottomArea }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            guard !loaded else { return }
+        .toolbar { if key.disciplineScope == nil { ToolbarItem(placement: .primaryAction) { manageMenu } } }
+        .alert("Rename", isPresented: $renaming) {
+            TextField("Name", text: $newName).accessibilityIdentifier("activity.rename.field")
+            Button("Rename") { rename(to: newName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Renames it in every session it was logged in.")
+        }
+        .sheet(item: $mergeRequest) { req in
+            LibraryMergeSheet(target: req.target, candidates: req.candidates) { merge($0) }
+        }
+        .task(id: "\(key.exerciseId)|\(key.nameKey)|\(revision)") {
             let media = ActivityMediaStore.snapshot(context: context)
             dashboard = ActivityDashboard.make(key: key, history: history, media: media, unit: unit)
             groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
@@ -98,7 +140,8 @@ struct ActivityDashboardView: View {
                 climbs = LibraryCatalog.sorted(all.filter { $0.discipline == .climb }, by: .recent)
             }
             // Never logged → the how-to is the useful page.
-            if dashboard == nil { tab = .about }
+            if !tabChosen { tabChosen = true; if dashboard == nil { tab = .about } }
+            if !tabs.contains(tab) { tab = tabs.first ?? .about }
             loaded = true
         }
         .fullScreenCover(item: $viewing) { req in
@@ -119,15 +162,28 @@ struct ActivityDashboardView: View {
 
     // MARK: - Log it now / Add to routine (prompt 184)
 
-    private var actionBar: some View {
+    /// The toast (with Undo for a rename / merge) above the action bar.
+    @ViewBuilder private var bottomArea: some View {
         VStack(spacing: 8) {
             if let toast {
-                Text(toast).font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(.thinMaterial, in: Capsule())
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .accessibilityIdentifier("activity.toast")
+                HStack(spacing: 12) {
+                    Text(toast).font(.subheadline.weight(.semibold)).accessibilityIdentifier("activity.toast")
+                    if undo != nil {
+                        Button("Undo") { undoLast() }
+                            .font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.workout)
+                            .accessibilityIdentifier("activity.undo")
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .background(.thinMaterial, in: Capsule())
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if tab != .clips && ActivityLauncher.canLaunch(key) { actionBar }
+        }
+    }
+
+    private var actionBar: some View {
+        VStack(spacing: 8) {
         HStack(spacing: 10) {
             Button { logNow() } label: {
                 Label("Log it now", systemImage: "play.fill").frame(maxWidth: .infinity)
@@ -172,13 +228,128 @@ struct ActivityDashboardView: View {
         routine.exercises.append(block)
         routine.updatedAt = .now
         try? context.save()
-        let message = "Added to \(routine.name)"
-        withAnimation { toast = message }
+        show("Added to \(routine.name)")
+    }
+
+    /// A transient toast (announced to VoiceOver); an undoable one stays a little longer.
+    private func show(_ message: String, undo step: UndoStep? = nil) {
+        withAnimation { toast = message; undo = step }
         AccessibilityNotification.Announcement(message).post()
+        let shown = message
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            withAnimation { toast = nil }
+            try? await Task.sleep(for: .seconds(step == nil ? 3 : 6))
+            if toast == shown { withAnimation { toast = nil; undo = nil } }
         }
+    }
+
+    // MARK: - Pin · Rename · Merge · Hide (prompt 185)
+
+    private var entry: LibraryEntry? { entries.first { $0.key == key } }
+
+    private var manageMenu: some View {
+        Menu {
+            Button { setFlag(pin: !(entry?.isPinned ?? false)) } label: {
+                Label(entry?.isPinned == true ? "Unpin" : "Pin to top", systemImage: entry?.isPinned == true ? "pin.slash" : "pin")
+            }
+            if LibraryMaintenance.canRename(key) {
+                Button { newName = title; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
+                    .accessibilityIdentifier("activity.rename")
+            }
+            if LibraryMaintenance.canMerge(key) {
+                Button { openMerge() } label: { Label("Merge with…", systemImage: "arrow.triangle.merge") }
+                    .accessibilityIdentifier("activity.merge")
+            }
+            Button { setFlag(hide: !(entry?.isHidden ?? false)) } label: {
+                Label(entry?.isHidden == true ? "Show in Library" : "Hide from Library",
+                      systemImage: entry?.isHidden == true ? "eye" : "eye.slash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("activity.manage")
+        .accessibilityLabel("More")
+    }
+
+    private func setFlag(pin: Bool? = nil, hide: Bool? = nil) {
+        guard let e = LibraryEntry.entry(for: key, in: context, create: true) else { return }
+        if let pin { e.isPinned = pin }
+        if let hide { e.isHidden = hide }
+        e.updatedAt = .now
+        let message = pin.map { $0 ? "Pinned to the top" : "Unpinned" } ?? (hide == true ? "Hidden from Library" : "Shown in Library")
+        if !e.isPinned && !e.isHidden { context.delete(e) }
+        try? context.save()
+        show(message)
+    }
+
+    private func rename(to name: String) {
+        let changes = LibraryMaintenance.rename(key, to: name, sessions: history, identity: ActivityIdentity(sessions: history))
+        guard !changes.isEmpty else { return }
+        let step = UndoStep(changes: changes, key: key, title: title)
+        apply(changes, newTitle: name.trimmingCharacters(in: .whitespacesAndNewlines))
+        show("Renamed", undo: step)
+    }
+
+    private func openMerge() {
+        let rows = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history), unit: unit,
+                                        title: LibraryCatalog.fallbackTitle)
+        guard let target = rows.first(where: { $0.key == key }) else { return }
+        mergeRequest = MergeRequest(target: target, candidates: rows.filter {
+            $0.key != key && $0.discipline == target.discipline && LibraryMaintenance.canMerge($0.key)
+        })
+    }
+
+    private func merge(_ sources: [ActivityKey]) {
+        let changes = LibraryMaintenance.merge(sources, into: key, sessions: history,
+                                               identity: ActivityIdentity(sessions: history))
+        guard !changes.isEmpty else { return }
+        let step = UndoStep(changes: changes, key: key, title: title)
+        apply(changes, newTitle: title)
+        show("Merged \(Set(changes.map(\.sessionID)).count) \(Set(changes.map(\.sessionID)).count == 1 ? "session" : "sessions")", undo: step)
+    }
+
+    /// Write the changes, then follow the activity to its (possibly new) identity — moving its pin / hide with it.
+    private func apply(_ changes: [LibraryMaintenance.Change], newTitle: String) {
+        let anchor = anchorEntity(changes)
+        LibraryMaintenance.apply(changes, to: history)
+        try? context.save()
+        follow(anchor: anchor, title: newTitle)
+    }
+
+    private func undoLast() {
+        guard let step = undo else { return }
+        let anchor = anchorEntity(step.changes)
+        LibraryMaintenance.apply(step.changes, to: history, undo: true)
+        try? context.save()
+        withAnimation { toast = nil; undo = nil }
+        follow(anchor: anchor, title: step.title, fallback: step.key)
+    }
+
+    /// An entity of THIS activity to re-find it by after history changed (the latest one).
+    private func anchorEntity(_ changes: [LibraryMaintenance.Change]) -> UUID? {
+        let ids = ActivityIdentity(sessions: history)
+        for s in history.sorted(by: { $0.startedAt > $1.startedAt }) {
+            if let ex = s.exercises.first(where: { ids.key(for: $0, loggedAt: s.startedAt) == key }) { return ex.id }
+        }
+        return changes.last?.exerciseID
+    }
+
+    private func follow(anchor: UUID?, title newTitle: String, fallback: ActivityKey? = nil) {
+        let ids = ActivityIdentity(sessions: history)
+        var newKey = fallback ?? key
+        if let anchor {
+            for s in history {
+                if let ex = s.exercises.first(where: { $0.id == anchor }), let k = ids.key(for: ex, loggedAt: s.startedAt) {
+                    newKey = k
+                }
+            }
+        }
+        if newKey != key, let e = entry {
+            e.activityKeyRaw = LibraryEntry.raw(newKey)      // the pin / hide follows the activity
+            try? context.save()
+        }
+        key = newKey
+        title = newTitle
+        revision += 1
     }
 
     // MARK: - Progress

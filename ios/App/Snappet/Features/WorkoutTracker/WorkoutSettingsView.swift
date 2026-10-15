@@ -14,6 +14,8 @@ struct WorkoutSettingsView: View {
     @AppStorage(WeightEntry.stepKey(for: .kg)) private var stepKg = 0.0
     @AppStorage(WeightEntry.stepKey(for: .lb)) private var stepLb = 0.0
     @AppStorage(KeepScreenAwakeMode.storageKey) private var keepAwakeRaw = KeepScreenAwakeMode.defaultMode.rawValue
+    /// How long a gym climb lives before the setters reset it (prompt 185) — read by `ActivityIdentity`.
+    @AppStorage(ActivityIdentity.resetDaysKey) private var climbResetDays = ActivityIdentity.defaultResetDays
 
     var body: some View {
         Form {
@@ -73,6 +75,18 @@ struct WorkoutSettingsView: View {
                 Text("Heart-rate profile")
             } footer: {
                 Text("Personalizes heart-rate zones, % effort, and a calorie estimate across the app. Optional — without it, zones use a default ceiling.")
+            }
+
+            Section {
+                Picker("Climbs reset after", selection: $climbResetDays) {
+                    ForEach([14, 21, 28, 42, 56, 84], id: \.self) { d in Text("\(d / 7) weeks").tag(d) }
+                    Text("Never").tag(3650)
+                }
+                .accessibilityIdentifier("settings.climbReset")
+            } header: {
+                Text("Library")
+            } footer: {
+                Text("Your gym resets its climbs. The same climb logged again after a longer gap than this counts as a new climb in your Library; inside it, a project you work across sessions stays one climb.")
             }
 
             Section("Your data") {

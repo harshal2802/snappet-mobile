@@ -78,7 +78,8 @@ struct SnappetApp: App {
                         "clips.grid.columns",
                         // The Library's Yours/Explore choice + per-discipline sorts (prompt 183) — a run that
                         // switches to Explore would make the next run open on Explore instead of the default.
-                        "library.mode", "library.sorts", "library.counts"] {
+                        "library.mode", "library.sorts", "library.counts",
+                        ActivityIdentity.resetDaysKey] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

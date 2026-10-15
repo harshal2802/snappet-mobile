@@ -23,6 +23,10 @@ struct WorkoutLibraryView: View {
 
     /// Saved timed exercises, newest-used first — folded into the timed discipline of Explore.
     @Query(sort: \TimedExerciseCatalog.lastUsedAt, order: .reverse) private var timed: [TimedExerciseCatalog]
+    /// Your pins / hides (prompt 185).
+    @Query private var entries: [LibraryEntry]
+    @Environment(\.modelContext) private var context
+    @State private var showHidden = false
 
     /// `""` = automatic (Yours when you have history, else Explore); otherwise the user's explicit choice.
     @AppStorage("library.mode") private var modeRaw = ""
@@ -39,8 +43,15 @@ struct WorkoutLibraryView: View {
     /// Your activities — rebuilt when history changes (never in `body`: it scans every session).
     @State private var yours: [LibraryCatalog.Row] = []
 
-    private var mode: Mode {
-        Mode(rawValue: modeRaw) ?? (history.contains { !$0.isActive } ? .yours : .explore)
+    /// Yours once you have history, else Explore.
+    private var automaticMode: Mode { history.contains { !$0.isActive } ? .yours : .explore }
+    private var mode: Mode { Mode(rawValue: modeRaw) ?? automaticMode }
+
+    /// Remember only a choice that DIFFERS from the automatic one. A pick that matches it is stored as automatic — so
+    /// a write of the current value (a picker re-asserting its selection while history is still loading) can never
+    /// pin the Library to Explore. It once did: the tab stuck on Explore with history present.
+    private func choose(_ m: Mode) {
+        modeRaw = m == automaticMode ? "" : m.rawValue
     }
     private var allItems: [LibraryItem] { resolver.library(timed: timed) }
     private var disciplines: [WorkoutDiscipline] {
@@ -57,15 +68,24 @@ struct WorkoutLibraryView: View {
     private var countUnit: LibraryCatalog.CountUnit {
         Self.parseSorts(countsRaw)[discipline?.rawValue ?? "all"].flatMap(LibraryCatalog.CountUnit.init) ?? .days
     }
+    private var pinnedKeys: Set<ActivityKey> { Set(entries.filter(\.isPinned).compactMap(\.key)) }
+    private var hiddenKeys: Set<ActivityKey> { Set(entries.filter(\.isHidden).compactMap(\.key)) }
+    /// Filtered + sorted; hidden activities are left out unless "Show hidden" is on (prompt 185).
     private var yoursShown: [LibraryCatalog.Row] {
-        LibraryCatalog.sorted(LibraryCatalog.filter(yours, query: query, discipline: discipline,
-                                                    climbFilter: discipline == .climb ? climbFilter : .all),
-                              by: sort)
+        let hidden = hiddenKeys
+        let rows = yours.filter { showHidden || !hidden.contains($0.key) }
+        return LibraryCatalog.sorted(LibraryCatalog.filter(rows, query: query, discipline: discipline,
+                                                           climbFilter: discipline == .climb ? climbFilter : .all),
+                                     by: sort)
+    }
+    private var hiddenCount: Int {
+        let hidden = hiddenKeys
+        return yours.filter { hidden.contains($0.key) && (discipline == nil || $0.discipline == discipline) }.count
     }
 
     var body: some View {
         List {
-            Picker("Library", selection: Binding(get: { mode }, set: { modeRaw = $0.rawValue })) {
+            Picker("Library", selection: Binding(get: { mode }, set: { choose($0) })) {
                 Text("Yours").tag(Mode.yours)
                 Text("Explore").tag(Mode.explore)
             }
@@ -120,7 +140,7 @@ struct WorkoutLibraryView: View {
                     Text("Nothing logged yet").font(.headline)
                     Text("Everything you log in a session — lifts, climbs, runs, holds — shows up here with how often you do it.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Explore the catalog") { modeRaw = Mode.explore.rawValue }
+                    Button("Explore the catalog") { choose(.explore) }
                         .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
                         .accessibilityIdentifier("library.yours.explore")
                 }
@@ -129,17 +149,45 @@ struct WorkoutLibraryView: View {
             } else if rows.isEmpty {
                 Text("Nothing matches.").foregroundStyle(.secondary)
             } else {
-                ForEach(rows) { row in
-                    Button { openActivity(ActivityRoute(key: row.key, title: row.title)) } label: {
-                        LibraryYoursRow(row: row, unit: unit, count: countUnit)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("library.yours.row")
+                // Pinned activities lead every sort (prompt 185).
+                let pinned = pinnedKeys
+                ForEach(rows.filter { pinned.contains($0.key) } + rows.filter { !pinned.contains($0.key) }) { row in
+                    yoursRow(row, pinned: pinned.contains(row.key))
                 }
             }
         } header: {
             if !yours.isEmpty { yoursHeader(count: rows.count) }
         }
+    }
+
+    private func yoursRow(_ row: LibraryCatalog.Row, pinned: Bool) -> some View {
+        let hidden = hiddenKeys.contains(row.key)
+        return Button { openActivity(ActivityRoute(key: row.key, title: row.title)) } label: {
+            LibraryYoursRow(row: row, unit: unit, count: countUnit, pinned: pinned, hidden: hidden)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("library.yours.row")
+        .swipeActions(edge: .leading) {
+            Button { setFlag(row.key, pin: !pinned) } label: {
+                Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
+            }
+            .tint(SnappetColor.workout)
+        }
+        .swipeActions(edge: .trailing) {
+            Button { setFlag(row.key, hide: !hidden) } label: {
+                Label(hidden ? "Unhide" : "Hide", systemImage: hidden ? "eye" : "eye.slash")
+            }
+            .tint(.gray)
+        }
+    }
+
+    private func setFlag(_ key: ActivityKey, pin: Bool? = nil, hide: Bool? = nil) {
+        guard let e = LibraryEntry.entry(for: key, in: context, create: true) else { return }
+        if let pin { e.isPinned = pin }
+        if let hide { e.isHidden = hide }
+        e.updatedAt = .now
+        if !e.isPinned && !e.isHidden { context.delete(e) }      // nothing to remember
+        try? context.save()
     }
 
     private func yoursHeader(count: Int) -> some View {
@@ -154,6 +202,9 @@ struct WorkoutLibraryView: View {
                 }
                 Picker("Count by", selection: Binding(get: { countUnit }, set: { setCount($0) })) {
                     ForEach(LibraryCatalog.CountUnit.allCases) { u in Text(u.label(for: discipline)).tag(u) }
+                }
+                if hiddenCount > 0 || showHidden {
+                    Toggle("Show hidden (\(hiddenCount))", isOn: $showHidden)
                 }
                 if discipline == .climb {
                     Picker("Show", selection: $climbFilter) {
@@ -312,6 +363,8 @@ struct LibraryYoursRow: View {
     let unit: WeightUnit
     /// What the trailing count means (prompt 183 follow-up) — days unless the user picked otherwise.
     var count: LibraryCatalog.CountUnit = .days
+    var pinned = false
+    var hidden = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -326,7 +379,11 @@ struct LibraryYoursRow: View {
                     .frame(width: 36, height: 30)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.headline).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(row.title).font(.headline).lineLimit(1)
+                    if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(SnappetColor.workout) }
+                    if hidden { Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.secondary) }
+                }
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 6)
@@ -343,6 +400,7 @@ struct LibraryYoursRow: View {
             }
         }
         .padding(.vertical, 2)
+        .opacity(hidden ? 0.5 : 1)
         .contentShape(Rectangle())
     }
 

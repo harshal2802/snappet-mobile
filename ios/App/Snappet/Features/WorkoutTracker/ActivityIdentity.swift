@@ -20,6 +20,12 @@ import Foundation
 ///   artist was last.
 struct ActivityIdentity: Sendable {
     static let defaultResetDays = 28
+    /// The user's "climbs reset after" setting (Workout Settings, prompt 185); `defaultResetDays` until they choose.
+    static let resetDaysKey = "library.climbResetDays"
+    static var configuredResetDays: Int {
+        let v = UserDefaults.standard.integer(forKey: resetDaysKey)
+        return v > 0 ? v : defaultResetDays
+    }
 
     let resetDays: Int
     /// Every climb entity in the given sessions → its key.
@@ -33,7 +39,7 @@ struct ActivityIdentity: Sendable {
     private var festivalKeys: [UUID: ActivityKey] = [:]
     private(set) var festivalName: [ActivityKey: String] = [:]
 
-    init(sessions: [WorkoutSession], resetDays: Int = ActivityIdentity.defaultResetDays) {
+    init(sessions: [WorkoutSession], resetDays: Int = ActivityIdentity.configuredResetDays) {
         self.resetDays = max(1, resetDays)
         let window = Double(self.resetDays) * 86_400
         var logs: [(base: String, id: UUID, date: Date)] = []

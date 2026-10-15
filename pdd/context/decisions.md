@@ -9952,3 +9952,22 @@ stripes, and the panel read as an opaque slab.
 - Log it now / Add to routine start from your LATEST instance (a climb comes back as that climb; a lift plans last
   time's set count; a routine block prescribes last time's sets × top reps @ top weight). Festival sets can't be
   logged on their own.
+
+## 2026-10-15 — Pin, rename, merge, hide (prompt 185)
+
+- **The Library stores only pins and hides** (`LibraryEntry`, in backup). Names live in history: rename and merge
+  REWRITE the session entities' name (and a climb's gym/wall/colour on merge) — never grades, sets, outcomes or clips —
+  and every operation is the exact before/after list so Undo is a pure reverse.
+- **Merge suggestions are conservative and nothing is pre-ticked.** Two climbs of different grades, or names that
+  differ only in a number ("V4 boulder" / "V5 boulder"), are never "the same" — the first build pre-ticked exactly
+  those. Merging rewrites history, so every log is chosen by hand (and undoable).
+- Catalog lifts can be renamed (an override; identity stays the catalog id) but never merged; festivals can't be
+  renamed (their name is the festival's).
+- An `isPresented` sheet that reads separate @State showed stale (empty) content — the merge sheet uses
+  `sheet(item:)` with its payload.
+- Changing "Climbs reset after" regroups climb sets, so a pin on a climb set can orphan; acceptable (re-pin).
+- (UI-test lesson) **A UI test that starts a workout must finish + discard it.** An un-ended live workout carried
+  into the NEXT launch and left that run's seeded in-memory store with no history (diagnosed via an accessibility
+  probe: `hist=0`, Library on its no-history Explore default) — failures alternated with passes run to run. The
+  Activity page "Log it now" test now discards, as `WorkoutPauseBackgroundTests` already did. Separately, the Library
+  stores a Yours/Explore pick only when it differs from the automatic default, so a re-asserted selection can't pin it.
