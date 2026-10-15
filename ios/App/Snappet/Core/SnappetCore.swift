@@ -63,6 +63,8 @@ enum SnappetSchema {
         Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
         // Clips — the user's default HR tile + title (prompt 163), one row
         ClipOverlayDefaults.self,
+        // Library — your pins / hides per activity (prompt 185); everything else is derived from history
+        LibraryEntry.self,
     ]
 }
 

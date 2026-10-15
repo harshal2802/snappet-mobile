@@ -56,13 +56,31 @@ final class ActivityPageUITests: XCTestCase {
     }
 
     func testLogItNowStartsAQuickSessionWithIt() {
-        openBench()
+        // Through Explore — the catalog path doesn't depend on seeded history.
+        app.segmentedControls.matching(identifier: "library.mode").firstMatch.buttons["Explore"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 4))
+        search.tap(); search.typeText("Barbell Bench Press - Medium")
+        let row = app.buttons.matching(NSPredicate(format: "identifier == 'exerciseRow' AND label CONTAINS 'Medium Grip'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 4))
+        row.tap()
+        XCTAssertTrue(any("activity.logNow").waitForExistence(timeout: 6), "the Activity page")
         any("activity.logNow").tap()
         // The player opens on the bench page, prefilled from last time.
         let name = any("freeform.entityName")
         XCTAssertTrue(name.waitForExistence(timeout: 8), "the session player")
         XCTAssertTrue(name.label.contains("Bench"), name.label)
         snap("05-logging")
+
+        // Clean up: finish + discard so the live workout doesn't leak into the next launch (an un-ended one left the
+        // next run's seeded history empty — the WorkoutPauseBackgroundTests rule).
+        app.buttons["freeform.finish"].tap()
+        let discard = app.buttons["freeform.discard"]
+        if discard.waitForExistence(timeout: 4) {
+            discard.tap()
+            let confirm = app.buttons["Discard (don't save)"]
+            if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+        }
     }
 
     func testExploreMarksMovesYouveDone() {

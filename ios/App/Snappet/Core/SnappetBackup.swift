@@ -68,6 +68,7 @@ enum SnappetBackup {
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
         Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
         ClipOverlayDefaults.self,
+        LibraryEntry.self,
     ]
 
     // MARK: - The envelope
@@ -129,6 +130,8 @@ enum SnappetBackup {
         var householdPeers: [HouseholdPeerRow] = []
         // Clips overlay style (prompt 163) — defaulted so older backup blobs still decode.
         var clipOverlayDefaults: [ClipOverlayDefaultsRow] = []
+        // Library pins / hides (prompt 185) — defaulted so older backup blobs still decode.
+        var libraryEntries: [LibraryEntryRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -181,6 +184,7 @@ enum SnappetBackup {
             n += householdOps.count
             n += householdPeers.count
             n += clipOverlayDefaults.count
+            n += libraryEntries.count
             return n
         }
     }
@@ -270,6 +274,7 @@ enum SnappetBackup {
         file.householdOps = try all(HouseholdOpRecord.self).map(HouseholdOpRecordRow.init).sorted(by: rowKey)
         file.householdPeers = try all(HouseholdPeer.self).map(HouseholdPeerRow.init).sorted(by: rowKey)
         file.clipOverlayDefaults = try all(ClipOverlayDefaults.self).map(ClipOverlayDefaultsRow.init).sorted(by: rowKey)
+        file.libraryEntries = try all(LibraryEntry.self).map(LibraryEntryRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -390,6 +395,8 @@ enum SnappetBackup {
             uniqued(file.householdPeers, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(ClipOverlayDefaults.self)
             uniqued(file.clipOverlayDefaults, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(LibraryEntry.self)
+            uniqued(file.libraryEntries, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -1452,5 +1459,26 @@ extension SnappetBackup {
         init(_ m: ClipOverlayDefaults) { id = m.id; styleData = m.styleData; updatedAt = m.updatedAt }
         func make() -> ClipOverlayDefaults { ClipOverlayDefaults(id: id, styleData: styleData, updatedAt: updatedAt) }
         var sortKey: String { "\(updatedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    struct LibraryEntryRow: BackupRow {
+        var id: UUID
+        var activityKeyRaw: String
+        var isPinned: Bool
+        var isHidden: Bool
+        var updatedAt: Date
+
+        init(_ m: LibraryEntry) {
+            id = m.id; activityKeyRaw = m.activityKeyRaw; isPinned = m.isPinned; isHidden = m.isHidden
+            updatedAt = m.updatedAt
+        }
+        func make() -> LibraryEntry {
+            // Raw key, not via ActivityKey: stored bytes survive verbatim (the raws-stay-raw rule).
+            let e = LibraryEntry(id: id, key: ActivityKey(exerciseId: "x", nameKey: ""), isPinned: isPinned,
+                                 isHidden: isHidden, updatedAt: updatedAt)
+            e.activityKeyRaw = activityKeyRaw
+            return e
+        }
+        var sortKey: String { id.uuidString }
     }
 }
