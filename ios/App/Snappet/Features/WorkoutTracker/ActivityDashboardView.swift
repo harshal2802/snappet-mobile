@@ -9,16 +9,26 @@ struct ActivityRoute: Hashable {
     let title: String
 }
 
-/// One activity's dashboard: KPI tiles · the hero metric over time (points with clips carry a 📷, and
-/// selecting one offers to play that session's clips) · records with their clips · frequency · a clips
-/// filmstrip. The numbers are the pure `ActivityDashboard`; the clips are `ActivityMediaIndex`.
+/// **The Activity page** (activity progress P2 → Library redesign L2, prompt 184): one page per activity with
+/// **Progress** (KPI tiles · the hero metric over time — filmed points carry a 📷 and play their clip · effort ·
+/// records · frequency · a clips strip), **Clips** (every clip, PR filter, Compare, Progress reel) and **About**
+/// (a catalog move's how-to, or your latest instance's details). **Log it now** / **Add to routine** sit at the
+/// bottom. A catalog move you've never logged opens on About.
 struct ActivityDashboardView: View {
     let key: ActivityKey
     let title: String
     let history: [WorkoutSession]
     let unit: WeightUnit
+    /// The catalog move behind this activity (a strength `exerciseId`), for the About tab's how-to.
+    var catalogExercise: Exercise? = nil
+
+    enum Tab: String { case progress, clips, about }
 
     @Environment(\.modelContext) private var context
+    @Environment(SuiteRouter.self) private var router
+    @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
+    @State private var tab: Tab = .progress
+    @State private var toast: String?
     @State private var dashboard: ActivityDashboard?
     @State private var groups: [ActivitySessionGroup] = []
     /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
@@ -27,7 +37,6 @@ struct ActivityDashboardView: View {
     @State private var loaded = false
     @State private var selected: UUID?
     @State private var viewing: ViewerRequest?
-    @State private var showingAllClips = false
     @State private var comparing = false
     @State private var reelScope: ClipsReelScope?
 
@@ -42,7 +51,139 @@ struct ActivityDashboardView: View {
     private var badges: [UUID: ActivityProgressReel.Badge] { dashboard.map(ActivityProgressReel.badges) ?? [:] }
     private var videos: [ActivityClip] { ActivityProgressReel.pick(allClips, rule: .all, badges: badges) }
 
+    private var tabs: [Tab] {
+        var t: [Tab] = []
+        if dashboard != nil { t.append(.progress) }
+        if !allClips.isEmpty { t.append(.clips) }
+        t.append(.about)
+        return t
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            if loaded && tabs.count > 1 {
+                Picker("Section", selection: $tab) {
+                    ForEach(tabs, id: \.self) { t in Text(label(t)).tag(t) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .accessibilityIdentifier("activity.tabs")
+            }
+            switch tab {
+            case .progress: progressTab
+            case .clips:
+                ActivityClipsContent(target: ActivityClipsTarget(key: key, title: title), history: history, unit: unit)
+            case .about:
+                if let ex = catalogExercise {
+                    ExerciseDetailView(exercise: ex, history: history, unit: unit)
+                } else {
+                    ActivityAboutView(key: key, title: title, history: history, unit: unit)
+                }
+            }
+        }
+        .background(SnappetColor.paper)
+        .safeAreaInset(edge: .bottom) { if tab != .clips && ActivityLauncher.canLaunch(key) { actionBar } }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard !loaded else { return }
+            let media = ActivityMediaStore.snapshot(context: context)
+            dashboard = ActivityDashboard.make(key: key, history: history, media: media, unit: unit)
+            groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
+                                               distanceUnit: unit == .lb ? .mi : .km)
+            effort = ActivityInsights.effort(key: key, history: history, unit: unit)
+            if key.disciplineScope == .climb {
+                let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
+                                               unit: unit, title: LibraryCatalog.fallbackTitle)
+                climbs = LibraryCatalog.sorted(all.filter { $0.discipline == .climb }, by: .recent)
+            }
+            // Never logged → the how-to is the useful page.
+            if dashboard == nil { tab = .about }
+            loaded = true
+        }
+        .fullScreenCover(item: $viewing) { req in
+            ActivityClipViewer(clips: req.clips, startIndex: req.start,
+                               sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
+        }
+        .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
+        .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
+    }
+
+    private func label(_ t: Tab) -> String {
+        switch t {
+        case .progress: return "Progress"
+        case .clips: return "Clips · \(allClips.count)"
+        case .about: return "About"
+        }
+    }
+
+    // MARK: - Log it now / Add to routine (prompt 184)
+
+    private var actionBar: some View {
+        VStack(spacing: 8) {
+            if let toast {
+                Text(toast).font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(.thinMaterial, in: Capsule())
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityIdentifier("activity.toast")
+            }
+        HStack(spacing: 10) {
+            Button { logNow() } label: {
+                Label("Log it now", systemImage: "play.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+            .accessibilityIdentifier("activity.logNow")
+            Menu {
+                if routines.isEmpty {
+                    Text("No routines yet")
+                } else {
+                    ForEach(routines) { r in
+                        Button(r.name) { addToRoutine(r) }
+                    }
+                }
+            } label: {
+                Label("Add to routine", systemImage: "plus").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("activity.addToRoutine")
+        }
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func logNow() {
+        guard let entity = ActivityLauncher.sessionExercise(for: key, history: history,
+                                                           identity: ActivityIdentity(sessions: history),
+                                                           catalogExerciseId: catalogExercise?.id) else { return }
+        // Hand it to the Gym Tracker home and pop back to it: a view under a pushed page doesn't run its change
+        // handlers, and the player is a cover the home presents. Pop everything above the module root (path[0]).
+        router.pendingQuickLog = entity
+        if router.path.count > 1 { router.path.removeLast(router.path.count - 1) }
+    }
+
+    private func addToRoutine(_ routine: Routine) {
+        guard let block = ActivityLauncher.routineBlock(for: key, history: history,
+                                                        identity: ActivityIdentity(sessions: history),
+                                                        defaultUnit: unit,
+                                                        catalogExerciseId: catalogExercise?.id) else { return }
+        routine.exercises.append(block)
+        routine.updatedAt = .now
+        try? context.save()
+        let message = "Added to \(routine.name)"
+        withAnimation { toast = message }
+        AccessibilityNotification.Announcement(message).post()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation { toast = nil }
+        }
+    }
+
+    // MARK: - Progress
+
+    private var progressTab: some View {
         ScrollView {
             if let d = dashboard {
                 VStack(alignment: .leading, spacing: 14) {
@@ -63,39 +204,7 @@ struct ActivityDashboardView: View {
                 .padding(16)
             }
         }
-        .background(SnappetColor.paper)
-        .overlay {
-            if loaded && dashboard == nil {
-                ContentUnavailableView("No history yet", systemImage: "chart.xyaxis.line",
-                                       description: Text("Log \(title) in a workout to track progress."))
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("activity.dashboard")
-        .task {
-            guard !loaded else { return }
-            let media = ActivityMediaStore.snapshot(context: context)
-            dashboard = ActivityDashboard.make(key: key, history: history, media: media, unit: unit)
-            groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
-                                               distanceUnit: unit == .lb ? .mi : .km)
-            effort = ActivityInsights.effort(key: key, history: history, unit: unit)
-            if key.disciplineScope == .climb {
-                let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
-                                               unit: unit, title: LibraryCatalog.fallbackTitle)
-                climbs = LibraryCatalog.sorted(all.filter { $0.discipline == .climb }, by: .recent)
-            }
-            loaded = true
-        }
-        .fullScreenCover(item: $viewing) { req in
-            ActivityClipViewer(clips: req.clips, startIndex: req.start,
-                               sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
-        }
-        .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
-        .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
-        .sheet(isPresented: $showingAllClips) {
-            ActivityClipsSheet(target: ActivityClipsTarget(key: key, title: title), history: history, unit: unit)
-        }
     }
 
     // MARK: - Cards
@@ -209,7 +318,7 @@ struct ActivityDashboardView: View {
                 }
             }
             HStack(spacing: 16) {
-                Button("See all clips") { showingAllClips = true }
+                Button("See all clips") { withAnimation { tab = .clips } }
                     .accessibilityIdentifier("activity.dashboard.allClips")
                 Spacer()
                 if videos.count >= 2 {

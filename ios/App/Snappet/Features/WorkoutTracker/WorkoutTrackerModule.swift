@@ -170,8 +170,10 @@ struct WorkoutHomeView: View {
         .navigationTitle(section.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
+        // A catalog exercise opens its Activity page (Library L2, prompt 184) — How-to lives on its About tab.
         .navigationDestination(for: Exercise.self) { ex in
-            ExerciseDetailView(exercise: ex, history: history, unit: unit)
+            ActivityDashboardView(key: ActivityKey(exerciseId: ex.id, nameKey: ""), title: ex.name,
+                                  history: history, unit: unit, catalogExercise: ex)
         }
         .navigationDestination(for: LibraryItemRoute.self) { route in
             LibraryItemDetailView(item: route.item, history: history, unit: unit)
@@ -195,10 +197,12 @@ struct WorkoutHomeView: View {
         // from a session's detail) render the same screen. It replaced `ExerciseProgressView`.
         .navigationDestination(for: ProgressRoute.self) { route in
             ActivityDashboardView(key: ActivityKey(exerciseId: route.exerciseId, nameKey: ""),
-                                  title: resolver.name(for: route.exerciseId), history: history, unit: unit)
+                                  title: resolver.name(for: route.exerciseId), history: history, unit: unit,
+                                  catalogExercise: resolver.exercise(id: route.exerciseId))
         }
         .navigationDestination(for: ActivityRoute.self) { route in
-            ActivityDashboardView(key: route.key, title: route.title, history: history, unit: unit)
+            ActivityDashboardView(key: route.key, title: route.title, history: history, unit: unit,
+                                  catalogExercise: route.key.nameKey.isEmpty ? resolver.exercise(id: route.key.exerciseId) : nil)
         }
         // Smart workout planning (workout-redesign E7): the pure WorkoutRecommender + per-muscle
         // WorkoutHistoryStats fed by the @MainActor resolver join, surfaced as an editable draft.
@@ -340,6 +344,12 @@ struct WorkoutHomeView: View {
                 startWorkout(from: routine)
             }
         }
+        // "Log it now" from an Activity page (prompt 184): add to the running session, or start a Quick Session
+        // with it — the same paths Quick Start / resume use (live metrics, Live Activity, the player).
+        // The Activity page pops back here as it sets the intent; consume on change AND on reappearing (a view
+        // under a pushed page doesn't run change handlers). Present on the next tick — the pop is still animating.
+        .onChange(of: router.pendingQuickLog?.id, initial: true) { _, _ in consumeQuickLog() }
+        .onAppear { consumeQuickLog() }
         .onChange(of: router.pendingShowRoutines, initial: true) { _, show in
             guard show else { return }
             router.pendingShowRoutines = false
@@ -349,6 +359,30 @@ struct WorkoutHomeView: View {
         // routine's schedule changes elsewhere (import, backup restore). Cheap: a handful of routines.
         .onChange(of: scheduleReplanKey) { _, _ in
             RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
+        }
+    }
+
+    private func consumeQuickLog() {
+        guard let entity = router.pendingQuickLog, router.path.count <= 1 else { return }
+        router.pendingQuickLog = nil
+        Task { @MainActor in startQuickLog(entity) }
+    }
+
+    /// "Log it now" (prompt 184): add the entity to the running session and resume, or start a Quick Session with it.
+    private func startQuickLog(_ entity: SessionExercise) {
+        if let active = activeSession {
+            active.exercises.append(entity)
+            try? context.save()
+            resume(active)
+        } else {
+            let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [entity])
+            context.insert(session)
+            try? context.save()
+            app.liveWorkout.start(for: session, disciplines: [entity.discipline], sport: nil, category: nil,
+                                  maxHR: app.userProfile.profile.resolvedMaxHR,
+                                  restHR: app.userProfile.profile.restingBound)
+            startLiveActivity(for: session)
+            playing = session
         }
     }
 

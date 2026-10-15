@@ -61,7 +61,8 @@ struct PastClipsChip: View {
 
 // MARK: - History sheet
 
-/// Every past clip of one activity, grouped by session (newest first), each stamped with its set + HR.
+/// Every past clip of one activity, as a sheet — from the pager chip and session detail. The content is
+/// `ActivityClipsContent`, which the Activity page's Clips tab shows inline (prompt 184).
 struct ActivityClipsSheet: View {
     let target: ActivityClipsTarget
     let history: [WorkoutSession]
@@ -69,8 +70,39 @@ struct ActivityClipsSheet: View {
     var excludingSession: UUID? = nil
     let unit: WeightUnit
 
-    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    /// Expanded to full height when the reel builder is pushed — it needs the room.
+    @State private var detent: PresentationDetent = .medium
+
+    var body: some View {
+        NavigationStack {
+            ActivityClipsContent(target: target, history: history, excludingSession: excludingSession, unit: unit,
+                                 onReel: { detent = .large })
+                .navigationTitle(target.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }.accessibilityIdentifier("activity.clips.done")
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large], selection: $detent)
+        .accessibilityIdentifier("activity.clips.sheet")
+    }
+}
+
+/// Every past clip of one activity, grouped by session (newest first), each stamped with its set + HR — with the
+/// Timeline / PRs filter, the fullscreen viewer, and Compare + Progress reel. Needs a `NavigationStack` ancestor
+/// (the reel builder pushes).
+struct ActivityClipsContent: View {
+    let target: ActivityClipsTarget
+    let history: [WorkoutSession]
+    var excludingSession: UUID? = nil
+    let unit: WeightUnit
+    /// Called as the reel builder is about to push (the sheet grows to full height for it).
+    var onReel: () -> Void = {}
+
+    @Environment(\.modelContext) private var context
     @State private var groups: [ActivitySessionGroup] = []
     @State private var untagged = 0
     @State private var loaded = false
@@ -80,8 +112,6 @@ struct ActivityClipsSheet: View {
     @State private var prsOnly = false
     @State private var comparing = false
     @State private var reelScope: ClipsReelScope?
-    /// Expanded to full height when the reel builder is pushed — it needs the room.
-    @State private var detent: PresentationDetent = .medium
 
     private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
     private var allClips: [ActivityClip] { groups.flatMap(\.clips) }
@@ -99,7 +129,6 @@ struct ActivityClipsSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
                     if !groups.isEmpty {
@@ -133,23 +162,13 @@ struct ActivityClipsSheet: View {
                 }
             }
             .background(SnappetColor.paper)
-            .navigationTitle(target.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.accessibilityIdentifier("activity.clips.done")
-                }
-            }
             .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
             .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
             .fullScreenCover(item: $viewing) { box in
                 ActivityClipViewer(clips: allClips, startIndex: box.value,
                                    sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
             }
-        }
-        .presentationDetents([.medium, .large], selection: $detent)
-        .onChange(of: reelScope) { _, scope in if scope != nil { detent = .large } }
-        .accessibilityIdentifier("activity.clips.sheet")
+        .onChange(of: reelScope) { _, scope in if scope != nil { onReel() } }
         .task {
             guard !loaded else { return }
             let media = ActivityMediaStore.snapshot(context: context)

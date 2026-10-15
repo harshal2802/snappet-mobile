@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// Full detail for one exercise: metadata, targeted muscles, step-by-step instructions, and
-/// a link to the user's progress on it. Custom exercises gain Edit/Delete actions.
+/// One catalog exercise's how-to: guide photos, metadata, targeted muscles, step-by-step instructions. Custom
+/// exercises gain Edit/Delete. Since the Library redesign (L2, prompt 184) this is the **About** tab of the Activity
+/// page (`ActivityDashboardView`) — its old "Your progress" section is the page's Progress tab now.
 struct ExerciseDetailView: View {
     let exercise: Exercise
     let history: [WorkoutSession]
@@ -14,8 +15,6 @@ struct ExerciseDetailView: View {
     @State private var editing = false
     @State private var confirmingDelete = false
 
-    private var top: WorkoutMath.TopSet? { WorkoutMath.topSet(history: history, exerciseId: exercise.id) }
-    private var sessionCount: Int { WorkoutMath.sessionCount(history: history, exerciseId: exercise.id) }
 
     var body: some View {
         List {
@@ -38,18 +37,6 @@ struct ExerciseDetailView: View {
                     }
                     if !exercise.secondaryMuscles.isEmpty {
                         muscleRow("Secondary", exercise.secondaryMuscles, .secondary)
-                    }
-                }
-            }
-
-            if sessionCount > 0 {
-                Section("Your progress") {
-                    if let top {
-                        LabeledContent("Best set", value: bestSetText(top))
-                    }
-                    LabeledContent("Sessions", value: "\(sessionCount)")
-                    Button { router.push(ProgressRoute(exerciseId: exercise.id)) } label: {
-                        Label("View progress", systemImage: "chart.xyaxis.line")
                     }
                 }
             }
@@ -147,13 +134,6 @@ struct ExerciseDetailView: View {
             Text(muscles.map(\.display).joined(separator: ", "))
                 .font(.callout).foregroundStyle(tint == .secondary ? .secondary : .primary)
         }
-    }
-
-    private func bestSetText(_ top: WorkoutMath.TopSet) -> String {
-        if top.bestKg > 0 {
-            return "\(WorkoutMath.formatWeight(kg: top.bestKg, unit: unit)) \(unit.display) × \(top.bestReps)"
-        }
-        return "\(top.bestReps) reps"
     }
 
     private func customModel() -> CustomExercise? {
