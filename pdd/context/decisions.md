@@ -9913,3 +9913,11 @@ stripes, and the panel read as an opaque slab.
 - A whole discipline is an `ActivityKey` too (`discipline:<raw>`, `matches(_:)`), so the dashboard, clips and
   reels work unchanged for "Climbing" / "Running" / "Timed".
 - Hardest-send improvement reads "▲ from V3", never a percentage of grade difficulty.
+
+## 2026-10-14 — A `.plain` button row needs a content shape (prompt 182)
+
+- Under `.buttonStyle(.plain)` only drawn content hit-tests; a row with a `Spacer()` has dead space. Library rows
+  now set `.contentShape(Rectangle())`. Climb/run rows (short text) were completely untappable at the centre while
+  strength rows worked by accident. Any new plain-styled list row with a Spacer needs the same.
+- SF Symbol names are not checked by the compiler — a typo renders nothing. `ClimbTypeSymbolTests` guards the climb
+  and discipline symbols.

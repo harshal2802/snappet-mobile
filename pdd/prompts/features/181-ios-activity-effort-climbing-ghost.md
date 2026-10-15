@@ -30,6 +30,5 @@ climbing overview with every named climb drillable into its own page, and an opt
 - [x] `ActivityInsightsTests` (discipline keys, climb identity, like-for-like effort, neutral fallback, climbs list).
 - [x] UI tests: effort card + ghost toggle; climb dashboard → all climbing → climbs list → a climb.
 - [ ] Device: effort trend with real watch HR; ghost overlay usefulness with a fixed camera.
-- [ ] PRE-EXISTING (reproduced on `main` 2026-10-13 with a probe UI test): tapping a climb item in the Library
-      doesn't open its detail in the simulator, so the new "View progress" row there is unreachable until that's
-      fixed. The UI test reaches the climbing overview from session detail instead. Separate fix.
+- [x] PRE-EXISTING Library climb-tap bug (also on `main`) — fixed in prompt 182 (`.plain` row had no content shape); the
+      Library "View progress" link is now reachable and covered by `LibraryTapUITests`.
