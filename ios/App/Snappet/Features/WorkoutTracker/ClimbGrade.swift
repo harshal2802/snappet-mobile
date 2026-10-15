@@ -22,7 +22,8 @@ enum ClimbType: String, Codable, CaseIterable, Sendable, Identifiable {
     /// SF Symbol for the climb card header / type chip.
     var symbol: String {
         switch self {
-        case .boulder: return "figure.bouldering"
+        // There is no `figure.bouldering` SF Symbol — it rendered NOTHING (the blank Library "Boulder" row).
+        case .boulder: return "figure.climbing"
         case .topRope: return "figure.climbing"
         case .lead, .sport: return "figure.climbing"
         }

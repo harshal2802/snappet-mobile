@@ -167,6 +167,10 @@ struct LibraryItemRow: View {
             }
         }
         .padding(.vertical, 2)
+        // The whole row is the tap target. Under `.buttonStyle(.plain)` only drawn content hit-tests, so a short
+        // title/subtitle (every climb/run starter) left the empty middle and right of the row dead — tapping a
+        // climb "did nothing" unless you hit the text.
+        .contentShape(Rectangle())
     }
 }
 
@@ -196,6 +200,7 @@ private struct LibraryRecentRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())   // whole row is the tap target (see `LibraryItemRow`)
     }
 }
 
