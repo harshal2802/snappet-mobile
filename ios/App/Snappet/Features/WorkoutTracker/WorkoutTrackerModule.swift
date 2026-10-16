@@ -75,6 +75,12 @@ struct SessionRoute: Hashable { let id: UUID }
 
 /// A pending "Save as routine" pre-fill handed from the smart planner (E7) to the routine editor sheet —
 /// the plan's `[RoutineExercise]` + a suggested name. `Identifiable` so it drives a `sheet(item:)`.
+/// Which Library ＋ create sheet is open (prompt 186).
+enum LibraryCreateKind: String, Identifiable {
+    case climb, timed, run, other
+    var id: String { rawValue }
+}
+
 struct PlannerRoutinePrefill: Identifiable {
     let id = UUID()
     let name: String
@@ -102,6 +108,10 @@ struct WorkoutHomeView: View {
     @State private var section: WorkoutSection = .dashboard
     @State private var showingNewRoutine = false
     @State private var showingNewExercise = false
+    /// The Library's ＋ (prompt 186): which create sheet is open, and the new activity's page to push once it closes
+    /// (pushing while the sheet dismisses drops the push — the stash-and-promote rule).
+    @State private var libraryCreate: LibraryCreateKind?
+    @State private var createdRoute: ActivityRoute?
     /// A planner "Save as routine" pre-fill — opens the routine editor seeded with the plan (E7). `nil` ⇒
     /// the plain "New Routine" path (no pre-fill).
     @State private var plannerPrefill: PlannerRoutinePrefill?
@@ -234,6 +244,25 @@ struct WorkoutHomeView: View {
         }
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditorView(existing: nil)
+        }
+        // The Library's ＋ (prompt 186): create a climb / timed protocol / run route / other before logging it.
+        .sheet(item: $libraryCreate, onDismiss: {
+            if let r = createdRoute { createdRoute = nil; router.push(r) }
+        }) { kind in
+            switch kind {
+            case .climb:
+                AddClimbSheet(inheritedGym: nil) { params, _ in created(LibraryCreate.climb(params)) }
+            case .timed:
+                NavigationStack {
+                    CreateTimedExerciseForm(initialName: "", ctaTitle: "Add to Library") { created(LibraryCreate.timed($0)) }
+                }
+            case .run:
+                NewRunRouteSheet(unit: unit == .lb ? .mi : .km) { name, meters in
+                    created(LibraryCreate.named(name, discipline: .run), meters: meters)
+                }
+            case .other:
+                NewNamedActivitySheet { name, d in created(LibraryCreate.named(name, discipline: d)) }
+            }
         }
         // The import-confirm preview for a routine arriving over QR / a snappet:// link (E6). Never
         // silent: the user reviews it (incl. the "not in your library" landing) and confirms an insert.
@@ -386,6 +415,10 @@ struct WorkoutHomeView: View {
         }
     }
 
+    private func created(_ exercise: SessionExercise, meters: Double? = nil) {
+        createdRoute = LibraryCreate.save(exercise, targetDistanceMeters: meters, history: history, in: context)
+    }
+
     /// Consume the router's one-shot resume intent (#71 review fix): Home's "Resume <routine>" card
     /// can't open this view's local `fullScreenCover`, so it flags the router and this view re-opens
     /// the player through the existing `resume(_:)` path (live-metrics / Live-Activity restart logic
@@ -502,7 +535,22 @@ struct WorkoutHomeView: View {
             }
         } else if section == .browse {
             ToolbarItem(placement: .primaryAction) {
-                Button { showingNewExercise = true } label: { Label("New Exercise", systemImage: "plus") }
+                Menu {
+                    Section("Add to your Library") {
+                        Button { showingNewExercise = true } label: { Label("New exercise", systemImage: "dumbbell") }
+                        Button { libraryCreate = .timed } label: { Label("New timed protocol", systemImage: "timer") }
+                            .accessibilityIdentifier("library.new.timed")
+                        Button { libraryCreate = .climb } label: { Label("New climb (to project)", systemImage: "figure.climbing") }
+                            .accessibilityIdentifier("library.new.climb")
+                        Button { libraryCreate = .run } label: { Label("New run route", systemImage: "figure.run") }
+                            .accessibilityIdentifier("library.new.run")
+                        Button { libraryCreate = .other } label: { Label("New activity (dance, other)", systemImage: "figure.dance") }
+                            .accessibilityIdentifier("library.new.other")
+                    }
+                } label: {
+                    Label("New", systemImage: "plus")
+                }
+                .accessibilityIdentifier("library.new")
             }
         } else if section == .dashboard {
             // Quick Start: a freeform session you build on the fly (no routine needed).

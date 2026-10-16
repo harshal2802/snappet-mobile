@@ -239,8 +239,10 @@ struct PickTimedExerciseSheet: View {
 /// The **create-new** sub-form (`timed.create.*`): the shared protocol editor (prompt 140 — presets incl.
 /// the hangboard protocols, every field editable incl. rest between sets and the get-ready countdown, a
 /// plain-English summary) + a "Save to my exercises" toggle and the Add CTA.
-private struct CreateTimedExerciseForm: View {
+struct CreateTimedExerciseForm: View {
     let onCreate: (AddTimedParams) -> Void
+    /// The CTA — "Add to session" in the player, "Add to Library" from the Library's ＋ (prompt 186).
+    var ctaTitle: String = "Add to session"
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -248,8 +250,9 @@ private struct CreateTimedExerciseForm: View {
     @State private var draft: ProtocolDraft
     @State private var saveToCatalog = true
 
-    init(initialName: String, onCreate: @escaping (AddTimedParams) -> Void) {
+    init(initialName: String, ctaTitle: String = "Add to session", onCreate: @escaping (AddTimedParams) -> Void) {
         self.onCreate = onCreate
+        self.ctaTitle = ctaTitle
         var initial = ProtocolDraft(name: initialName, category: .hangboard, spec: .hold(30))
         initial.restBetweenSetsSec = 180   // the old fixed value, now just the starting point
         _draft = State(initialValue: initial)
@@ -269,7 +272,7 @@ private struct CreateTimedExerciseForm: View {
             Button {
                 commit()
             } label: {
-                Text("Add to session").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                Text(ctaTitle).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
             .tint(SnappetColor.workout)

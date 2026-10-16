@@ -9,6 +9,8 @@ struct ActivityAboutView: View {
     let title: String
     let history: [WorkoutSession]
     let unit: WeightUnit
+    /// A created activity you haven't logged yet (prompt 186): its details come from the template.
+    var template: LibraryTemplate? = nil
 
     private var identity: ActivityIdentity { ActivityIdentity(sessions: history) }
 
@@ -27,8 +29,13 @@ struct ActivityAboutView: View {
     var body: some View {
         let all = instances
         List {
-            if let latest = all.last?.exercise {
-                Section("Details") { details(latest, all: all) }
+            if let latest = all.last?.exercise ?? template?.exercise {
+                Section("Details") {
+                    details(latest, all: all)
+                    if all.isEmpty, let m = template?.targetDistanceMeters, m > 0 {
+                        LabeledContent("Distance", value: SetMeasure.formatDistance(m, unit: unit == .lb ? .mi : .km))
+                    }
+                }
             }
             if key.exerciseId == ActivityIdentity.festivalExerciseId, !all.isEmpty {
                 Section("Sets you were at · \(all.count)") {
@@ -50,7 +57,9 @@ struct ActivityAboutView: View {
                 }
             }
             if all.isEmpty {
-                Text("Log \(title) in a session and its details show up here.").foregroundStyle(.secondary)
+                Text(template == nil ? "Log \(title) in a session and its details show up here."
+                                     : "Not done yet — Log it now when you start it.")
+                    .foregroundStyle(.secondary)
             }
         }
         .listStyle(.insetGrouped)

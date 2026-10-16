@@ -27,8 +27,13 @@ enum ActivityLauncher {
     /// A fresh session entity to log: the latest instance's identity + setup (no sets, new id), or — for a catalog
     /// move you've never logged — a blank strength entity. `nil` when the activity can't be launched.
     static func sessionExercise(for key: ActivityKey, history: [WorkoutSession], identity: ActivityIdentity,
-                                catalogExerciseId: String? = nil) -> SessionExercise? {
+                                catalogExerciseId: String? = nil, template: LibraryTemplate? = nil) -> SessionExercise? {
         guard canLaunch(key) else { return nil }
+        // Never logged but created in the Library (prompt 186) → start from its template.
+        if latest(key, history: history, identity: identity) == nil, var t = template?.exercise {
+            t.id = UUID(); t.sets = []
+            return t
+        }
         if let last = latest(key, history: history, identity: identity)?.exercise {
             var ex = last
             ex.id = UUID()
@@ -49,9 +54,10 @@ enum ActivityLauncher {
     /// A routine block for the activity, prescribing what you did last time (sets, reps, top weight · the climb ·
     /// the hold · the distance), or a light default for a never-logged catalog move.
     static func routineBlock(for key: ActivityKey, history: [WorkoutSession], identity: ActivityIdentity,
-                             defaultUnit: WeightUnit, catalogExerciseId: String? = nil) -> RoutineExercise? {
+                             defaultUnit: WeightUnit, catalogExerciseId: String? = nil,
+                             template: LibraryTemplate? = nil) -> RoutineExercise? {
         guard canLaunch(key) else { return nil }
-        guard let last = latest(key, history: history, identity: identity)?.exercise else {
+        guard let last = latest(key, history: history, identity: identity)?.exercise ?? template?.exercise else {
             guard let id = catalogExerciseId ?? (key.nameKey.isEmpty ? key.exerciseId : nil) else { return nil }
             return RoutineExercise(exerciseId: id, sets: 3, reps: "10", restSeconds: 90, weightUnit: defaultUnit)
         }
@@ -81,7 +87,7 @@ enum ActivityLauncher {
             let meters = done.compactMap(\.distanceMeters).reduce(0, +)
             return RoutineExercise(exerciseId: last.exerciseId, sets: 1, reps: "", restSeconds: 0,
                                    displayName: name, discipline: .run,
-                                   targetDistanceMeters: meters > 0 ? meters : nil)
+                                   targetDistanceMeters: meters > 0 ? meters : template?.targetDistanceMeters)
         case .dance, .other:
             return RoutineExercise(exerciseId: last.exerciseId, sets: 1, reps: "", restSeconds: 0,
                                    displayName: name, discipline: last.discipline,
