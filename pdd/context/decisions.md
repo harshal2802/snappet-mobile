@@ -9971,3 +9971,12 @@ stripes, and the panel read as an opaque slab.
   probe: `hist=0`, Library on its no-history Explore default) — failures alternated with passes run to run. The
   Activity page "Log it now" test now discards, as `WorkoutPauseBackgroundTests` already did. Separately, the Library
   stores a Yours/Explore pick only when it differs from the automatic default, so a re-asserted selection can't pin it.
+
+## 2026-10-15 — Create in the Library (prompt 186)
+
+- A created-but-not-logged activity is a `LibraryEntry` with a **template** (no new model): it's already keyed by
+  activity, in backup, and gives Log it now something to start from. Unpin / unhide must never delete such an entry.
+- A created climb is keyed at creation (set day = that day). Logging it later lands on a new set key, so the "not
+  done yet" row is folded by BASE + "logged on/after the creation day", not by key.
+- Not-done-yet rows sit right after pinned ones: under "Most used" (0 days) they'd vanish to the bottom right after
+  you made them — the first UI run couldn't find the new route.

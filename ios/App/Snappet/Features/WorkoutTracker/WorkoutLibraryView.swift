@@ -123,7 +123,7 @@ struct WorkoutLibraryView: View {
         .sheet(isPresented: $showingFilters) {
             LibraryFilterSheet(discipline: discipline ?? .strength, facets: $facets)
         }
-        .task(id: history.count) { rebuildYours() }
+        .task(id: "\(history.count)|\(entries.filter { $0.templateData != nil }.count)") { rebuildYours() }
         .onChange(of: modeRaw) { _, _ in
             // A discipline that has nothing in the other tab would leave an empty list behind the chip.
             if let d = discipline, !disciplines.contains(d) { discipline = nil }
@@ -149,9 +149,13 @@ struct WorkoutLibraryView: View {
             } else if rows.isEmpty {
                 Text("Nothing matches.").foregroundStyle(.secondary)
             } else {
-                // Pinned activities lead every sort (prompt 185).
+                // Pinned activities lead every sort (prompt 185), then what you've created but not done yet (186) —
+                // it would otherwise sink under "Most used" right after you made it.
                 let pinned = pinnedKeys
-                ForEach(rows.filter { pinned.contains($0.key) } + rows.filter { !pinned.contains($0.key) }) { row in
+                let ordered = rows.filter { pinned.contains($0.key) }
+                    + rows.filter { !pinned.contains($0.key) && $0.notDoneYet }
+                    + rows.filter { !pinned.contains($0.key) && !$0.notDoneYet }
+                ForEach(ordered) { row in
                     yoursRow(row, pinned: pinned.contains(row.key))
                 }
             }
@@ -186,7 +190,7 @@ struct WorkoutLibraryView: View {
         if let pin { e.isPinned = pin }
         if let hide { e.isHidden = hide }
         e.updatedAt = .now
-        if !e.isPinned && !e.isHidden { context.delete(e) }      // nothing to remember
+        if !e.isPinned && !e.isHidden && e.templateData == nil { context.delete(e) }      // nothing to remember
         try? context.save()
     }
 
@@ -236,7 +240,11 @@ struct WorkoutLibraryView: View {
 
     private func rebuildYours() {
         let identity = ActivityIdentity(sessions: history)
-        yours = LibraryCatalog.yours(history: history, identity: identity, unit: unit) { ex in
+        let created = entries.compactMap { e -> LibraryCatalog.CreatedInput? in
+            guard let key = e.key, let t = e.template else { return nil }
+            return LibraryCatalog.CreatedInput(key: key, template: t, createdAt: e.createdAt ?? e.updatedAt)
+        }
+        yours = LibraryCatalog.yours(history: history, identity: identity, unit: unit, created: created) { ex in
             ex.discipline == .strength && !ex.exerciseId.hasPrefix("adhoc-")
                 ? resolver.name(for: ex.exerciseId, override: ex.displayName)
                 : LibraryCatalog.fallbackTitle(ex)
@@ -388,7 +396,11 @@ struct LibraryYoursRow: View {
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 2) {
-                if let c = row.climb {
+                if row.notDoneYet {
+                    Text("New").font(.caption.weight(.bold)).foregroundStyle(SnappetColor.workout)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(SnappetColor.workout.opacity(0.15), in: Capsule())
+                } else if let c = row.climb {
                     Text(statusLabel(c)).font(.caption.weight(.bold))
                         .foregroundStyle(c.sent ? SnappetColor.perfFresh : SnappetColor.kilter)
                     Text(LibraryCatalog.countLabel(row, count))
@@ -405,6 +417,13 @@ struct LibraryYoursRow: View {
     }
 
     private var subtitle: String {
+        if row.notDoneYet {
+            var parts = [row.climb.map(\.type.label) ?? row.discipline.label]
+            if let gym = row.climb?.gym, !gym.isEmpty { parts.append(gym) }
+            if let grade = row.climb?.grade, !grade.isEmpty, row.climb != nil { parts.insert(grade, at: 1) }
+            parts.append(row.headline ?? "Not done yet")
+            return parts.joined(separator: " · ")
+        }
         if let c = row.climb {
             var parts = [c.type.label]
             if let gym = c.gym, !gym.isEmpty { parts.append(gym) }

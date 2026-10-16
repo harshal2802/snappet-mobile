@@ -614,8 +614,13 @@ final class SnappetBackupTests: XCTestCase {
         context.insert(ClipOverlayDefaults(styleData: try! JSONEncoder().encode(style),
                                            updatedAt: Date(timeIntervalSince1970: 1_700_011_800)))
         // Library pins / hides (prompt 185).
-        context.insert(LibraryEntry(key: ActivityKey(exerciseId: "climb", nameKey: "n:blue crimp|gravity@2026-09-14"),
-                                    isPinned: true, updatedAt: Date(timeIntervalSince1970: 1_700_011_900)))
+        let libraryEntry = LibraryEntry(key: ActivityKey(exerciseId: "climb", nameKey: "n:blue crimp|gravity@2026-09-14"),
+                                 isPinned: true, updatedAt: Date(timeIntervalSince1970: 1_700_011_900))
+        // A created activity's template (prompt 186) must survive the round trip too.
+        libraryEntry.template = LibraryTemplate(exercise: LibraryCreate.named("Riverside 5k", discipline: .run),
+                                                targetDistanceMeters: 5_000)
+        libraryEntry.createdAt = Date(timeIntervalSince1970: 1_700_011_950)
+        context.insert(libraryEntry)
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

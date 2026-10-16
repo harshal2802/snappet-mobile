@@ -2,7 +2,8 @@ import Foundation
 import SwiftData
 
 /// Your choices about one Library activity (Library redesign L3, prompt 185): pinned to the top, or hidden from the
-/// Library. Everything else about an activity is derived from history; this is the only thing the Library stores.
+/// Library — and (L4a, prompt 186) an activity you CREATED before ever logging it ("a climb to project", "a run
+/// route"): its `template` is the entry "Log it now" starts from. Everything else is derived from history.
 /// Keyed by the activity's `ActivityKey` (as `exerciseId` + U+001F + `nameKey`), so a rename or merge moves the row.
 /// In the suite backup (`SnappetBackup.LibraryEntryRow`).
 @Model
@@ -12,6 +13,11 @@ final class LibraryEntry {
     var isPinned: Bool
     var isHidden: Bool
     var updatedAt: Date
+    /// A created activity's template (`LibraryTemplate`, JSON); `nil` for a pin/hide-only entry. Additive optional
+    /// (prompt 186) → lightweight migration; older backups decode without it.
+    var templateData: Data?
+    /// When the activity was created in the Library (prompt 186); `nil` for pin/hide-only entries.
+    var createdAt: Date?
 
     init(id: UUID = UUID(), key: ActivityKey, isPinned: Bool = false, isHidden: Bool = false, updatedAt: Date = .now) {
         self.id = id
@@ -22,6 +28,11 @@ final class LibraryEntry {
     }
 
     var key: ActivityKey? { LibraryEntry.key(activityKeyRaw) }
+
+    var template: LibraryTemplate? {
+        get { templateData.flatMap { try? JSONDecoder().decode(LibraryTemplate.self, from: $0) } }
+        set { templateData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
 
     static func raw(_ key: ActivityKey) -> String { key.exerciseId + "\u{1f}" + key.nameKey }
 
@@ -44,4 +55,11 @@ final class LibraryEntry {
         context.insert(new)
         return new
     }
+}
+
+/// What a created-but-never-logged activity is (prompt 186): the session entity to log (no sets) and, for a run
+/// route, its distance.
+struct LibraryTemplate: Codable, Equatable, Sendable {
+    var exercise: SessionExercise
+    var targetDistanceMeters: Double?
 }

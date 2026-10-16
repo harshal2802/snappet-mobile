@@ -41,6 +41,8 @@ enum LibraryCatalog {
         /// The discipline's "best" value for sorting (e1RM kg · grade difficulty · pace sec/km · hold sec · time sec).
         let bestValue: Double?
         let climb: Climb?
+        /// Created in the Library but never logged yet (prompt 186) — shown as "Not done yet".
+        var notDoneYet: Bool = false
         var id: ActivityKey { key }
     }
 
@@ -130,8 +132,51 @@ enum LibraryCatalog {
 
     /// Every activity in `history` that has at least one completed effort. `title` resolves a display name for an
     /// entity (the catalog name for a lift, the typed name otherwise); the most recent instance's name wins.
+    /// A created activity (prompt 186) to show until you log it: its key (as saved), template and creation date.
+    struct CreatedInput: Sendable {
+        let key: ActivityKey
+        let template: LibraryTemplate
+        let createdAt: Date
+    }
+
     static func yours(history: [WorkoutSession], identity: ActivityIdentity, unit: WeightUnit,
-                      now: Date = .now, title: (SessionExercise) -> String) -> [Row] {
+                      now: Date = .now, created: [CreatedInput] = [],
+                      title: (SessionExercise) -> String) -> [Row] {
+        let logged = loggedRows(history: history, identity: identity, unit: unit, now: now, title: title)
+        return logged + createdRows(created, logged: logged, unit: unit, title: title)
+    }
+
+    /// Created activities that haven't been logged since: a logged row with the same key — or, for a climb, the same
+    /// climb (base) logged on/after the creation day — replaces it. A climb's key carries its set day, so logging it
+    /// later lands on a different key; the base comparison is what folds the two together.
+    private static func createdRows(_ created: [CreatedInput], logged: [Row], unit: WeightUnit,
+                                    title: (SessionExercise) -> String) -> [Row] {
+        func base(_ k: ActivityKey) -> String { String(k.nameKey.split(separator: "@").first ?? "") }
+        let distanceUnit: DistanceUnit = unit == .lb ? .mi : .km
+        return created.compactMap { c in
+            let replaced = logged.contains { r in
+                r.key == c.key || (c.key.exerciseId == ActivityIdentity.climbExerciseId && r.key.exerciseId == c.key.exerciseId
+                                   && base(r.key) == base(c.key)
+                                   && r.lastDate >= Calendar.current.startOfDay(for: c.createdAt))
+            }
+            guard !replaced else { return nil }
+            let ex = c.template.exercise
+            var headline = "Not done yet"
+            if let m = c.template.targetDistanceMeters, m > 0 {
+                headline = "\(SetMeasure.formatDistance(m, unit: distanceUnit)) · not done yet"
+            }
+            let climb = ex.discipline == .climb
+                ? Row.Climb(type: ex.climbType, grade: ex.climbGradeLabel, status: nil, attempts: 0, gym: ex.gym,
+                            wall: ex.wall, setStart: c.createdAt, isReset: false)
+                : nil
+            return Row(key: c.key, title: title(ex), discipline: ex.discipline, sessions: 0, days: 0, recentDays: 0,
+                       efforts: 0, recentSessions: 0, lastDate: c.createdAt, headline: headline, bestValue: nil,
+                       climb: climb, notDoneYet: true)
+        }
+    }
+
+    private static func loggedRows(history: [WorkoutSession], identity: ActivityIdentity, unit: WeightUnit,
+                                   now: Date, title: (SessionExercise) -> String) -> [Row] {
         struct Acc {
             var discipline: WorkoutDiscipline
             var title: String

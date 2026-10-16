@@ -109,7 +109,7 @@ struct ActivityDashboardView: View {
                 if let ex = catalogExercise {
                     ExerciseDetailView(exercise: ex, history: history, unit: unit)
                 } else {
-                    ActivityAboutView(key: key, title: title, history: history, unit: unit)
+                    ActivityAboutView(key: key, title: title, history: history, unit: unit, template: template)
                 }
             }
         }
@@ -213,7 +213,8 @@ struct ActivityDashboardView: View {
     private func logNow() {
         guard let entity = ActivityLauncher.sessionExercise(for: key, history: history,
                                                            identity: ActivityIdentity(sessions: history),
-                                                           catalogExerciseId: catalogExercise?.id) else { return }
+                                                           catalogExerciseId: catalogExercise?.id,
+                                                           template: template) else { return }
         // Hand it to the Gym Tracker home and pop back to it: a view under a pushed page doesn't run its change
         // handlers, and the player is a cover the home presents. Pop everything above the module root (path[0]).
         router.pendingQuickLog = entity
@@ -224,7 +225,8 @@ struct ActivityDashboardView: View {
         guard let block = ActivityLauncher.routineBlock(for: key, history: history,
                                                         identity: ActivityIdentity(sessions: history),
                                                         defaultUnit: unit,
-                                                        catalogExerciseId: catalogExercise?.id) else { return }
+                                                        catalogExerciseId: catalogExercise?.id,
+                                                        template: template) else { return }
         routine.exercises.append(block)
         routine.updatedAt = .now
         try? context.save()
@@ -245,6 +247,8 @@ struct ActivityDashboardView: View {
     // MARK: - Pin · Rename · Merge · Hide (prompt 185)
 
     private var entry: LibraryEntry? { entries.first { $0.key == key } }
+    /// A created activity's template (prompt 186) — what Log it now / Add to routine / About use until it's logged.
+    private var template: LibraryTemplate? { entry?.template }
 
     private var manageMenu: some View {
         Menu {
@@ -263,11 +267,21 @@ struct ActivityDashboardView: View {
                 Label(entry?.isHidden == true ? "Show in Library" : "Hide from Library",
                       systemImage: entry?.isHidden == true ? "eye" : "eye.slash")
             }
+            // A created activity you never logged can simply go (prompt 186) — nothing in history to keep.
+            if template != nil && dashboard == nil {
+                Button(role: .destructive) { deleteCreated() } label: { Label("Delete", systemImage: "trash") }
+                    .accessibilityIdentifier("activity.deleteCreated")
+            }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityIdentifier("activity.manage")
         .accessibilityLabel("More")
+    }
+
+    private func deleteCreated() {
+        if let e = entry { context.delete(e); try? context.save() }
+        if router.path.count > 1 { router.path.removeLast() }
     }
 
     private func setFlag(pin: Bool? = nil, hide: Bool? = nil) {
@@ -276,7 +290,7 @@ struct ActivityDashboardView: View {
         if let hide { e.isHidden = hide }
         e.updatedAt = .now
         let message = pin.map { $0 ? "Pinned to the top" : "Unpinned" } ?? (hide == true ? "Hidden from Library" : "Shown in Library")
-        if !e.isPinned && !e.isHidden { context.delete(e) }
+        if !e.isPinned && !e.isHidden && e.templateData == nil { context.delete(e) }
         try? context.save()
         show(message)
     }

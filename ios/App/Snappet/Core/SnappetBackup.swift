@@ -1467,16 +1467,21 @@ extension SnappetBackup {
         var isPinned: Bool
         var isHidden: Bool
         var updatedAt: Date
+        // Created activities (prompt 186) — Optional, so prompt-185 backups decode.
+        var templateData: Data?
+        var createdAt: Date?
 
         init(_ m: LibraryEntry) {
             id = m.id; activityKeyRaw = m.activityKeyRaw; isPinned = m.isPinned; isHidden = m.isHidden
-            updatedAt = m.updatedAt
+            updatedAt = m.updatedAt; templateData = m.templateData; createdAt = m.createdAt
         }
         func make() -> LibraryEntry {
             // Raw key, not via ActivityKey: stored bytes survive verbatim (the raws-stay-raw rule).
             let e = LibraryEntry(id: id, key: ActivityKey(exerciseId: "x", nameKey: ""), isPinned: isPinned,
                                  isHidden: isHidden, updatedAt: updatedAt)
             e.activityKeyRaw = activityKeyRaw
+            e.templateData = templateData
+            e.createdAt = createdAt
             return e
         }
         var sortKey: String { id.uuidString }
