@@ -7,40 +7,61 @@ import SwiftData
 /// chosen items back so the editor can seed a **typed block** (`RoutineSessionBuilder.block(from:)`). It
 /// reuses the library's discipline chip bar + faceted filter + `LibraryItemRow` so picking-for-a-routine
 /// reads exactly like browsing the library. Presented as a sheet (its own `NavigationStack`).
+///
+/// **It's the Library** (prompt 187): it opens on **Yours · Most used** — a pick there becomes a block prescribing
+/// what you did last time (`ActivityLauncher.routineBlock`, like the Activity page's Add to routine) — with the
+/// catalog under **Explore**.
 struct LibraryPickerView: View {
+    /// A pick: a catalog item (the editor seeds its block) or one of yours, already a block.
+    enum Pick {
+        case item(LibraryItem)
+        case block(RoutineExercise)
+    }
+
     let resolver: ExerciseResolver
-    let onAdd: ([LibraryItem]) -> Void
+    var defaultUnit: WeightUnit = .kg
+    let onAdd: ([Pick]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \TimedExerciseCatalog.lastUsedAt, order: .reverse) private var timed: [TimedExerciseCatalog]
+    @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var history: [WorkoutSession]
+    @Query private var entries: [LibraryEntry]
+    @State private var source = LibraryPickSource()
+    @State private var loaded = false
+    @State private var showYours = true
 
     @State private var query = ""
     @State private var discipline: WorkoutDiscipline?
     @State private var facets = LibraryFacets()
     @State private var showingFilters = false
-    @State private var selected: [LibraryItem] = []   // ordered selection
+    @State private var selected: [LibraryPick.Choice] = []   // ordered selection
 
     private var allItems: [LibraryItem] { resolver.library(timed: timed) }
     private var disciplines: [WorkoutDiscipline] { LibraryBuilder.disciplines(in: allItems) }
     private var results: [LibraryItem] {
         LibraryBuilder.apply(allItems, query: query, discipline: discipline, facets: facets)
     }
-    private var selectedIDs: Set<String> { Set(selected.map(\.id)) }
+    private var yourRows: [LibraryCatalog.Row] {
+        LibraryPick.rows(source.rows, hidden: source.hidden, query: query, discipline: discipline)
+    }
+    private var selectedSet: Set<LibraryPick.Choice> { Set(selected) }
 
     var body: some View {
         NavigationStack {
             List {
+                LibraryPickModeBar(yours: $showYours)
                 disciplineChipBar
 
                 if !selected.isEmpty {
                     Section("Selected (\(selected.count))") {
-                        ForEach(selected) { item in
+                        ForEach(selected, id: \.self) { choice in
                             HStack {
-                                Image(systemName: item.symbol).foregroundStyle(item.discipline.accent).frame(width: 24)
-                                Text(item.title).lineLimit(1)
+                                Image(systemName: symbol(of: choice).0).foregroundStyle(symbol(of: choice).1)
+                                    .frame(width: 24)
+                                Text(name(of: choice)).lineLimit(1)
                                 Spacer()
-                                Button { toggle(item) } label: {
+                                Button { toggle(choice) } label: {
                                     Image(systemName: "minus.circle.fill").foregroundStyle(.red)
                                 }
                                 .buttonStyle(.plain)
@@ -49,21 +70,7 @@ struct LibraryPickerView: View {
                     }
                 }
 
-                Section {
-                    ForEach(results) { item in
-                        Button { toggle(item) } label: {
-                            HStack {
-                                LibraryItemRow(item: item)
-                                Image(systemName: selectedIDs.contains(item.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedIDs.contains(item.id) ? item.discipline.accent : Color.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("libraryPicker.row")
-                    }
-                } header: {
-                    Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
-                }
+                if showYours { yoursSection } else { exploreSection }
             }
             .listStyle(.plain)
             .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: selected)
@@ -77,7 +84,7 @@ struct LibraryPickerView: View {
                               ? "line.3.horizontal.decrease.circle"
                               : "line.3.horizontal.decrease.circle.fill")
                     }
-                    .disabled(discipline == nil)
+                    .disabled(discipline == nil || showYours)
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -89,6 +96,69 @@ struct LibraryPickerView: View {
             .sheet(isPresented: $showingFilters) {
                 LibraryPickerFilterSheet(discipline: discipline ?? .strength, facets: $facets)
             }
+            .task {
+                guard !loaded else { return }
+                loaded = true
+                source = LibraryPickSource.build(history: history, entries: entries, resolver: resolver,
+                                                 unit: defaultUnit)
+                showYours = LibraryPick.opensOnYours(LibraryPick.rows(source.rows, hidden: source.hidden,
+                                                                      query: "", discipline: nil))
+            }
+        }
+    }
+
+    @ViewBuilder private var yoursSection: some View {
+        Section {
+            if yourRows.isEmpty {
+                Text(query.isEmpty && discipline == nil ? "Nothing logged yet — pick from Explore." : "No match in yours.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(yourRows) { row in
+                Button { toggle(.yours(row.key)) } label: {
+                    LibraryPickRow(row: row, selected: selectedSet.contains(.yours(row.key)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("picker.yours.row")
+            }
+        } header: {
+            Text("Most used")
+        }
+    }
+
+    @ViewBuilder private var exploreSection: some View {
+        Section {
+            ForEach(results) { item in
+                let on = selectedSet.contains(.catalog(item.id))
+                Button { toggle(.catalog(item.id)) } label: {
+                    HStack {
+                        LibraryItemRow(item: item)
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(on ? item.discipline.accent : Color.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("libraryPicker.row")
+            }
+        } header: {
+            Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
+        }
+    }
+
+    private func item(_ id: String) -> LibraryItem? { allItems.first { $0.id == id } }
+
+    private func name(of choice: LibraryPick.Choice) -> String {
+        switch choice {
+        case .catalog(let id): return item(id)?.title ?? id
+        case .yours(let key): return source.row(key)?.title ?? key.nameKey
+        }
+    }
+
+    private func symbol(of choice: LibraryPick.Choice) -> (String, Color) {
+        switch choice {
+        case .catalog(let id):
+            return item(id).map { ($0.symbol, $0.discipline.accent) } ?? ("circle", .secondary)
+        case .yours(let key):
+            return source.row(key).map { ($0.discipline.symbol, $0.discipline.accent) } ?? ("circle", .secondary)
         }
     }
 
@@ -127,13 +197,18 @@ struct LibraryPickerView: View {
         .accessibilityIdentifier("libraryPicker.chip.\(d?.rawValue ?? "all")")
     }
 
-    private func toggle(_ item: LibraryItem) {
-        if let idx = selected.firstIndex(where: { $0.id == item.id }) { selected.remove(at: idx) }
-        else { selected.append(item) }
+    private func toggle(_ choice: LibraryPick.Choice) {
+        if let idx = selected.firstIndex(of: choice) { selected.remove(at: idx) }
+        else { selected.append(choice) }
     }
 
     private func commit() {
-        onAdd(selected)
+        onAdd(selected.compactMap { choice in
+            switch choice {
+            case .catalog(let id): return item(id).map(Pick.item)
+            case .yours(let key): return source.routineBlock(key, defaultUnit: defaultUnit).map(Pick.block)
+            }
+        })
         dismiss()
     }
 }

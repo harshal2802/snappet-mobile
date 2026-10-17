@@ -105,8 +105,13 @@ struct RoutineEditorView: View {
                 }
             }
             .sheet(isPresented: $showingPicker) {
-                LibraryPickerView(resolver: resolver) { picked in
-                    for item in picked { items.append(makeBlock(for: item)) }
+                LibraryPickerView(resolver: resolver, defaultUnit: defaultUnit) { picked in
+                    for pick in picked {
+                        switch pick {
+                        case .item(let item): items.append(makeBlock(for: item))
+                        case .block(let block): items.append(block)
+                        }
+                    }
                 }
             }
             .onAppear(perform: loadExisting)

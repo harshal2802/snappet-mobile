@@ -164,7 +164,7 @@ struct FreeformPlayerView: View {
         .celebrates(on: milestoneTrigger)
         .interactiveDismissDisabled()
         .sheet(isPresented: $pickingLift) {
-            ExercisePickerView(resolver: resolver) { picked in addLifting(picked) }
+            ExercisePickerView(resolver: resolver, unit: unit) { picked in addPicked(picked) }
         }
         .sheet(item: $logging) { target in
             LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId],
@@ -1475,13 +1475,9 @@ struct FreeformPlayerView: View {
         session.exercises.firstIndex { $0.id == ex.id }
     }
 
-    private func addLifting(_ exercises: [Exercise]) {
-        for ex in exercises {
-            let entity = SessionExercise(
-                exerciseId: ex.id, targetSets: 0, targetReps: "", targetRestSeconds: 0,
-                sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue)
-            session.exercises.append(entity)
-        }
+    /// The picker's entities (prompt 187): catalog lifts start blank, yours come set up as you left them.
+    private func addPicked(_ entities: [SessionExercise]) {
+        session.exercises.append(contentsOf: entities)
         persist()
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
     }

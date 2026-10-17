@@ -9980,3 +9980,13 @@ stripes, and the panel read as an opaque slab.
   done yet" row is folded by BASE + "logged on/after the creation day", not by key.
 - Not-done-yet rows sit right after pinned ones: under "Most used" (0 days) they'd vanish to the bottom right after
   you made them — the first UI run couldn't find the new route.
+
+## 2026-10-16 — Pickers are the Library (prompt 187)
+
+- The pickers reuse the Library's `yours` rows and convert a pick through `ActivityLauncher` — so "Add exercise" mid
+  session, Log it now and Add to routine all start an activity the same way (as you left it last time).
+- The pickers' line is "Last: …" (the LATEST session), not the Library's headline (the BEST set): picking is about
+  repeating what you did, the Library row is about progress.
+- A picker's Yours/Explore choice is not persisted (unlike the Library's): it opens on Yours whenever you have
+  history, else Explore — which also keeps every fresh-store UI test on the catalog path.
+- Routine block rows show 67.5 kg as "68 kg" (`RoutineBlockRow`) — pre-existing, logged with the weight-rounding bug.

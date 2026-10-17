@@ -43,6 +43,8 @@ enum LibraryCatalog {
         let climb: Climb?
         /// Created in the Library but never logged yet (prompt 186) — shown as "Not done yet".
         var notDoneYet: Bool = false
+        /// What you did the most recent time (prompt 187), for the pickers: "4 × 8 @ 75 kg", "1:30", "5 km · 5:33/km".
+        var last: String? = nil
         var id: ActivityKey { key }
     }
 
@@ -234,7 +236,8 @@ enum LibraryCatalog {
             return Row(key: key, title: a.title, discipline: a.discipline, sessions: a.sessions.count,
                        days: a.days.count, recentDays: a.recentDays.count, efforts: a.efforts,
                        recentSessions: a.recent.count, lastDate: a.last, headline: headline,
-                       bestValue: best, climb: climb)
+                       bestValue: best, climb: climb,
+                       last: lastLine(a.latest, unit: unit, distanceUnit: distanceUnit))
         }
     }
 
@@ -336,6 +339,38 @@ enum LibraryCatalog {
         case .dance, .other:
             let t = done.compactMap(\.durationSec).reduce(0, +)
             return t > 0 ? (SetMeasure.formatDuration(t), t) : (nil, nil)
+        }
+    }
+
+    /// The most recent instance in a few words (prompt 187) — the pickers' "Last: …" line. Strength: sets × top reps
+    /// @ top weight; climb: grade · attempts; hold: longest; run: distance · pace; dance/other: time. `nil` when the
+    /// entity has nothing completed to describe.
+    static func lastLine(_ ex: SessionExercise, unit: WeightUnit, distanceUnit: DistanceUnit) -> String? {
+        let done = ex.sets.filter { $0.completedAt != nil }
+        guard !done.isEmpty else { return nil }
+        switch ex.discipline {
+        case .strength:
+            let reps = done.compactMap(\.actualReps).max()
+            let top = done.compactMap { s in s.actualWeight.flatMap { $0 > 0 ? WorkoutMath.toKg($0, s.weightUnit) : nil } }.max()
+            var text = "\(done.count) × \(reps.map(String.init) ?? "–")"
+            if let top { text += " @ \(ActivityDashboard.weightLabel(kg: top, unit: unit))" }
+            return text
+        case .climb:
+            let attempts = done.reduce(0) { $0 + max(1, $1.climbAttempts ?? 1) }
+            return [ex.climbGradeLabel, "\(attempts) \(attempts == 1 ? "attempt" : "attempts")"]
+                .compactMap { $0 }.joined(separator: " · ")
+        case .timed:
+            guard let hold = done.compactMap(\.durationSec).filter({ $0 > 0 }).max() else { return "\(done.count) sets" }
+            return done.count > 1 ? "\(done.count) × \(SetMeasure.formatDuration(hold))" : SetMeasure.formatDuration(hold)
+        case .run:
+            let meters = done.compactMap(\.distanceMeters).reduce(0, +)
+            var parts: [String] = []
+            if meters > 0 { parts.append(SetMeasure.formatDistance(meters, unit: distanceUnit)) }
+            if let p = RunStats.avgPaceSecPerKm(ex) { parts.append(SetMeasure.formatPace(secPerKm: p, unit: distanceUnit)) }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        case .dance, .other:
+            let t = done.compactMap(\.durationSec).reduce(0, +)
+            return t > 0 ? SetMeasure.formatDuration(t) : nil
         }
     }
 
