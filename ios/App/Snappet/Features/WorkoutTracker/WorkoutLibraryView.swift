@@ -245,10 +245,15 @@ struct WorkoutLibraryView: View {
             return LibraryCatalog.CreatedInput(key: key, template: t, createdAt: e.createdAt ?? e.updatedAt)
         }
         yours = LibraryCatalog.yours(history: history, identity: identity, unit: unit, created: created) { ex in
-            ex.discipline == .strength && !ex.exerciseId.hasPrefix("adhoc-")
-                ? resolver.name(for: ex.exerciseId, override: ex.displayName)
-                : LibraryCatalog.fallbackTitle(ex)
+            Self.title(ex, resolver: resolver)
         }
+    }
+
+    /// An activity's display name: a catalog lift by the catalog (or your rename), anything else as typed.
+    static func title(_ ex: SessionExercise, resolver: ExerciseResolver) -> String {
+        ex.discipline == .strength && !ex.exerciseId.hasPrefix("adhoc-")
+            ? resolver.name(for: ex.exerciseId, override: ex.displayName)
+            : LibraryCatalog.fallbackTitle(ex)
     }
 
     private func setSort(_ s: LibraryCatalog.Sort) {
