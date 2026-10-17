@@ -9990,3 +9990,12 @@ stripes, and the panel read as an opaque slab.
 - A picker's Yours/Explore choice is not persisted (unlike the Library's): it opens on Yours whenever you have
   history, else Explore — which also keeps every fresh-store UI test on the catalog path.
 - Routine block rows show 67.5 kg as "68 kg" (`RoutineBlockRow`) — pre-existing, logged with the weight-rounding bug.
+
+## 2026-10-17 — Kilter board climbs in Yours (prompt 188)
+
+- A board climb's identity is the Kilter catalog uuid — no set window (boards don't reset), angle is shown, not
+  keyed (one climb across angles, like the Kilter module's own history).
+- Grade = the V half of Kilter's "6c/V5" on the V ladder, so "Hardest" interleaves board and gym climbs.
+- Tapping opens the Kilter module through the deep-link one-shot (not a Library Activity page): the climb's detail,
+  board lighting and logging live there, and the one-shot already handles "not in this device's catalog".
+- Board climbs aren't launchable (Log it now / pickers) — they're logged on the board.

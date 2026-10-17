@@ -25,6 +25,8 @@ struct WorkoutLibraryView: View {
     @Query(sort: \TimedExerciseCatalog.lastUsedAt, order: .reverse) private var timed: [TimedExerciseCatalog]
     /// Your pins / hides (prompt 185).
     @Query private var entries: [LibraryEntry]
+    /// Your Kilter board logs (prompt 188) — board climbs show in Yours with a KILTER badge.
+    @Query private var kilterLogs: [KilterLogEntry]
     @Environment(\.modelContext) private var context
     @State private var showHidden = false
 
@@ -123,7 +125,9 @@ struct WorkoutLibraryView: View {
         .sheet(isPresented: $showingFilters) {
             LibraryFilterSheet(discipline: discipline ?? .strength, facets: $facets)
         }
-        .task(id: "\(history.count)|\(entries.filter { $0.templateData != nil }.count)") { rebuildYours() }
+        .task(id: "\(history.count)|\(entries.filter { $0.templateData != nil }.count)|\(kilterLogs.count)") {
+            rebuildYours()
+        }
         .onChange(of: modeRaw) { _, _ in
             // A discipline that has nothing in the other tab would leave an empty list behind the chip.
             if let d = discipline, !disciplines.contains(d) { discipline = nil }
@@ -166,7 +170,7 @@ struct WorkoutLibraryView: View {
 
     private func yoursRow(_ row: LibraryCatalog.Row, pinned: Bool) -> some View {
         let hidden = hiddenKeys.contains(row.key)
-        return Button { openActivity(ActivityRoute(key: row.key, title: row.title)) } label: {
+        return Button { openActivity(ActivityRoute(key: row.key, title: row.title, angle: row.climb?.angle)) } label: {
             LibraryYoursRow(row: row, unit: unit, count: countUnit, pinned: pinned, hidden: hidden)
         }
         .buttonStyle(.plain)
@@ -247,6 +251,10 @@ struct WorkoutLibraryView: View {
         yours = LibraryCatalog.yours(history: history, identity: identity, unit: unit, created: created) { ex in
             Self.title(ex, resolver: resolver)
         }
+        yours += LibraryCatalog.kilterRows(kilterLogs.map {
+            .init(uuid: $0.climbUUID, name: $0.climbName, angle: $0.angle, gradeLabel: $0.gradeLabel,
+                  status: $0.status, attempts: $0.attempts, date: $0.date, sessionId: $0.sessionId)
+        })
     }
 
     /// An activity's display name: a catalog lift by the catalog (or your rename), anything else as typed.
@@ -394,6 +402,11 @@ struct LibraryYoursRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(row.title).font(.headline).lineLimit(1)
+                    if LibraryCatalog.isKilter(row.key) {
+                        Text("KILTER").font(.caption2.weight(.heavy)).foregroundStyle(SnappetColor.kilter)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(SnappetColor.kilter.opacity(0.15), in: Capsule())
+                    }
                     if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(SnappetColor.workout) }
                     if hidden { Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.secondary) }
                 }
@@ -428,6 +441,11 @@ struct LibraryYoursRow: View {
             if let grade = row.climb?.grade, !grade.isEmpty, row.climb != nil { parts.insert(grade, at: 1) }
             parts.append(row.headline ?? "Not done yet")
             return parts.joined(separator: " · ")
+        }
+        if let c = row.climb, LibraryCatalog.isKilter(row.key) {
+            // A board climb (prompt 188): the angle you last climbed it at, and your attempts.
+            return ["Kilter Board", c.angle.map { "\($0)°" }, "\(c.attempts) \(c.attempts == 1 ? "attempt" : "attempts")"]
+                .compactMap { $0 }.joined(separator: " · ")
         }
         if let c = row.climb {
             var parts = [c.type.label]

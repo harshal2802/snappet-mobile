@@ -7,6 +7,8 @@ import Charts
 struct ActivityRoute: Hashable {
     let key: ActivityKey
     let title: String
+    /// A Kilter board climb's last angle (prompt 188) — the board opens at it.
+    var angle: Int? = nil
 }
 
 /// **The Activity page** (activity progress P2 → Library redesign L2, prompt 184): one page per activity with

@@ -382,7 +382,7 @@ struct KilterRootView: View {
                presenting: missingSharedClimb) { _ in
             Button("OK", role: .cancel) {}
         } message: { link in
-            Text("This shared climb isn't in the catalog on this device. Get a catalog that "
+            Text("This climb isn't in the catalog on this device. Get a catalog that "
                  + "includes it — the sharer's board, or a bigger download — then open the link "
                  + "or scan the code again. (Climb id \(link.uuid).)")
         }

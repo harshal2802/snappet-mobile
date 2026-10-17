@@ -3,7 +3,7 @@ import SwiftData
 
 /// Test-only seed for activity progress (prompt 178): `-uiTestSeedActivityClips` layers tagged clips onto the
 /// `RoutineHistorySeed` fixture (which it implies) — bench-press clips on four of the past Push Day sessions,
-/// one untagged clip, and a clip on the newest Bouldering session. The identifiers are fake, so the tiles show
+/// one untagged clip, a clip on the newest Bouldering session, and (prompt 188) a Kilter board climb. The identifiers are fake, so the tiles show
 /// the placeholder gradient (the simulator has no library) while the chip / sheet / dashboard structure renders.
 /// Strictly launch-arg guarded, fresh in-memory store — zero production impact.
 enum ActivityClipsSeed {
@@ -33,6 +33,13 @@ enum ActivityClipsSeed {
             context.insert(SessionMedia(sessionID: climb.id, localIdentifier: "seed-activity-climb",
                                         kind: .video, offsetSec: 1_190, durationSec: 20,
                                         assignedExerciseID: v5.id, assignedSetIndex: 0, source: .manual))
+        }
+        // A Kilter board climb worked over three sessions and sent (prompt 188) — shows in Yours with a KILTER badge.
+        let statuses: [(Double, KilterAscentStatus, Int)] = [(12, .attempt, 5), (6, .project, 4), (2, .sent, 3)]
+        for (daysAgo, status, attempts) in statuses {
+            context.insert(KilterLogEntry(climbUUID: "seed-kilter-pringle", climbName: "Spicy Pringle", angle: 40,
+                                          difficulty: 21, gradeLabel: "6b+/V4", status: status, attempts: attempts,
+                                          date: now.addingTimeInterval(-daysAgo * 86_400), sessionId: UUID()))
         }
         try? context.save()
     }

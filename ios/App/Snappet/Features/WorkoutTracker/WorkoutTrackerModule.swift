@@ -490,7 +490,18 @@ struct WorkoutHomeView: View {
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
-                               openActivity: { router.push($0) })
+                               openActivity: { route in
+                                   // A board climb lives in the Kilter module (prompt 188): push it over the Library
+                                   // (Back returns here) and hand it the climb — the deep-link one-shot, which lands
+                                   // gracefully when the climb isn't in this device's catalog.
+                                   if LibraryCatalog.isKilter(route.key) {
+                                       router.pendingKilterClimb = KilterClimbLink(uuid: route.key.nameKey,
+                                                                                   angle: route.angle)
+                                       router.push(ModuleRoute(id: "kilter"))
+                                   } else {
+                                       router.push(route)
+                                   }
+                               })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },

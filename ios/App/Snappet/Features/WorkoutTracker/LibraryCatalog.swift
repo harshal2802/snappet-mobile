@@ -20,6 +20,8 @@ enum LibraryCatalog {
             let setStart: Date
             /// A newer set of the same climb exists (the gym reset it and you logged it again).
             let isReset: Bool
+            /// A Kilter board climb's angle (prompt 188); `nil` for a gym climb.
+            var angle: Int? = nil
             var sent: Bool { status?.isSend ?? false }
         }
 
