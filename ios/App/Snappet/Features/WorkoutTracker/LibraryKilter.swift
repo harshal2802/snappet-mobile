@@ -57,3 +57,6 @@ extension LibraryCatalog {
         }
     }
 }
+
+/// A board climb opened from the Library (prompt 188).
+struct LibraryKilterRoute: Hashable { let uuid: String }

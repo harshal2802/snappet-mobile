@@ -32,3 +32,14 @@ V grade, last angle, attempts, best outcome, how often — and opens in the Kilt
       win; ad-hoc logs count by day; V-grade sort value; not launchable / not in pickers; projects/sent filters.
 - [x] `LibraryKilterUITests`: the board climb is under Climbing with KILTER · 40° · 12 attempts and opens Kilter.
 - [ ] Device: your real board climbs appear and open on their detail at the right angle.
+
+## Device feedback (2026-10-18) — fixed in the same PR
+
+1. "Tapping a Kilter climb takes me to the Kilter app first and then to the climb's page — confusing." → the Library
+   now pushes the climb's page itself (`LibraryKilterRoute` → `LibraryKilterClimbView`, the module's
+   `KilterClimbDetailView` with `app.kilterSessions` + its own `KilterBoardController`, which only touches Bluetooth
+   on connect). The installed check + angle adoption reuse the pure `KilterDeepLinkRouting.destination`; a climb not
+   in this phone's catalog is explained in the Library.
+2. "I can't see the way to unhide the hidden Kilter climb." → the only way back was a toggle inside the sort menu.
+   Yours now ends with a visible "Show N hidden" row (`library.showHidden`); when shown: "Swipe a dimmed one left to
+   unhide it." `LibraryKilterUITests.testHideABoardClimbThenBringItBack` covers the round trip.

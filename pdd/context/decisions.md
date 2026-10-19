@@ -9999,3 +9999,7 @@ stripes, and the panel read as an opaque slab.
 - Tapping opens the Kilter module through the deep-link one-shot (not a Library Activity page): the climb's detail,
   board lighting and logging live there, and the one-shot already handles "not in this device's catalog".
 - Board climbs aren't launchable (Log it now / pickers) — they're logged on the board.
+- (device feedback, same day) A board climb opens its Kilter page directly from the Library, not via the module's
+  root (the two-step push read as a detour). The detail gets its own `KilterBoardController` — safe because the
+  controller defers `CBCentralManager` to the first connect. "Show hidden" is a visible row at the end of Yours, not
+  only a menu toggle — a hide you can't find the way back from is data loss from the user's point of view.

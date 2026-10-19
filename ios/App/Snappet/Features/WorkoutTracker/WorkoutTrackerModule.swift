@@ -210,6 +210,9 @@ struct WorkoutHomeView: View {
                                   title: resolver.name(for: route.exerciseId), history: history, unit: unit,
                                   catalogExercise: resolver.exercise(id: route.exerciseId))
         }
+        .navigationDestination(for: LibraryKilterRoute.self) { route in
+            LibraryKilterClimbView(uuid: route.uuid)
+        }
         .navigationDestination(for: ActivityRoute.self) { route in
             ActivityDashboardView(key: route.key, title: route.title, history: history, unit: unit,
                                   catalogExercise: route.key.nameKey.isEmpty ? resolver.exercise(id: route.key.exerciseId) : nil)
@@ -491,13 +494,10 @@ struct WorkoutHomeView: View {
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
                                openActivity: { route in
-                                   // A board climb lives in the Kilter module (prompt 188): push it over the Library
-                                   // (Back returns here) and hand it the climb — the deep-link one-shot, which lands
-                                   // gracefully when the climb isn't in this device's catalog.
+                                   // A board climb opens its Kilter page right here (prompt 188); the Library has
+                                   // already checked it's in this device's catalog and adopted its angle.
                                    if LibraryCatalog.isKilter(route.key) {
-                                       router.pendingKilterClimb = KilterClimbLink(uuid: route.key.nameKey,
-                                                                                   angle: route.angle)
-                                       router.push(ModuleRoute(id: "kilter"))
+                                       router.push(LibraryKilterRoute(uuid: route.key.nameKey))
                                    } else {
                                        router.push(route)
                                    }
