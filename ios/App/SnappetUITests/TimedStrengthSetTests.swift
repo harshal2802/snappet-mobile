@@ -75,8 +75,9 @@ import XCTest
 
     /// The timed-set cover offers a "Record a clip" affordance (camera → attach to this set). The camera
     /// itself is device-only — the Simulator has no camera — so here we assert the button is present and
-    /// that tapping it surfaces the guard notice (the deterministic sim path); the real record → save →
-    /// attach flow is device-pending.
+    /// that tapping it surfaces the guard notice (the deterministic sim path; `SnappetCameraUITests` drives the
+    /// camera's own controls with the `-uiTestFakeCamera` stand-in); the real record → save → attach flow is
+    /// device-pending.
     func testTimedSetCoverOffersRecordClipButton() {
         openFreeformPlayer()
         addLiftingExercise()

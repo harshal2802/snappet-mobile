@@ -19,7 +19,7 @@ import HighlightEngine
 /// dismissing BEFORE a Stop logs nothing. No milestone celebration here — Phase 3 owns that.
 ///
 /// **Record a clip mid-attempt:** while the timer runs, a "Record a clip" button opens the in-app camera
-/// (`RecordClipButton` → `VideoRecorder`) over this cover — the wall-clock timer keeps running underneath,
+/// (`RecordClipButton` → `SnappetCameraView`) over this cover — the wall-clock timer keeps running underneath,
 /// so finishing the recording drops the user back on the live attempt. Recordings are saved to Photos
 /// immediately and queued in `recordedClips`; committing the outcome hands them up so they attach to the
 /// attempt being logged.
