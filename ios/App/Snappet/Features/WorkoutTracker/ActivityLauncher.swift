@@ -10,6 +10,7 @@ enum ActivityLauncher {
     /// Whether the page offers Log it now / Add to routine for this activity.
     static func canLaunch(_ key: ActivityKey) -> Bool {
         key.disciplineScope == nil && key.exerciseId != ActivityIdentity.festivalExerciseId
+            && !LibraryCatalog.isKilter(key)   // a board climb is logged on the board (prompt 188)
     }
 
     /// The most recent session entity of the activity (and its session), if any.

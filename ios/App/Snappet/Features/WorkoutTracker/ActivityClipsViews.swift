@@ -12,7 +12,7 @@ extension ActivityMediaInput {
         ActivityMediaInput(id: m.id, sessionID: m.sessionID, assignedExerciseID: m.assignedExerciseID,
                            assignedSetIndex: m.assignedSetIndex, kindRaw: m.kindRaw, offsetSec: m.offsetSec,
                            durationSec: m.durationSec, localIdentifier: m.localIdentifier,
-                           isReel: m.isReel, isBaked: m.isBaked)
+                           isReel: m.isReel, isBaked: m.isBaked, assignedClimbUUID: m.assignedClimbUUID)
     }
 
     /// The feed's media value, so the viewer reuses `ClipMediaSurface` + `ClipHROverlay` unchanged.
@@ -29,6 +29,20 @@ enum ActivityMediaStore {
     @MainActor
     static func snapshot(context: ModelContext) -> [ActivityMediaInput] {
         ((try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []).map(ActivityMediaInput.from)
+    }
+}
+
+/// The heart rate a clip's overlay is drawn from — a gym session's or a Kilter board session's (prompt 188).
+struct ClipHRSource {
+    let hrSeries: [HRPoint]
+    let maxHR: Double?
+    let restHR: Double?
+
+    init(_ s: WorkoutSession) { hrSeries = s.hrSeries; maxHR = s.maxHR; restHR = s.restHR }
+    init(_ k: KilterSession) { hrSeries = k.hrSeries; maxHR = k.maxHR; restHR = k.restHR }
+
+    static func map(_ history: [WorkoutSession]) -> [UUID: ClipHRSource] {
+        Dictionary(history.map { ($0.id, ClipHRSource($0)) }, uniquingKeysWith: { a, _ in a })
     }
 }
 
@@ -69,6 +83,8 @@ struct ActivityClipsSheet: View {
     /// The live / current session, whose own clips are shown elsewhere.
     var excludingSession: UUID? = nil
     let unit: WeightUnit
+    /// A Kilter board climb's clips instead of a gym activity's (prompt 188).
+    var kilterClimbUUID: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     /// Expanded to full height when the reel builder is pushed — it needs the room.
@@ -77,7 +93,7 @@ struct ActivityClipsSheet: View {
     var body: some View {
         NavigationStack {
             ActivityClipsContent(target: target, history: history, excludingSession: excludingSession, unit: unit,
-                                 onReel: { detent = .large })
+                                 kilterClimbUUID: kilterClimbUUID, onReel: { detent = .large })
                 .navigationTitle(target.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -99,6 +115,8 @@ struct ActivityClipsContent: View {
     let history: [WorkoutSession]
     var excludingSession: UUID? = nil
     let unit: WeightUnit
+    /// A Kilter board climb's clips (prompt 188): filed by climb across board sessions, no PR badges.
+    var kilterClimbUUID: String? = nil
     /// Called as the reel builder is about to push (the sheet grows to full height for it).
     var onReel: () -> Void = {}
 
@@ -112,6 +130,8 @@ struct ActivityClipsContent: View {
     @State private var prsOnly = false
     @State private var comparing = false
     @State private var reelScope: ClipsReelScope?
+    /// Each clip's session HR, for the viewer's overlay.
+    @State private var hrSources: [UUID: ClipHRSource] = [:]
 
     private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
     private var allClips: [ActivityClip] { groups.flatMap(\.clips) }
@@ -158,20 +178,27 @@ struct ActivityClipsContent: View {
             .overlay {
                 if loaded && groups.isEmpty {
                     ContentUnavailableView("No past clips", systemImage: "video.slash",
-                                           description: Text("Film a set of \(target.title) and it shows up here next time."))
+                                           description: Text(kilterClimbUUID == nil
+                                                             ? "Film a set of \(target.title) and it shows up here next time."
+                                                             : "Film an attempt on \(target.title) and it shows up here."))
                 }
             }
             .background(SnappetColor.paper)
             .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
             .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
             .fullScreenCover(item: $viewing) { box in
-                ActivityClipViewer(clips: allClips, startIndex: box.value,
-                                   sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
+                ActivityClipViewer(clips: allClips, startIndex: box.value, sessions: hrSources)
             }
         .onChange(of: reelScope) { _, scope in if scope != nil { onReel() } }
         .task {
             guard !loaded else { return }
             let media = ActivityMediaStore.snapshot(context: context)
+            if let uuid = kilterClimbUUID {
+                loadKilter(uuid, media: media)
+                loaded = true
+                return
+            }
+            hrSources = ClipHRSource.map(history)
             groups = ActivityMediaIndex.groups(for: target.key, history: history, media: media,
                                                excludingSession: excludingSession, unit: unit,
                                                distanceUnit: distanceUnit)
@@ -182,6 +209,18 @@ struct ActivityClipsContent: View {
             }
             loaded = true
         }
+    }
+
+    /// A board climb's clips: its board sessions + its logs (for each session's "V5 · Sent · 40°" stamp).
+    private func loadKilter(_ uuid: String, media: [ActivityMediaInput]) {
+        let sessions = (try? context.fetch(FetchDescriptor<KilterSession>())) ?? []
+        let logs = (try? context.fetch(FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.climbUUID == uuid }))) ?? []
+        groups = KilterClipIndex.groups(
+            climbUUID: uuid, media: media,
+            sessions: sessions.map { .init(id: $0.id, startedAt: $0.startedAt, title: $0.title, hrSeries: $0.hrSeries) },
+            logs: logs.map { .init(uuid: $0.climbUUID, name: $0.climbName, angle: $0.angle, gradeLabel: $0.gradeLabel,
+                                   status: $0.status, attempts: $0.attempts, date: $0.date, sessionId: $0.sessionId) })
+        hrSources = Dictionary(sessions.map { ($0.id, ClipHRSource($0)) }, uniquingKeysWith: { a, _ in a })
     }
 
     private func section(_ group: ActivitySessionGroup) -> some View {
@@ -276,7 +315,7 @@ struct ActivityClipTile: View {
 struct ActivityClipViewer: View {
     let clips: [ActivityClip]
     let startIndex: Int
-    let sessions: [UUID: WorkoutSession]
+    let sessions: [UUID: ClipHRSource]
 
     @Environment(\.dismiss) private var dismiss
     @State private var index = 0
@@ -338,7 +377,7 @@ struct ActivityClipViewer: View {
 /// One page: the shared media surface + its session's HR scorebug + the transport bar for videos.
 private struct ActivityClipPage: View {
     let clip: ActivityClip
-    let session: WorkoutSession?
+    let session: ClipHRSource?
     let isActive: Bool
 
     @State private var fraction: Double = 1

@@ -76,6 +76,9 @@ struct KilterClimbDetailView: View {
     /// Incremented on a first send of a grade — drives `.celebrates(on:)` (issue #80).
     @State private var celebrationTrigger = 0
     @State private var showingShare = false
+    /// Your clips filed to this climb across board sessions (prompt 188) — "▶ N past clips" opens them all.
+    @State private var clipCount = 0
+    @State private var showingClips = false
     @State private var showingMatchInfo = false
     // Created-climb lifecycle (#76): edit re-opens the authoring sheet; rename + delete act in place.
     @State private var showingEdit = false
@@ -129,6 +132,13 @@ struct KilterClimbDetailView: View {
                     .accessibilityIdentifier("kilter.created.menu")
                 }
             }
+        }
+        .task(id: currentUUID) { clipCount = countClips(currentUUID) }
+        .sheet(isPresented: $showingClips) {
+            ActivityClipsSheet(target: ActivityClipsTarget(key: ActivityKey(exerciseId: LibraryCatalog.kilterExerciseId,
+                                                                            nameKey: currentUUID),
+                                                           title: climb?.name ?? "Climb"),
+                               history: [], unit: .kg, kilterClimbUUID: currentUUID)
         }
         .sheet(isPresented: $showingShare) {
             if let climb {
@@ -188,6 +198,12 @@ struct KilterClimbDetailView: View {
 
     /// The "Set up this board" verifier, seeded with the open climb's own layout (so a matching board lights
     /// the real climb straight away) and the current size.
+    /// Clips filed to this climb in any board session (not posted reels).
+    private func countClips(_ uuid: String) -> Int {
+        (try? modelContext.fetchCount(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.assignedClimbUUID == uuid && $0.reelTitle == nil }))) ?? 0
+    }
+
     @ViewBuilder private var boardSetupSheet: some View {
         KilterBoardSetupSheet(
             board: board, catalog: catalog, climb: climb,
@@ -205,6 +221,9 @@ struct KilterClimbDetailView: View {
             anglePicker
             statRow
             metaRow
+            if clipCount > 0 {
+                PastClipsChip(count: clipCount) { showingClips = true }
+            }
             offBoardNote
             sessionStatusRow
             logButtons

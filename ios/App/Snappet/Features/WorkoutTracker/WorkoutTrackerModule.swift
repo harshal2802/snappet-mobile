@@ -210,6 +210,9 @@ struct WorkoutHomeView: View {
                                   title: resolver.name(for: route.exerciseId), history: history, unit: unit,
                                   catalogExercise: resolver.exercise(id: route.exerciseId))
         }
+        .navigationDestination(for: LibraryKilterRoute.self) { route in
+            LibraryKilterClimbView(uuid: route.uuid)
+        }
         .navigationDestination(for: ActivityRoute.self) { route in
             ActivityDashboardView(key: route.key, title: route.title, history: history, unit: unit,
                                   catalogExercise: route.key.nameKey.isEmpty ? resolver.exercise(id: route.key.exerciseId) : nil)
@@ -490,7 +493,15 @@ struct WorkoutHomeView: View {
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
-                               openActivity: { router.push($0) })
+                               openActivity: { route in
+                                   // A board climb opens its Kilter page right here (prompt 188); the Library has
+                                   // already checked it's in this device's catalog and adopted its angle.
+                                   if LibraryCatalog.isKilter(route.key) {
+                                       router.push(LibraryKilterRoute(uuid: route.key.nameKey))
+                                   } else {
+                                       router.push(route)
+                                   }
+                               })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },

@@ -60,6 +60,8 @@ struct ActivityMediaInput: Sendable, Equatable {
     var isReel: Bool = false
     /// A Studio-baked clip carries its HR tile in the pixels — the viewer must not draw another.
     var isBaked: Bool = false
+    /// The Kilter board climb it's filed to (prompt 188) — board clips are filed by climb, not exercise.
+    var assignedClimbUUID: String? = nil
 }
 
 /// One clip of an activity, stamped with the set it was filmed during and the heart rate around it —
