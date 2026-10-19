@@ -27,10 +27,6 @@ struct WorkoutLibraryView: View {
     @Query private var entries: [LibraryEntry]
     /// Your Kilter board logs (prompt 188) — board climbs show in Yours with a KILTER badge.
     @Query private var kilterLogs: [KilterLogEntry]
-    /// Climbs you authored on the board — "installed" even though they're not in the downloaded catalog.
-    @Query private var kilterCreated: [KilterCreatedClimb]
-    /// A board climb tapped that this device's catalog doesn't have — explained here, not in the Kilter module.
-    @State private var missingKilterClimb: String?
     @Environment(\.modelContext) private var context
     @State private var showHidden = false
 
@@ -129,14 +125,6 @@ struct WorkoutLibraryView: View {
         .sheet(isPresented: $showingFilters) {
             LibraryFilterSheet(discipline: discipline ?? .strength, facets: $facets)
         }
-        .alert("Climb not in your catalog",
-               isPresented: Binding(get: { missingKilterClimb != nil }, set: { if !$0 { missingKilterClimb = nil } }),
-               presenting: missingKilterClimb) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { _ in
-            Text("This board climb isn't in the Kilter catalog on this phone — it may have been logged on another "
-                 + "board. Get a catalog that includes it in the Kilter Board app.")
-        }
         .task(id: "\(history.count)|\(entries.filter { $0.templateData != nil }.count)|\(kilterLogs.count)") {
             rebuildYours()
         }
@@ -218,24 +206,10 @@ struct WorkoutLibraryView: View {
         }
     }
 
-    /// A board climb opens straight on its Kilter page (device feedback on prompt 188 — going through the Kilter
-    /// module's home first was confusing): the same installed check + angle adoption as a shared Kilter link.
     private func open(_ row: LibraryCatalog.Row) {
-        guard LibraryCatalog.isKilter(row.key) else {
-            openActivity(ActivityRoute(key: row.key, title: row.title))
-            return
-        }
-        let uuid = row.key.nameKey
-        let installed = KilterCatalog.shared.climb(uuid) != nil || kilterCreated.contains { $0.uuid == uuid }
-        switch KilterDeepLinkRouting.destination(for: KilterClimbLink(uuid: uuid, angle: row.climb?.angle),
-                                                 climbInstalled: installed,
-                                                 availableAngles: KilterCatalog.shared.angles()) {
-        case .openClimb(_, let adoptAngle):
-            if let adoptAngle { UserDefaults.standard.set(adoptAngle, forKey: "kilter.angle") }
-            openActivity(ActivityRoute(key: row.key, title: row.title))
-        case .explainMissing:
-            missingKilterClimb = uuid
-        }
+        // Every row — a board climb too (prompt 189) — opens its Activity page; a board climb's page offers
+        // "Open on the board" for its Kilter page.
+        openActivity(ActivityRoute(key: row.key, title: row.title))
     }
 
     private func setFlag(_ key: ActivityKey, pin: Bool? = nil, hide: Bool? = nil) {

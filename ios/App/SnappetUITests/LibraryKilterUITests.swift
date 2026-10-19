@@ -1,7 +1,7 @@
 import XCTest
 
 /// Kilter board climbs in Yours (Library redesign L4c, prompt 188): a board climb shows under Climbing with a KILTER
-/// badge, its angle and attempts, opens straight on its climb page, and hides / unhides. Seeded by `-uiTestSeedActivityClips`.
+/// badge, its angle and attempts, opens its Activity page (Progress · Clips · About) with "Open on the board" for its Kilter page (prompt 189), and hides / unhides. Seeded by `-uiTestSeedActivityClips`.
 @MainActor
 final class LibraryKilterUITests: XCTestCase {
     var app: XCUIApplication!
@@ -49,12 +49,21 @@ final class LibraryKilterUITests: XCTestCase {
         snap("01-kilter-in-yours")
 
         row.tap()
-        // Straight to the climb — never the Kilter module's home first. The simulator has no catalog, so the Library
-        // itself explains (on a phone with the catalog the climb's page opens).
+        // Its Activity page, like a gym climb's: Progress · Clips · About (prompt 189).
+        let tabs = app.segmentedControls.matching(identifier: "activity.tabs").firstMatch
+        XCTAssertTrue(tabs.waitForExistence(timeout: 6), "the Activity page")
+        XCTAssertTrue(tabs.buttons["Progress"].isSelected)
+        XCTAssertTrue(tabs.buttons["Clips · 2"].exists, "its board clips")
+        XCTAssertTrue(tabs.buttons["About"].exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "activity.dashboard.kpis").firstMatch.exists)
+        snap("02-activity-page")
+        tabs.buttons["About"].tap()
+        snap("02b-about")
+        // The simulator has no catalog: "Open on the board" explains in place.
+        app.buttons["activity.openOnBoard"].tap()
         let missing = app.alerts["Climb not in your catalog"]
         XCTAssertTrue(missing.waitForExistence(timeout: 6), "explained in place")
         XCTAssertFalse(app.navigationBars["Kilter Board"].exists, "no detour through the Kilter module")
-        snap("02-not-in-catalog")
         missing.buttons["OK"].tap()
     }
 
@@ -85,9 +94,17 @@ final class LibraryKilterUITests: XCTestCase {
         let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6))
         row.tap()
-        // Straight onto the climb's page (no Kilter home in between), with every clip of it across sessions.
+        let tabs = app.segmentedControls.matching(identifier: "activity.tabs").firstMatch
+        XCTAssertTrue(tabs.waitForExistence(timeout: 6), "the Activity page")
+        tabs.buttons["Clips · 2"].tap()
+        XCTAssertTrue(app.staticTexts["activity.clips.summary"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["activity.clips.summary"].label.contains("2 clips · 2 sessions"))
+        snap("04-clips-tab")
+        tabs.buttons["Progress"].tap()
+        // "Open on the board" → the climb's Kilter page, with every clip of it.
+        app.buttons["activity.openOnBoard"].tap()
         let clips = app.buttons["activity.pastClips"]
-        XCTAssertTrue(clips.waitForExistence(timeout: 8), "the climb's page offers its past clips")
+        XCTAssertTrue(clips.waitForExistence(timeout: 8), "the climb's Kilter page offers its past clips")
         XCTAssertTrue(clips.label.contains("2 past clips"), clips.label)
         XCTAssertFalse(app.navigationBars["Kilter Board"].exists, "no detour through the Kilter module")
         snap("05-climb-page")

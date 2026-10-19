@@ -72,8 +72,10 @@ struct ActivityAboutView: View {
         switch ex.discipline {
         case .climb:
             if let g = ex.climbGradeLabel, !g.isEmpty { LabeledContent("Grade", value: g) }
-            if let gym = ex.gym, !gym.isEmpty { LabeledContent("Gym", value: gym) }
-            if let wall = ex.wall, !wall.isEmpty { LabeledContent("Wall", value: wall) }
+            // A board climb (prompt 189) carries the board as its "gym" and the angle as its "wall".
+            let board = LibraryCatalog.isKilter(key)
+            if let gym = ex.gym, !gym.isEmpty { LabeledContent(board ? "Board" : "Gym", value: gym) }
+            if let wall = ex.wall, !wall.isEmpty { LabeledContent(board ? "Last angle" : "Wall", value: wall) }
             if let c = ex.climbColor { LabeledContent("Colour", value: c.label) }
             if let setter = ex.setter, !setter.isEmpty { LabeledContent("Setter", value: setter) }
             if let start = identity.setStart[key] {

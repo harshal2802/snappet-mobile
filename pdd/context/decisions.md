@@ -10007,3 +10007,12 @@ stripes, and the panel read as an opaque slab.
   Compare and Progress reel everywhere. The only coupling was the viewer reading `WorkoutSession` for HR — now
   `ClipHRSource` (hrSeries / maxHR / restHR), which `KilterSession` already carries. No PR badges for board climbs yet
   (their "best" is per angle — a follow-up if wanted).
+
+## 2026-10-19 — Board climbs get the Activity page (prompt 189)
+
+- Adapter over fork: a board climb's logs become transient `WorkoutSession`s (one entity per board session,
+  `exerciseId` "kilter:<uuid>") so the existing Activity page — dashboard, records, effort, clips, About — renders a
+  board climb with zero changes to its builders. The adapter is the only Kilter-aware piece (plus one identity rule);
+  nothing is persisted, so gym history, backup and stats never see these sessions.
+- The Library row opens the Activity page; the Kilter page is one tap away ("Open on the board"), where lighting and
+  logging live. Reverses 188's direct push only because the page in between is now the useful one.
