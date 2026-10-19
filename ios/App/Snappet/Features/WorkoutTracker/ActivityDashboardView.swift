@@ -146,7 +146,7 @@ struct ActivityDashboardView: View {
         }
         .fullScreenCover(item: $viewing) { req in
             ActivityClipViewer(clips: req.clips, startIndex: req.start,
-                               sessions: Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
+                               sessions: ClipHRSource.map(history))
         }
         .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
         .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }

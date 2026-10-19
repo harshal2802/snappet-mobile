@@ -10003,3 +10003,7 @@ stripes, and the panel read as an opaque slab.
   root (the two-step push read as a detour). The detail gets its own `KilterBoardController` — safe because the
   controller defers `CBCentralManager` to the first connect. "Show hidden" is a visible row at the end of Yours, not
   only a menu toggle — a hide you can't find the way back from is data loss from the user's point of view.
+- (device feedback) Board climbs' clips reuse the gym Clips sheet rather than a Kilter-specific gallery: one viewer,
+  Compare and Progress reel everywhere. The only coupling was the viewer reading `WorkoutSession` for HR — now
+  `ClipHRSource` (hrSeries / maxHR / restHR), which `KilterSession` already carries. No PR badges for board climbs yet
+  (their "best" is per angle — a follow-up if wanted).

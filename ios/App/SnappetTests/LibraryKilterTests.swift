@@ -65,4 +65,35 @@ final class LibraryKilterTests: XCTestCase {
         XCTAssertEqual(LibraryCatalog.filter(rows, query: "", discipline: .climb, climbFilter: .projects).count, 1)
         XCTAssertEqual(LibraryCatalog.filter(rows, query: "", discipline: .climb, climbFilter: .sent).count, 1)
     }
+
+    // MARK: - Every clip of a board climb
+
+    private func clip(_ session: UUID, climb: String? = "c1", offset: Double = 100, reel: Bool = false) -> ActivityMediaInput {
+        ActivityMediaInput(id: UUID(), sessionID: session, assignedExerciseID: nil, assignedSetIndex: nil,
+                           kindRaw: "video", offsetSec: offset, durationSec: 10, localIdentifier: UUID().uuidString,
+                           isReel: reel, assignedClimbUUID: climb)
+    }
+
+    func testClipsOfABoardClimbGroupByBoardSessionNewestFirstWithHowItWent() throws {
+        let old = UUID(), new = UUID()
+        let sessions = [
+            KilterClipIndex.SessionInput(id: old, startedAt: now.addingTimeInterval(-9 * 86_400), title: nil,
+                                         hrSeries: [HRPoint(t: 100, bpm: 150), HRPoint(t: 110, bpm: 160)]),
+            KilterClipIndex.SessionInput(id: new, startedAt: now.addingTimeInterval(-86_400), title: "Tuesday board",
+                                         hrSeries: []),
+        ]
+        let media = [clip(old), clip(new, offset: 300), clip(new, offset: 50),
+                     clip(new, climb: "other"), clip(new, reel: true), clip(UUID())]   // other climb · reel · unknown session
+        let logs = [log(.attempt, attempts: 4, daysAgo: 9, session: old), log(.sent, daysAgo: 1, session: new),
+                    log(.project, daysAgo: 1, session: new)]
+        let groups = KilterClipIndex.groups(climbUUID: "c1", media: media, sessions: sessions, logs: logs)
+        XCTAssertEqual(groups.map(\.sessionID), [new, old])
+        XCTAssertEqual(groups[0].title, "Tuesday board · 40°")
+        XCTAssertEqual(groups[1].title, "Kilter session · 40°")
+        XCTAssertEqual(groups[0].clips.count, 2)
+        XCTAssertEqual(groups[0].clips.map(\.media.offsetSec), [50, 300], "in filming order")
+        XCTAssertEqual(groups[0].clips[0].setSummary, "V5 · Sent", "the session's best outcome on the climb")
+        XCTAssertEqual(groups[1].clips[0].setSummary, "V5 · Attempt")
+        XCTAssertNotNil(groups[1].clips[0].avgBPM, "the board session's heart rate")
+    }
 }

@@ -43,3 +43,10 @@ V grade, last angle, attempts, best outcome, how often — and opens in the Kilt
 2. "I can't see the way to unhide the hidden Kilter climb." → the only way back was a toggle inside the sort menu.
    Yours now ends with a visible "Show N hidden" row (`library.showHidden`); when shown: "Swipe a dimmed one left to
    unhide it." `LibraryKilterUITests.testHideABoardClimbThenBringItBack` covers the round trip.
+3. "How can I see all clips for Kilter climbs? That part is missing." → the climb's page (from the Library and in
+   the Kilter module) shows "▶ N past clips" when any clip is filed to the climb (`SessionMedia.assignedClimbUUID`,
+   reels excluded); it opens the shared `ActivityClipsSheet` — grouped by board session ("Kilter session · 40°"),
+   each tile stamped "V5 · Sent" + HR, fullscreen viewer, Compare, Progress reel (the reel host already reads Kilter
+   sessions). Pure `KilterClipIndex.groups`; the viewer's HR source is now `ClipHRSource` (gym or board session).
+   The seed's board climb is the catalog fixture's "Alpha" with two filmed board sessions;
+   `testBoardClimbOpensOnItsPageWithItsClips` installs the fixture catalog and opens them.

@@ -60,3 +60,43 @@ extension LibraryCatalog {
 
 /// A board climb opened from the Library (prompt 188).
 struct LibraryKilterRoute: Hashable { let uuid: String }
+
+/// **Every clip of one board climb** (prompt 188, device feedback "how can I see all clips for Kilter climbs?"): the
+/// Kilter counterpart of `ActivityMediaIndex.groups` — media filed to the climb (`assignedClimbUUID`) across board
+/// sessions, newest session first, each clip stamped with how that session went on it ("V5 · Sent", the angle on the
+/// session header) and the
+/// heart rate around it. Feeds the same Clips sheet (viewer, Compare, Progress reel) the gym activities use.
+enum KilterClipIndex {
+    struct SessionInput: Sendable {
+        let id: UUID
+        let startedAt: Date
+        let title: String?
+        let hrSeries: [HRPoint]
+    }
+
+    static func groups(climbUUID: String, media: [ActivityMediaInput], sessions: [SessionInput],
+                       logs: [LibraryCatalog.KilterInput]) -> [ActivitySessionGroup] {
+        let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let mine = media.filter { $0.assignedClimbUUID == climbUUID && !$0.isReel }
+        let rank: (KilterAscentStatus) -> Int = {
+            switch $0 { case .flash: return 3; case .sent: return 2; case .project: return 1; case .attempt: return 0 }
+        }
+        return Dictionary(grouping: mine, by: \.sessionID).compactMap { sid, clips -> ActivitySessionGroup? in
+            guard let session = byID[sid] else { return nil }
+            let entries = logs.filter { $0.uuid == climbUUID && $0.sessionId == sid }
+            // The tile stamp is short ("V5 · Sent" — a 76 pt tile); the angle rides on the session header.
+            let best = entries.max { rank($0.status) < rank($1.status) }
+            let summary = best.map { "\(LibraryCatalog.kilterVGrade($0.gradeLabel)) · \($0.status.label)" }
+            let stamped = clips.sorted { $0.offsetSec < $1.offsetSec }.map { m in
+                ActivityClip(media: m, sessionID: sid, sessionDate: session.startedAt, setIndex: nil,
+                             setSummary: summary,
+                             avgBPM: ActivityMediaIndex.averageBPM(for: m, hrSeries: session.hrSeries))
+            }
+            return ActivitySessionGroup(sessionID: sid, date: session.startedAt,
+                                        title: [session.title ?? "Kilter session", best.map { "\($0.angle)°" }]
+                                            .compactMap { $0 }.joined(separator: " · "),
+                                        clips: stamped)
+        }
+        .sorted { $0.date > $1.date }
+    }
+}

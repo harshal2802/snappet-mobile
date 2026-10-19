@@ -9,7 +9,12 @@ final class LibraryKilterUITests: XCTestCase {
     override func setUp() async throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-uiTestSeedActivityClips"]
+        // `-uiTestFreshStore` spelled out: it's what clears a Kilter catalog a previous test installed.
+        app.launchArguments += ["-uiTestSeedActivityClips", "-uiTestFreshStore"]
+    }
+
+    private func launchToClimbing(catalog: Bool = false) async {
+        if catalog { app.launchArguments += ["-uiTestInstallKilterCatalog"] }
         app.launch()
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
@@ -20,6 +25,13 @@ final class LibraryKilterUITests: XCTestCase {
         let yours = app.segmentedControls.matching(identifier: "library.mode").firstMatch.buttons["Yours"]
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: yours)
         await fulfillment(of: [selected], timeout: 10)
+        let chip = app.descendants(matching: .any).matching(identifier: "library.chip.climb").firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 6))
+        chip.tap()
+    }
+
+    private var boardRow: XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier == 'library.yours.row' AND label CONTAINS 'Spicy Pringle'")).firstMatch
     }
 
     private func snap(_ name: String) {
@@ -27,11 +39,9 @@ final class LibraryKilterUITests: XCTestCase {
         a.name = name; a.lifetime = .keepAlways; add(a)
     }
 
-    func testBoardClimbShowsInYoursAndOpensInKilter() {
-        let chip = app.descendants(matching: .any).matching(identifier: "library.chip.climb").firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 6))
-        chip.tap()
-        let row = app.buttons.matching(NSPredicate(format: "identifier == 'library.yours.row' AND label CONTAINS 'Spicy Pringle'")).firstMatch
+    func testBoardClimbShowsInYoursAndOpensInKilter() async {
+        await launchToClimbing()
+        let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the board climb is in Yours")
         XCTAssertTrue(row.label.contains("KILTER"), row.label)
         XCTAssertTrue(row.label.contains("40°"), row.label)
@@ -48,11 +58,9 @@ final class LibraryKilterUITests: XCTestCase {
         missing.buttons["OK"].tap()
     }
 
-    func testHideABoardClimbThenBringItBack() {
-        let chip = app.descendants(matching: .any).matching(identifier: "library.chip.climb").firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 6))
-        chip.tap()
-        let row = app.buttons.matching(NSPredicate(format: "identifier == 'library.yours.row' AND label CONTAINS 'Spicy Pringle'")).firstMatch
+    func testHideABoardClimbThenBringItBack() async {
+        await launchToClimbing()
+        let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6))
         row.swipeLeft()
         app.buttons["Hide"].tap()
@@ -70,5 +78,24 @@ final class LibraryKilterUITests: XCTestCase {
         show.tap()   // "Hide hidden" — nothing is hidden any more, so the row stays
         XCTAssertTrue(row.waitForExistence(timeout: 4), "unhidden")
         XCTAssertFalse(app.buttons["library.showHidden"].exists, "nothing left hidden")
+    }
+
+    func testBoardClimbOpensOnItsPageWithItsClips() async {
+        await launchToClimbing(catalog: true)
+        let row = boardRow
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        // Straight onto the climb's page (no Kilter home in between), with every clip of it across sessions.
+        let clips = app.buttons["activity.pastClips"]
+        XCTAssertTrue(clips.waitForExistence(timeout: 8), "the climb's page offers its past clips")
+        XCTAssertTrue(clips.label.contains("2 past clips"), clips.label)
+        XCTAssertFalse(app.navigationBars["Kilter Board"].exists, "no detour through the Kilter module")
+        snap("05-climb-page")
+        clips.tap()
+        let summary = app.staticTexts["activity.clips.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 6))
+        XCTAssertTrue(summary.label.contains("2 clips · 2 sessions"), summary.label)
+        XCTAssertTrue(app.buttons["activity.clips.compare"].exists, "two videos → Compare")
+        snap("06-climb-clips")
     }
 }
