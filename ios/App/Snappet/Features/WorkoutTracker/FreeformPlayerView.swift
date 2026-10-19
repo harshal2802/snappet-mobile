@@ -216,13 +216,16 @@ struct FreeformPlayerView: View {
                 climbName: resolver.name(for: climb?.exerciseId ?? "", override: climb?.displayName),
                 climbType: target.type,
                 gradeLabel: climb?.climbGradeLabel,
-                attemptNumber: (climb?.sets.count ?? 0) + 1) { status, duration, clips in
+                attemptNumber: (climb?.sets.count ?? 0) + 1,
+                onCommit: { status, duration, clips in
                     // Capture the attempt's landing index before logAttempt appends, so recorded clips
                     // attach to exactly this attempt.
                     let setIndex = session.exercises.first { $0.id == target.exerciseID }?.sets.count ?? 0
                     logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
                     attachRecordedClips(clips, toExerciseID: target.exerciseID, setIndex: setIndex)
-                }
+                },
+                // Closed before STOP: the clips wait on the climb for its next logged attempt (prompt 191).
+                onLeave: { clips in attachRecordedClips(clips, toExerciseID: target.exerciseID, setIndex: nil) })
         }
         // "Time this set" FOCUS cover (Workout-Type Parity Phase 3): times a strength/generic set off the
         // wall clock and commits a SetLog carrying reps × weight AND the captured duration → the combined
@@ -231,7 +234,10 @@ struct FreeformPlayerView: View {
             let ex = session.exercises.first { $0.id == target.exerciseID }
             TimedSetCover(
                 exerciseName: resolver.name(for: ex?.exerciseId ?? "", override: ex?.displayName),
-                initialReps: target.reps, initialWeight: target.weight, initialUnit: target.unit) { reps, weight, unit, duration, clips in
+                initialReps: target.reps, initialWeight: target.weight, initialUnit: target.unit,
+                setNumber: (ex?.sets.count ?? 0) + 1,
+                // Closed without logging: the clips wait on the exercise for its next logged set (prompt 191).
+                onLeave: { clips in attachRecordedClips(clips, toExerciseID: target.exerciseID, setIndex: nil) }) { reps, weight, unit, duration, clips in
                     // Don't log a completely-empty effort (instant STOP with reps/weight zeroed) — that
                     // would render a meaningless "—" row. A recorded clip counts as content, so a set is
                     // logged to host it (in practice the timer ran while recording → duration > 0).
@@ -783,7 +789,12 @@ struct FreeformPlayerView: View {
                                                         set: { pageClips[ex.id] = $0 }),
                                  savingClip: $savingPageClip,
                                  idPrefix: "freeform.page",
-                                 attachNoun: QuickSessionPager.effortNoun(for: ex))
+                                 attachNoun: QuickSessionPager.effortNoun(for: ex),
+                                 // Tagged to the exercise, then claimed by its next logged set (prompt 191); a set
+                                 // logged meanwhile (the watch) ends the clip.
+                                 context: CameraContext(title: resolver.name(for: ex.exerciseId, override: ex.displayName),
+                                                        detail: "next \(QuickSessionPager.effortNoun(for: ex))",
+                                                        loggedCount: ex.sets.count))
                 ghostLedger(ex)
             }
             .padding(.horizontal, 16)
@@ -1703,6 +1714,7 @@ struct FreeformPlayerView: View {
         entry.completedAt = .now
         let ex = session.exercises[idx]
         session.exercises[idx].sets.append(entry)
+        claimFilmedClips(exerciseID: id)
         persist()
         recomputeClimbStats()
         pushLiveActivity()
@@ -1716,6 +1728,21 @@ struct FreeformPlayerView: View {
         // count-down rest in the command bar at the duration remembered for this exercise's context.
         // Never gates logging (the append already happened); off by default.
         if restAutoStart, QuickSessionPager.startsRestAfterLog(ex) { startRest(for: ex) }
+    }
+
+    /// The set just logged claims the clips filmed for it (prompt 191): ones recorded from this exercise's page, or
+    /// left behind by a timed set / attempt closed without logging, since the previous set (`ClipSetClaim`).
+    private func claimFilmedClips(exerciseID id: UUID) {
+        guard let ex = session.exercises.first(where: { $0.id == id }), !ex.sets.isEmpty else { return }
+        let pending = mediaRows(assignedTo: id).filter {
+            $0.assignedSetIndex == nil && $0.addedManually && $0.assignmentSource == .manual
+        }
+        guard !pending.isEmpty else { return }
+        let start = session.startedAt
+        let claimed = Set(ClipSetClaim.claims(pending.map { .init(id: $0.id, offsetSec: $0.offsetSec) },
+                                              completions: ex.sets.map { $0.completedAt?.timeIntervalSince(start) },
+                                              setIndex: ex.sets.count - 1))
+        for row in pending where claimed.contains(row.id) { row.assignedSetIndex = ex.sets.count - 1 }
     }
 
     // MARK: - Remembered rest timer (Phase 7)

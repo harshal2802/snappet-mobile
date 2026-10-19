@@ -32,6 +32,9 @@ struct TimedAttemptCover: View {
     /// The same commit funnel the inline outcome strip uses: `logAttempt(toExerciseID:status:durationSec:)`,
     /// plus any clips recorded during the attempt (the owner attaches them to the just-logged attempt).
     let onCommit: (_ status: KilterAscentStatus, _ durationSec: Double?, _ clips: [RecordedClip]) -> Void
+    /// Leaving before STOP (Peek canvas) hands any recorded clips up so they attach to the climb, then to the next
+    /// attempt logged (prompt 191) — they used to be dropped.
+    var onLeave: ([RecordedClip]) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -110,6 +113,7 @@ struct TimedAttemptCover: View {
     private var topRow: some View {
         HStack {
             Button {
+                if !isStopped && !recordedClips.isEmpty { onLeave(recordedClips); recordedClips = [] }
                 dismiss()
             } label: {
                 Label("Peek canvas", systemImage: "chevron.down")
@@ -216,21 +220,28 @@ struct TimedAttemptCover: View {
         } else {
             VStack(spacing: 12) {
                 RecordClipButton(recordedClips: $recordedClips, savingClip: $savingClip,
-                                 idPrefix: "timedAttempt", attachNoun: "attempt")
+                                 idPrefix: "timedAttempt", attachNoun: "attempt",
+                                 context: CameraContext(title: climbName, detail: "attempt \(attemptNumber)",
+                                                        logLabel: "Stop attempt"),
+                                 logAction: { stop() })
                 stopButton
             }
             .transition(.opacity)
         }
     }
 
+    /// STOP — capture the seconds and show the outcome grid (also the camera's "Stop attempt").
+    private func stop() {
+        guard !isStopped else { return }
+        let captured = vm.stop()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+            capturedSeconds = captured
+        }
+        Haptics.tap()
+    }
+
     private var stopButton: some View {
-        Button {
-            let captured = vm.stop()
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
-                capturedSeconds = captured
-            }
-            Haptics.tap()
-        } label: {
+        Button { stop() } label: {
             Text("STOP")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)

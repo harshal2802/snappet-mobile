@@ -201,3 +201,19 @@ enum CameraLogic {
         return String(format: "%02d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60)
     }
 }
+
+/// What the camera is filming for (prompt 191) — the set / attempt its clips will be tagged to, how to stop-and-log
+/// it from the camera, and how many sets are logged so far (a set logged elsewhere — the watch — stops the clip when
+/// "Stop when I log the set" is on).
+struct CameraContext: Equatable {
+    /// "Bench Press".
+    var title: String
+    /// "set 3", "attempt 2", "next set".
+    var detail: String?
+    /// The in-camera "Stop & log set" / "Stop attempt" — `nil` where logging isn't one tap (an exercise page).
+    var logLabel: String?
+    /// Sets logged on the target so far; `nil` when the host can't observe it.
+    var loggedCount: Int?
+
+    var label: String { [title, detail].compactMap { $0 }.joined(separator: " · ") }
+}

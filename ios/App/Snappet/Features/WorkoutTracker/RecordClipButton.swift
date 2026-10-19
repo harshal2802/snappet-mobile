@@ -28,20 +28,31 @@ struct RecordClipButton: View {
     /// a11y-id namespace + caption noun for the two covers: `("timedSet", "set")` / `("timedAttempt", "attempt")`.
     let idPrefix: String
     let attachNoun: String
+    /// What the camera is filming for (prompt 191) — its tag chip, stop-and-log label, stop-when-a-set-is-logged.
+    var context: CameraContext?
+    /// The host's "log it now" (STOP & LOG a timed set / STOP an attempt), run once the camera has closed and the
+    /// clip has been saved — so the clip is in `recordedClips` when the host commits.
+    var logAction: (() -> Void)?
 
     @State private var showingRecorder = false
     @State private var noticeText: String?
+    /// Tag captures to this set / attempt (the camera's chip → "Don't tag" saves to Photos only).
+    @State private var tagClips = true
+    @State private var pendingLog = false
 
     /// Stateless Photos writer (same `Sendable` service the clip-delete path uses).
     private let mediaLibrary = MediaLibraryService()
 
     /// Explicit init so the memberwise initializer isn't lowered to `private` by the `private` stored
     /// members (the codebase pattern for views with `@State private var` — `TimedSetCover`, `SetMediaStrip`).
-    init(recordedClips: Binding<[RecordedClip]>, savingClip: Binding<Bool>, idPrefix: String, attachNoun: String) {
+    init(recordedClips: Binding<[RecordedClip]>, savingClip: Binding<Bool>, idPrefix: String, attachNoun: String,
+         context: CameraContext? = nil, logAction: (() -> Void)? = nil) {
         self._recordedClips = recordedClips
         self._savingClip = savingClip
         self.idPrefix = idPrefix
         self.attachNoun = attachNoun
+        self.context = context
+        self.logAction = logAction
     }
 
     var body: some View {
@@ -72,11 +83,17 @@ struct RecordClipButton: View {
             .disabled(savingClip)
             .accessibilityIdentifier("\(idPrefix).record")
         }
-        .fullScreenCover(isPresented: $showingRecorder) {
+        .fullScreenCover(isPresented: $showingRecorder, onDismiss: runPendingLog) {
             SnappetCameraView(onVideo: { url, start in handleRecorded(url, startedAt: start) },
                               onPhoto: { data, at in handlePhoto(data, takenAt: at) },
-                              onClose: { showingRecorder = false })
+                              onClose: { showingRecorder = false },
+                              context: context, tagging: $tagClips,
+                              onStopAndLog: logAction == nil ? nil : {
+                                  pendingLog = true
+                                  showingRecorder = false
+                              })
         }
+        .onChange(of: savingClip) { _, saving in if !saving { runPendingLog() } }
     }
 
     /// Authorize then present the camera — or surface a notice when there's no camera (the Simulator) or
@@ -94,6 +111,7 @@ struct RecordClipButton: View {
                 noticeText = "Allow camera access in Settings to record a clip."
                 return
             }
+            tagClips = true
             showingRecorder = true
         }
     }
@@ -106,13 +124,20 @@ struct RecordClipButton: View {
             defer { savingClip = false }
             do {
                 let clip = try await mediaLibrary.saveRecording(at: url, capturedAt: startedAt)
-                recordedClips.append(clip)
-                noticeText = nil
+                if tagClips { recordedClips.append(clip) }
+                noticeText = tagClips ? nil : "Saved to Photos — not tagged."
                 Haptics.tap()
             } catch {
                 noticeText = "Couldn't save the clip — allow Photos access in Settings to keep recordings."
             }
         }
+    }
+
+    /// The camera's "Stop & log" — once it's closed and nothing is still saving, so the host commits with the clip.
+    private func runPendingLog() {
+        guard pendingLog, !showingRecorder, !savingClip else { return }
+        pendingLog = false
+        logAction?()
     }
 
     /// A still from the camera — saved and queued like a clip (it attaches to the set as a photo).
@@ -122,8 +147,9 @@ struct RecordClipButton: View {
         Task {
             defer { savingClip = false }
             do {
-                recordedClips.append(try await mediaLibrary.savePhoto(data, takenAt: takenAt))
-                noticeText = nil
+                let photo = try await mediaLibrary.savePhoto(data, takenAt: takenAt)
+                if tagClips { recordedClips.append(photo) }
+                noticeText = tagClips ? nil : "Saved to Photos — not tagged."
             } catch {
                 noticeText = "Couldn't save the photo — allow Photos access in Settings."
             }

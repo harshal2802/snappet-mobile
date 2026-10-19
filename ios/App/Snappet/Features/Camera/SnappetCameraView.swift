@@ -10,6 +10,14 @@ struct SnappetCameraView: View {
     let onVideo: (URL, Date) -> Void
     let onPhoto: (Data, Date) -> Void
     let onClose: () -> Void
+    /// What it's filming for (prompt 191): the tag chip, the in-camera stop-and-log, stop-when-a-set-is-logged.
+    var context: CameraContext? = nil
+    /// Whether captures get tagged to `context` (tap the chip → "Don't tag": Photos only).
+    var tagging: Binding<Bool>? = nil
+    /// Stop the clip, close the camera and log the set / stop the attempt — one tap.
+    var onStopAndLog: (() -> Void)? = nil
+
+    @Environment(AppModel.self) private var app
 
     @State private var camera = CameraController()
     @State private var settings = CameraSettings.load(from: UserDefaults.standard.data(forKey: CameraSettings.storageKey))
@@ -22,6 +30,8 @@ struct SnappetCameraView: View {
     @State private var pinchBase: Double?
     @State private var previewLayer = PreviewLayerBox()
     @State private var idleTimerWas = false
+    /// "Stop & log" is waiting for the clip to finish before closing.
+    @State private var pendingLog = false
 
     private struct FocusMark: Equatable {
         let point: CGPoint
@@ -37,6 +47,22 @@ struct SnappetCameraView: View {
             ZStack {
                 preview
                 if settings.grid { GridOverlay().allowsHitTesting(false).accessibilityIdentifier("camera.grid") }
+                VStack {
+                    HStack(alignment: .top) {
+                        if let context { tagChip(context) }
+                        Spacer()
+                        if let bpm = app.liveWorkout.latestHR {
+                            Label("\(Int(bpm))", systemImage: "heart.fill")
+                                .font(.caption.weight(.bold)).monospacedDigit()
+                                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.48))
+                                .padding(.horizontal, 9).padding(.vertical, 5)
+                                .background(.black.opacity(0.55), in: Capsule())
+                                .accessibilityIdentifier("camera.hr")
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(10)
                 if let mark = focusMark { focusSquare(mark) }
                 VStack {
                     Spacer()
@@ -56,7 +82,11 @@ struct SnappetCameraView: View {
         .statusBarHidden()
         .preferredColorScheme(.dark)
         .onAppear {
-            camera.onMovie = { url, start in captured += 1; onVideo(url, start) }
+            camera.onMovie = { url, start in
+                captured += 1
+                onVideo(url, start)
+                if pendingLog { finishStopAndLog() }
+            }
             camera.onPhoto = { data, at in captured += 1; onPhoto(data, at) }
             camera.start(with: settings)
             settings = CameraLogic.resolve(settings, camera.capabilities)
@@ -68,6 +98,10 @@ struct SnappetCameraView: View {
             countdownTask?.cancel()
             camera.stop()
             UIApplication.shared.isIdleTimerDisabled = idleTimerWas
+        }
+        // A set logged elsewhere (the watch) ends the clip, with "Stop when I log the set" on.
+        .onChange(of: context?.loggedCount) { old, new in
+            if let old, let new, new > old, settings.stopOnLog, camera.isRecording { camera.stopRecording() }
         }
         .animation(.easeOut(duration: 0.2), value: showTray)
         .animation(.easeOut(duration: 0.2), value: camera.isRecording)
@@ -262,6 +296,12 @@ struct SnappetCameraView: View {
                     }
                 }
             }
+            if context != nil && settings.mode.recordsVideo {
+                trayRow("Stop when I log the set") {
+                    Toggle("", isOn: Binding(get: { settings.stopOnLog }, set: { var s = settings; s.stopOnLog = $0; update(s) }))
+                        .labelsHidden().accessibilityIdentifier("camera.tray.stopOnLog")
+                }
+            }
             trayRow("Grid") {
                 Toggle("", isOn: Binding(get: { settings.grid }, set: { var s = settings; s.grid = $0; update(s) }))
                     .labelsHidden().accessibilityIdentifier("camera.tray.grid")
@@ -341,11 +381,22 @@ struct SnappetCameraView: View {
             }
             .padding(.horizontal, 32)
 
-            Button("Done") { close() }
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                .opacity(camera.isRecording ? 0 : 1)
-                .disabled(camera.isRecording)
-                .accessibilityIdentifier("camera.done")
+            HStack(spacing: 18) {
+                Button("Done") { close() }
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .opacity(camera.isRecording ? 0 : 1)
+                    .disabled(camera.isRecording)
+                    .accessibilityIdentifier("camera.done")
+                if let label = context?.logLabel, settings.stopOnLog, onStopAndLog != nil, settings.mode.recordsVideo {
+                    Button { stopAndLog() } label: {
+                        Text(label).font(.subheadline.weight(.bold)).foregroundStyle(.black)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(SnappetColor.workout, in: Capsule())
+                    }
+                    .disabled(pendingLog)
+                    .accessibilityIdentifier("camera.stopAndLog")
+                }
+            }
         }
         .padding(.top, 14).padding(.bottom, 10)
         .background(Color.black)
@@ -461,6 +512,44 @@ struct SnappetCameraView: View {
         camera.capturePhoto()
         withAnimation(.easeOut(duration: 0.08)) { flash = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { withAnimation { flash = false } }
+    }
+
+    /// The tag chip (prompt 191): what these captures attach to — tap to switch to "Not tagged" (Photos only) and back.
+    private func tagChip(_ context: CameraContext) -> some View {
+        let on = tagging?.wrappedValue ?? true
+        return Button { tagging?.wrappedValue.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: on ? "tag.fill" : "tag.slash")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(on ? SnappetColor.workout : .gray)
+                Text(on ? context.label : "Not tagged · Photos only").lineLimit(1)
+            }
+            .font(.caption.weight(.semibold)).foregroundStyle(.white)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(.black.opacity(0.55), in: Capsule())
+        }
+        .disabled(tagging == nil || camera.isRecording)
+        .accessibilityIdentifier("camera.tag")
+        .accessibilityLabel(on ? "Tagged to \(context.label)" : "Not tagged")
+        .accessibilityHint("Double-tap to \(on ? "save to Photos only" : "tag to \(context.label)")")
+    }
+
+    /// End the clip (waiting for it to land), close, and let the host log the set / stop the attempt.
+    private func stopAndLog() {
+        cancelCountdown()
+        pendingLog = true
+        if camera.isRecording {
+            camera.stopRecording()
+            if camera.fake { finishStopAndLog() }   // the stand-in records nothing to wait for
+        } else {
+            finishStopAndLog()
+        }
+    }
+
+    private func finishStopAndLog() {
+        pendingLog = false
+        camera.stop()
+        onStopAndLog?()
     }
 
     private func close() {
