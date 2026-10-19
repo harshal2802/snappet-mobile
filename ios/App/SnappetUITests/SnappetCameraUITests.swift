@@ -108,4 +108,35 @@ import XCTest
         XCTAssertTrue(app.buttons["camera.chip.resolution"].waitForExistence(timeout: 6))
         XCTAssertEqual(app.buttons["camera.chip.resolution"].label, "4K", "opens with the last-used settings")
     }
+
+    func testStopAndLogFromTheCameraAndTheTagChip() {
+        openCameraFromATimedSet()
+        // It knows what it's filming for.
+        let tag = app.buttons["camera.tag"]
+        XCTAssertTrue(tag.waitForExistence(timeout: 4))
+        XCTAssertTrue(tag.label.contains("set 1"), tag.label)
+        // Tap → Photos only; tap again → tagged.
+        tag.tap()
+        XCTAssertTrue(app.buttons["camera.tag"].label.contains("Not tagged"), app.buttons["camera.tag"].label)
+        tag.tap()
+        XCTAssertTrue(app.buttons["camera.tag"].label.contains("set 1"), app.buttons["camera.tag"].label)
+        // The tray has the Snappet toggle.
+        app.buttons["camera.more"].tap()
+        XCTAssertTrue(app.switches["camera.tray.stopOnLog"].waitForExistence(timeout: 3))
+        app.buttons["camera.more"].tap()
+        snap("06-tagged")
+
+        // Record, then Stop & log set: the clip ends, the camera closes and the set is logged — one tap.
+        app.buttons["camera.shutter"].tap()
+        XCTAssertTrue(app.staticTexts["camera.timer"].waitForExistence(timeout: 4))
+        let stopAndLog = app.buttons["camera.stopAndLog"]
+        XCTAssertTrue(stopAndLog.exists)
+        XCTAssertEqual(stopAndLog.label, "Stop & log set")
+        sleep(1)
+        stopAndLog.tap()
+        XCTAssertTrue(app.staticTexts["timedSet.timer"].waitForNonExistence(timeout: 6), "the timed set was logged and closed")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch.waitForExistence(timeout: 6),
+                      "the logged set")
+        snap("07-logged")
+    }
 }

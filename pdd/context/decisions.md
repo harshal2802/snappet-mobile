@@ -10030,3 +10030,14 @@ stripes, and the panel read as an opaque slab.
   lets XCUITest drive every control on a simulator that has no camera.
 - Apple doesn't expose Cinematic mode, Action mode or Apple Log to apps; "Enhanced" stabilization =
   cinematic-extended where the format supports it.
+
+## 2026-10-19 — The camera knows the set (prompt 191)
+
+- A clip filmed before its set is logged (from the exercise page, or left by a closed timed cover) attaches to the
+  exercise and is CLAIMED by the next set logged when it was filmed since the previous set — time decides, not the
+  page you happened to be on. Only manual, set-less clips of that exercise are candidates, so auto-placed media and
+  clips already on a set never move.
+- "Stop & log" lives in the camera so filming a set is one tap to finish; it waits for the Photos save before the
+  cover commits (the same race the cover's STOP guards with `savingClip`).
+- The tag chip toggles rather than opening a menu: one tap with chalky hands, and a menu inside the camera's
+  full-screen cover wasn't reliably hittable.

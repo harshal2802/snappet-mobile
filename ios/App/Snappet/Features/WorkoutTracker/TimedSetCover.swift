@@ -22,6 +22,11 @@ struct TimedSetCover: View {
     let initialReps: Int
     let initialWeight: Double
     let initialUnit: WeightUnit
+    /// 1-based number of the set being timed — the camera's tag chip ("Bench Press · set 3"; prompt 191).
+    var setNumber: Int?
+    /// Leaving without logging (Peek canvas) hands any recorded clips up so they attach to the exercise, then to the
+    /// next set logged (prompt 191) — they used to be dropped.
+    var onLeave: ([RecordedClip]) -> Void = { _ in }
     /// Commits the timed set: reps/weight (nil when zeroed → bodyweight / time-only) + the captured seconds
     /// + any clips recorded during the set (the owner attaches them to the just-logged set).
     let onCommit: (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double,
@@ -46,12 +51,15 @@ struct TimedSetCover: View {
     @State private var savingClip = false
 
     init(exerciseName: String, initialReps: Int, initialWeight: Double, initialUnit: WeightUnit,
+         setNumber: Int? = nil, onLeave: @escaping ([RecordedClip]) -> Void = { _ in },
          onCommit: @escaping (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double,
                               _ clips: [RecordedClip]) -> Void) {
         self.exerciseName = exerciseName
         self.initialReps = initialReps
         self.initialWeight = initialWeight
         self.initialUnit = initialUnit
+        self.setNumber = setNumber
+        self.onLeave = onLeave
         self.onCommit = onCommit
         _reps = State(initialValue: max(0, initialReps))
         _weight = State(initialValue: max(0, initialWeight))
@@ -72,7 +80,10 @@ struct TimedSetCover: View {
                 if let bpm = app.liveWorkout.latestHR { hrChip(bpm) }
                 Spacer()
                 RecordClipButton(recordedClips: $recordedClips, savingClip: $savingClip,
-                                 idPrefix: "timedSet", attachNoun: "set")
+                                 idPrefix: "timedSet", attachNoun: "set",
+                                 context: CameraContext(title: exerciseName, detail: setNumber.map { "set \($0)" },
+                                                        logLabel: "Stop & log set"),
+                                 logAction: { stopAndLog() })
                 stopButton
             }
             .padding(.horizontal, 20)
@@ -101,7 +112,10 @@ struct TimedSetCover: View {
 
     private var topRow: some View {
         HStack {
-            Button { dismiss() } label: {
+            Button {
+                if !recordedClips.isEmpty { onLeave(recordedClips); recordedClips = [] }
+                dismiss()
+            } label: {
                 Label("Peek canvas", systemImage: "chevron.down")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
@@ -190,14 +204,19 @@ struct TimedSetCover: View {
         .accessibilityIdentifier("timedSet.hr")
     }
 
+    /// Capture the elapsed seconds, commit the set (reps/weight + duration + clips), dismiss — STOP & LOG, or the
+    /// camera's "Stop & log set".
+    private func stopAndLog() {
+        let captured = vm.stop()
+        Haptics.tap()
+        onCommit(reps > 0 ? reps : nil, weight > 0 ? weight : nil, unitSel, captured, recordedClips)
+        recordedClips = []
+        dismiss()
+    }
+
     /// STOP & LOG: capture the elapsed seconds, commit the set (reps/weight + duration), dismiss.
     private var stopButton: some View {
-        Button {
-            let captured = vm.stop()
-            Haptics.tap()
-            onCommit(reps > 0 ? reps : nil, weight > 0 ? weight : nil, unitSel, captured, recordedClips)
-            dismiss()
-        } label: {
+        Button { stopAndLog() } label: {
             Text("STOP & LOG")
                 .font(.title3.weight(.bold)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 64)
