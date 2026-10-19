@@ -63,10 +63,7 @@ enum SetMeasure {
             if let w = set.actualWeight, w > 0 {
                 // Entered in the display unit → show exactly what was typed (67.5, not 68; prompt 146);
                 // converted from the other unit → the whole-number conversion as before.
-                let shown = (set.weightUnit ?? .kg) == unit
-                    ? formatWeight((w * 100).rounded() / 100)
-                    : WorkoutMath.formatWeight(kg: WorkoutMath.toKg(w, set.weightUnit), unit: unit)
-                base = "\(shown) \(unit.display) × \(set.actualReps ?? 0)"
+                base = "\(WorkoutMath.setWeight(w, enteredIn: set.weightUnit, unit: unit)) × \(set.actualReps ?? 0)"
             } else {
                 base = set.actualReps.map { "\($0) reps" } ?? "done"
             }

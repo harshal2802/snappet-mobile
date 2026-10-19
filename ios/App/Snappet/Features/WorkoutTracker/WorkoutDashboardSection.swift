@@ -335,7 +335,7 @@ struct WorkoutDashboardSection: View {
 
     private func prText(_ top: WorkoutMath.TopSet) -> String {
         top.bestKg > 0
-            ? "\(WorkoutMath.formatWeight(kg: top.bestKg, unit: unit)) \(unit.display) × \(top.bestReps)"
+            ? "\(WorkoutMath.setWeight(kg: top.bestKg, unit: unit)) × \(top.bestReps)"
             : "\(top.bestReps) reps"
     }
 

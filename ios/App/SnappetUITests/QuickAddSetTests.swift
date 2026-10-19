@@ -108,4 +108,22 @@ final class QuickAddSetTests: XCTestCase {
         let row = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH '× 71.3 kg'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the logged set keeps the typed weight exactly")
     }
+
+    /// The device bug (2026-10-14, "edited weight isn't kept when I log — it seems to round"): type a weight and tap
+    /// Log set straight away, keyboard still up, without the field's ✓ (prompt 192).
+    func testTypedWeightIsKeptWhenLoggingWithoutDone() {
+        openFreeformPlayer()
+        addLiftingExercise()
+
+        let weight = app.buttons["freeform.quickWeight"]
+        XCTAssertTrue(weight.waitForExistence(timeout: 6))
+        weight.tap()
+        let field = app.textFields["freeform.quickWeight.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 4))
+        field.typeText("67.5")
+        app.buttons["freeform.quickLog"].tap()
+
+        let row = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH '× 67.5 kg'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "the logged set keeps the typed 67.5")
+    }
 }
