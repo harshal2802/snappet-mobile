@@ -17,6 +17,21 @@ enum WorkoutMath {
         let value = (kgToUnit(kg, unit)).rounded()
         return value.formatted(.number.grouping(.automatic))
     }
+    /// ONE set's weight as the lifter entered it (prompt 146's rule, applied everywhere by prompt 192): exact (to
+    /// 0.01) in the unit it was entered in — 67.5 kg stays "67.5 kg", never "68 kg" — and whole only after a kg↔lb
+    /// conversion. `formatWeight(kg:)` (whole numbers) is for totals like volume.
+    static func setWeight(_ weight: Double, enteredIn: WeightUnit?, unit: WeightUnit) -> String {
+        let shown = (enteredIn ?? .kg) == unit
+            ? SetMeasure.formatWeight((weight * 100).rounded() / 100)
+            : formatWeight(kg: toKg(weight, enteredIn), unit: unit)
+        return "\(shown) \(unit.display)"
+    }
+
+    /// A set weight held in kg (bests, records): exact when shown in kg.
+    static func setWeight(kg: Double, unit: WeightUnit) -> String {
+        setWeight(kg, enteredIn: .kg, unit: unit)
+    }
+
     static func formatVolume(kg: Double, unit: WeightUnit) -> String {
         "\(formatWeight(kg: kg, unit: unit)) \(unit.display)"
     }

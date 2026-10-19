@@ -48,7 +48,7 @@ enum RecentSessions {
             var facts = [WorkoutMath.formatVolume(kg: WorkoutMath.sessionVolumeKg(s), unit: unit),
                          "\(s.completedSetCount) sets"]
             if let top = topSet(s) {
-                facts.append("top \(WorkoutMath.formatWeight(kg: top.kg, unit: unit)) \(unit.display) × \(top.reps)")
+                facts.append("top \(WorkoutMath.setWeight(kg: top.kg, unit: unit)) × \(top.reps)")
             }
             return facts
         case .run:

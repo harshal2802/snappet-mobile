@@ -181,9 +181,7 @@ struct ActivityDashboard: Equatable, Sendable {
     /// A logged weight as typed: "67.5 kg" stays 67.5 in its own unit (prompt 146's rule), whole numbers
     /// after a kg↔lb conversion.
     static func weightLabel(kg: Double, unit: WeightUnit) -> String {
-        let shown = unit == .kg ? SetMeasure.formatWeight((kg * 100).rounded() / 100)
-                                : WorkoutMath.formatWeight(kg: kg, unit: unit)
-        return "\(shown) \(unit.display)"
+        WorkoutMath.setWeight(kg: kg, unit: unit)
     }
 
     // MARK: - KPIs / records / frequency

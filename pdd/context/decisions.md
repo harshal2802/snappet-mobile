@@ -10041,3 +10041,11 @@ stripes, and the panel read as an opaque slab.
   cover commits (the same race the cover's STOP guards with `savingClip`).
 - The tag chip toggles rather than opening a menu: one tap with chalky hands, and a menu inside the camera's
   full-screen cover wasn't reliably hittable.
+
+## 2026-10-19 — A typed weight is kept (prompt 192)
+
+- An editable value that feeds an action must update its binding as you type, not on focus loss: the action button
+  runs before the blur, and here the view that would have committed is destroyed by the log itself. The old UI
+  test passed only because it tapped ✓ first — test the path users take (straight to Log).
+- One set's weight has ONE formatter (`WorkoutMath.setWeight`); `formatWeight(kg:)` is for totals. The rounding rule
+  had been fixed in two places (146 rows, 181 dashboard) and survived in five others.

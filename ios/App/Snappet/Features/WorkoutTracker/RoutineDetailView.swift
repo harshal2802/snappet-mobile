@@ -221,7 +221,7 @@ struct RoutineBlockRow: View {
         case .strength:
             var s = "\(item.sets) × \(item.reps.isEmpty ? "—" : item.reps)"
             if let weight = item.weight {
-                s += " · \(WorkoutMath.formatWeight(kg: WorkoutMath.toKg(weight, item.weightUnit), unit: unit)) \(unit.display)"
+                s += " · \(WorkoutMath.setWeight(weight, enteredIn: item.weightUnit, unit: unit))"
             }
             return s
         case .climb:

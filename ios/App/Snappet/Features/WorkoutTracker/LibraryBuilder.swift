@@ -154,7 +154,7 @@ enum LibraryRecords {
         var out: [Record] = []
         if let top = WorkoutMath.topSet(history: history, exerciseId: exerciseId) {
             let v = top.bestKg > 0
-                ? "\(WorkoutMath.formatWeight(kg: top.bestKg, unit: unit)) \(unit.display) × \(top.bestReps)"
+                ? "\(WorkoutMath.setWeight(kg: top.bestKg, unit: unit)) × \(top.bestReps)"
                 : "\(top.bestReps) reps"
             out.append(Record(value: v, label: "Best set"))
         }

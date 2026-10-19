@@ -57,6 +57,12 @@ struct TypeableWeightValue: View {
                 .accessibilityIdentifier(id)
             }
         }
+        // Every keystroke the parser accepts updates the weight at once (prompt 192): tapping Log set with the field
+        // still focused used to log the OLD value — the hero re-seeds after a log, destroying the field before its
+        // focus-loss commit ran, so the typed 67.5 was lost and the set logged at its previous weight.
+        .onChange(of: text) { _, new in
+            if editing, let value = WeightEntry.parse(new) { weight = value }
+        }
         .onChange(of: focused) { _, isFocused in
             if !isFocused, editing { commit() }
         }
