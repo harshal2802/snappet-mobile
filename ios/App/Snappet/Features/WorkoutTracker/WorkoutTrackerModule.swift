@@ -493,15 +493,7 @@ struct WorkoutHomeView: View {
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
-                               openActivity: { route in
-                                   // A board climb opens its Kilter page right here (prompt 188); the Library has
-                                   // already checked it's in this device's catalog and adopted its angle.
-                                   if LibraryCatalog.isKilter(route.key) {
-                                       router.push(LibraryKilterRoute(uuid: route.key.nameKey))
-                                   } else {
-                                       router.push(route)
-                                   }
-                               })
+                               openActivity: { router.push($0) })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },

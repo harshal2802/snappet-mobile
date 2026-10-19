@@ -100,3 +100,79 @@ enum KilterClipIndex {
         .sorted { $0.date > $1.date }
     }
 }
+
+/// **A board climb as activity history** (prompt 189): turns one Kilter climb's logs into transient (never inserted)
+/// `WorkoutSession`s — one per board session, holding one climb entity (`exerciseId` "kilter:<uuid>", V grade,
+/// "Kilter Board", the angle as its wall) whose sets are the logged ascents (outcome + attempts) — with the board
+/// session's heart rate, and the climb's clips re-filed to that entity. So the Activity page's Progress / Clips /
+/// About (dashboard, records, effort, clips, history) work for a board climb exactly as for a gym climb, unchanged.
+enum KilterActivityHistory {
+    static let entityPrefix = "kilter:"
+
+    struct SessionInput: Sendable {
+        let id: UUID
+        let startedAt: Date
+        let endedAt: Date?
+        let title: String?
+        let hrSeries: [HRPoint]
+        let maxHR: Double?
+        let restHR: Double?
+    }
+
+    /// The climb's uuid when `ex` is a board-climb entity built here.
+    static func climbUUID(_ ex: SessionExercise) -> String? {
+        ex.exerciseId.hasPrefix(entityPrefix) ? String(ex.exerciseId.dropFirst(entityPrefix.count)) : nil
+    }
+
+    static func build(climbUUID: String, logs: [LibraryCatalog.KilterInput], sessions: [SessionInput],
+                      media: [ActivityMediaInput]) -> (history: [WorkoutSession], media: [ActivityMediaInput]) {
+        let mine = logs.filter { $0.uuid == climbUUID }.sorted { $0.date < $1.date }
+        let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // A log outside a board session (ad-hoc) groups with the others of its active day.
+        var adHoc: [Date: UUID] = [:]
+        func sessionID(_ e: LibraryCatalog.KilterInput) -> UUID {
+            if let id = e.sessionId, byID[id] != nil { return id }
+            let day = LibraryCatalog.activeDay(e.date)
+            if let id = adHoc[day] { return id }
+            let id = UUID(); adHoc[day] = id
+            return id
+        }
+        let grouped = Dictionary(grouping: mine, by: sessionID)
+        var entityBySession: [UUID: UUID] = [:]
+        let history: [WorkoutSession] = grouped.map { sid, entries in
+            let latest = entries.last!
+            var ex = SessionExercise(exerciseId: entityPrefix + climbUUID, targetSets: 0, targetReps: "",
+                                     targetRestSeconds: 0, sets: [], displayName: latest.name,
+                                     kindRaw: SetKind.climbAttempt.rawValue)
+            ex.climbTypeRaw = ClimbType.boulder.rawValue
+            ex.climbGradeLabel = LibraryCatalog.kilterVGrade(latest.gradeLabel)
+            ex.climbGradeScaleRaw = GradeScale.vScale.rawValue
+            ex.gym = "Kilter Board"
+            ex.wall = "\(latest.angle)°"
+            ex.sets = entries.map { e in
+                var s = SetLog()
+                s.climbGradeLabel = LibraryCatalog.kilterVGrade(e.gradeLabel)
+                s.climbStatusRaw = e.status.rawValue
+                s.climbAttempts = max(1, e.attempts)
+                s.completedAt = e.date
+                return s
+            }
+            entityBySession[sid] = ex.id
+            let board = byID[sid]
+            let start = board?.startedAt ?? entries.first!.date
+            return WorkoutSession(id: sid, routineName: board?.title ?? "Kilter session", startedAt: start,
+                                  completedAt: board?.endedAt ?? entries.last!.date.addingTimeInterval(60),
+                                  exercises: [ex], hrSeries: board?.hrSeries ?? [], maxHR: board?.maxHR,
+                                  restHR: board?.restHR)
+        }
+        .sorted { $0.startedAt < $1.startedAt }
+        let refiled = media.compactMap { m -> ActivityMediaInput? in
+            guard m.assignedClimbUUID == climbUUID, let entity = entityBySession[m.sessionID] else { return nil }
+            var m = m
+            m.assignedExerciseID = entity
+            m.assignedSetIndex = nil
+            return m
+        }
+        return (history, refiled)
+    }
+}

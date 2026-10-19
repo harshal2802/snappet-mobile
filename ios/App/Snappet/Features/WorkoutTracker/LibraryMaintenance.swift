@@ -37,6 +37,7 @@ enum LibraryMaintenance {
     /// is the festival's) and not whole-discipline overviews.
     static func canRename(_ key: ActivityKey) -> Bool {
         key.disciplineScope == nil && key.exerciseId != ActivityIdentity.festivalExerciseId
+            && !LibraryCatalog.isKilter(key)   // a board climb's name is the Kilter catalog's (prompt 189)
     }
 
     /// Merge folds named activities together — climbs and ad-hoc entities. A catalog lift's identity is its catalog

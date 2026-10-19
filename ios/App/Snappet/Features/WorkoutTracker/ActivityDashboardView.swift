@@ -49,6 +49,14 @@ struct ActivityDashboardView: View {
     @State private var revision = 0
     @State private var tabChosen = false
     @Query private var entries: [LibraryEntry]
+    /// A Kilter board climb's logs as activity history (prompt 189) — `nil` for every other activity.
+    @State private var boardHistory: [WorkoutSession]?
+    /// A board climb the "Open on the board" button found missing from this phone's Kilter catalog.
+    @State private var boardClimbMissing = false
+    @Query private var kilterCreated: [KilterCreatedClimb]
+    private var isBoardClimb: Bool { LibraryCatalog.isKilter(key) }
+    /// What every tab reads: your sessions, or — for a board climb — its board sessions.
+    private var source: [WorkoutSession] { boardHistory ?? history }
 
     private struct MergeRequest: Identifiable {
         let id = UUID()
@@ -104,12 +112,13 @@ struct ActivityDashboardView: View {
             switch tab {
             case .progress: progressTab
             case .clips:
-                ActivityClipsContent(target: ActivityClipsTarget(key: key, title: title), history: history, unit: unit)
+                ActivityClipsContent(target: ActivityClipsTarget(key: key, title: title), history: source, unit: unit,
+                                     kilterClimbUUID: isBoardClimb ? key.nameKey : nil)
             case .about:
                 if let ex = catalogExercise {
                     ExerciseDetailView(exercise: ex, history: history, unit: unit)
                 } else {
-                    ActivityAboutView(key: key, title: title, history: history, unit: unit, template: template)
+                    ActivityAboutView(key: key, title: title, history: source, unit: unit, template: template)
                 }
             }
         }
@@ -129,11 +138,16 @@ struct ActivityDashboardView: View {
             LibraryMergeSheet(target: req.target, candidates: req.candidates) { merge($0) }
         }
         .task(id: "\(key.exerciseId)|\(key.nameKey)|\(revision)") {
-            let media = ActivityMediaStore.snapshot(context: context)
-            dashboard = ActivityDashboard.make(key: key, history: history, media: media, unit: unit)
-            groups = ActivityMediaIndex.groups(for: key, history: history, media: media, unit: unit,
+            var media = ActivityMediaStore.snapshot(context: context)
+            if isBoardClimb {
+                let board = loadBoardHistory(media: media)
+                boardHistory = board.history
+                media = board.media
+            }
+            dashboard = ActivityDashboard.make(key: key, history: source, media: media, unit: unit)
+            groups = ActivityMediaIndex.groups(for: key, history: source, media: media, unit: unit,
                                                distanceUnit: unit == .lb ? .mi : .km)
-            effort = ActivityInsights.effort(key: key, history: history, unit: unit)
+            effort = ActivityInsights.effort(key: key, history: source, unit: unit)
             if key.disciplineScope == .climb {
                 let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
                                                unit: unit, title: LibraryCatalog.fallbackTitle)
@@ -146,7 +160,7 @@ struct ActivityDashboardView: View {
         }
         .fullScreenCover(item: $viewing) { req in
             ActivityClipViewer(clips: req.clips, startIndex: req.start,
-                               sessions: ClipHRSource.map(history))
+                               sessions: ClipHRSource.map(source))
         }
         .sheet(isPresented: $comparing) { ActivityComparePicker(clips: videos) }
         .navigationDestination(item: $reelScope) { scope in WeeklyReelHostView(scope: scope) }
@@ -179,7 +193,56 @@ struct ActivityDashboardView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if tab != .clips && ActivityLauncher.canLaunch(key) { actionBar }
+            if tab != .clips && isBoardClimb { boardBar }
         }
+    }
+
+    /// A board climb is lit and logged on the board (prompt 189): its Kilter page, straight from here.
+    private var boardBar: some View {
+        Button { openOnBoard() } label: {
+            Label("Open on the board", systemImage: "square.grid.3x3.fill").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent).tint(SnappetColor.kilter).controlSize(.large)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .accessibilityIdentifier("activity.openOnBoard")
+        .alert("Climb not in your catalog", isPresented: $boardClimbMissing) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This board climb isn't in the Kilter catalog on this phone — it may have been logged on another "
+                 + "board. Get a catalog that includes it in the Kilter Board app.")
+        }
+    }
+
+    /// Same installed check + angle adoption as a shared Kilter link; the climb's page is pushed right here.
+    private func openOnBoard() {
+        let uuid = key.nameKey
+        let installed = KilterCatalog.shared.climb(uuid) != nil || kilterCreated.contains { $0.uuid == uuid }
+        let lastAngle = boardHistory?.last?.exercises.first?.wall.flatMap { Int($0.dropLast()) }
+        switch KilterDeepLinkRouting.destination(for: KilterClimbLink(uuid: uuid, angle: lastAngle),
+                                                 climbInstalled: installed,
+                                                 availableAngles: KilterCatalog.shared.angles()) {
+        case .openClimb(_, let adoptAngle):
+            if let adoptAngle { UserDefaults.standard.set(adoptAngle, forKey: "kilter.angle") }
+            router.push(LibraryKilterRoute(uuid: uuid))
+        case .explainMissing:
+            boardClimbMissing = true
+        }
+    }
+
+    /// The board climb's logs + sessions → activity history (prompt 189), with its clips re-filed to it.
+    private func loadBoardHistory(media: [ActivityMediaInput]) -> (history: [WorkoutSession], media: [ActivityMediaInput]) {
+        let uuid = key.nameKey
+        let logs = (try? context.fetch(FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.climbUUID == uuid }))) ?? []
+        let ids = Set(logs.compactMap(\.sessionId))
+        let sessions = ((try? context.fetch(FetchDescriptor<KilterSession>())) ?? []).filter { ids.contains($0.id) }
+        return KilterActivityHistory.build(
+            climbUUID: uuid,
+            logs: logs.map { .init(uuid: $0.climbUUID, name: $0.climbName, angle: $0.angle, gradeLabel: $0.gradeLabel,
+                                   status: $0.status, attempts: $0.attempts, date: $0.date, sessionId: $0.sessionId) },
+            sessions: sessions.map { .init(id: $0.id, startedAt: $0.startedAt, endedAt: $0.endedAt, title: $0.title,
+                                           hrSeries: $0.hrSeries, maxHR: $0.maxHR, restHR: $0.restHR) },
+            media: media)
     }
 
     private var actionBar: some View {
@@ -378,7 +441,7 @@ struct ActivityDashboardView: View {
                     if !allClips.isEmpty { clipsCard }
                     if !climbs.isEmpty { climbsCard }
                     recordsCard(d)
-                    if d.discipline == .climb, key.disciplineScope == nil {
+                    if d.discipline == .climb, key.disciplineScope == nil, !isBoardClimb {
                         NavigationLink(value: ActivityRoute(key: .discipline(.climb), title: "Climbing")) {
                             Label("All climbing", systemImage: "figure.climbing").font(.subheadline.weight(.semibold))
                         }

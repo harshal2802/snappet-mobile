@@ -74,6 +74,10 @@ struct ActivityIdentity: Sendable {
     /// `loggedAt`: into the latest set of its base when that set is still within the reset window, else a new one.
     func key(for ex: SessionExercise, loggedAt: Date = .now) -> ActivityKey? {
         if ex.exerciseId == Self.festivalExerciseId { return festivalKeys[ex.id] }
+        // A board climb seen as activity history (prompt 189) is its Kilter climb, whatever its angle or date.
+        if let uuid = KilterActivityHistory.climbUUID(ex) {
+            return ActivityKey(exerciseId: LibraryCatalog.kilterExerciseId, nameKey: uuid)
+        }
         guard ex.discipline == .climb else { return ActivityKey.plain(ex) }
         if let known = climbKeys[ex.id] { return known }
         guard let base = Self.climbBase(ex) else { return nil }

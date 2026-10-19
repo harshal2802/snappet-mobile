@@ -96,4 +96,47 @@ final class LibraryKilterTests: XCTestCase {
         XCTAssertEqual(groups[1].clips[0].setSummary, "V5 · Attempt")
         XCTAssertNotNil(groups[1].clips[0].avgBPM, "the board session's heart rate")
     }
+
+    // MARK: - A board climb as activity history (prompt 189)
+
+    func testABoardClimbBecomesActivityHistoryTheDashboardReads() throws {
+        let s1 = UUID(), s2 = UUID()
+        let sessions = [
+            KilterActivityHistory.SessionInput(id: s1, startedAt: now.addingTimeInterval(-10 * 86_400), endedAt: nil,
+                                               title: nil, hrSeries: [], maxHR: nil, restHR: nil),
+            KilterActivityHistory.SessionInput(id: s2, startedAt: now.addingTimeInterval(-2 * 86_400), endedAt: nil,
+                                               title: "Board night", hrSeries: [HRPoint(t: 0, bpm: 140)], maxHR: 190,
+                                               restHR: nil),
+        ]
+        let logs = [log(.attempt, attempts: 5, daysAgo: 10, session: s1), log(.project, attempts: 2, daysAgo: 10, session: s1),
+                    log(.sent, attempts: 3, daysAgo: 2, session: s2), log(.flash, uuid: "other", daysAgo: 2, session: s2),
+                    log(.attempt, daysAgo: 1, session: nil)]   // ad-hoc → its own day
+        let media = [clip(s2), clip(s2, climb: "other"), clip(s1, climb: nil)]
+        let built = KilterActivityHistory.build(climbUUID: "c1", logs: logs, sessions: sessions, media: media)
+        XCTAssertEqual(built.history.count, 3, "two board sessions + one ad-hoc day")
+        XCTAssertEqual(built.history.map { $0.exercises.count }, [1, 1, 1], "only this climb")
+        let night = try XCTUnwrap(built.history.first { $0.id == s2 })
+        XCTAssertEqual(night.routineName, "Board night")
+        XCTAssertEqual(night.hrSeries.count, 1, "the board session's heart rate")
+        let ex = try XCTUnwrap(night.exercises.first)
+        XCTAssertEqual(ex.climbGradeLabel, "V5")
+        XCTAssertEqual(ex.wall, "40°")
+        XCTAssertEqual(ex.sets.first?.climbStatusRaw, "sent")
+        XCTAssertEqual(built.media.count, 1, "only this climb's clips, re-filed to its entity")
+        XCTAssertEqual(built.media.first?.assignedExerciseID, ex.id)
+
+        let key = ActivityKey(exerciseId: LibraryCatalog.kilterExerciseId, nameKey: "c1")
+        XCTAssertEqual(ActivityIdentity(sessions: built.history).key(for: ex), key)
+        let dashboard = try XCTUnwrap(ActivityDashboard.make(key: key, history: built.history, media: built.media,
+                                                             unit: .kg, now: now))
+        XCTAssertEqual(dashboard.sessionCount, 3)
+        XCTAssertEqual(dashboard.metric, .hardestSend)
+        XCTAssertTrue(dashboard.points.contains { $0.hasMedia }, "the filmed session carries its 📷")
+    }
+
+    func testBoardClimbsCantBeRenamedOrMerged() {
+        let key = ActivityKey(exerciseId: LibraryCatalog.kilterExerciseId, nameKey: "c1")
+        XCTAssertFalse(LibraryMaintenance.canRename(key))
+        XCTAssertFalse(LibraryMaintenance.canMerge(key))
+    }
 }
