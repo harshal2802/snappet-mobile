@@ -1,0 +1,206 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — In-app camera · Wireframes</title><style>
+  :root{
+    /* SnappetColor dark tokens */
+    --coral:#FF7A6B; --amber:#F59E0B; --ember:#FF9645; --green:#5BC074; --blue:#589BF2; --violet:#9D82F0; --red:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1d1610,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:2100px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc9a1 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2{font-size:24px;margin:48px 0 6px;font-weight:800;letter-spacing:-.01em;color:#fff}
+  h2 .n{color:var(--ember);margin-right:8px}
+  .sub{color:#b2b3bd;font-size:15.5px;max-width:1250px;margin:0 0 10px}
+  .sub b{color:#fff}
+  .wrap{max-width:2100px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:22px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 8px;border-radius:17px;
+    background:var(--ember);color:#2a1205;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,150,69,.4)}
+  .stepnum.alt{background:#4a4a52;color:#fff;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .new{color:var(--ember);font-weight:700}
+  .rec{display:inline-block;font-size:11px;font-weight:800;color:#06210f;background:var(--green);border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+
+  /* tables / panels */
+  table{border-collapse:collapse;width:100%;max-width:1400px;font-size:14px;margin-top:14px}
+  th,td{padding:9px 12px;border-top:1px solid #2a2b31;text-align:left;vertical-align:top}
+  th{color:#9da0aa;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-top:0}
+  td b{color:#fff} td .bad{color:var(--red)} td .ok{color:var(--green)}
+  .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;max-width:1500px;margin-top:16px}
+  .panel{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:16px 18px}
+  .panel h4{margin:0 0 10px;font-size:15.5px;color:#fff}
+  .opt{display:flex;gap:10px;font-size:13.5px;padding:7px 0;border-top:1px solid #26272d;color:#c9cbd3}
+  .opt:first-of-type{border-top:0}
+  .opt .k{font-weight:800;color:#8d909a;flex:0 0 16px}
+  .opt.r{color:#fff} .opt.r .k{color:var(--green)}
+  .phase{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:14px 16px}
+  .phase .p{color:var(--ember);font-weight:800;font-size:13px} .phase b{display:block;margin:2px 0 6px;color:#fff}
+  .phase ul{margin:0;padding-left:18px;font-size:13px;color:#b8bcc6}
+
+  
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;background:#000;color:#fff;font-size:12px}
+  .vf{position:absolute;left:0;right:0;top:92px;bottom:178px;background:
+     radial-gradient(160px 120px at 55% 42%,rgba(255,190,140,.20),transparent 70%),
+     linear-gradient(180deg,#3a3f4a 0%,#2a2620 55%,#1b1712 100%);}
+  .wall{position:absolute;inset:0;background-image:radial-gradient(circle,#f0b46a 2.2px,transparent 2.6px),radial-gradient(circle,#7fd1ff 2px,transparent 2.4px);
+     background-size:46px 52px,61px 47px;background-position:12px 8px,30px 26px;opacity:.55}
+  .climber{position:absolute;left:44%;top:22%;width:46px;height:120px;border-radius:24px 24px 14px 14px;background:linear-gradient(#0d0d0f,#19191d);opacity:.9}
+  .grid{position:absolute;inset:0;background:
+     linear-gradient(90deg,transparent 33.2%,rgba(255,255,255,.28) 33.3%,transparent 33.6%,transparent 66.5%,rgba(255,255,255,.28) 66.6%,transparent 66.9%),
+     linear-gradient(180deg,transparent 33.2%,rgba(255,255,255,.28) 33.3%,transparent 33.6%,transparent 66.5%,rgba(255,255,255,.28) 66.6%,transparent 66.9%)}
+  .top{position:absolute;top:44px;left:0;right:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+  .ic{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .ic.on{background:#FFD60A;color:#000}
+  .pill{padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.12);font-weight:700;font-size:11.5px;letter-spacing:.02em}
+  .pill.y{color:#FFD60A}
+  .ctx{position:absolute;top:100px;left:12px;padding:5px 9px;border-radius:10px;background:rgba(0,0,0,.55);font-size:11px;font-weight:650;backdrop-filter:blur(6px)}
+  .ctx b{color:var(--ember)}
+  .hr{position:absolute;top:100px;right:12px;padding:5px 9px;border-radius:10px;background:rgba(0,0,0,.55);font-size:11px;font-weight:700;color:#ff6a7a}
+  .lenses{position:absolute;bottom:190px;left:0;right:0;display:flex;justify-content:center;gap:8px}
+  .lens{width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  .lens.on{color:#FFD60A;width:40px;height:40px;margin-top:-3px;font-size:12.5px}
+  .bottom{position:absolute;left:0;right:0;bottom:0;height:178px;background:#000}
+  .modes{display:flex;justify-content:center;gap:18px;padding-top:14px;font-size:12.5px;font-weight:650;color:#bbb;letter-spacing:.04em}
+  .modes .on{color:#FFD60A}
+  .controls{display:flex;align-items:center;justify-content:space-between;padding:16px 34px 0}
+  .thumb{width:42px;height:42px;border-radius:8px;background:linear-gradient(135deg,#6b5b4a,#2b2622);border:1px solid #444}
+  .shutter{width:70px;height:70px;border-radius:50%;border:4px solid #fff;display:flex;align-items:center;justify-content:center}
+  .shutter i{width:56px;height:56px;border-radius:50%;background:#ff3b30;display:block}
+  .shutter.recording i{width:26px;height:26px;border-radius:6px}
+  .flip{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .done{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:12px;color:#aaa}
+  .recpill{position:absolute;top:52px;left:50%;transform:translateX(-50%);background:#ff3b30;border-radius:7px;padding:3px 9px;font-weight:800;font-size:13px;font-variant-numeric:tabular-nums}
+  .focus{position:absolute;left:40%;top:30%;width:70px;height:70px;border:1.5px solid #FFD60A}
+  .focus span{position:absolute;top:-22px;left:-6px;background:#FFD60A;color:#000;font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:4px;white-space:nowrap}
+  .zoomdial{position:absolute;bottom:186px;left:30px;right:30px;height:46px;border-radius:23px;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;gap:9px;font-size:10px;color:#999}
+  .zoomdial b{color:#FFD60A;font-size:13px}
+  .tray{position:absolute;left:0;right:0;bottom:178px;background:rgba(18,18,20,.94);border-radius:18px 18px 0 0;padding:10px 14px 8px;backdrop-filter:blur(10px)}
+  .tray .row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-top:1px solid #2a2a30;font-size:12px}
+  .tray .row:first-of-type{border-top:0}
+  .seg2{display:flex;background:#2a2a30;border-radius:8px;padding:2px}
+  .seg2 span{padding:3px 8px;border-radius:6px;color:#aaa;font-weight:650;font-size:11px}
+  .seg2 .on{background:#46464e;color:#fff}
+  .tog{width:34px;height:20px;border-radius:10px;background:#34C759;position:relative}
+  .tog::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+  .tog.off{background:#3a3a40} .tog.off::after{left:2px;right:auto}
+  .tray .new{color:var(--ember);font-size:9.5px;font-weight:800;margin-left:5px}
+  .count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:150px;font-weight:200;color:rgba(255,255,255,.92);text-shadow:0 6px 30px rgba(0,0,0,.6)}
+  .countsub{position:absolute;top:63%;left:0;right:0;text-align:center;font-size:13px;font-weight:650;color:#fff;text-shadow:0 2px 8px #000}
+</style></head><body>
+<header class="page">
+  <h1 class="title">In-app camera — like the iPhone Camera, built for sets</h1>
+  <p class="sub">Today the record button opens Apple's stock picker (<b>record / stop / flip</b>, and it was recording at ~480×360 — fixed separately in prompt 190).
+  A custom camera (AVFoundation) unlocks what the iPhone Camera has — <b>lenses, 4K/60, slo-mo, tap-to-focus/exposure lock, zoom, torch, grid</b> —
+  plus things only Snappet can do because it knows the set: <b>a hands-free countdown, auto-stop when you log the set, and live HR on screen</b>.
+  Your phone (iPhone 13 Pro Max) has 0.5× / 1× / 3× lenses, 4K60 and 240 fps slo-mo; other phones show what they have.</p>
+</header>
+<div class="wrap">
+<h2><span class="n">01</span>The camera</h2>
+<div class="gallery">
+
+  <div class="step"><span class="stepnum">1</span>
+    <div class="device"><div class="screen">
+      <div class="status" style="position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;padding:12px 26px 0;font-weight:650;font-size:13.5px"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="top"><span class="ic">ϟ</span><span class="pill">4K · <span class="pill y" style="padding:0;background:none">30</span></span><span class="ic">⏱</span><span class="ic">⌃</span></div>
+      <div class="vf"><div class="wall"></div><div class="climber"></div><div class="grid"></div></div>
+      <div class="ctx">● <b>Blue arete</b> · attempt 3</div>
+      <div class="hr">♥ 128</div>
+      <div class="lenses"><span class="lens">.5</span><span class="lens on">1×</span><span class="lens">3</span></div>
+      <div class="bottom">
+        <div class="modes"><span>SLO-MO</span><span class="on">VIDEO</span><span>PHOTO</span></div>
+        <div class="controls"><span class="thumb"></span><span class="shutter"><i></i></span><span class="flip">⟲</span></div>
+        <div class="done">Done</div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Ready to film.</b> Top: torch · <b>resolution · fps</b> (tap to cycle, like iPhone) · countdown · ⌃ more.
+    It knows what you're doing — <b>"Blue arete · attempt 3"</b> and live <b>♥ HR</b>. Lenses <b>.5 / 1× / 3</b> (pinch for in-between). <b>SLO-MO · VIDEO · PHOTO</b> modes.</p>
+  </div>
+
+  <div class="step"><span class="stepnum">2</span>
+    <div class="device"><div class="screen">
+      <div class="status" style="position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;padding:12px 26px 0;font-weight:650;font-size:13.5px"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="top"><span class="ic">ϟ</span><span class="pill">4K · 30</span><span class="ic">⏱</span><span class="ic on">⌄</span></div>
+      <div class="vf"><div class="wall"></div><div class="climber"></div></div>
+      <div class="tray">
+        <div class="row"><span>Resolution</span><span class="seg2"><span>HD</span><span class="on">4K</span></span></div>
+        <div class="row"><span>Frame rate</span><span class="seg2"><span>24</span><span class="on">30</span><span>60</span></span></div>
+        <div class="row"><span>Slo-mo</span><span class="seg2"><span>120</span><span class="on">240</span></span></div>
+        <div class="row"><span>Stabilization</span><span class="seg2"><span>Standard</span><span class="on">Enhanced</span></span></div>
+        <div class="row"><span>Countdown</span><span class="seg2"><span>Off</span><span class="on">3s</span><span>10s</span></span></div>
+        <div class="row"><span>Grid</span><span class="tog"></span></div>
+        <div class="row"><span>Stop when I log the set<span class="new">SNAPPET</span></span><span class="tog"></span></div>
+        <div class="row"><span>Remember my settings</span><span class="tog"></span></div>
+      </div>
+      <div class="bottom">
+        <div class="modes"><span>SLO-MO</span><span class="on">VIDEO</span><span>PHOTO</span></div>
+        <div class="controls"><span class="thumb"></span><span class="shutter"><i></i></span><span class="flip">⟲</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>⌃ opens the settings tray</b> (iPhone's chevron): resolution, frame rate, slo-mo speed, stabilization, countdown, grid —
+    and <b>"Stop when I log the set"</b>, which ends the clip the moment you tap Sent / log the set. Remembered next time.</p>
+  </div>
+
+  <div class="step"><span class="stepnum">3</span>
+    <div class="device"><div class="screen">
+      <div class="recpill">00:00:14</div>
+      <div class="vf"><div class="wall" style="background-size:62px 70px,82px 63px"></div><div class="climber" style="left:40%;width:62px;height:160px"></div><div class="grid"></div>
+        <div class="focus"><span>AE/AF LOCK</span></div></div>
+      <div class="ctx">● <b>Blue arete</b> · attempt 3</div>
+      <div class="hr">♥ 151</div>
+      <div class="zoomdial"><span>1×</span><span>·</span><span>·</span><b>1.8×</b><span>·</span><span>·</span><span>3×</span></div>
+      <div class="bottom">
+        <div class="modes" style="visibility:hidden"><span>VIDEO</span></div>
+        <div class="controls"><span class="flip" style="font-size:15px">◉</span><span class="shutter recording"><i></i></span><span class="flip" style="visibility:hidden"></span></div>
+        <div class="done" style="color:#ff9a8f">auto-stops when you log the attempt</div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Recording.</b> Timer up top, <b>pinch / drag to zoom</b> across lenses (1.8×), <b>long-press to lock focus + exposure</b>
+    on the wall so it doesn't hunt when you move. ◉ grabs a still mid-clip. The clip is filed to this attempt automatically, with its HR.</p>
+  </div>
+
+  <div class="step"><span class="stepnum">4</span>
+    <div class="device"><div class="screen">
+      <div class="vf" style="top:0;bottom:0"><div class="wall"></div><div class="climber" style="top:40%"></div></div>
+      <div class="count">3</div>
+      <div class="countsub">Recording starts in 3… get on the wall</div>
+      <div class="ctx" style="top:56px">● <b>Max hangs</b> · set 2 of 5</div>
+      <div class="bottom" style="background:rgba(0,0,0,.7)">
+        <div class="controls" style="padding-top:44px;justify-content:center"><span class="shutter" style="border-color:#888"><i style="background:#555"></i></span></div>
+        <div class="done">Tap to cancel</div>
+      </div>
+    </div></div>
+    <p class="caption"><span class="new">NEW</span> <b>Hands-free.</b> Prop the phone, tap record, walk to the wall: a <b>3 s / 10 s countdown</b> starts it;
+    "Stop when I log the set" (or your watch) ends it. No one needs to hold the phone.</p>
+  </div>
+</div>
+
+<h2><span class="n">02</span>Your picks</h2>
+<div class="panels">
+  <div class="panel"><h4>1 · What's in v1</h4>
+    <div class="opt r"><span class="k">A</span>Everything shown: lenses + zoom, 4K/HD + 24/30/60, slo-mo, focus/exposure lock, torch, grid, countdown, auto-stop, live HR chip, still-during-video</div>
+    <div class="opt"><span class="k">B</span>Core first (lenses, zoom, 4K/60, focus lock, torch, grid, countdown); slo-mo + HR chip + auto-stop next</div>
+    <div class="opt"><span class="k">C</span>Minimal: quality + lenses + countdown only</div>
+  </div>
+  <div class="panel"><h4>2 · Photo mode</h4>
+    <div class="opt r"><span class="k">A</span>Yes — same camera takes stills (beta photos, the wall, a setter's tag)</div>
+    <div class="opt"><span class="k">B</span>Video + slo-mo only</div>
+  </div>
+  <div class="panel"><h4>3 · Default when it opens</h4>
+    <div class="opt r"><span class="k">A</span>Your last-used settings (remembered)</div>
+    <div class="opt"><span class="k">B</span>Always 1080p · 30 (smallest files)</div>
+    <div class="opt"><span class="k">C</span>Always 4K · 30</div>
+  </div>
+  <div class="panel"><h4>Notes</h4>
+    <div class="opt"><span class="k">·</span>4K60 is ~400 MB/min — the "2.7 GB free" Mac + full-phone episodes say keep 1080p an easy choice</div>
+    <div class="opt"><span class="k">·</span>Cinematic mode, Action mode and Apple Log aren't available to apps — the closest is Enhanced stabilization</div>
+    <div class="opt"><span class="k">·</span>Saved to Photos as now; the clip still lands on the set/attempt with its HR</div>
+  </div>
+</div>
+</div></body></html>

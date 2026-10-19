@@ -89,7 +89,7 @@ final class SessionMediaService: Sendable {
     /// recording began just before `startedAt` pins to 0). Pure (no Photos/SwiftData) → unit-tested.
     static func candidate(for clip: RecordedClip, startedAt: Date) -> Candidate {
         Candidate(localIdentifier: clip.localIdentifier,
-                  kind: .video,
+                  kind: clip.isPhoto ? .photo : .video,
                   offsetSec: offset(of: clip.capturedAt, startedAt: startedAt),
                   durationSec: clip.durationSec)
     }

@@ -96,8 +96,35 @@ final class MediaLibraryService: Sendable {
         guard let id = try await saveVideoToPhotos(url, accessLevel: .readWrite) else {
             throw SaveError.failed("no asset id")
         }
+        #if DEBUG
+        // What the camera actually recorded (prompt 190) — readable on a device with `devicectl … --console`.
+        if let track = try? await AVURLAsset(url: url).loadTracks(withMediaType: .video).first,
+           let size = try? await track.load(.naturalSize) {
+            print("[Camera] saved \(Int(abs(size.width)))x\(Int(abs(size.height))) " +
+                  "\(String(format: "%.1f", durationSec ?? 0))s")
+        }
+        #endif
         let startedAt = durationSec.map { max(openedAt, Date().addingTimeInterval(-$0)) } ?? openedAt
         return RecordedClip(localIdentifier: id, capturedAt: startedAt, durationSec: durationSec)
+    }
+
+    /// Save a still from the in-app camera (prompt 190) into Photos — read-write, like `saveRecording`, so it can
+    /// be shown back on the set — and describe it as a photo `RecordedClip` taken at `takenAt`.
+    func savePhoto(_ data: Data, takenAt: Date) async throws -> RecordedClip {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        guard status == .authorized || status == .limited else { throw SaveError.denied }
+        let idBox = MutableBox<String?>(nil)
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, data: data, options: nil)
+                idBox.value = request.placeholderForCreatedAsset?.localIdentifier
+            }
+        } catch {
+            throw SaveError.failed(error.localizedDescription)
+        }
+        guard let id = idBox.value else { throw SaveError.failed("no asset id") }
+        return RecordedClip(localIdentifier: id, capturedAt: takenAt, durationSec: nil, isPhoto: true)
     }
 
     /// **Overwrite in place**: replace the original Photos asset's video content with the edited

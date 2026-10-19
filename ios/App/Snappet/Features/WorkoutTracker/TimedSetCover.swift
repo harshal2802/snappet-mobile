@@ -13,7 +13,7 @@ import UIKit
 /// later refinement. Dismissing before STOP logs nothing; STOP commits once and dismisses (no double-log).
 ///
 /// **Record a clip mid-set:** a "Record a clip" button opens the in-app camera (`RecordClipButton` →
-/// `VideoRecorder`) over this cover — the wall-clock timer keeps running underneath, so finishing the
+/// `SnappetCameraView`) over this cover — the wall-clock timer keeps running underneath, so finishing the
 /// recording drops the user right back on the live set. Each recording is saved to Photos immediately and
 /// queued in `recordedClips`; STOP & LOG hands them up so they attach to the very set being logged.
 struct TimedSetCover: View {

@@ -10016,3 +10016,17 @@ stripes, and the panel read as an opaque slab.
   nothing is persisted, so gym history, backup and stats never see these sessions.
 - The Library row opens the Activity page; the Kilter page is one tap away ("Open on the board"), where lighting and
   logging live. Reverses 188's direct push only because the page in between is now the useful one.
+
+## 2026-10-19 — The in-app camera (prompt 190)
+
+- Custom AVFoundation camera instead of `UIImagePickerController`: the picker can't do lenses, frame rates, slo-mo,
+  focus lock or a countdown, and its quality default (`.typeMedium`, ~480×360) was the "blurry video" bug. The old
+  comment lumped `videoQuality` with the crashing camera-only setters; git history showed it was never set at all —
+  the crash report named only `setCameraCaptureMode:`. Lesson: read the crash, don't widen it by analogy.
+- The back camera is the virtual multi-lens device, so zoom crosses lenses seamlessly; lens buttons come from
+  `virtualDeviceSwitchOverVideoZoomFactors` × `displayVideoZoomFactorMultiplier` (0.5 / 1 / 3 on a 13 Pro), never
+  hard-coded — other phones show what they have.
+- The rules (what's supported, clamping, chip cycling) are pure (`CameraLogic`), and a `-uiTestFakeCamera` stand-in
+  lets XCUITest drive every control on a simulator that has no camera.
+- Apple doesn't expose Cinematic mode, Action mode or Apple Log to apps; "Enhanced" stabilization =
+  cinematic-extended where the format supports it.

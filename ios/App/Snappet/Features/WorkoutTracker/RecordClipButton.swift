@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The reusable **"Record a clip"** control for the timed-effort FOCUS covers (`TimedSetCover` and
-/// `TimedAttemptCover`). A glass button that opens the in-app camera (`VideoRecorder`), saves the finished
-/// recording into the user's Photos library (`MediaLibraryService.saveRecording`), and appends a
+/// `TimedAttemptCover`). A glass button that opens the in-app camera (`SnappetCameraView`, prompt 190), saves each
+/// finished recording / photo into the user's Photos library (`MediaLibraryService.saveRecording` / `savePhoto`)
+/// as it lands — the camera stays open for several — and appends a
 /// `RecordedClip` to `recordedClips` — which the host cover hands up to the session at commit, so the clip
 /// attaches to the very set / attempt being logged. An in-place "N clips will attach" confirmation gives
 /// the user certainty before they STOP & LOG.
@@ -10,7 +11,8 @@ import SwiftUI
 /// Presenting the recorder over the (wall-clock-backed) cover keeps the effort timer running, so finishing
 /// a recording drops the user **back on the same live set** — the whole point of the affordance.
 ///
-/// **Device-only:** the Simulator has no camera (`VideoRecorder.isAvailable == false`), so the button is
+/// **Device-only:** the Simulator has no camera (`CameraController.isAvailable == false`; UI tests use the
+/// `-uiTestFakeCamera` stand-in), so the button is
 /// always shown (the affordance stays reachable + testable) but a tap there surfaces a transient
 /// "Camera isn't available" caption instead of presenting. The record → save → attach path can only be
 /// exercised on hardware.
@@ -28,7 +30,6 @@ struct RecordClipButton: View {
     let attachNoun: String
 
     @State private var showingRecorder = false
-    @State private var recordingStartedAt = Date()
     @State private var noticeText: String?
 
     /// Stateless Photos writer (same `Sendable` service the clip-delete path uses).
@@ -72,39 +73,34 @@ struct RecordClipButton: View {
             .accessibilityIdentifier("\(idPrefix).record")
         }
         .fullScreenCover(isPresented: $showingRecorder) {
-            VideoRecorder(onRecorded: { handleRecorded($0) },
-                          onCancel: { showingRecorder = false })
-                .ignoresSafeArea()
+            SnappetCameraView(onVideo: { url, start in handleRecorded(url, startedAt: start) },
+                              onPhoto: { data, at in handlePhoto(data, takenAt: at) },
+                              onClose: { showingRecorder = false })
         }
     }
 
     /// Authorize then present the camera — or surface a notice when there's no camera (the Simulator) or
     /// access is declined, so the affordance never silently does nothing or crashes.
     ///
-    /// Camera authorization MUST be granted before presenting: `UIImagePickerController` throws when its
-    /// camera-only properties are configured on a camera the app isn't authorized for, and
-    /// `VideoRecorder.isAvailable` (source availability) is `true` even while permission is `.notDetermined`.
+    /// Camera access is asked for before presenting, so the camera never opens onto a black, unauthorized session.
     private func present() {
         noticeText = nil
-        guard VideoRecorder.isAvailable else {
+        guard CameraController.isAvailable else {
             noticeText = "Camera isn't available on this device."
             return
         }
         Task {
-            guard await VideoRecorder.requestCaptureAccess() else {
+            guard await CameraController.requestAccess() else {
                 noticeText = "Allow camera access in Settings to record a clip."
                 return
             }
-            recordingStartedAt = Date()
             showingRecorder = true
         }
     }
 
     /// Save the finished recording to Photos (preserving it immediately) and queue it for attachment. A
     /// failed save (e.g. Photos add-only denied) leaves a recoverable notice rather than losing it silently.
-    private func handleRecorded(_ url: URL) {
-        showingRecorder = false
-        let startedAt = recordingStartedAt
+    private func handleRecorded(_ url: URL, startedAt: Date) {
         savingClip = true
         Task {
             defer { savingClip = false }
@@ -115,6 +111,21 @@ struct RecordClipButton: View {
                 Haptics.tap()
             } catch {
                 noticeText = "Couldn't save the clip — allow Photos access in Settings to keep recordings."
+            }
+        }
+    }
+
+    /// A still from the camera — saved and queued like a clip (it attaches to the set as a photo).
+    private func handlePhoto(_ data: Data, takenAt: Date) {
+        guard !data.isEmpty else { return }   // the UI-test fake camera captures nothing
+        savingClip = true
+        Task {
+            defer { savingClip = false }
+            do {
+                recordedClips.append(try await mediaLibrary.savePhoto(data, takenAt: takenAt))
+                noticeText = nil
+            } catch {
+                noticeText = "Couldn't save the photo — allow Photos access in Settings."
             }
         }
     }
