@@ -145,6 +145,8 @@ struct RootShell: View {
             guard let exercise = ExerciseCatalog.all.first(where: { $0.id == id }) else { return }
             router.open(module: "workout-log")
             router.push(exercise)
+        case .workout(let action):
+            handleWorkoutLink(action)
         case nil:
             break   // not ours — ignore
         }
@@ -203,8 +205,54 @@ struct RootShell: View {
         // The action→navigation decision is the pure, unit-tested AppActionRouter; this is just glue.
         let route = AppActionRouter.route(for: action)
         if route.startPomodoro { router.pendingPomodoroStart = true }
+        // Workout actions from Shortcuts / Siri / links (prompt 199): with an activity → the "Log it now" path.
+        switch action {
+        case .startQuickSession(let raw?):
+            if let entity = quickSessionEntity(raw) { router.pendingQuickLog = entity } else { router.pendingQuickStart = true }
+        case .startQuickSession(nil):
+            router.pendingQuickStart = true
+        case .finishSession:
+            router.pendingFinishSession = true
+        default:
+            break
+        }
         if let compose = route.journalCompose { router.pendingJournalCompose = compose }
         router.open(module: route.moduleID)
+    }
+
+    /// A `snappet://` workout link (prompt 199): quick / finish go through the same one-shots as the App Intents; log /
+    /// attempt write through `WorkoutIntentService`, then open the Gym Tracker so you see where it landed.
+    private func handleWorkoutLink(_ action: WorkoutLinkAction) {
+        switch action {
+        case .quick(let activity):
+            dispatch(.startQuickSession(activity))
+        case .finish:
+            dispatch(.finishSession)
+        case let .log(activity, reps, weight, unit, seconds, meters):
+            let out = try? WorkoutIntentService.logSet(activity: activity, reps: reps, weight: weight, unit: unit,
+                                                       seconds: seconds, meters: meters, in: context)
+            showStartedSession(out)
+        case let .attempt(climb, outcome):
+            showStartedSession(try? WorkoutIntentService.logAttempt(climb: climb, outcome: outcome, in: context))
+        }
+    }
+
+    /// A logged set lands in the running session — an open player shows it live, so stay put. Only a session the
+    /// link just STARTED is opened (the Gym Tracker resumes it).
+    private func showStartedSession(_ out: WorkoutIntentService.Outcome?) {
+        guard out?.startedSession == true else { return }
+        router.pendingWorkoutResume = true
+        router.open(module: "workout-log")
+    }
+
+    /// The entity a Quick Session starts with for an activity (as last time, or its created template) — prompt 199.
+    private func quickSessionEntity(_ raw: String) -> SessionExercise? {
+        let history = (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        let rows = WorkoutIntentService.activities(in: context)
+        guard let row = WorkoutIntentService.resolve(raw, in: rows) else { return nil }
+        let template = LibraryEntry.entry(for: row.key, in: context, create: false)?.template
+        return ActivityLauncher.sessionExercise(for: row.key, history: history.filter { !$0.isActive },
+                                                identity: ActivityIdentity(sessions: history), template: template)
     }
 
     private static var isUITestLaunch: Bool {

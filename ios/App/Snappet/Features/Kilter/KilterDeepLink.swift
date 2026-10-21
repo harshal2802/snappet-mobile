@@ -67,6 +67,8 @@ enum SnappetDeepLink: Equatable, Sendable {
     /// `snappet://household/join?…` — a household invite (household prompt 02). The shell opens Household
     /// with a one-shot `pendingHouseholdJoin`, which the root turns into the join-confirm sheet.
     case householdJoin(HouseholdInvite)
+    /// `snappet://quick|finish|log|attempt…` — start / log / finish a workout from another app or a tag (prompt 199).
+    case workout(WorkoutLinkAction)
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
@@ -76,6 +78,7 @@ enum SnappetDeepLink: Equatable, Sendable {
         if let invite = HouseholdInvite(url: url) { return .householdJoin(invite) }
         if isStartFocus(url) { return .startFocus }
         if let id = exerciseID(url) { return .exercise(id: id) }
+        if let action = WorkoutLinkAction(url: url) { return .workout(action) }
         return nil
     }
 

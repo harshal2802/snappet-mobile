@@ -13,6 +13,10 @@ enum PendingAppAction: Codable, Sendable, Equatable {
     case quickJournal(String?)
     /// Open the gym tracker to start a routine (a specific-routine auto-launch is a follow-up).
     case startRoutine
+    /// Start a Quick Session, optionally with an activity on it (`LibraryEntry.raw(ActivityKey)`) — prompt 199.
+    case startQuickSession(String?)
+    /// Finish the running workout session — prompt 199.
+    case finishSession
 }
 
 /// The App-Group **inbox** for those actions (#81 Phase 3). A DIRECTORY of one-file-per-action — the

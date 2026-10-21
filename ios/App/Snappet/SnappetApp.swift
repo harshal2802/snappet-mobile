@@ -1,4 +1,5 @@
 import SwiftUI
+import AppIntents
 import SwiftData
 
 @main
@@ -138,6 +139,9 @@ struct SnappetApp: App {
         // Hand the store to AppModel so the Apple Watch → Clips import can reconcile from a background
         // HealthKit callback, where no SwiftUI environment context exists (watch-workouts-clips P2).
         _appModel.wrappedValue.modelContainer = container
+        // The workout App Intents (prompt 199) run in this process and write to this same store.
+        let shared = container
+        AppDependencyManager.shared.add(dependency: shared)
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {
