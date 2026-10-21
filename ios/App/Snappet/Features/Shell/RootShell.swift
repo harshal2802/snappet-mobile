@@ -44,6 +44,7 @@ struct RootShell: View {
                         // has data. Subsequent refreshes ride scenePhase below.
                         WidgetSnapshotService.refresh(context: context)
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
+                        reconcileLiveActivities()   // prompt 198: no stale "session on" left on the Lock Screen
                         RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)   // prompt 136
                         SpotlightIndexer.reindex(context: context)   // #81 Phase 4
                         app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
@@ -70,6 +71,7 @@ struct RootShell: View {
             if phase == .active {
                 app.screenAwake.reassert()   // prompt 135: re-apply the workout's keep-awake on return
                 drainAppActions()
+                reconcileLiveActivities()   // prompt 198
                 // Roll the scheduled-routine reminders' 14-day window forward (prompt 136).
                 RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
                 importWatchWorkouts()   // catch workouts finished while backgrounded (PR2 adds true background delivery)
@@ -169,6 +171,20 @@ struct RootShell: View {
     /// dispatch each through the existing `SuiteRouter` deep-link plumbing — the same routing the
     /// `snappet://` URLs use. Skipped under UI-test launches so a stale inbox file can't navigate a
     /// test run.
+    /// Match the Lock Screen to the store (prompt 198): keep the Live Activity of the workout / board session that's
+    /// actually running and end every other — a crash or the system closing the app mid-workout used to leave one
+    /// showing "session on" after the session had ended (and a resume started a second beside it).
+    private func reconcileLiveActivities() {
+        let running = (try? context.fetch(FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.completedAt == nil },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)])))?.first
+        app.liveActivity.reconcile(activeSessionStartedAt: running?.startedAt)
+        let board = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.endedAt == nil },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)])))?.first
+        app.kilterLiveActivity.reconcile(activeSessionStartedAt: board?.startedAt)
+    }
+
     private func drainAppActions() {
         guard !Self.isUITestLaunch else { return }
         for action in AppActionInbox.drain() { dispatch(action) }

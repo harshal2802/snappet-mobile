@@ -67,13 +67,43 @@ final class LiveActivityController {
         #endif
     }
 
-    /// Begin a Live Activity for a workout. No-op if unavailable/unauthorized. If one is
-    /// already running it is ended first so a re-start (resume) doesn't leave an orphan.
+    /// Match the Lock Screen to the store (prompt 198): keep (adopt) the activity of the session that's actually
+    /// running — `nil` when none is — and end every other workout activity, including ones a previous run of the app
+    /// started (a crash / the system closing the app mid-workout left them showing "session on"). Run at launch,
+    /// on every return to the foreground, and inside `start` / `end`.
+    func reconcile(activeSessionStartedAt: Date?) {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        let all = Activity<WorkoutActivityAttributes>.activities
+        let plan = LiveActivityReconcile.plan(
+            running: all.map { .init(id: $0.id, startedAt: $0.content.state.startedAt) },
+            activeSessionStartedAt: activeSessionStartedAt)
+        for act in all where plan.end.contains(act.id) {
+            if typedActivity?.id == act.id { typedActivity = nil; lastSnapshot = nil; lastPushedAt = nil }
+            nonisolated(unsafe) let a = act
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+        if let keep = plan.keep, typedActivity?.id != keep, let running = all.first(where: { $0.id == keep }) {
+            typedActivity = running   // adopt: a relaunch lost the handle, not the activity
+            let st = running.content.state
+            lastSnapshot = WorkoutLiveSnapshot(startedAt: st.startedAt, hrBpm: st.hrBpm,
+                                               exerciseName: st.exerciseName, setProgress: st.setProgress)
+            lastPushedAt = .now
+        }
+        #endif
+    }
+
+    /// Begin a Live Activity for a workout. No-op if unavailable/unauthorized. The session's own activity (still on
+    /// the Lock Screen from before a relaunch) is adopted instead of requesting a second one; every other is ended.
     func start(routineName: String, startedAt: Date,
                exerciseName: String = "Starting…", setProgress: String = "", maxHR: Double? = nil) {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if typedActivity != nil { end() }
+        reconcile(activeSessionStartedAt: startedAt)
+        if typedActivity != nil {
+            update(hrBpm: nil, exerciseName: exerciseName, setProgress: setProgress)
+            return
+        }
         let attributes = WorkoutActivityAttributes(routineName: routineName, maxHR: maxHR)
         let state = WorkoutActivityAttributes.ContentState(
             startedAt: startedAt, hrBpm: nil,
@@ -132,15 +162,15 @@ final class LiveActivityController {
         #endif
     }
 
-    /// End the Live Activity immediately. Safe to call when none is running.
+    /// End the session's Live Activity — and any orphan a previous run left on the Lock Screen (prompt 198). Safe to
+    /// call when none is running.
     func end() {
         #if canImport(ActivityKit)
-        guard #available(iOS 16.1, *), let activity = typedActivity else { return }
+        guard #available(iOS 16.1, *) else { return }
         self.typedActivity = nil
         lastSnapshot = nil
         lastPushedAt = nil
-        nonisolated(unsafe) let act = activity
-        Task { await act.end(nil, dismissalPolicy: .immediate) }
+        reconcile(activeSessionStartedAt: nil)
         #endif
     }
 }

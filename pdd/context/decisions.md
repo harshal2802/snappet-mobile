@@ -10094,3 +10094,9 @@ stripes, and the panel read as an opaque slab.
 - An album is keyed by `ActivityKey` (so the 28-day climb set window and board climbs behave like the Library); posts
   with no identity (untagged "Session clips", festival nights) live only in Sessions / Activities.
 - Albums carry no caption in this phase (the wireframe shows none); session posts do (`session@<id>`).
+
+## 2026-10-20 — The Lock Screen matches the store (prompt 198)
+
+- A Live Activity outlives the process that started it, so "the one I started" isn't enough to manage it. Reconcile
+  every running activity against the store's running session at launch, on foreground, on start and on end: keep
+  the session's (matched by start time), end every other. The store decides; the in-memory handle is a cache.

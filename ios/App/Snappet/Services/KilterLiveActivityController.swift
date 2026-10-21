@@ -54,11 +54,14 @@ final class KilterLiveActivityController {
     /// from the running state so the first post-recovery `update(_:)` isn't dropped. Returns whether an
     /// activity is now held — so recovery can decide between re-attaching and (re)starting one.
     @discardableResult
-    func adoptRunningActivity() -> Bool {
+    func adoptRunningActivity(id: String? = nil) -> Bool {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *) else { return false }
         if typedActivity != nil { return true }
-        guard let running = Activity<KilterActivityAttributes>.activities.first else { return false }
+        let all = Activity<KilterActivityAttributes>.activities
+        let match: Activity<KilterActivityAttributes>?
+        if let id { match = all.first { $0.id == id } } else { match = all.first }
+        guard let running = match else { return false }
         typedActivity = running
         let s = running.content.state
         lastSnapshot = KilterLiveSnapshot(startedAt: s.startedAt, hrBpm: s.hrBpm,
@@ -68,6 +71,24 @@ final class KilterLiveActivityController {
         return true
         #else
         return false
+        #endif
+    }
+
+    /// Match the Lock Screen to the store (prompt 198): keep the running board session's activity, end every other
+    /// (orphans from a previous run of the app). Run at launch / on foreground and from `end`.
+    func reconcile(activeSessionStartedAt: Date?) {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return }
+        let all = Activity<KilterActivityAttributes>.activities
+        let plan = LiveActivityReconcile.plan(
+            running: all.map { .init(id: $0.id, startedAt: $0.content.state.startedAt) },
+            activeSessionStartedAt: activeSessionStartedAt)
+        for act in all where plan.end.contains(act.id) {
+            if typedActivity?.id == act.id { typedActivity = nil; lastSnapshot = nil; lastPushedAt = nil }
+            nonisolated(unsafe) let a = act
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+        if plan.keep != nil, typedActivity == nil { adoptRunningActivity(id: plan.keep) }
         #endif
     }
 
@@ -127,15 +148,14 @@ final class KilterLiveActivityController {
         #endif
     }
 
-    /// End the Live Activity immediately. Safe to call when none is running.
+    /// End the session's Live Activity — and any orphan a previous run left (prompt 198). Safe when none is running.
     func end() {
         #if canImport(ActivityKit)
-        guard #available(iOS 16.1, *), let activity = typedActivity else { return }
+        guard #available(iOS 16.1, *) else { return }
         self.typedActivity = nil
         lastSnapshot = nil
         lastPushedAt = nil
-        nonisolated(unsafe) let act = activity
-        Task { await act.end(nil, dismissalPolicy: .immediate) }
+        reconcile(activeSessionStartedAt: nil)
         #endif
     }
 }
