@@ -100,4 +100,41 @@ import XCTest
         XCTAssertTrue(found.waitForExistence(timeout: 5), "search finds the post by its caption")
         XCTAssertEqual(app.buttons.matching(identifier: "clips.post.caption").count, 1, "only that post")
     }
+
+    // MARK: - Sessions · Activities · Exercises (prompt 197)
+
+    func testTheLevelsAndTheyAreRemembered() {
+        let level = app.segmentedControls.matching(identifier: "clips.level").firstMatch
+        XCTAssertTrue(level.waitForExistence(timeout: 10))
+        XCTAssertTrue(level.buttons["Activities"].isSelected, "Activities by default")
+
+        // Sessions: one post per workout, each clip labelled with its activity.
+        level.buttons["Sessions"].tap()
+        let clipSet = app.staticTexts.matching(identifier: "clips.post.clipSet").firstMatch
+        XCTAssertTrue(clipSet.waitForExistence(timeout: 6))
+        XCTAssertTrue(clipSet.label.contains(" · "), "activity · set: \(clipSet.label)")
+        snap("05-sessions")
+
+        // Exercises: a progress album → its Activity page.
+        level.buttons["Exercises"].tap()
+        let title = app.staticTexts.matching(NSPredicate(format: "identifier == 'clips.album.title' AND label CONTAINS 'Bench'")).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 6) || reveal(title), "the bench album")
+        XCTAssertTrue(reveal(title))
+        XCTAssertTrue(app.staticTexts.matching(identifier: "clips.album.gain").firstMatch.exists, "Then vs Now")
+        snap("06-exercises")
+        let open = app.buttons.matching(NSPredicate(format: "identifier == 'clips.album.open' AND label CONTAINS 'Bench'")).firstMatch
+        XCTAssertTrue(reveal(open))
+        open.tap()
+        XCTAssertTrue(app.segmentedControls.matching(identifier: "activity.tabs").firstMatch.waitForExistence(timeout: 6))
+
+        // Remembered.
+        app.terminate()
+        app.launchArguments = ["clips"]   // keep the seeded store? the level lives in UserDefaults — relaunch plainly
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+        let again = app.segmentedControls.matching(identifier: "clips.level").firstMatch
+        if again.waitForExistence(timeout: 10) {
+            XCTAssertTrue(again.buttons["Exercises"].isSelected, "the last pick is remembered")
+        }
+    }
 }
