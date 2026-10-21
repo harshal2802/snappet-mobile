@@ -86,7 +86,7 @@ struct SharedRoutine: Equatable, Sendable {
     var encoded: String { url?.absoluteString ?? "" }
 
     /// Encoded byte size — the number that decides QR vs link fallback (`fitsInScannableQR`).
-    var encodedByteCount: Int { encoded.utf8.count }
+    var encodedByteCount: Int { SnappetWebLink.webForm(encoded).utf8.count }   // the QR carries the https form
 
     /// A version-`M` QR at this density should stay scannable below roughly this many URL bytes
     /// (alphanumeric-ish base64url at ECC-M lands well under a v40 symbol; we keep a conservative cap so
@@ -102,7 +102,7 @@ struct SharedRoutine: Equatable, Sendable {
 
     /// Parse a scanned/opened string back into a routine, or nil if it isn't one of ours / wrong version.
     init?(decoding string: String) {
-        guard let c = URLComponents(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard let c = URLComponents(string: SnappetWebLink.appForm(string)),
               c.scheme?.lowercased() == "snappet",
               c.host?.lowercased() == "routine" else { return nil }
         // path = "/v<version>/<blob>"

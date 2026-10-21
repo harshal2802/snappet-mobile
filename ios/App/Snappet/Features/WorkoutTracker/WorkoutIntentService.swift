@@ -181,7 +181,8 @@ enum WorkoutLinkAction: Equatable, Sendable {
     case attempt(climb: String, outcome: KilterAscentStatus)
 
     init?(url: URL) {
-        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false), c.scheme?.lowercased() == "snappet",
+        guard let c = URLComponents(url: SnappetWebLink.appForm(url), resolvingAgainstBaseURL: false),
+              c.scheme?.lowercased() == "snappet",
               let host = c.host?.lowercased() else { return nil }
         let q = Dictionary((c.queryItems ?? []).compactMap { i in i.value.map { (i.name.lowercased(), $0) } },
                            uniquingKeysWith: { a, _ in a })

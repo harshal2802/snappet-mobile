@@ -27,7 +27,7 @@ object KilterDeepLink {
      * validated to the 8-4-4-4-12 dashed-hex shape so junk text after a scan is rejected.
      */
     fun parse(raw: String): ClimbLink? {
-        val s = raw.trim()
+        val s = appForm(raw.trim())
         // Split off the query first.
         val qIdx = s.indexOf('?')
         val path = if (qIdx >= 0) s.substring(0, qIdx) else s
@@ -50,6 +50,14 @@ object KilterDeepLink {
         val angle = parseQuery(query)["angle"]?.toIntOrNull()
         return ClimbLink(uuid = uuid, angle = angle)
     }
+
+    /** The https twin iOS QR codes carry since prompt 200 — `https://harshal2802.github.io/Snappet/open/<rest>` —
+     *  read as `snappet://<rest>`. Anything else unchanged. */
+    const val WEB_PREFIX = "https://harshal2802.github.io/Snappet/open/"
+
+    fun appForm(s: String): String =
+        if (s.length > WEB_PREFIX.length && s.startsWith(WEB_PREFIX, ignoreCase = true))
+            "$SCHEME://" + s.substring(WEB_PREFIX.length) else s
 
     private fun parseQuery(query: String): Map<String, String> =
         query.split('&').mapNotNull { pair ->

@@ -68,7 +68,7 @@ struct RoutineShareView: View {
         VStack(spacing: 14) {
             Text(routine.name).font(.headline).multilineTextAlignment(.center)
 
-            if shared.fitsInScannableQR, let image = QRCodeImage.make(for: shared.encoded) {
+            if shared.fitsInScannableQR, let image = QRCodeImage.make(for: SnappetWebLink.webForm(shared.encoded)) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable().scaledToFit()
@@ -104,7 +104,7 @@ struct RoutineShareView: View {
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
             }
 
-            if let url = shared.url {
+            if let url = shared.url.map(SnappetWebLink.webForm) {
                 ShareLink(item: url, subject: Text(routine.name),
                           message: Text("A workout routine from Snappet")) {
                     Label("Share link", systemImage: "square.and.arrow.up")

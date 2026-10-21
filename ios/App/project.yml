@@ -64,6 +64,10 @@ targets:
     entitlements:
       path: Snappet/Resources/Snappet.entitlements
       properties:
+        # Universal links (prompt 200): https://harshal2802.github.io/Snappet/open/* opens the app — the domain's
+        # /.well-known/apple-app-site-association (the harshal2802.github.io repo) claims the path for this app id.
+        com.apple.developer.associated-domains:
+          - applinks:harshal2802.github.io
         com.apple.developer.healthkit: true
         # NOTE: no `com.apple.developer.healthkit.access: [health-records]` — the app reads only standard
         # HealthKit (heart rate / workouts), never clinical records. Declaring the unused Health Records

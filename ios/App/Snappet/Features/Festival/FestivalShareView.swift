@@ -121,7 +121,7 @@ struct FestivalShareView: View {
             Text(subject == .plan ? planTitle : lineupName)
                 .font(.headline).multilineTextAlignment(.center)
 
-            if let image = QRCodeImage.make(for: shared.encoded) {
+            if let image = QRCodeImage.make(for: SnappetWebLink.webForm(shared.encoded)) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable().scaledToFit()
@@ -148,7 +148,7 @@ struct FestivalShareView: View {
                     .accessibilityIdentifier("festival.share.formNote")
             }
 
-            if let url = shared.url {
+            if let url = shared.url.map(SnappetWebLink.webForm) {
                 ShareLink(item: url, subject: Text(subject == .plan ? planTitle : lineupName),
                           message: Text("A festival lineup from Snappet")) {
                     Label("Share link", systemImage: "square.and.arrow.up")
