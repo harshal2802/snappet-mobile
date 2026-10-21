@@ -478,7 +478,7 @@ struct ClipPostCard: View {
         VStack(alignment: .leading, spacing: 5) {
             if c.showStats, let stats = post.stats {
                 (Text(stats.line).foregroundStyle(SnappetColor.ink)
-                 + Text(stats.isPR ? " · ▲ PR" : "").foregroundStyle(SnappetColor.perfFresh))
+                 + Text(ClipPostStats.prText(stats).map { " · \($0)" } ?? "").foregroundStyle(SnappetColor.perfFresh))
                     .font(.subheadline.weight(.bold))
                     .accessibilityIdentifier("clips.post.stats")
             }
@@ -494,7 +494,11 @@ struct ClipPostCard: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("clips.post.addCaption")
             }
-            if c.showSets { setChips }
+            if post.level == .sessions, !post.activityChips.isEmpty {
+                activityChips
+            } else if c.showSets {
+                setChips
+            }
             if let stats = post.stats, let key = stats.activityKey, activityClipCount > post.clipCount {
                 NavigationLink(value: ActivityRoute(key: key, title: stats.activityTitle)) {
                     Text("View all \(activityClipCount) \(stats.activityTitle) clips ›")
@@ -506,6 +510,25 @@ struct ClipPostCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SnappetSpacing.lg)
+    }
+
+    /// A session post's activities ("Bench Press · 3") — tap to jump to its first clip (prompt 197).
+    private var activityChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(post.activityChips, id: \.self) { chip in
+                    let on = currentClip.attemptLabel?.hasPrefix(chip.title) == true
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { page = chip.firstPage } } label: {
+                        Text("\(chip.title) · \(chip.count)").font(.caption2.weight(.bold))
+                            .foregroundStyle(on ? accent : SnappetColor.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background((on ? accent : SnappetColor.textSecondary).opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("clips.post.activityChip")
+                }
+            }
+        }
     }
 
     /// One chip per filmed set ("Set 2 · 8 × 75 kg") — tap to jump the carousel to it; ★ PR first.

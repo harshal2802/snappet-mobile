@@ -10086,3 +10086,11 @@ stripes, and the panel read as an opaque slab.
 - Captions attach at render time, not in the composed feed: editing one must not trigger the ~500 ms re-compose.
 - "PR" = the session's top est. 1RM beats every earlier session of that activity (strict). The first session of a
   lift is not a PR, so a brand-new exercise isn't wall-to-wall stars.
+
+## 2026-10-20 — Clips by Sessions · Activities · Exercises (prompt 197)
+
+- The levels are pure transforms of the composed ACTIVITY posts, applied after filters/search: one composer, and a
+  filter means the same thing at every level. A session post / album is cheap to build per render (≤ 300 posts).
+- An album is keyed by `ActivityKey` (so the 28-day climb set window and board climbs behave like the Library); posts
+  with no identity (untagged "Session clips", festival nights) live only in Sessions / Activities.
+- Albums carry no caption in this phase (the wireframe shows none); session posts do (`session@<id>`).

@@ -16,6 +16,10 @@ struct ClipFeedPostStats: Sendable, Equatable {
     var activityKey: ActivityKey?
     /// The activity's display name ("Bench Press").
     var activityTitle: String
+    /// The session's best est. 1RM (kg) — the Exercises album's "Then vs Now" gain (prompt 197).
+    var bestKg: Double? = nil
+    /// A whole-session post's PR count ("▲ 2 PRs", prompt 197); 0 elsewhere (an activity post uses `isPR`).
+    var prCount: Int = 0
 }
 
 enum ClipPostStats {
@@ -32,7 +36,8 @@ enum ClipPostStats {
         }
         var pr = false
         if ex.discipline == .strength, let prior = priorBestKg, let best = bestKg(ex) { pr = best > prior + 0.01 }
-        return ClipFeedPostStats(line: line, isPR: pr, setDetail: detail, activityKey: key, activityTitle: title)
+        return ClipFeedPostStats(line: line, isPR: pr, setDetail: detail, activityKey: key, activityTitle: title,
+                                 bestKg: bestKg(ex))
     }
 
     /// An exercise's best est. 1RM (kg) this session — the PR yardstick.
@@ -45,7 +50,14 @@ enum ClipPostStats {
 
     /// The post's stats line as shown: "4 × 8 @ 75 kg · ▲ PR".
     static func display(_ stats: ClipFeedPostStats) -> String {
-        stats.isPR ? "\(stats.line) · ▲ PR" : stats.line
+        guard let pr = prText(stats) else { return stats.line }
+        return "\(stats.line) · \(pr)"
+    }
+
+    /// "▲ PR" / "▲ 2 PRs" — nil when there's none.
+    static func prText(_ stats: ClipFeedPostStats) -> String? {
+        if stats.prCount > 1 { return "▲ \(stats.prCount) PRs" }
+        return stats.isPR || stats.prCount == 1 ? "▲ PR" : nil
     }
 }
 

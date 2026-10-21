@@ -163,6 +163,10 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     var sessionActivity: Discipline = .general
     /// The post's stats line, PR flag, set details + activity (prompt 196) — gym exercise posts with logged sets.
     var stats: ClipFeedPostStats? = nil
+    /// Which level built it (prompt 197) — a session post shows activity chips instead of set chips.
+    var level: ClipFeedLevel = .activities
+    /// A session post's activities, to jump between (prompt 197).
+    var activityChips: [ClipFeedActivityChip] = []
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double

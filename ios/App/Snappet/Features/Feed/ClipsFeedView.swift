@@ -92,6 +92,9 @@ struct ClipsFeedView: View {
     @State private var captions = ClipCaptionStore()
     /// Clips per activity across the feed — each post's "View all N clips" (prompt 196).
     @State private var activityCounts: [ActivityKey: Int] = [:]
+    /// Sessions · Activities · Exercises (prompt 197) — Activities by default, the last pick remembered.
+    @AppStorage(ClipFeedLevel.storageKey) private var levelRaw = ClipFeedLevel.activities.rawValue
+    private var level: ClipFeedLevel { ClipFeedLevel(rawValue: levelRaw) ?? .activities }
     /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
     @State private var overlayStore = ClipOverlayStyleStore()
     @State private var showStyle = false
@@ -165,6 +168,13 @@ struct ClipsFeedView: View {
                                 // dismissed — the fresh-install read-priming gap the retired Workout
                                 // Reels onboarding left behind. The Health sheet fires ONLY from the
                                 // card's Connect tap, never from a launch path (the reverted trap).
+                                // Sessions · Activities · Exercises (prompt 197) — first, under the title (wireframe).
+                                Picker("Show", selection: $levelRaw) {
+                                    ForEach(ClipFeedLevel.allCases) { l in Text(l.label).tag(l.rawValue) }
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.horizontal, SnappetSpacing.lg)
+                                .accessibilityIdentifier("clips.level")
                                 if showsHealthOffer {
                                     ClipsHealthOfferCard(onConnect: connectHealth,
                                                          onDismiss: { healthOfferResolved = true })
@@ -191,27 +201,48 @@ struct ClipsFeedView: View {
                                 if visible.isEmpty, filter.isActive {
                                     noMatchState
                                 } else {
-                                    // Grouped under a pinned session header (prompt 167) — over the
-                                    // VISIBLE posts, so filters and search group their results too.
-                                    let indexByID = Dictionary(visible.enumerated().map { ($1.id, $0) },
-                                                               uniquingKeysWith: { a, _ in a })
-                                    ForEach(ClipFeedSections.sessions(visible)) { section in
-                                        Section {
-                                            ForEach(section.posts) { post in
-                                                postCard(post, width: feedGeo.size.width)
-                                                    // Warm the posters just below the fold (prompt 134). A
-                                                    // poster costs 70–120 ms and used to START loading only
-                                                    // when its cell appeared, so a normal scroll outran the
-                                                    // loader. Hooking the row's own appearance keeps this
-                                                    // free of scroll-offset tracking.
-                                                    .onAppear {
-                                                        prefetchPosters(after: indexByID[post.id] ?? 0,
-                                                                        in: visible,
-                                                                        width: feedGeo.size.width)
-                                                    }
+                                    // The level (prompt 197) decides what a post is — over the VISIBLE posts, so filters
+                                    // and search apply at every level.
+                                    switch level {
+                                    case .activities:
+                                        // Grouped under a pinned session header (prompt 167).
+                                        let indexByID = Dictionary(visible.enumerated().map { ($1.id, $0) },
+                                                                   uniquingKeysWith: { a, _ in a })
+                                        ForEach(ClipFeedSections.sessions(visible)) { section in
+                                            Section {
+                                                ForEach(section.posts) { post in
+                                                    postCard(post, width: feedGeo.size.width)
+                                                        // Warm the posters just below the fold (prompt 134).
+                                                        .onAppear {
+                                                            prefetchPosters(after: indexByID[post.id] ?? 0,
+                                                                            in: visible,
+                                                                            width: feedGeo.size.width)
+                                                        }
+                                                }
+                                            } header: {
+                                                ClipSessionHeader(section: section)
                                             }
-                                        } header: {
-                                            ClipSessionHeader(section: section)
+                                        }
+                                    case .sessions:
+                                        let sessionPosts = ClipFeedLevels.sessions(visible)
+                                        let indexByID = Dictionary(sessionPosts.enumerated().map { ($1.id, $0) },
+                                                                   uniquingKeysWith: { a, _ in a })
+                                        ForEach(sessionPosts) { post in
+                                            postCard(post, width: feedGeo.size.width)
+                                                .onAppear {
+                                                    prefetchPosters(after: indexByID[post.id] ?? 0, in: sessionPosts,
+                                                                    width: feedGeo.size.width)
+                                                }
+                                        }
+                                    case .exercises:
+                                        let albums = ClipFeedLevels.albums(visible)
+                                        if albums.isEmpty {
+                                            Text("Log a set or an attempt with a clip and its progress album shows up here.")
+                                                .font(.subheadline).foregroundStyle(SnappetColor.textSecondary)
+                                                .padding(SnappetSpacing.lg)
+                                        }
+                                        ForEach(albums) { album in
+                                            ClipAlbumCard(album: album, unit: feedUnit)
                                         }
                                     }
                                 }
@@ -294,11 +325,12 @@ struct ClipsFeedView: View {
             .navigationBarTitleDisplayMode(.large)
             // The Weekly Highlight Reel builder (highlights P4), pushed by the hero card above.
             .navigationDestination(for: WeeklyReelRoute.self) { _ in WeeklyReelHostView() }
-            // "View all 14 Bench Press clips" (prompt 196) → that activity's page, on its Clips tab.
+            // "View all 14 Bench Press clips" (prompt 196) / an album's Open (197) → that activity's page.
             .navigationDestination(for: ActivityRoute.self) { route in
-                ActivityDashboardView(key: route.key, title: route.title, history: workoutSessions,
-                                      unit: WeightUnit(rawValue: UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") ?? "") ?? .kg)
+                ActivityDashboardView(key: route.key, title: route.title, history: workoutSessions, unit: feedUnit)
             }
+            // An album's Progress reel (prompt 197).
+            .navigationDestination(for: ClipsReelScope.self) { scope in WeeklyReelHostView(scope: scope) }
             .toolbar {
                 if !posts.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -358,6 +390,10 @@ struct ClipsFeedView: View {
     }
 
     /// One post card with the feed's shared state (prompt 167 pulled it out of the grouped ForEach).
+    private var feedUnit: WeightUnit {
+        WeightUnit(rawValue: UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") ?? "") ?? .kg
+    }
+
     private func postCard(_ post: ClipFeedPost, width: CGFloat) -> some View {
         ClipPostCard(post: post,
                      hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
