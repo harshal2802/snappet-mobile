@@ -10049,3 +10049,12 @@ stripes, and the panel read as an opaque slab.
   test passed only because it tapped ✓ first — test the path users take (straight to Log).
 - One set's weight has ONE formatter (`WorkoutMath.setWeight`); `formatWeight(kg:)` is for totals. The rounding rule
   had been fixed in two places (146 rows, 181 dashboard) and survived in five others.
+
+## 2026-10-20 — Crash fixes: camera session, reminder taps (prompt 194)
+
+- All AVCaptureSession work goes through one serial queue. "Start running off-main" alone isn't enough — any
+  configuration on another thread can interleave with it, and AVFoundation raises rather than waits.
+- UNUserNotificationCenterDelegate uses the completion-handler forms, completed on main. The async forms in a
+  `nonisolated` delegate complete on a cooperative thread, and iOS's own completion touches UIApplication.
+- Crash reports live on the phone: `xcrun devicectl device copy from --domain-type systemCrashLogs --source /` — pull
+  them before guessing.
