@@ -26,9 +26,9 @@ final class RoutineReminders: NSObject, UNUserNotificationCenterDelegate {
     var pendingAction: Action?
 
     nonisolated static let categoryID = "snappet.routine.reminder"
-    private nonisolated static let startActionID = "snappet.routine.start"
-    private nonisolated static let snoozeActionID = "snappet.routine.snooze"
-    private nonisolated static let skipActionID = "snappet.routine.skip"
+    nonisolated static let startActionID = "snappet.routine.start"
+    nonisolated static let snoozeActionID = "snappet.routine.snooze"
+    nonisolated static let skipActionID = "snappet.routine.skip"
     private nonisolated static let snoozePrefix = "snappet.routineSnooze."
     nonisolated static let snoozeMinutes = 15
 
@@ -89,46 +89,88 @@ final class RoutineReminders: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: - UNUserNotificationCenterDelegate
+    //
+    // The COMPLETION-HANDLER forms, completed on the main thread (prompt 193). The `async` forms let iOS run its
+    // completion off-main, which calls into UIApplication state restoration and trips a main-thread assertion —
+    // tapping a reminder crashed the app (2 device reports, 2026-10-19: `-[UIApplication
+    // _performBlockAfterCATransactionCommitSynchronizes:]` from a cooperative thread).
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions {
-        notification.request.content.categoryIdentifier == Self.categoryID ? [.banner, .list, .sound] : []
+                                            willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler:
+                                                @escaping (UNNotificationPresentationOptions) -> Void) {
+        let options: UNNotificationPresentationOptions =
+            notification.request.content.categoryIdentifier == Self.categoryID ? [.banner, .list, .sound] : []
+        nonisolated(unsafe) let done = completionHandler
+        DispatchQueue.main.async { done(options) }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse) async {
+                                            didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Read everything off the response now — it isn't Sendable.
         let content = response.notification.request.content
-        guard content.categoryIdentifier == Self.categoryID else { return }
-        let id = response.notification.request.identifier
-        let actionID = response.actionIdentifier
-        let title = content.title, body = content.body
-        let sound = content.sound != nil
-        let level = content.interruptionLevel
-        // Snoozes carry the original id in userInfo (their own id is the per-routine snooze slot).
-        let originalID = (content.userInfo["original"] as? String) ?? id
-        guard let (routineID, day) = PlannedRoutineNotification.parse(originalID) else { return }
+        let tap = Tap(category: content.categoryIdentifier, id: response.notification.request.identifier,
+                      actionID: response.actionIdentifier, original: content.userInfo["original"] as? String,
+                      title: content.title, body: content.body, sound: content.sound != nil,
+                      level: content.interruptionLevel)
+        nonisolated(unsafe) let done = completionHandler
+        Task { @MainActor in
+            await self.handle(tap)
+            done()   // on the main thread
+        }
+    }
 
-        switch actionID {
-        case Self.startActionID:
-            await MainActor.run { pendingAction = .start(routineID) }
-        case Self.skipActionID:
-            await MainActor.run { pendingAction = .skip(routineID, day) }
-        case Self.snoozeActionID:
+    /// A tapped notification, as plain values.
+    struct Tap: Sendable {
+        let category: String
+        let id: String
+        let actionID: String
+        let original: String?
+        let title: String
+        let body: String
+        let sound: Bool
+        let level: UNNotificationInterruptionLevel
+    }
+
+    /// What a tap means (pure): an action for the shell, a snooze to schedule, or nothing.
+    enum TapOutcome: Equatable, Sendable {
+        case action(Action)
+        case snooze(originalID: String, routineID: UUID)
+        case ignore
+    }
+
+    nonisolated static func outcome(of tap: Tap) -> TapOutcome {
+        guard tap.category == categoryID else { return .ignore }
+        // Snoozes carry the original id in userInfo (their own id is the per-routine snooze slot).
+        let originalID = tap.original ?? tap.id
+        guard let (routineID, day) = PlannedRoutineNotification.parse(originalID) else { return .ignore }
+        switch tap.actionID {
+        case startActionID: return .action(.start(routineID))
+        case skipActionID: return .action(.skip(routineID, day))
+        case snoozeActionID: return .snooze(originalID: originalID, routineID: routineID)
+        case UNNotificationDefaultActionIdentifier: return .action(.open(routineID))
+        default: return .ignore
+        }
+    }
+
+    private func handle(_ tap: Tap) async {
+        switch Self.outcome(of: tap) {
+        case .action(let action):
+            pendingAction = action
+        case .snooze(let originalID, let routineID):
             let snooze = UNMutableNotificationContent()
-            snooze.title = title
-            snooze.body = body
-            snooze.sound = sound ? .default : nil
-            snooze.interruptionLevel = level
+            snooze.title = tap.title
+            snooze.body = tap.body
+            snooze.sound = tap.sound ? .default : nil
+            snooze.interruptionLevel = tap.level
             snooze.categoryIdentifier = Self.categoryID
             snooze.userInfo = ["original": originalID]
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(Self.snoozeMinutes * 60),
                                                             repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Self.snoozePrefix + routineID.uuidString,
                                                         content: snooze, trigger: trigger))
-        case UNNotificationDefaultActionIdentifier:
-            await MainActor.run { pendingAction = .open(routineID) }
-        default:
+        case .ignore:
             break
         }
     }

@@ -9,9 +9,8 @@ import Observation
 /// stabilization, torch, zoom, and focus / exposure at a point (tap) or locked (long-press). The rules live in the
 /// pure `CameraLogic`; this only talks to the device.
 ///
-/// Main-actor, like `SnappetQRScannerController`: configuration is quick and happens here; only the blocking
-/// `startRunning` / `stopRunning` go to a background queue (the session isn't `Sendable` — handed over as
-/// `nonisolated(unsafe)`). Delegate callbacks hop back to the main actor.
+/// Main-actor for its observable state; every capture-session change runs on one serial `sessionQueue` (see there —
+/// the 2026-10-19 startRunning crash). Delegate callbacks hop back to the main actor.
 ///
 /// `fake` (the simulator under `-uiTestFakeCamera`) runs no session — `CameraCapabilities.sample`, a pretend
 /// recording — so the camera's controls are exercisable in UI tests.
@@ -78,44 +77,66 @@ final class CameraController: NSObject {
 
     // MARK: - Session
 
+    /// EVERY session change — configuration, start / stop running, recording, photos — runs on this ONE serial
+    /// queue (Apple's AVCam pattern). Device crash 2026-10-19 (prompt 193, 3 reports): `start` handed `startRunning`
+    /// to a global queue while `onAppear` began another `apply` on main, and `startRunning` landing between
+    /// `beginConfiguration` and `commitConfiguration` raises → SIGABRT. Serial ⇒ it can't interleave.
+    private let sessionQueue = DispatchQueue(label: "com.snappet.camera.session", qos: .userInitiated)
+
+    /// The capture objects, handed to `sessionQueue` (not `Sendable`; only ever touched there once configured).
+    private struct Parts: @unchecked Sendable {
+        let session: AVCaptureSession
+        let movie: AVCaptureMovieFileOutput
+        let photo: AVCapturePhotoOutput
+    }
+    private var parts: Parts { Parts(session: session, movie: movieOutput, photo: photoOutput) }
+
     func start(with settings: CameraSettings) {
         self.settings = settings
         guard !fake else { configured = true; return }
         if !configured { configure(position: .back) }
         apply(settings)
-        nonisolated(unsafe) let session = session
-        DispatchQueue.global(qos: .userInitiated).async { if !session.isRunning { session.startRunning() } }
+        let p = parts
+        sessionQueue.async { if !p.session.isRunning { p.session.startRunning() } }
     }
 
     func stop() {
         if isRecording { stopRecording() }
         setTorch(false)
         guard !fake else { return }
-        nonisolated(unsafe) let session = session
-        DispatchQueue.global(qos: .userInitiated).async { if session.isRunning { session.stopRunning() } }
+        let p = parts
+        sessionQueue.async { if p.session.isRunning { p.session.stopRunning() } }
     }
 
+    /// Pick the device and read what it can do here (no session mutation), then wire it in on `sessionQueue`.
     private func configure(position: AVCaptureDevice.Position) {
-        session.beginConfiguration()
-        defer { session.commitConfiguration() }
-        if let videoInput { session.removeInput(videoInput) }
         let types: [AVCaptureDevice.DeviceType] = position == .back
             ? [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
             : [.builtInTrueDepthCamera, .builtInWideAngleCamera]
         let found = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: position).devices
         guard let device = types.lazy.compactMap({ t in found.first { $0.deviceType == t } }).first,
-              let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return }
-        session.addInput(input)
+              let input = try? AVCaptureDeviceInput(device: device) else { return }
+        nonisolated(unsafe) let oldInput = videoInput
+        nonisolated(unsafe) let newInput = input
+        var micInput: AVCaptureDeviceInput?
+        if audioInput == nil, let mic = AVCaptureDevice.default(for: .audio) {
+            micInput = try? AVCaptureDeviceInput(device: mic)
+            audioInput = micInput
+        }
+        nonisolated(unsafe) let mic = micInput
+        let p = parts
+        sessionQueue.async {
+            p.session.beginConfiguration()
+            if let oldInput { p.session.removeInput(oldInput) }
+            if p.session.canAddInput(newInput) { p.session.addInput(newInput) }
+            if let mic, p.session.canAddInput(mic) { p.session.addInput(mic) }
+            if !p.session.outputs.contains(p.movie), p.session.canAddOutput(p.movie) { p.session.addOutput(p.movie) }
+            if !p.session.outputs.contains(p.photo), p.session.canAddOutput(p.photo) { p.session.addOutput(p.photo) }
+            p.session.commitConfiguration()
+        }
         self.device = device
         self.videoInput = input
         self.position = position
-        if audioInput == nil, let mic = AVCaptureDevice.default(for: .audio),
-           let a = try? AVCaptureDeviceInput(device: mic), session.canAddInput(a) {
-            session.addInput(a)
-            audioInput = a
-        }
-        if !session.outputs.contains(movieOutput), session.canAddOutput(movieOutput) { session.addOutput(movieOutput) }
-        if !session.outputs.contains(photoOutput), session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
         rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         zoomMultiplier = Double(device.displayVideoZoomFactorMultiplier)
         let lensFactors = [1.0] + device.virtualDeviceSwitchOverVideoZoomFactors.map { $0.doubleValue }
@@ -138,41 +159,51 @@ final class CameraController: NSObject {
         configured = true
     }
 
-    /// Point the hardware at `settings` (already resolved against `capabilities`).
+    /// Point the hardware at `settings` (already resolved against `capabilities`): the format is chosen here, the
+    /// session is reconfigured on `sessionQueue`.
     func apply(_ settings: CameraSettings) {
         self.settings = settings
         guard !fake, let device else { return }
-        session.beginConfiguration()
-        if settings.mode == .photo {
-            if session.canSetSessionPreset(.photo) { session.sessionPreset = .photo }
-        } else {
-            let res = settings.mode == .slomo ? CameraResolution.hd : settings.resolution
-            let fps = Double(settings.mode == .slomo ? settings.slomoFPS : settings.fps)
-            let format = device.formats.first { f in
-                let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
-                return Int(d.width) == res.width && Int(d.height) == res.height
-                    && f.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= fps && fps <= $0.maxFrameRate + 0.5 }
-                    && (settings.stabilization == .standard || f.isVideoStabilizationModeSupported(.cinematic))
-            } ?? device.formats.first { f in
-                let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
-                return Int(d.width) == res.width && Int(d.height) == res.height
-                    && f.videoSupportedFrameRateRanges.contains { fps <= $0.maxFrameRate + 0.5 }
-            }
-            if let format, (try? device.lockForConfiguration()) != nil {
-                device.activeFormat = format
+        let photoMode = settings.mode == .photo
+        let res = settings.mode == .slomo ? CameraResolution.hd : settings.resolution
+        let fps = Double(settings.mode == .slomo ? settings.slomoFPS : settings.fps)
+        nonisolated(unsafe) let format = photoMode ? nil : (device.formats.first { f in
+            let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+            return Int(d.width) == res.width && Int(d.height) == res.height
+                && f.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= fps && fps <= $0.maxFrameRate + 0.5 }
+                && (settings.stabilization == .standard || f.isVideoStabilizationModeSupported(.cinematic))
+        } ?? device.formats.first { f in
+            let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+            return Int(d.width) == res.width && Int(d.height) == res.height
+                && f.videoSupportedFrameRateRanges.contains { fps <= $0.maxFrameRate + 0.5 }
+        })
+        nonisolated(unsafe) let dev = device
+        let enhanced = settings.stabilization == .enhanced
+        let factor = CGFloat(CameraLogic.clampZoom(zoom, capabilities) / zoomMultiplier)
+        let p = parts
+        sessionQueue.async {
+            p.session.beginConfiguration()
+            if photoMode {
+                if p.session.canSetSessionPreset(.photo) { p.session.sessionPreset = .photo }
+            } else if let format, (try? dev.lockForConfiguration()) != nil {
+                dev.activeFormat = format
                 let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
-                device.activeVideoMinFrameDuration = duration
-                device.activeVideoMaxFrameDuration = duration
-                device.unlockForConfiguration()
+                dev.activeVideoMinFrameDuration = duration
+                dev.activeVideoMaxFrameDuration = duration
+                dev.unlockForConfiguration()
             }
-            if let connection = movieOutput.connection(with: .video), connection.isVideoStabilizationSupported {
-                let enhanced: AVCaptureVideoStabilizationMode =
-                    device.activeFormat.isVideoStabilizationModeSupported(.cinematicExtended) ? .cinematicExtended : .cinematic
-                connection.preferredVideoStabilizationMode = settings.stabilization == .enhanced ? enhanced : .standard
+            if !photoMode, let connection = p.movie.connection(with: .video), connection.isVideoStabilizationSupported {
+                let best: AVCaptureVideoStabilizationMode =
+                    dev.activeFormat.isVideoStabilizationModeSupported(.cinematicExtended) ? .cinematicExtended : .cinematic
+                connection.preferredVideoStabilizationMode = enhanced ? best : .standard
+            }
+            p.session.commitConfiguration()
+            // A new format resets the zoom range — re-apply the current zoom inside the same serial step.
+            if (try? dev.lockForConfiguration()) != nil {
+                dev.videoZoomFactor = min(max(factor, dev.minAvailableVideoZoomFactor), dev.maxAvailableVideoZoomFactor)
+                dev.unlockForConfiguration()
             }
         }
-        session.commitConfiguration()
-        setZoom(zoom, animated: false)
     }
 
     // MARK: - Controls
@@ -238,13 +269,17 @@ final class CameraController: NSObject {
         recordingStartedAt = Date()
         isRecording = true
         guard !fake else { return }
-        if let connection = movieOutput.connection(with: .video), let rotation {
-            let angle = rotation.videoRotationAngleForHorizonLevelCapture
-            if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
-            if position == .front { connection.isVideoMirrored = true }
-        }
+        let angle = rotation?.videoRotationAngleForHorizonLevelCapture
+        let mirrored = position == .front
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("snappet-\(UUID().uuidString).mov")
-        movieOutput.startRecording(to: url, recordingDelegate: self)
+        let p = parts
+        sessionQueue.async {
+            if let connection = p.movie.connection(with: .video) {
+                if let angle, connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
+                if mirrored, connection.isVideoMirroringSupported { connection.isVideoMirrored = true }
+            }
+            p.movie.startRecording(to: url, recordingDelegate: self)
+        }
     }
 
     func stopRecording() {
@@ -254,19 +289,23 @@ final class CameraController: NSObject {
             recordingStartedAt = nil
             return
         }
-        movieOutput.stopRecording()   // → didFinishRecordingTo
+        let p = parts
+        sessionQueue.async { p.movie.stopRecording() }   // → didFinishRecordingTo
     }
 
     func capturePhoto() {
         guard !fake else { onPhoto?(Data(), Date()); return }
-        let format: [String: Any] = photoOutput.availablePhotoCodecTypes.contains(.hevc)
-            ? [AVVideoCodecKey: AVVideoCodecType.hevc] : [:]
-        let settings = AVCapturePhotoSettings(format: format)
-        if let connection = photoOutput.connection(with: .video), let rotation {
-            let angle = rotation.videoRotationAngleForHorizonLevelCapture
-            if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
+        let angle = rotation?.videoRotationAngleForHorizonLevelCapture
+        let p = parts
+        sessionQueue.async {
+            let format: [String: Any] = p.photo.availablePhotoCodecTypes.contains(.hevc)
+                ? [AVVideoCodecKey: AVVideoCodecType.hevc] : [:]
+            if let connection = p.photo.connection(with: .video), let angle,
+               connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+            p.photo.capturePhoto(with: AVCapturePhotoSettings(format: format), delegate: self)
         }
-        photoOutput.capturePhoto(with: settings, delegate: self)
     }
 
     /// The preview's device-coordinate point for a tap (the preview layer converts).
