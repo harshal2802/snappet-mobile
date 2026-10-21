@@ -76,6 +76,13 @@ final class BuddyRig {
     private var zzz: ModelEntity?
     private var builtStage: BuddyStage?
     private var builtPaused: Bool?
+    /// Materials are built once and reused (prompt 193): a NEW `PhysicallyBasedMaterial` every frame made RealityKit
+    /// process a fresh asset per frame — a backlog it flushed on the main thread as ~110 ms stalls for a second
+    /// after leaving Home (measured with an in-app main-thread sampler, 2026-10-20).
+    private var skinKey: String?
+    private var tipHue: Double?
+    private var tipStep: Int?
+    private var tipMaterials: [Int: PhysicallyBasedMaterial] = [:]
 
     init() {
         let camera = PerspectiveCamera()
@@ -136,8 +143,12 @@ final class BuddyRig {
         let girth: Float = 1 / squash.squareRoot()
         body.scale = look.stage == .egg ? SIMD3<Float>(0.95, 1.22, 0.95) : SIMD3<Float>(girth, squash, girth)
 
-        let color = UIColor(hue: look.hue, saturation: look.saturation, brightness: look.brightness, alpha: 1)
-        body.model?.materials = [Self.skin(color, glow: look.glow)]
+        let key = "\(look.hue)|\(look.saturation)|\(look.brightness)|\(look.glow)"
+        if key != skinKey {
+            skinKey = key
+            let color = UIColor(hue: look.hue, saturation: look.saturation, brightness: look.brightness, alpha: 1)
+            body.model?.materials = [Self.skin(color, glow: look.glow)]
+        }
 
         for eye in eyes { eye.scale = [1, max(0.05, eyeOpen), 1] }
         for (i, arm) in arms.enumerated() {
@@ -145,8 +156,17 @@ final class BuddyRig {
             arm.position = [side * 0.255, -0.05 + armLift * 0.17, 0.03]
             arm.orientation = simd_quatf(angle: side * (0.25 + armLift * 1.2), axis: [0, 0, 1])
         }
+        // The tips' glow pulses with time — stepped to 1/20ths so ≤ 21 materials ever exist, each built once.
         let tipGlow = look.paused ? 0.05 : 0.4 + 0.6 * look.form * (0.75 + 0.25 * sin(t * 3))
-        for tip in tips { tip.model?.materials = [Self.glowing(UIColor(hue: look.hue, saturation: 0.5, brightness: 1, alpha: 1), Float(tipGlow))] }
+        if tipHue != look.hue { tipHue = look.hue; tipMaterials.removeAll(); tipStep = nil }
+        let step = Int((tipGlow * 20).rounded())
+        if step != tipStep {
+            tipStep = step
+            let material = tipMaterials[step] ?? Self.glowing(UIColor(hue: look.hue, saturation: 0.5, brightness: 1, alpha: 1),
+                                                             Float(step) / 20)
+            tipMaterials[step] = material
+            for tip in tips { tip.model?.materials = [material] }
+        }
 
         for (k, spark) in sparks.enumerated() {
             let a = t * 1.4 + Double(k) * 2 * .pi / Double(max(1, sparks.count))
@@ -162,6 +182,7 @@ final class BuddyRig {
     // MARK: Build (on stage / pause change)
 
     private func rebuild(_ look: BuddyLook) {
+        skinKey = nil; tipStep = nil   // new entities → re-apply the (cached) materials
         parts.removeFromParent()
         parts = Entity()
         pivot.addChild(parts)

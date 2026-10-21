@@ -248,7 +248,10 @@ struct BuddyHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .top) {
-                BuddyCreatureView(look: look, cheerTrigger: cheer, animated: onScreen, interactive: false)
+                // Paused while another tab is showing (prompt 193): Home stays alive inside the TabView, and its
+                // scroll-visibility never changes on a tab switch, so the buddy kept animating behind Clips.
+                BuddyCreatureView(look: look, cheerTrigger: cheer, animated: onScreen && router.tab == .home,
+                                  interactive: false)
                     .frame(height: 230)
                 chips.padding(10)
             }
