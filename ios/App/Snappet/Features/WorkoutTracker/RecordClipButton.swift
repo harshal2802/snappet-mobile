@@ -28,6 +28,8 @@ struct RecordClipButton: View {
     /// a11y-id namespace + caption noun for the two covers: `("timedSet", "set")` / `("timedAttempt", "attempt")`.
     let idPrefix: String
     let attachNoun: String
+    /// The button's label — "Record a clip", or (an exercise page, prompt 195) "Record a set" / "Record an attempt".
+    var title: String = "Record a clip"
     /// What the camera is filming for (prompt 191) — its tag chip, stop-and-log label, stop-when-a-set-is-logged.
     var context: CameraContext?
     /// The host's "log it now" (STOP & LOG a timed set / STOP an attempt), run once the camera has closed and the
@@ -46,7 +48,8 @@ struct RecordClipButton: View {
     /// Explicit init so the memberwise initializer isn't lowered to `private` by the `private` stored
     /// members (the codebase pattern for views with `@State private var` — `TimedSetCover`, `SetMediaStrip`).
     init(recordedClips: Binding<[RecordedClip]>, savingClip: Binding<Bool>, idPrefix: String, attachNoun: String,
-         context: CameraContext? = nil, logAction: (() -> Void)? = nil) {
+         title: String = "Record a clip", context: CameraContext? = nil, logAction: (() -> Void)? = nil) {
+        self.title = title
         self._recordedClips = recordedClips
         self._savingClip = savingClip
         self.idPrefix = idPrefix
@@ -72,7 +75,7 @@ struct RecordClipButton: View {
                     .accessibilityIdentifier("\(idPrefix).recordNotice")
             }
             Button { present() } label: {
-                Label(savingClip ? "Saving clip…" : "Record a clip",
+                Label(savingClip ? "Saving clip…" : title,
                       systemImage: savingClip ? "arrow.down.circle" : "video.fill")
                     .font(.headline)
                     .foregroundStyle(.white)

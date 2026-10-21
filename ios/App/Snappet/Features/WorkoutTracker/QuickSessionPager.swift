@@ -73,6 +73,15 @@ enum QuickSessionPager {
     }
 
     /// The per-discipline noun for plan labels and ledgers ("set" / "leg" / "round").
+    /// The exercise page's record button (prompt 195): recording is logging an effort.
+    static func recordTitle(for ex: SessionExercise) -> String {
+        switch ex.discipline {
+        case .climb: return "Record an attempt"
+        case .run: return "Record a leg"
+        default: return "Record a set"
+        }
+    }
+
     static func effortNoun(for ex: SessionExercise) -> String {
         switch ex.discipline {
         case .run:   return "leg"

@@ -10058,3 +10058,11 @@ stripes, and the panel read as an opaque slab.
   `nonisolated` delegate complete on a cooperative thread, and iOS's own completion touches UIApplication.
 - Crash reports live on the phone: `xcrun devicectl device copy from --domain-type systemCrashLogs --source /` — pull
   them before guessing.
+
+## 2026-10-20 — Recording is the effort (prompt 195)
+
+- From an exercise page the camera logs the effort itself (user: "record a clip should be record an attempt and it
+  should update to sets"). A recorded lift takes the quick-add seed's reps × weight (the hero steppers' unsaved
+  edits live in the card's own state, out of reach) — edit the set after if they differed.
+- A recorded climb always ends in a logged attempt: the outcome sheet's dismissal saves a plain attempt, matching the
+  timed-attempt cover's "never silently drop a captured effort".

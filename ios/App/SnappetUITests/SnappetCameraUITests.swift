@@ -11,6 +11,7 @@ import XCTest
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
+        app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
         app.launch()
     }
 
@@ -138,5 +139,71 @@ import XCTest
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch.waitForExistence(timeout: 6),
                       "the logged set")
         snap("07-logged")
+    }
+
+    // MARK: - Recording IS the effort (prompt 195)
+
+    private func openQuickSession() {
+        XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 8))
+        app.tabBars.buttons["Apps"].tap()
+        app.buttons["moduleCard.workout-log"].tap()
+        let quick = app.buttons["workout.quickStart"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 6))
+        quick.tap()
+        XCTAssertTrue(app.buttons["freeform.addExercise"].waitForExistence(timeout: 8))
+    }
+
+    func testRecordASetLogsTheSetWithItsClip() {
+        openQuickSession()
+        app.buttons["freeform.addExercise"].tap()
+        app.buttons["Lifting exercise"].tap()
+        let row = app.buttons.matching(NSPredicate(
+            format: "label CONTAINS 'Beginner' OR label CONTAINS 'Intermediate' OR label CONTAINS 'Expert'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Add'")).firstMatch.tap()
+
+        let record = app.buttons["freeform.page.record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 6))
+        XCTAssertTrue(record.label.contains("Record a set"), record.label)
+        record.tap()
+        XCTAssertTrue(app.buttons["camera.tag"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.buttons["camera.tag"].label.contains("set 1"), app.buttons["camera.tag"].label)
+        app.buttons["camera.shutter"].tap()
+        XCTAssertTrue(app.staticTexts["camera.timer"].waitForExistence(timeout: 4))
+        XCTAssertEqual(app.buttons["camera.stopAndLog"].label, "Stop & log set")
+        app.buttons["camera.stopAndLog"].tap()
+
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
+            .waitForExistence(timeout: 6), "the filmed set is logged")
+        snap("08-record-a-set")
+    }
+
+    func testRecordAnAttemptAsksHowItWent() {
+        openQuickSession()
+        app.buttons["freeform.addExercise"].tap()
+        app.buttons["Climbing"].tap()
+        let v3 = app.buttons["addClimb.rung.V3"]
+        XCTAssertTrue(v3.waitForExistence(timeout: 6))
+        v3.tap()
+        app.buttons["addClimb.add"].tap()
+
+        let record = app.buttons["freeform.page.record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 6))
+        XCTAssertTrue(record.label.contains("Record an attempt"), record.label)
+        record.tap()
+        XCTAssertTrue(app.buttons["camera.shutter"].waitForExistence(timeout: 6))
+        app.buttons["camera.shutter"].tap()
+        XCTAssertTrue(app.staticTexts["camera.timer"].waitForExistence(timeout: 4))
+        XCTAssertEqual(app.buttons["camera.stopAndLog"].label, "Stop attempt")
+        app.buttons["camera.stopAndLog"].tap()
+
+        let sent = app.buttons["Send"].exists ? app.buttons["Send"] : app.buttons.matching(NSPredicate(format: "label == 'Sent' OR label == 'Send'")).firstMatch
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "recordedAttempt.sheet").firstMatch
+            .waitForExistence(timeout: 6) || sent.waitForExistence(timeout: 2), "how did it go?")
+        snap("09-how-did-it-go")
+        sent.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
+            .waitForExistence(timeout: 6), "the filmed attempt is logged")
     }
 }
