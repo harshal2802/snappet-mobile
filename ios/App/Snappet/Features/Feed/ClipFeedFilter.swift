@@ -69,6 +69,7 @@ struct ClipFeedFilter: Equatable, Sendable {
     /// Filter `posts` down to the visible set. `isFavorite` injects the reaction store lookup so the
     /// UserDefaults edge stays out of the pure layer (and is only consulted when `favoritesOnly` is on).
     func apply(_ posts: [ClipFeedPost], isFavorite: (ClipFeedPost) -> Bool,
+               caption: (ClipFeedPost) -> String? = { _ in nil },
                searchContext: ClipSearch.Context = .current) -> [ClipFeedPost] {
         guard isActive else { return posts }
         let q = trimmedQuery
@@ -95,7 +96,7 @@ struct ClipFeedFilter: Equatable, Sendable {
             // Every word must match something the user remembers (prompt 165): name, session, grade,
             // angle, outcome, date words, or a relative range ("last week"). `localizedStandardContains`
             // = case- and diacritic-insensitive, the same matching Spotlight-style search uses.
-            if let search, !search.matches(post) { return false }
+            if let search, !search.matches(post, caption: caption(post)) { return false }
             return true
         }
     }

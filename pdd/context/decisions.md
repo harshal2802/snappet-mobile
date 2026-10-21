@@ -10077,3 +10077,12 @@ stripes, and the panel read as an opaque slab.
   sample the main thread's stack. Each round ruled something out (posters, SwiftUI bodies, the RealityView itself)
   before the sampler named the cause.
 - `PHAsset.fetchAssets` is never called on main in the Clips pipeline (`AssetPosterLoader.assets` is the one lookup).
+
+## 2026-10-20 — Clips posts, Instagram-style (prompt 196)
+
+- Captions reuse `FeedReaction` rows (like favorites and hides), keyed `clippost:<post.id>`: no schema change, and
+  the backup already covers them. A post id is `groupKey@session`, stable across rebuilds. Part 2's session /
+  exercise posts get their own ids, so a caption belongs to the post at its level (the user's pick).
+- Captions attach at render time, not in the composed feed: editing one must not trigger the ~500 ms re-compose.
+- "PR" = the session's top est. 1RM beats every earlier session of that activity (strict). The first session of a
+  lift is not a PR, so a brand-new exercise isn't wall-to-wall stars.

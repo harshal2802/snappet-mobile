@@ -1,0 +1,222 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Clips feed levels · Wireframes</title><style>
+  :root{
+    /* SnappetColor dark tokens */
+    --coral:#FF7A6B; --amber:#F59E0B; --ember:#FF9645; --green:#5BC074; --blue:#589BF2; --violet:#9D82F0; --red:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1d1610,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:2100px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc9a1 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2{font-size:24px;margin:48px 0 6px;font-weight:800;letter-spacing:-.01em;color:#fff}
+  h2 .n{color:var(--ember);margin-right:8px}
+  .sub{color:#b2b3bd;font-size:15.5px;max-width:1250px;margin:0 0 10px}
+  .sub b{color:#fff}
+  .wrap{max-width:2100px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:22px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 8px;border-radius:17px;
+    background:var(--ember);color:#2a1205;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,150,69,.4)}
+  .stepnum.alt{background:#4a4a52;color:#fff;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .new{color:var(--ember);font-weight:700}
+  .rec{display:inline-block;font-size:11px;font-weight:800;color:#06210f;background:var(--green);border-radius:6px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+
+  /* tables / panels */
+  table{border-collapse:collapse;width:100%;max-width:1400px;font-size:14px;margin-top:14px}
+  th,td{padding:9px 12px;border-top:1px solid #2a2b31;text-align:left;vertical-align:top}
+  th{color:#9da0aa;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-top:0}
+  td b{color:#fff} td .bad{color:var(--red)} td .ok{color:var(--green)}
+  .panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;max-width:1500px;margin-top:16px}
+  .panel{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:16px 18px}
+  .panel h4{margin:0 0 10px;font-size:15.5px;color:#fff}
+  .opt{display:flex;gap:10px;font-size:13.5px;padding:7px 0;border-top:1px solid #26272d;color:#c9cbd3}
+  .opt:first-of-type{border-top:0}
+  .opt .k{font-weight:800;color:#8d909a;flex:0 0 16px}
+  .opt.r{color:#fff} .opt.r .k{color:var(--green)}
+  .phase{background:#17181d;border:1px solid #2a2b31;border-radius:16px;padding:14px 16px}
+  .phase .p{color:var(--ember);font-weight:800;font-size:13px} .phase b{display:block;margin:2px 0 6px;color:#fff}
+  .phase ul{margin:0;padding-left:18px;font-size:13px;color:#b8bcc6}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{flex:none;height:44px;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{flex:none;padding:4px 14px 6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .navbar .t{font-size:17px;font-weight:700}
+  .navbar .big{font-size:28px;font-weight:800;letter-spacing:-.02em}
+  .circ{width:32px;height:32px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ember)}
+  .seg{flex:none;margin:4px 14px 8px;display:flex;background:var(--muted);border-radius:9px;padding:2px}
+  .seg span{flex:1;text-align:center;font-size:12px;padding:5px 0;border-radius:7px;color:var(--t2);font-weight:600}
+  .seg .on{background:#3a3a42;color:#fff}
+  .search{flex:none;margin:0 14px 8px;background:var(--muted);border-radius:11px;padding:8px 11px;font-size:13px;color:#7d7d84}
+  .chips{flex:none;display:flex;gap:7px;padding:0 14px 8px;overflow:hidden}
+  .chip{flex:none;padding:6px 11px;border-radius:999px;font-size:12px;font-weight:650;background:var(--muted);color:var(--t2);white-space:nowrap}
+  .chip.on{background:rgba(255,150,69,.16);color:var(--ember);box-shadow:0 0 0 1px rgba(255,150,69,.45) inset}
+  .chip.climb.on{background:rgba(245,158,11,.16);color:var(--amber);box-shadow:0 0 0 1px rgba(245,158,11,.45) inset}
+  .chip.new{box-shadow:0 0 0 2px var(--ember)}
+  .bar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:2px 16px 6px;font-size:11.5px;color:var(--t2)}
+  .sortbtn{color:var(--ember);font-weight:700;font-size:12px}
+  .sortbtn.new{background:rgba(255,150,69,.14);border-radius:8px;padding:3px 8px;box-shadow:0 0 0 1.5px var(--ember)}
+  .sect{flex:none;padding:8px 16px 4px;font-size:11px;font-weight:800;letter-spacing:.08em;color:#8a8a92;text-transform:uppercase;display:flex;justify-content:space-between}
+  .sect a{color:var(--ember);text-transform:none;letter-spacing:0;font-weight:700}
+  .list{flex:none;margin:0 12px;background:var(--surface);border-radius:14px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 11px;border-top:1px solid #2a2a30;font-size:13px}
+  .row:first-child{border-top:0}
+  .glyph{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+  .g-str{background:rgba(255,150,69,.15);color:var(--ember)} .g-clm{background:rgba(245,158,11,.15);color:var(--amber)}
+  .g-run{background:rgba(88,155,242,.15);color:var(--blue)} .g-tim{background:rgba(255,106,92,.15);color:var(--red)}
+  .g-dan{background:rgba(157,130,240,.15);color:var(--violet)}
+  .grade{width:34px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:rgba(245,158,11,.16);color:var(--amber);flex:none}
+  .rt{flex:1;min-width:0}
+  .rt .a{font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rt .b{font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rr{text-align:right;font-size:10.5px;color:var(--t2);flex:none}
+  .rr b{display:block;color:var(--ink);font-size:11.5px}
+  .sent{color:var(--green);font-weight:800} .proj{color:var(--amber);font-weight:800}
+  .pill{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:99px;background:rgba(91,192,116,.15);color:var(--green);margin-left:4px}
+  .pin{color:var(--ember);font-size:10px;margin-left:3px}
+  .done{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:99px;background:rgba(255,150,69,.15);color:var(--ember);margin-left:4px}
+  .hl{box-shadow:0 0 0 2px var(--ember) inset;border-radius:14px}
+  .tabbar{margin-top:auto;flex:none;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:8px 8px 22px}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:#8a8a90}
+  .tab.on{color:var(--coral)} .tab .ic{font-size:17px}
+  .menu{position:absolute;right:14px;width:212px;background:rgba(44,44,50,.97);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.6);z-index:20;overflow:hidden;font-size:13px}
+  .menu div{padding:10px 13px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:first-child{border-top:0}
+  .menu .h{font-size:10.5px;color:#9a9aa2;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:8px 13px}
+  .menu .ck{color:var(--ember)}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:10}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#1c1c20;border-radius:22px 22px 0 0;z-index:15;padding:8px 0 20px}
+  .grab{width:36px;height:5px;border-radius:3px;background:#48484f;margin:0 auto 8px}
+  .kpis{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 12px 8px}
+  .kpi{background:var(--surface);border-radius:11px;padding:7px 8px}
+  .kpi span{font-size:9.5px;color:var(--t2);display:block} .kpi b{font-size:15px} .kpi small{display:block;font-size:9.5px;color:var(--green);font-weight:700}
+  .card{flex:none;margin:0 12px 8px;background:var(--surface);border-radius:14px;padding:9px 11px}
+  .card .ct{font-size:12px;font-weight:700;display:flex;justify-content:space-between}
+  .card .ct span{font-weight:500;color:var(--t2)}
+  .actions{flex:none;display:flex;gap:7px;padding:0 12px 8px}
+  .btn{flex:1;text-align:center;border-radius:12px;padding:9px 0;font-size:12.5px;font-weight:700;background:var(--muted);color:var(--ink)}
+  .btn.p{background:var(--ember);color:#2a1205}
+  .tabs2{flex:none;display:flex;gap:16px;padding:2px 16px 8px;font-size:12.5px;font-weight:650;color:var(--t2)}
+  .tabs2 .on{color:#fff;border-bottom:2px solid var(--ember);padding-bottom:3px}
+  .thumb{width:44px;height:58px;border-radius:7px;background:linear-gradient(160deg,#6d4a2e,#211510);flex:none;position:relative}
+  .thumb::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px}
+  .tag{font-size:9.5px;font-weight:800;color:#2a1205;background:var(--ember);border-radius:5px;padding:1px 5px}
+  .note{font-size:11px;color:var(--t2);padding:0 16px 8px}
+  .fieldrow{display:flex;justify-content:space-between;padding:10px 14px;border-top:1px solid #2a2a30;font-size:13px}
+  .fieldrow:first-child{border-top:0}
+  .fieldrow span{color:var(--t2)}
+  svg text{font-family:inherit}
+
+  .screen{font-size:12px}
+  .feedhead{padding:4px 14px 6px}
+  .feedhead .big{font-size:26px;font-weight:800;letter-spacing:-.02em}
+  .levels{display:flex;background:var(--muted);border-radius:9px;padding:2px;margin:6px 0 2px}
+  .levels span{flex:1;text-align:center;font-size:11.5px;padding:5px 0;border-radius:7px;color:var(--t2);font-weight:650}
+  .levels .on{background:#3a3a42;color:#fff}
+  .post{border-top:1px solid #222228;padding-top:8px}
+  .ph{display:flex;align-items:center;gap:8px;padding:0 12px 7px}
+  .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+  .av.str{background:rgba(255,150,69,.18);color:var(--ember);box-shadow:0 0 0 1.5px var(--ember) inset}
+  .av.clm{background:rgba(157,130,240,.2);color:var(--violet);box-shadow:0 0 0 1.5px var(--violet) inset}
+  .av.ses{background:rgba(88,155,242,.18);color:var(--blue);box-shadow:0 0 0 1.5px var(--blue) inset}
+  .ph .t{font-weight:750;font-size:12.5px;line-height:1.15}
+  .ph .s{font-size:10.5px;color:var(--t2)}
+  .ph .dots{margin-left:auto;color:var(--t2);font-size:16px}
+  .media{position:relative;height:250px;background:linear-gradient(160deg,#4a4038,#1d1915 70%);overflow:hidden}
+  .media.tall{height:300px}
+  .media .fig{position:absolute;left:42%;top:18%;width:48px;height:130px;border-radius:24px 24px 12px 12px;background:#0e0e10;opacity:.85}
+  .bar{position:absolute;left:30%;right:30%;top:30%;height:6px;border-radius:3px;background:#bbb;opacity:.7}
+  .hrt{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);border-radius:10px;padding:5px 8px;font-size:10px;font-weight:700}
+  .hrt b{color:#ff6a7a;font-size:14px}
+  .pgr{position:absolute;right:10px;top:10px;background:rgba(0,0,0,.55);border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700}
+  .actpill{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);border-radius:8px;padding:3px 8px;font-size:10px;font-weight:700}
+  .actpill i{font-style:normal;color:var(--ember)}
+  .dotsrow{display:flex;justify-content:center;gap:4px;padding:6px 0 0}
+  .dotsrow span{width:5px;height:5px;border-radius:50%;background:#55555c}
+  .dotsrow .on{background:#fff}
+  .acts{display:flex;align-items:center;gap:14px;padding:4px 12px 2px;font-size:17px}
+  .acts .r{margin-left:auto;font-size:11px;color:var(--t2)}
+  .stats{padding:3px 12px 0;font-size:11.5px;font-weight:700}
+  .stats .up{color:var(--green)}
+  .cap{padding:3px 12px 0;font-size:11.5px;color:#e6e6ea;line-height:1.35}
+  .cap b{font-weight:750}
+  .htag{color:#7fb2ff}
+  .chips2{display:flex;gap:5px;flex-wrap:wrap;padding:5px 12px 0}
+  .chip2{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--muted);color:var(--t2)}
+  .chip2.pr{background:rgba(91,192,116,.16);color:var(--green)}
+  .chip2.on{background:rgba(255,150,69,.16);color:var(--ember)}
+  .more{padding:5px 12px 0;font-size:11px;color:var(--t2)}
+  .when{padding:3px 12px 10px;font-size:9.5px;color:#77777e;text-transform:uppercase;letter-spacing:.04em}
+  .strip{display:flex;gap:4px;padding:0 12px}
+  .strip div{flex:1;height:86px;border-radius:8px;background:linear-gradient(160deg,#4a4038,#1d1915);position:relative}
+  .strip div span{position:absolute;left:5px;bottom:4px;font-size:9px;font-weight:700}
+  .tl{display:flex;gap:6px;padding:8px 12px 0;overflow:hidden}
+  .tl div{flex:none;width:58px}
+  .tl i{display:block;height:58px;border-radius:7px;background:linear-gradient(160deg,#3e352e,#1a1612)}
+  .tl span{display:block;font-size:9px;color:var(--t2);margin-top:2px}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:120px;background:#1b1b1f;border-radius:18px 18px 0 0;padding:10px 14px}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#444;margin:0 auto 10px}
+  .field{background:var(--muted);border-radius:10px;padding:10px;min-height:86px;font-size:12px;color:#ddd;line-height:1.4}
+  .row2{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid #2a2a30;font-size:12px}
+  .tog{width:30px;height:18px;border-radius:9px;background:#34C759;position:relative}
+  .tog::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .tog.off{background:#3a3a40} .tog.off::after{left:2px;right:auto}
+  .lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px}
+</style></head><body>
+<header class="page"><h1 class="title">Clips — by session, activity or exercise, as real posts</h1>
+<p class="sub">Today every post is one activity in one session, headed by its name and the session ("Climbing" / "Session" reads generic when the name is missing).
+A <b>Sessions · Activities · Exercises</b> switch changes what a post is, and every post becomes Instagram-style: <b>avatar + title + where</b>, the carousel with its
+HR tile, an <b>action row</b> (♡ favorite · ✎ caption · ↗ share · ✂︎ Studio), a <b>stats line</b>, <b>your caption with #tags</b>, set chips, and "View all".
+Captions are new (stored, backed up); everything else is derived from what you logged.</p></header>
+<div class="wrap"><h2><span class="n">01</span>The three levels + the caption</h2><div class="gallery">
+<div class="step"><span class="stepnum">1</span><div class="device"><div class="screen"><div class="status"><span>9:41</span><span>●●● ▮</span></div><div class="feedhead"><div class="big">Clips</div><div class="levels"><span class="">Sessions</span><span class="on">Activities</span><span class="">Exercises</span></div></div><div class="post"><div class="ph"><span class="av str">🏋</span><div><div class="t">Bench Press</div><div class="s">Push Day · Gravity Gym</div></div><span class="dots">⋯</span></div>
+<div class="media"><div class="fig"></div><div class="bar"></div><span class="pgr">2/3</span><div class="hrt">♥ <b>151</b> bpm · zone 4</div></div>
+<div class="dotsrow"><span></span><span class="on"></span><span></span></div>
+<div class="acts"><span>♡</span><span>✎</span><span>↗</span><span>✂︎</span><span class="r">Set 3 of 4</span></div>
+<div class="stats">4 × 8 @ 75 kg <span class="up">· ▲ 2.5 kg PR</span></div>
+<div class="cap"><b>you</b> Last rep was a grind but it moved 💪 <span class="htag">#pushday #PR</span></div>
+<div class="chips2"><span class="chip2 pr">★ PR</span><span class="chip2">Set 2 · 8 × 75</span><span class="chip2">Set 3 · 8 × 75</span></div>
+<div class="more">View all 14 Bench Press clips ›</div><div class="when">2 days ago</div></div></div></div><p class="caption"><span class="new">NEW</span> <b>Activities</b> (today's grouping, richer): Bench Press in Push Day — set chips,
+the <b>stats line with the PR</b>, your caption + tags, "View all 14 Bench Press clips" (→ its Activity page).</p></div>
+<div class="step"><span class="stepnum">2</span><div class="device"><div class="screen"><div class="status"><span>9:41</span><span>●●● ▮</span></div><div class="feedhead"><div class="big">Clips</div><div class="levels"><span class="on">Sessions</span><span class="">Activities</span><span class="">Exercises</span></div></div><div class="post"><div class="ph"><span class="av ses">⌁</span><div><div class="t">Push Day</div><div class="s">Thu 16 Oct · Gravity Gym · 52 min</div></div><span class="dots">⋯</span></div>
+<div class="media tall"><div class="fig"></div><div class="bar"></div><span class="actpill"><i>Incline DB Press</i> · set 2</span><span class="pgr">4/9</span><div class="hrt">♥ <b>139</b> bpm</div></div>
+<div class="dotsrow"><span></span><span></span><span></span><span class="on"></span><span></span><span></span></div>
+<div class="chips2"><span class="chip2">Bench Press · 3</span><span class="chip2 on">Incline DB · 2</span><span class="chip2">Cable Fly · 2</span><span class="chip2">Plank · 2</span></div>
+<div class="acts"><span>♡</span><span>✎</span><span>↗</span><span>✂︎</span></div>
+<div class="stats">14 sets · 4 exercises · ♥ avg 128 <span class="up">· 2 PRs</span></div>
+<div class="cap"><b>you</b> Short on sleep but solid. Fly felt off. <span class="htag">#push</span></div><div class="when">Thursday</div></div></div></div><p class="caption"><span class="new">NEW</span> <b>Sessions</b>: one post per workout — every clip in order, <b>each labelled with its
+activity + set</b> (top-left pill), activity chips to jump, the session's stats and one caption for the day.</p></div>
+<div class="step"><span class="stepnum">3</span><div class="device"><div class="screen"><div class="status"><span>9:41</span><span>●●● ▮</span></div><div class="feedhead"><div class="big">Clips</div><div class="levels"><span class="">Sessions</span><span class="">Activities</span><span class="on">Exercises</span></div></div><div class="post"><div class="ph"><span class="av str">🏋</span><div><div class="t">Bench Press</div><div class="s">14 clips · 9 sessions · since Aug</div></div><span class="dots">⋯</span></div>
+<div class="strip"><div><span>Aug 12 · 60 kg</span></div><div><span>Oct 16 · 75 kg</span></div></div>
+<div class="stats" style="padding-top:6px">Then vs Now <span class="up">· +15 kg in 9 weeks</span></div>
+<div class="tl"><div><i></i><span>Oct 16</span></div><div><i></i><span>Oct 9</span></div><div><i></i><span>Oct 2</span></div><div><i></i><span>Sep 25</span></div></div>
+<div class="more">Open Bench Press ›  ·  Progress reel</div><div class="when">Updated 2 days ago</div></div>
+<div class="post"><div class="ph"><span class="av clm">V5</span><div><div class="t">Blue arete</div><div class="s">6 clips · 3 sessions · Gravity</div></div><span class="dots">⋯</span></div>
+<div class="strip"><div><span>Project · 5 tries</span></div><div><span>Sent ✓</span></div></div></div></div></div><p class="caption"><span class="new">NEW</span> <b>Exercises</b>: one post per exercise or climb, all time — <b>Then vs Now</b>,
+the gain, a timeline of sessions, Progress reel. A progress album rather than a diary.</p></div>
+<div class="step"><span class="stepnum">4</span><div class="device"><div class="screen"><div class="status"><span>9:41</span><span>●●● ▮</span></div><div class="feedhead"><div class="big">Clips</div><div class="levels"><span class="">Sessions</span><span class="on">Activities</span><span class="">Exercises</span></div></div><div class="post" style="opacity:.35"><div class="ph"><span class="av str">🏋</span><div><div class="t">Bench Press</div><div class="s">Push Day · Gravity Gym</div></div></div><div class="media"></div></div>
+<div class="sheet"><div class="grab"></div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span style="color:var(--t2);font-weight:500">Cancel</span><span>Caption</span><span style="color:var(--ember)">Save</span></div>
+<div class="lbl">Caption</div><div class="field">Last rep was a grind but it moved 💪 #pushday #PR<span style="color:var(--ember)">|</span></div>
+<div class="lbl">Suggested tags</div><div class="chips2" style="padding:0"><span class="chip2 pr">#PR</span><span class="chip2">#pushday</span><span class="chip2">#gravity</span><span class="chip2">#bench</span></div>
+<div class="lbl">On the post</div>
+<div class="row2"><span>Stats line (4 × 8 @ 75 kg)</span><span class="tog"></span></div>
+<div class="row2"><span>Set chips</span><span class="tog"></span></div>
+<div class="row2"><span>Heart-rate tile</span><span class="tog"></span></div></div></div></div><p class="caption"><span class="new">NEW</span> <b>✎ Caption</b>: write what it felt like; suggested tags from what you logged
+(#PR, the routine, the gym, the exercise); choose what the post shows.</p></div></div>
+<h2><span class="n">02</span>Your picks</h2><div class="panels">
+<div class="panel"><h4>1 · Default view</h4><div class="opt r"><span class="k">A</span>Activities (today's posts, richer) — remember the last one picked</div>
+<div class="opt"><span class="k">B</span>Sessions</div><div class="opt"><span class="k">C</span>Exercises</div></div>
+<div class="panel"><h4>2 · Captions belong to</h4><div class="opt r"><span class="k">A</span>The post at each level — an activity post and its session post each have one</div>
+<div class="opt"><span class="k">B</span>The session only (one caption shown on all its posts)</div><div class="opt"><span class="k">C</span>Each clip</div></div>
+<div class="panel"><h4>3 · Tags</h4><div class="opt r"><span class="k">A</span>Free text + suggested #tags (searchable in Clips search)</div>
+<div class="opt"><span class="k">B</span>Free text only</div></div>
+<div class="panel"><h4>4 · Exercises level</h4><div class="opt r"><span class="k">A</span>Progress album (Then vs Now + timeline) — this phase</div>
+<div class="opt"><span class="k">B</span>Later — ship Sessions + Activities first</div></div>
+</div></div></body></html>

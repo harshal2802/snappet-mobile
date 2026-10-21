@@ -88,6 +88,10 @@ struct ClipsFeedView: View {
     /// Favorite reactions (prompt 88) — `FeedReaction` rows keyed by clip, so they're backed up and
     /// survive regrouping (prompt 162). Bound to the context in `rebuildFeed`.
     @State private var reactions = ClipReactionStore()
+    /// Post captions (prompt 196) — `FeedReaction` rows, cached.
+    @State private var captions = ClipCaptionStore()
+    /// Clips per activity across the feed — each post's "View all N clips" (prompt 196).
+    @State private var activityCounts: [ActivityKey: Int] = [:]
     /// The user's default HR tile + title (prompt 163) — backed-up row, re-read every rebuild.
     @State private var overlayStore = ClipOverlayStyleStore()
     @State private var showStyle = false
@@ -133,7 +137,8 @@ struct ClipsFeedView: View {
         // toggling a heart live-updates the filtered feed.
         // Hidden clips leave the feed (prompt 164) — or, behind the Hidden chip, are all it shows.
         let unhidden = ClipFeedFilter.withHidden(posts, hidden: reactions.hiddenIDs, showHidden: filter.showHidden)
-        let visible = filter.apply(unhidden, isFavorite: reactions.isFavorite)
+        let visible = filter.apply(unhidden, isFavorite: reactions.isFavorite,
+                                   caption: { captions.byPost[$0.id]?.text })
         return NavigationStack {
             Group {
                 if posts.isEmpty {
@@ -289,6 +294,11 @@ struct ClipsFeedView: View {
             .navigationBarTitleDisplayMode(.large)
             // The Weekly Highlight Reel builder (highlights P4), pushed by the hero card above.
             .navigationDestination(for: WeeklyReelRoute.self) { _ in WeeklyReelHostView() }
+            // "View all 14 Bench Press clips" (prompt 196) → that activity's page, on its Clips tab.
+            .navigationDestination(for: ActivityRoute.self) { route in
+                ActivityDashboardView(key: route.key, title: route.title, history: workoutSessions,
+                                      unit: WeightUnit(rawValue: UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") ?? "") ?? .kg)
+            }
             .toolbar {
                 if !posts.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -359,7 +369,9 @@ struct ClipsFeedView: View {
                      style: overlayStore.style,
                      showingHidden: filter.showHidden,
                      onHide: hide, onUnhide: { reactions.unhide($0) },
-                     onTagArtist: tagArtistAction(for: post))
+                     onTagArtist: tagArtistAction(for: post),
+                     captions: captions,
+                     activityClipCount: post.stats?.activityKey.flatMap { activityCounts[$0] } ?? 0)
             .id(post.id)
     }
 
@@ -613,6 +625,27 @@ struct ClipsFeedView: View {
                 kilterResults[sid]?[log.climbUUID].map { $0.merged(with: r) } ?? r
         }
 
+        // Each filmed exercise's stats line, PR + set details (prompt 196). One chronological pass keeps every
+        // activity's best est. 1RM so far, so "PR" means beating every EARLIER session.
+        let unit = WeightUnit(rawValue: UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") ?? "") ?? .kg
+        let filmed = Set(bySession.keys)
+        let identity = ActivityIdentity(sessions: workoutSessions)
+        var bestSoFar: [ActivityKey: Double] = [:]
+        var statsBySession: [UUID: [String: ClipFeedPostStats]] = [:]
+        for w in workoutSessions.sorted(by: { $0.startedAt < $1.startedAt }) where !w.isActive {
+            var bests: [(ActivityKey, Double)] = []
+            for ex in w.exercises where ex.sets.contains(where: { $0.completedAt != nil }) {
+                let key = identity.key(for: ex, loggedAt: w.startedAt)
+                if filmed.contains(w.id),
+                   let st = ClipPostStats.make(ex, title: exerciseName[ex.id] ?? LibraryCatalog.fallbackTitle(ex), key: key,
+                                               priorBestKg: key.flatMap { bestSoFar[$0] }, unit: unit) {
+                    statsBySession[w.id, default: [:]][ex.id.uuidString] = st
+                }
+                if let key, let b = ClipPostStats.bestKg(ex) { bests.append((key, b)) }
+            }
+            for (k, b) in bests { bestSoFar[k] = max(bestSoFar[k] ?? 0, b) }
+        }
+
         let kilterByID = Dictionary(kilterSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let workoutByID = Dictionary(workoutSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
@@ -644,7 +677,7 @@ struct ClipsFeedView: View {
                     angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips,
                     climbResults: Self.quickSessionClimbResults(w.exercises),
                     exerciseActivity: exerciseActivity, sessionActivity: sessionActivity,
-                    festivalNight: festivalNights[sid]))
+                    festivalNight: festivalNights[sid], exerciseStats: statsBySession[sid] ?? [:]))
                 hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).
@@ -796,6 +829,8 @@ struct ClipsFeedView: View {
             // Favorites (prompt 162): re-read the rows each rebuild (picks up a backup restore) and move
             // any prompt-88 post-id hearts onto the freshly composed posts' clips, once.
             reactions.attach(context)
+            captions.attach(context)
+            activityCounts = ClipFeedComposer.activityClipCounts(composed.posts)
             reactions.migrateLegacy(posts: composed.posts)
             cachedPosts = composed.posts
             cachedHRContext = composed.hr
