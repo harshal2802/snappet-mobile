@@ -48,10 +48,13 @@ struct ClipSearch {
 
     var isEmpty: Bool { terms.isEmpty && ranges.isEmpty }
 
-    func matches(_ post: ClipFeedPost) -> Bool {
+    func matches(_ post: ClipFeedPost) -> Bool { matches(post, caption: nil) }
+
+    func matches(_ post: ClipFeedPost, caption: String?) -> Bool {
         guard ranges.allSatisfy({ $0.contains(post.captureAt) }) else { return false }
         guard !terms.isEmpty else { return true }
-        let text = haystack(post)
+        // The user's caption + #tags are searchable too (prompt 196).
+        let text = haystack(post) + (caption.map { " | " + $0 } ?? "")
         return terms.allSatisfy { text.localizedStandardContains($0) }
     }
 

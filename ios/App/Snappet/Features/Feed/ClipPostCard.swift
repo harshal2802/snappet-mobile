@@ -62,6 +62,10 @@ struct ClipPostCard: View {
     /// "Tag artist" (prompt 171) — set only for a festival post not matched to an artist yet. Called with the
     /// clip on screen, so the review opens on exactly that clip (prompt 172).
     let onTagArtist: ((UUID) -> Void)?
+    /// The user's caption on this post + what it shows (prompt 196).
+    let captions: ClipCaptionStore
+    /// Clips of this post's activity across the feed — "View all N Bench Press clips" when it has more (prompt 196).
+    let activityClipCount: Int
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -79,6 +83,10 @@ struct ClipPostCard: View {
     @State private var shareFailed = false
     /// Tap a playing clip → the fullscreen player with play/pause + scrubber (prompt 94).
     @State private var fullscreen: ClipFullscreen?
+    /// The ✎ caption editor (prompt 196).
+    @State private var editingCaption = false
+
+    private var caption: ClipCaption { captions.caption(for: post.id) }
 
     private var accent: Color {
         // A posted reel reads as a REEL first (reels-coral), whatever session it came from. Otherwise the
@@ -94,10 +102,15 @@ struct ClipPostCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
             carousel
+            actionRow
+            details
             meta
+        }
+        .sheet(isPresented: $editingCaption) {
+            ClipCaptionEditor(post: post, initial: caption) { captions.save($0, for: post.id) }
         }
         // Lazy-backfill the post's first-clip aspect on appearance (prompt 92) so the tile resizes to the
         // media; one-shot per clip (skips when already resolved), cached, persisted to SessionMedia.
@@ -173,7 +186,6 @@ struct ClipPostCard: View {
                 Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            favoriteButton
             optionsMenu
         }
         .padding(.horizontal, SnappetSpacing.lg)
@@ -342,7 +354,8 @@ struct ClipPostCard: View {
                     // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
                     ClipPosterView(item: item, post: post, style: style,
                                    playback: playback, postID: post.id, postIndex: idx,
-                                   payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
+                                   // precomputed off the swipe path (perf); none when the post's HR tile is off (196)
+                                   payload: caption.showHR ? payloads[item.media.id] : nil,
                                    warmLive: warmLive(idx),
                                    loadPoster: abs(idx - page) <= 3,
                                    isCurrentPage: idx == page,
@@ -409,6 +422,133 @@ struct ClipPostCard: View {
                 .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    // MARK: Instagram-style post (prompt 196)
+
+    /// ♡ · ✎ caption · ↗ share · ✂︎ Studio — and which set this clip is, on the right.
+    private var actionRow: some View {
+        HStack(spacing: 4) {
+            favoriteButton
+            iconButton("pencil.line", label: "Caption", id: "clips.post.caption") { editingCaption = true }
+            if currentClip.media.kind == "video" {
+                switch shareOffer {
+                case .burnedAndRaw:
+                    iconButton("paperplane", label: "Share with heart rate", id: "clips.post.share") {
+                        shareCurrentClip(withHeartRate: true)
+                    }
+                case .raw:
+                    iconButton("paperplane", label: "Share clip", id: "clips.post.share") {
+                        shareCurrentClip(withHeartRate: false)
+                    }
+                case .none:
+                    EmptyView()
+                }
+                if !currentClip.media.isReel {
+                    iconButton("scissors", label: "Edit in Studio", id: "clips.post.studio") { editCurrentClip() }
+                }
+            }
+            Spacer(minLength: 8)
+            if let label = currentClip.attemptLabel {
+                let total = post.stats?.setDetail.count ?? 0
+                Text(total > 1 && label.hasPrefix("Set ") ? "\(label) of \(total)" : label)
+                    .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("clips.post.clipSet")
+            }
+        }
+        .padding(.horizontal, SnappetSpacing.lg - 8)
+    }
+
+    private func iconButton(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(SnappetColor.ink)
+                .frame(width: 36, height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
+    /// The stats line (with the PR), the caption with its #tags, set chips, and "View all".
+    @ViewBuilder private var details: some View {
+        let c = caption
+        VStack(alignment: .leading, spacing: 5) {
+            if c.showStats, let stats = post.stats {
+                (Text(stats.line).foregroundStyle(SnappetColor.ink)
+                 + Text(stats.isPR ? " · ▲ PR" : "").foregroundStyle(SnappetColor.perfFresh))
+                    .font(.subheadline.weight(.bold))
+                    .accessibilityIdentifier("clips.post.stats")
+            }
+            if !c.text.isEmpty {
+                Text(Self.captionText(c.text))
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("clips.post.captionText")
+            } else {
+                Button { editingCaption = true } label: {
+                    Text("Add a caption…").font(.subheadline).foregroundStyle(SnappetColor.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("clips.post.addCaption")
+            }
+            if c.showSets { setChips }
+            if let stats = post.stats, let key = stats.activityKey, activityClipCount > post.clipCount {
+                NavigationLink(value: ActivityRoute(key: key, title: stats.activityTitle)) {
+                    Text("View all \(activityClipCount) \(stats.activityTitle) clips ›")
+                        .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("clips.post.viewAll")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SnappetSpacing.lg)
+    }
+
+    /// One chip per filmed set ("Set 2 · 8 × 75 kg") — tap to jump the carousel to it; ★ PR first.
+    @ViewBuilder private var setChips: some View {
+        let chips: [(page: Int, text: String)] = post.clips.enumerated().compactMap { i, item in
+            guard let label = item.attemptLabel, label.hasPrefix("Set ") || label.hasPrefix("Attempt ") else { return nil }
+            let detail = item.media.setIndex.flatMap { post.stats?.setDetail[$0] }
+            return (i, [label, detail].compactMap { $0 }.joined(separator: " · "))
+        }
+        if !chips.isEmpty || post.stats?.isPR == true {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    if post.stats?.isPR == true {
+                        Text("★ PR").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.perfFresh)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(SnappetColor.perfFresh.opacity(0.15), in: Capsule())
+                    }
+                    ForEach(chips, id: \.page) { chip in
+                        Button { withAnimation(.easeInOut(duration: 0.2)) { page = chip.page } } label: {
+                            Text(chip.text).font(.caption2.weight(.bold))
+                                .foregroundStyle(chip.page == page ? accent : SnappetColor.textSecondary)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background((chip.page == page ? accent : SnappetColor.textSecondary).opacity(0.14), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("clips.post.setChip")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The caption with its #tags tinted.
+    static func captionText(_ text: String) -> AttributedString {
+        var out = AttributedString()
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        for (i, w) in words.enumerated() {
+            var part = AttributedString(String(w))
+            if w.hasPrefix("#") && w.count > 1 { part.foregroundColor = SnappetColor.budget }
+            out += part
+            if i < words.count - 1 { out += AttributedString(" ") }
+        }
+        return out
     }
 
     private var meta: some View {

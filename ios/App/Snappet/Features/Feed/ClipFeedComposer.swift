@@ -161,6 +161,8 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// The whole SESSION's activity (prompt 170) — the session header's label; a post's own `discipline`
     /// can differ (a climb exercise inside a mixed Quick Session).
     var sessionActivity: Discipline = .general
+    /// The post's stats line, PR flag, set details + activity (prompt 196) — gym exercise posts with logged sets.
+    var stats: ClipFeedPostStats? = nil
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
     var aspect: Double
@@ -208,6 +210,8 @@ enum ClipFeedComposer {
         /// Set when this session is a FESTIVAL NIGHT ("I'm here" attendance) — its festival/day, artist nil.
         /// Prompt 171: its untagged clips are titled by festival + day and offer "Tag artist".
         var festivalNight: ClipFeedPostFestival? = nil
+        /// Per tagged exercise (keyed like the post group): the post's stats line, PR, set details (prompt 196).
+        var exerciseStats: [String: ClipFeedPostStats] = [:]
     }
 
     /// Compose every session's media into posts, newest capture first.
@@ -307,7 +311,8 @@ enum ClipFeedComposer {
             let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
                 !$0.isReel && festivalMeta[$0.id]?.setKey == nil
             }, climbResults: bundle.climbResults, exerciseActivity: bundle.exerciseActivity,
-               sessionActivity: bundle.sessionActivity, festivalNight: bundle.festivalNight)
+               sessionActivity: bundle.sessionActivity, festivalNight: bundle.festivalNight,
+               exerciseStats: bundle.exerciseStats)
             guard !bundle.clips.isEmpty else { continue }
             // Resolve a group key → label for FeedMedia.groups (the post's header title).
             let nameFor: (String) -> String = { key in
@@ -374,6 +379,7 @@ enum ClipFeedComposer {
                     sessionAngle: meta.angle,
                     festival: night,
                     sessionActivity: sessionActivity,
+                    stats: night == nil ? bundle.exerciseStats[key] : nil,
                     aspect: postAspect(ordered)))
             }
         }
@@ -417,8 +423,16 @@ enum ClipFeedComposer {
                 guard let w = winner[$0.localIdentifier] else { return false }
                 return w.sessionIndex == s && w.clip.id == $0.id
             }, climbResults: bundle.climbResults, exerciseActivity: bundle.exerciseActivity,
-               sessionActivity: bundle.sessionActivity, festivalNight: bundle.festivalNight)
+               sessionActivity: bundle.sessionActivity, festivalNight: bundle.festivalNight,
+               exerciseStats: bundle.exerciseStats)
         }
+    }
+
+    /// Clips per activity across the whole feed (prompt 196) — the posts' "View all N Bench Press clips".
+    static func activityClipCounts(_ posts: [ClipFeedPost]) -> [ActivityKey: Int] {
+        var out: [ActivityKey: Int] = [:]
+        for p in posts { if let k = p.stats?.activityKey { out[k, default: 0] += p.clipCount } }
+        return out
     }
 
     /// Does the challenger clip beat the incumbent for the same `localIdentifier`? (Survivor rule above.)
