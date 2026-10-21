@@ -10100,3 +10100,16 @@ stripes, and the panel read as an opaque slab.
 - A Live Activity outlives the process that started it, so "the one I started" isn't enough to manage it. Reconcile
   every running activity against the store's running session at launch, on foreground, on start and on end: keep
   the session's (matched by start time), end every other. The store decides; the in-memory handle is a cache.
+
+## 2026-10-20 — Other apps can drive workouts (prompt 199)
+
+- The workout intents live in the APP target, not `Shared/`. iOS runs them in the app's process (starting it in the
+  background if needed), so "Log a Set" writes straight to the store on the main context, and an open player shows
+  the set live. The widget-style outbox (`ToggleHabitIntent`) is for intents that run in the widget's process.
+- A log always lands in the running session, or a new Quick Session — never a hidden side session — on the
+  activity's entity, set up the way "Log it now" sets it up. Missing numbers repeat the last set, so "log a set of
+  bench" works with no numbers.
+- Links and intents share the service; a link is just another caller. A log link doesn't navigate if a player is
+  open (moving would close it); it only opens the Gym Tracker when it started the session.
+- UI tests deliver URLs with `XCUIDevice.shared.system.open`. `XCUIApplication.open` relaunches the app (a new
+  in-memory store), which hid a working feature behind a false failure.

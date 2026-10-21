@@ -38,6 +38,10 @@ final class SuiteRouter {
     /// One-shot "Log it now" from an Activity page (Library L2, prompt 184): the entity to log. `WorkoutHomeView`
     /// adds it to the running session (resuming the player) or starts a Quick Session with it. Self-clearing.
     var pendingQuickLog: SessionExercise?
+    /// One-shot "start a blank Quick Session" (prompt 199 — Shortcuts / Siri / `snappet://quick`).
+    var pendingQuickStart = false
+    /// One-shot "finish the running workout" (prompt 199 — Shortcuts / Siri / `snappet://finish`).
+    var pendingFinishSession = false
 
     /// One-shot QR/URL deep-link intent (#75, the `pendingWorkoutResume` pattern): the shell's
     /// `onOpenURL` sets this before `open(module: "kilter")`, and `KilterRootView` consumes it on

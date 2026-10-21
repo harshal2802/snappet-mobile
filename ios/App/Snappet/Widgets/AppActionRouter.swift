@@ -22,8 +22,8 @@ enum AppActionRouter {
             return Route(moduleID: id)
         case .quickJournal(let text):
             return Route(moduleID: "journal", journalCompose: JournalComposeRequest(text: text))
-        case .startRoutine:
-            return Route(moduleID: "workout-log")   // WorkoutTrackerModule.id (#74)
+        case .startRoutine, .startQuickSession, .finishSession:
+            return Route(moduleID: "workout-log")   // WorkoutTrackerModule.id (#74); the shell sets the one-shot (199)
         }
     }
 }

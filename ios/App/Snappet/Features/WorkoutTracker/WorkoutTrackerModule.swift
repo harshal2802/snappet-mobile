@@ -381,6 +381,9 @@ struct WorkoutHomeView: View {
         // The Activity page pops back here as it sets the intent; consume on change AND on reappearing (a view
         // under a pushed page doesn't run change handlers). Present on the next tick — the pop is still animating.
         .onChange(of: router.pendingQuickLog?.id, initial: true) { _, _ in consumeQuickLog() }
+        // Shortcuts / Siri / links (prompt 199): a blank Quick Session, or finish the running one.
+        .onChange(of: router.pendingQuickStart, initial: true) { _, _ in consumeQuickStart() }
+        .onChange(of: router.pendingFinishSession, initial: true) { _, _ in consumeFinishSession() }
         .onAppear { consumeQuickLog() }
         .onChange(of: router.pendingShowRoutines, initial: true) { _, show in
             guard show else { return }
@@ -398,6 +401,20 @@ struct WorkoutHomeView: View {
         guard let entity = router.pendingQuickLog, router.path.count <= 1 else { return }
         router.pendingQuickLog = nil
         Task { @MainActor in startQuickLog(entity) }
+    }
+
+    private func consumeQuickStart() {
+        guard router.pendingQuickStart, router.path.count <= 1 else { return }
+        router.pendingQuickStart = false
+        Task { @MainActor in if let s = activeSession { resume(s) } else { startFreeform() } }
+    }
+
+    /// Finish the running workout as the player's Finish would — an empty one is discarded, like the player does.
+    private func consumeFinishSession() {
+        guard router.pendingFinishSession else { return }
+        router.pendingFinishSession = false
+        guard let s = activeSession else { return }
+        Task { @MainActor in finishWorkout(s, saved: s.completedSetCount > 0) }
     }
 
     /// "Log it now" (prompt 184): add the entity to the running session and resume, or start a Quick Session with it.
