@@ -81,6 +81,8 @@ struct FreeformPlayerView: View {
     /// must still attach to the exercise it was filmed for, never the page that happens to be
     /// current (#273).
     @State private var pageClips: [UUID: [RecordedClip]] = [:]
+    /// A climb attempt just filmed from its page, waiting for its outcome (prompt 195).
+    @State private var recordedAttemptFor: RecordedAttemptTarget?
     @State private var savingPageClip = false
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
@@ -210,6 +212,12 @@ struct FreeformPlayerView: View {
         // The live timed-attempt FOCUS cover (Quick Session redesign Phase 2): a dark, glass, full-screen
         // moment that times ONE attempt off the wall clock, then reveals a 2×2 outcome grid. Replaces the
         // old half-sheet; commits through the same `logAttempt` funnel (stamps grade + completedAt + haptic).
+        // "Record an attempt" → Stop attempt → how did it go? (prompt 195)
+        .sheet(item: $recordedAttemptFor) { target in
+            RecordedAttemptOutcomeSheet(type: target.type, durationSec: target.durationSec) { status in
+                logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: target.durationSec)
+            }
+        }
         .fullScreenCover(item: $timingAttemptFor) { target in
             let climb = session.exercises.first { $0.id == target.exerciseID }
             TimedAttemptCover(
@@ -785,16 +793,21 @@ struct FreeformPlayerView: View {
                     onRequestDelete: { pendingClipDeletion = $0 })
                 // The binding is scoped to THIS exercise's queue so the clip's owner is captured
                 // when the recorder is presented, not when the async save lands (#273).
+                // Recording IS the effort (prompt 195): "Record a set / an attempt" → the camera's "Stop & log set" /
+                // "Stop attempt" logs it with the clip (a climb asks how it went). Done without logging leaves the clip
+                // on the exercise for its next logged set (prompt 191); a set logged meanwhile (the watch) ends it.
+                let noun = QuickSessionPager.effortNoun(for: ex)
                 RecordClipButton(recordedClips: Binding(get: { pageClips[ex.id] ?? [] },
                                                         set: { pageClips[ex.id] = $0 }),
                                  savingClip: $savingPageClip,
                                  idPrefix: "freeform.page",
-                                 attachNoun: QuickSessionPager.effortNoun(for: ex),
-                                 // Tagged to the exercise, then claimed by its next logged set (prompt 191); a set
-                                 // logged meanwhile (the watch) ends the clip.
+                                 attachNoun: noun,
+                                 title: QuickSessionPager.recordTitle(for: ex),
                                  context: CameraContext(title: resolver.name(for: ex.exerciseId, override: ex.displayName),
-                                                        detail: "next \(QuickSessionPager.effortNoun(for: ex))",
-                                                        loggedCount: ex.sets.count))
+                                                        detail: "\(noun) \(ex.sets.count + 1)",
+                                                        logLabel: ex.discipline == .climb ? "Stop attempt" : "Stop & log \(noun)",
+                                                        loggedCount: ex.sets.count),
+                                 logAction: { logRecordedEffort(exerciseID: ex.id) })
                 ghostLedger(ex)
             }
             .padding(.horizontal, 16)
@@ -1728,6 +1741,33 @@ struct FreeformPlayerView: View {
         // count-down rest in the command bar at the duration remembered for this exercise's context.
         // Never gates logging (the append already happened); off by default.
         if restAutoStart, QuickSessionPager.startsRestAfterLog(ex) { startRest(for: ex) }
+    }
+
+    /// The camera's "Stop & log" from an exercise page (prompt 195): the clip just filmed is the effort. Its clips
+    /// are filed to the exercise first (so the claim below sees them, whichever of the two onChange paths ran), then
+    /// a lift / hold / leg logs at once — reps × weight from the quick-add seed + the clip's length — and a climb asks
+    /// how it went. The new effort claims the clip (`claimFilmedClips`).
+    private func logRecordedEffort(exerciseID id: UUID) {
+        if let queued = pageClips[id], !queued.isEmpty {
+            pageClips[id] = []
+            attachRecordedClips(queued, toExerciseID: id, setIndex: nil)
+        }
+        guard let ex = session.exercises.first(where: { $0.id == id }) else { return }
+        let duration = mediaRows(assignedTo: id)
+            .filter { $0.assignedSetIndex == nil && $0.addedManually }
+            .max { $0.offsetSec < $1.offsetSec }?.durationSec
+        if ex.discipline == .climb {
+            recordedAttemptFor = RecordedAttemptTarget(exerciseID: id, type: ex.climbType, durationSec: duration)
+            return
+        }
+        switch ex.kind {
+        case .repsWeight:
+            let seed = quickAddSeed(for: ex)
+            appendLog(SetLog(actualReps: seed.reps, actualWeight: seed.weight > 0 ? seed.weight : nil,
+                             weightUnit: seed.unit, durationSec: duration), toExerciseID: id)
+        case .duration, .climbAttempt:
+            appendLog(SetLog(durationSec: duration), toExerciseID: id)
+        }
     }
 
     /// The set just logged claims the clips filmed for it (prompt 191): ones recorded from this exercise's page, or

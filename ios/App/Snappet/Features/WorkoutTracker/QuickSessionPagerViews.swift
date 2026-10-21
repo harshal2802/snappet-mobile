@@ -781,3 +781,51 @@ struct PlanCompleteNudge: View {
         }
     }
 }
+
+
+/// A climb attempt just filmed with "Record an attempt" (prompt 195).
+struct RecordedAttemptTarget: Identifiable {
+    let id = UUID()
+    let exerciseID: UUID
+    let type: ClimbType
+    let durationSec: Double?
+}
+
+/// "How did it go?" after the camera's Stop attempt — the page's outcome grid, then the attempt is logged with the
+/// clip. "Save as attempt" (or swiping it away) logs a plain attempt, so a filmed effort is never dropped.
+struct RecordedAttemptOutcomeSheet: View {
+    let type: ClimbType
+    let durationSec: Double?
+    let onLog: (KilterAscentStatus) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var logged = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 4) {
+                Text("How did it go?").font(.title3.weight(.bold))
+                if let durationSec, durationSec > 0 {
+                    Text("Filmed attempt · \(SetMeasure.formatDuration(durationSec))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            OutcomeGridView(type: type) { status in log(status) }
+            Button("Save as attempt") { log(.attempt) }
+                .font(.subheadline.weight(.semibold))
+                .accessibilityIdentifier("recordedAttempt.saveAsAttempt")
+        }
+        .padding(20)
+        .presentationDetents([.height(320)])
+        .preferredColorScheme(.dark)
+        .onDisappear { if !logged { logged = true; onLog(.attempt) } }
+        .accessibilityIdentifier("recordedAttempt.sheet")
+    }
+
+    private func log(_ status: KilterAscentStatus) {
+        guard !logged else { return }
+        logged = true
+        onLog(status)
+        dismiss()
+    }
+}

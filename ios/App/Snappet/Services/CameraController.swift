@@ -18,10 +18,16 @@ import Observation
 @Observable
 final class CameraController: NSObject {
     static let fakeArgument = "-uiTestFakeCamera"
+    /// The stand-in is on — by launch argument OR environment (`SNAPPET_FAKE_CAMERA=1`): a UI test once launched
+    /// without the argument being visible (intermittently), so the tests set both.
+    static var fakeRequested: Bool {
+        ProcessInfo.processInfo.arguments.contains(fakeArgument)
+            || ProcessInfo.processInfo.environment["SNAPPET_FAKE_CAMERA"] == "1"
+    }
 
     /// A real camera exists (never on the simulator), or the UI-test fake is on.
     static var isAvailable: Bool {
-        if ProcessInfo.processInfo.arguments.contains(fakeArgument) { return true }
+        if fakeRequested { return true }
         #if targetEnvironment(simulator)
         return false
         #else
@@ -31,7 +37,7 @@ final class CameraController: NSObject {
 
     /// Camera (required) + microphone (best-effort — a denied mic records silent video).
     static func requestAccess() async -> Bool {
-        if ProcessInfo.processInfo.arguments.contains(fakeArgument) { return true }
+        if fakeRequested { return true }
         func access(_ media: AVMediaType) async -> Bool {
             switch AVCaptureDevice.authorizationStatus(for: media) {
             case .authorized: return true
@@ -70,7 +76,7 @@ final class CameraController: NSObject {
     private var zoomMultiplier: Double = 1
     private var settings = CameraSettings()
 
-    init(fake: Bool = ProcessInfo.processInfo.arguments.contains(CameraController.fakeArgument)) {
+    init(fake: Bool = CameraController.fakeRequested) {
         self.fake = fake
         super.init()
     }
