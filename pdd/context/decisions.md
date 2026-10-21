@@ -10066,3 +10066,14 @@ stripes, and the panel read as an opaque slab.
   edits live in the card's own state, out of reach) — edit the set after if they differed.
 - A recorded climb always ends in a logged attempt: the outcome sheet's dismissal saves a plain attempt, matching the
   timed-attempt cover's "never silently drop a captured effort".
+
+## 2026-10-20 — Opening Clips no longer stalls (prompt 193)
+
+- The "slow Clips tab" was mostly HOME: the 3D buddy built new RealityKit materials every frame and kept animating
+  behind other tabs; RealityKit flushed the backlog on main for ~1 s after leaving. In RealityKit, build materials
+  once and reuse them; per-frame updates should only move or scale things, or swap cached materials. Pause
+  per-frame animation when its tab isn't selected — TabView keeps every tab alive.
+- Method, which worked twice now: when a guess fails, probe on a throwaway branch; when timestamps aren't enough,
+  sample the main thread's stack. Each round ruled something out (posters, SwiftUI bodies, the RealityView itself)
+  before the sampler named the cause.
+- `PHAsset.fetchAssets` is never called on main in the Clips pipeline (`AssetPosterLoader.assets` is the one lookup).

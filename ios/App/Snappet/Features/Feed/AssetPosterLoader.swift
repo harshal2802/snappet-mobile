@@ -135,11 +135,14 @@ enum AssetPosterLoader {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = false
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: fresh.map(\.localIdentifier), options: nil)
-        var objects: [PHAsset] = []
-        assets.enumerateObjects { asset, _, _ in objects.append(asset) }
-        manager.startCachingImages(for: objects, targetSize: target,
-                                   contentMode: .aspectFill, options: options)
+        // The library lookup runs detached + cached (`assets`), never on main: a by-identifier fetch costs
+        // ~100 ms on a big library, and this one ran ON MAIN as each card appeared — the 110 ms hitches every
+        // ~115 ms for a second after opening Clips (measured on device 2026-10-19, prompt 193).
+        Task { @MainActor in
+            let found = await assets(fresh.map(\.localIdentifier))
+            manager.startCachingImages(for: fresh.compactMap { found[$0.localIdentifier] }, targetSize: target,
+                                       contentMode: .aspectFill, options: options)
+        }
 
         // Pre-bake the exact frame-0 for videos, throttled — `videoFrameZero` memoizes, so the cell's
         // own request then hits the cache and paints immediately.
@@ -177,8 +180,9 @@ enum AssetPosterLoader {
     static func videoFrameZero(localIdentifier: String, pointSize: CGSize, at seconds: Double = 0) async -> UIImage? {
         let key = (seconds > 0.01 ? "\(localIdentifier)@\(Int(seconds * 100))" : localIdentifier) as NSString
         if let cached = frameZeroCache.object(forKey: key) { return cached }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = assets.firstObject else {
+        // Detached + cached lookup (prompt 193) — this was the other main-thread `fetchAssets`, paid by every
+        // video poster request.
+        guard let asset = await assets([localIdentifier])[localIdentifier] else {
             return await poster(localIdentifier: localIdentifier, pointSize: pointSize)
         }
         // The PHImageManager + AVAssetImageGenerator callbacks are delivered on a BACKGROUND queue, so the

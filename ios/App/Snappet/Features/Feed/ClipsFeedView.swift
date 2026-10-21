@@ -111,6 +111,8 @@ struct ClipsFeedView: View {
     /// post's aspect backfill saves one `SessionMedia` → one `feedKey` tick each) coalesces into ONE
     /// background composition instead of M consecutive full recomputes.
     @State private var rebuildTask: Task<Void, Never>?
+    /// The inputs the cached feed was last built from — re-entering the tab with these unchanged skips the rebuild.
+    @State private var builtKey: FeedKey?
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
     /// suppressed under Reduce Motion / Low Power.
     @AppStorage("clips.autoplay") private var autoplayEnabled = false
@@ -271,7 +273,12 @@ struct ClipsFeedView: View {
             // (the aspect backfill) coalesces into one recompute (prompt 106).
             // Re-entering the tab with posts already showing: let the tab switch land first, then refresh in
             // the background (the compose is off-main, but its 100 ms snapshot isn't — Clips perf 2026-10-06).
-            .task { rebuildFeed(debounce: !cachedPosts.isEmpty, delay: .milliseconds(600)) }
+            // Re-entering the tab rebuilds only when something changed since the last build (prompt 193): the
+            // rebuild's main-thread snapshot (65–137 ms on device) ran on EVERY tab tap even with nothing new.
+            .task {
+                guard cachedPosts.isEmpty || builtKey != feedKey else { return }
+                rebuildFeed(debounce: !cachedPosts.isEmpty, delay: .milliseconds(600))
+            }
             .onChange(of: feedKey) { _, _ in rebuildFeed(debounce: true) }
             // A saved overlay style re-composes every payload with the new default tile (prompt 163).
             .onChange(of: overlayStore.style) { _, _ in rebuildFeed() }
@@ -782,6 +789,7 @@ struct ClipsFeedView: View {
                 guard !Task.isCancelled else { return }
             }
             overlayStore.attach(context)   // re-read the saved style (picks up a restore)
+            let key = feedKey
             let snap = makeSnapshot()
             let composed = await Task.detached(priority: .userInitiated) { Self.compose(snap) }.value
             guard !Task.isCancelled else { return }   // a newer rebuild superseded this one
@@ -793,6 +801,7 @@ struct ClipsFeedView: View {
             cachedHRContext = composed.hr
             cachedHRTiles = composed.tiles
             cachedPayloads = composed.payloads
+            builtKey = key
         }
     }
 
