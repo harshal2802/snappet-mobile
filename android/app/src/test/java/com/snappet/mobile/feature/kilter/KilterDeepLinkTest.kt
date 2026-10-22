@@ -23,6 +23,13 @@ class KilterDeepLinkTest {
         assertEquals(40, link.angle)
     }
 
+    @Test fun parse_theHttpsTwinIosQrCodesCarry() {
+        val link = KilterDeepLink.parse("https://harshal2802.github.io/Snappet/open/kilter/climb/$uuid?angle=40")!!
+        assertEquals(uuid, link.uuid)
+        assertEquals(40, link.angle)
+        assertEquals(null, KilterDeepLink.parse("https://example.com/Snappet/open/kilter/climb/$uuid"))
+    }
+
     @Test fun parse_noAngle() {
         val link = KilterDeepLink.parse("snappet://kilter/climb/$uuid")!!
         assertEquals(uuid, link.uuid)

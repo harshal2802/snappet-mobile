@@ -30,7 +30,7 @@ struct KilterClimbLink: Equatable, Sendable {
 
     /// Parse a scanned/opened string back into a climb link, or nil if it isn't one of ours.
     init?(decoding string: String) {
-        guard let c = URLComponents(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard let c = URLComponents(string: SnappetWebLink.appForm(string)),
               c.scheme?.lowercased() == "snappet",
               c.host?.lowercased() == "kilter" else { return nil }
         // path = "/climb/<uuid>"
@@ -72,6 +72,7 @@ enum SnappetDeepLink: Equatable, Sendable {
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
+        let url = SnappetWebLink.appForm(url)   // the https twin routes the same (prompt 200)
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
         if let routine = SharedRoutine(decoding: url.absoluteString) { return .routine(routine) }
         if let lineup = SharedLineup(decoding: url.absoluteString) { return .festivalLineup(lineup) }

@@ -113,6 +113,8 @@ struct RootShell: View {
     /// parses; the climb/focus intents ride `SuiteRouter` one-shots (the destinations own the catalog /
     /// timer); an exercise resolves from the catalog and pushes after opening the gym tracker.
     private func handle(_ url: URL) {
+        // A universal link (`https://…/Snappet/open/…`, prompt 200) is its `snappet://` twin.
+        let url = SnappetWebLink.appForm(url)
         // Recap feed (F1): `snappet://feed` selects the middle tab directly (no module push).
         if url.scheme == "snappet", url.host == "feed" { router.tab = .feed; return }
         // Clips feed (prompt 82): `snappet://clips` selects the Clips tab directly.

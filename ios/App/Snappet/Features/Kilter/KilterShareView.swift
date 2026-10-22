@@ -22,7 +22,7 @@ struct KilterShareView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
 
-                if let image = QRCodeImage.make(for: link.encoded) {
+                if let image = QRCodeImage.make(for: SnappetWebLink.webForm(link.encoded)) {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable().scaledToFit()
@@ -39,7 +39,7 @@ struct KilterShareView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal)
 
-                if let url = link.url {
+                if let url = link.url.map(SnappetWebLink.webForm) {
                     ShareLink(item: url) { Label("Share link", systemImage: "square.and.arrow.up") }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("kilter.share.link")

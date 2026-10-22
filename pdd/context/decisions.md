@@ -10113,3 +10113,15 @@ stripes, and the panel read as an opaque slab.
   open (moving would close it); it only opens the Gym Tracker when it started the session.
 - UI tests deliver URLs with `XCUIDevice.shared.system.open`. `XCUIApplication.open` relaunches the app (a new
   in-memory store), which hid a working feature behind a false failure.
+
+## 2026-10-21 — Universal links (prompt 200)
+
+- One rule maps the forms both ways: `snappet://<rest>` ⇄ `https://harshal2802.github.io/Snappet/open/<rest>`. No
+  per-link-type https format. A new `snappet://` link gets its twin for free, and every parser reads both by
+  normalizing first.
+- Shares and QR codes carry the https form, but stored identifiers (Spotlight) stay `snappet://`. Changing an
+  identifier would orphan the existing index.
+- Household invites stay `snappet://`: a bearer token must never sit in a URL that can reach a web server's logs.
+- The AASA lives on the user site, not the Snappet project site: Apple only fetches it from the domain root.
+  Without the app the link falls to the Snappet site's GitHub Pages 404.html, which shows the "Open in Snappet"
+  page for `/open/` paths. No new route in the web app.

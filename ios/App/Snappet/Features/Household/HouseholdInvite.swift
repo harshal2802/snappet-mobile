@@ -45,7 +45,7 @@ struct HouseholdInvite: Equatable, Sendable {
 
     /// Parses an invite link; nil for anything else (another app's link, a wrong version, a bad token).
     init?(url: URL) {
-        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        guard let c = URLComponents(url: SnappetWebLink.appForm(url), resolvingAgainstBaseURL: false),
               c.scheme?.lowercased() == "snappet", c.host?.lowercased() == "household", c.path == "/join"
         else { return nil }
         let q = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })

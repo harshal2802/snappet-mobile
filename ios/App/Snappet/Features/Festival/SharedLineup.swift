@@ -111,7 +111,7 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
     var encoded: String { url?.absoluteString ?? "" }
 
     /// Encoded byte size — the number that decides the payload-vs-link fallback.
-    var encodedByteCount: Int { encoded.utf8.count }
+    var encodedByteCount: Int { SnappetWebLink.webForm(encoded).utf8.count }   // the QR carries the https form
 
     /// A version-`M` QR at this density stays scannable below roughly this many URL bytes. Higher than
     /// `SharedRoutine`'s 900 because the wireframe wants a ~dozen-set day plan (~1.1 KB) in the code;
@@ -133,7 +133,7 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
     /// Parse a scanned/opened string back into a shared lineup, or nil if it isn't one of ours / a
     /// wrong version.
     init?(decoding string: String) {
-        guard let c = URLComponents(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard let c = URLComponents(string: SnappetWebLink.appForm(string)),
               c.scheme?.lowercased() == "snappet",
               c.host?.lowercased() == "festival" else { return nil }
         let parts = c.path.split(separator: "/").map(String.init)
