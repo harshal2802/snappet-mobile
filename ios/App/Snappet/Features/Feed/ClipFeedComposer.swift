@@ -394,6 +394,14 @@ enum ClipFeedComposer {
     /// position is its session's place in time (NOT the clip capture offset). All of a session's posts share
     /// the same start+end, so they cluster; capture-time then id break ties within a session, keeping the
     /// order stable + deterministic.
+    /// The sessions whose HR overlays are built before the feed first paints (prompt 202): the `count` newest by
+    /// start — the top of every feed level, since posts sort newest session first (`postOrder`). The rest follow
+    /// off main once the feed is on screen.
+    static func firstPaintSessions(_ startedAt: [UUID: Date], count: Int) -> Set<UUID> {
+        Set(startedAt.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.uuidString < $1.key.uuidString }
+            .prefix(count).map(\.key))
+    }
+
     static func postOrder(_ a: ClipFeedPost, _ b: ClipFeedPost) -> Bool {
         if a.sessionStartedAt != b.sessionStartedAt { return a.sessionStartedAt > b.sessionStartedAt }
         let aEnd = a.sessionEndedAt ?? a.sessionStartedAt, bEnd = b.sessionEndedAt ?? b.sessionStartedAt

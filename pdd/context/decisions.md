@@ -10140,3 +10140,14 @@ stripes, and the panel read as an opaque slab.
   accessibility ids would flatten its ids.
 - `QRImageDecoder` stays in the app target and the extension lists it by path: `Shared/` also compiles into the
   watch, which has no Vision.
+
+## 2026-10-22 — Clips paints first, overlays follow (prompt 202)
+
+- Measured before deciding: the "hrSeries on main" backlog item was real (~78 ms) but not the main cost. The
+  per-clip HR overlay payloads (~550 ms, off main) gated the first paint, and a style load inside the rebuild
+  started a second full rebuild every first open.
+- The feed paints with the 8 newest sessions' overlays, and a second off-main pass (its own `ModelContext`, so the
+  `hrSeries` decode never touches main) builds the rest. The top of every level is the newest sessions, so the
+  first screen is complete.
+- The second pass REPLACES the caches with this build's results; it doesn't merge. A carried-over overlay would
+  outlive a clip that was baked since. Between the passes the previous build's overlays stay, so nothing blanks.

@@ -120,6 +120,8 @@ struct ClipsFeedView: View {
     @State private var rebuildTask: Task<Void, Never>?
     /// The inputs the cached feed was last built from — re-entering the tab with these unchanged skips the rebuild.
     @State private var builtKey: FeedKey?
+    /// The overlay style the latest rebuild composed with (prompt 202).
+    @State private var snapshotStyle: ClipOverlayStyle?
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
     /// suppressed under Reduce Motion / Low Power.
     @AppStorage("clips.autoplay") private var autoplayEnabled = false
@@ -317,7 +319,12 @@ struct ClipsFeedView: View {
             }
             .onChange(of: feedKey) { _, _ in rebuildFeed(debounce: true) }
             // A saved overlay style re-composes every payload with the new default tile (prompt 163).
-            .onChange(of: overlayStore.style) { _, _ in rebuildFeed() }
+            // Only a style the feed wasn't built with re-composes — loading the saved style inside a rebuild
+            // (`overlayStore.attach`) used to start a second full rebuild on every first open (prompt 202).
+            .onChange(of: overlayStore.style) { _, style in
+                guard style != snapshotStyle else { return }
+                rebuildFeed()
+            }
             // Audio session (prompt 93): driven from `ClipFeedPlayback.playing`'s didSet (NOT an `.onChange`
             // here — that would re-read `playing` and re-introduce the whole-feed invalidation prompt 97 removes).
             .onDisappear { ClipAudioSession.deactivate() }
@@ -603,7 +610,11 @@ struct ClipsFeedView: View {
         var festivalMeta: [UUID: ClipFeedFestivalMeta]
         /// Per-session HR context — **media-bearing sessions only**. Building it for every historical
         /// session decoded every `hrSeries` blob per rebuild (and retained them) for posts that don't exist.
+        /// Only the FIRST-PAINT sessions (the newest few) are read here, on main; the rest are read off main
+        /// after the feed has painted (prompt 202) — decoding all 300+ series on main cost ~80 ms.
         var hr: [UUID: ClipFeedHR]
+        var laterGym: [UUID] = []
+        var laterKilter: [UUID] = []
         var tiles: [UUID: HRTile]
         /// The user's default tile (prompt 163) — used where a session has no Studio tile of its own.
         var style: ClipOverlayStyle
@@ -690,6 +701,12 @@ struct ClipsFeedView: View {
         let festivalSessionIDs = Set(festivalAttendance.map(\.sessionID))
         let festivalNights = makeFestivalNights(workoutByID: Dictionary(workoutSessions.map { ($0.id, $0) },
                                                                         uniquingKeysWith: { a, _ in a }))
+        // The newest few filmed sessions are the top of every feed level — only their HR is read on main.
+        let firstPaint = ClipFeedComposer.firstPaintSessions(
+            Dictionary(uniqueKeysWithValues: bySession.keys.compactMap { sid in
+                (kilterByID[sid]?.startedAt ?? workoutByID[sid]?.startedAt).map { (sid, $0) } }),
+            count: Self.firstPaintSessions)
+        var laterGym: [UUID] = [], laterKilter: [UUID] = []
         var bundles: [ClipFeedComposer.SessionBundle] = []
         var hr: [UUID: ClipFeedHR] = [:]
         for (sid, clips) in bySession {
@@ -697,7 +714,9 @@ struct ClipsFeedView: View {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .kilter,
                     title: k.title ?? "Kilter session", startedAt: k.startedAt, endedAt: k.endedAt,
                     angle: k.angle), clips: clips, climbResults: kilterResults[sid] ?? [:]))
-                hr[sid] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
+                if firstPaint.contains(sid) {
+                    hr[sid] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
+                } else { laterKilter.append(sid) }
             } else if let w = workoutByID[sid] {
                 // What the workout actually WAS (prompt 170): per tagged exercise, and for the whole
                 // session — a festival night, a Health import by its workout type, else the most common
@@ -714,13 +733,16 @@ struct ClipsFeedView: View {
                     climbResults: Self.quickSessionClimbResults(w.exercises),
                     exerciseActivity: exerciseActivity, sessionActivity: sessionActivity,
                     festivalNight: festivalNights[sid], exerciseStats: statsBySession[sid] ?? [:]))
-                hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
+                if firstPaint.contains(sid) {
+                    hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
+                } else { laterGym.append(sid) }
             }
             // else: media whose session was deleted — skip (no orphan posts).
         }
         return FeedSnapshot(bundles: bundles, climbMeta: climbMeta, exerciseNames: exerciseName,
                             festivalMeta: makeFestivalMeta(workoutByID: workoutByID),
-                            hr: hr, tiles: sessionHRTile, style: overlayStore.style)
+                            hr: hr, laterGym: laterGym, laterKilter: laterKilter,
+                            tiles: sessionHRTile, style: overlayStore.style)
     }
 
     /// A Quick Session's climbs → their per-attempt outcomes (prompt 161), keyed like the post group
@@ -804,12 +826,19 @@ struct ClipsFeedView: View {
         let posts = ClipFeedComposer.posts(sessions: snap.bundles, climbMeta: snap.climbMeta,
                                            exerciseName: { names[$0] ?? "Exercise" },
                                            festivalMeta: snap.festivalMeta)
+        let payloads = payloads(for: posts, hr: snap.hr, tiles: snap.tiles, style: snap.style)
+        return ComposedFeed(posts: posts, hr: snap.hr, tiles: snap.tiles, payloads: payloads)
+    }
+
+    /// The per-clip HR overlays for the posts whose session HR is in `hr` (the others wait for their HR — prompt 202).
+    nonisolated private static func payloads(for posts: [ClipFeedPost], hr: [UUID: ClipFeedHR], tiles: [UUID: HRTile],
+                                             style: ClipOverlayStyle) -> [UUID: ClipHROverlay.Payload] {
         var payloads: [UUID: ClipHROverlay.Payload] = [:]
         for post in posts {
-            let hr = snap.hr[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
+            guard let hr = hr[post.sessionID] else { continue }
             // Precedence (prompt 163): the session's Studio tile → the user's default → (inside `make`,
             // when neither would draw anything) the built-in scorebug.
-            let tile = snap.style.tile(sessionTile: snap.tiles[post.sessionID], restHR: hr.restHR)
+            let tile = style.tile(sessionTile: tiles[post.sessionID], restHR: hr.restHR)
             for item in post.clips where !item.media.isReel {
                 // A posted reel already carries the burned scorebug in its pixels (highlights P2) —
                 // composing a live overlay for it would double-draw, same rule as a baked clip.
@@ -819,8 +848,30 @@ struct ClipsFeedView: View {
                 }
             }
         }
-        return ComposedFeed(posts: posts, hr: snap.hr, tiles: snap.tiles, payloads: payloads)
+        return payloads
     }
+
+    /// The later sessions' HR, read on a background context so the `hrSeries` decode stays off main (prompt 202).
+    nonisolated private static func laterHR(container: ModelContainer, gym: [UUID], kilter: [UUID]) -> [UUID: ClipFeedHR] {
+        let ctx = ModelContext(container)
+        var out: [UUID: ClipFeedHR] = [:]
+        if !gym.isEmpty {
+            let ids = gym
+            for w in (try? ctx.fetch(FetchDescriptor<WorkoutSession>(predicate: #Predicate { ids.contains($0.id) }))) ?? [] {
+                out[w.id] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
+            }
+        }
+        if !kilter.isEmpty {
+            let ids = kilter
+            for k in (try? ctx.fetch(FetchDescriptor<KilterSession>(predicate: #Predicate { ids.contains($0.id) }))) ?? [] {
+                out[k.id] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
+            }
+        }
+        return out
+    }
+
+    /// How many of the newest filmed sessions get their HR overlays before the feed first paints (prompt 202).
+    private static let firstPaintSessions = 8
 
     /// A cheap Equatable signature of the @Query inputs — recompute the cached feed only when this changes
     /// (add/remove, an aspect backfill, a Studio-tile edit), NOT on a `playingClip`/`page` write.
@@ -860,6 +911,7 @@ struct ClipsFeedView: View {
             overlayStore.attach(context)   // re-read the saved style (picks up a restore)
             let key = feedKey
             let snap = makeSnapshot()
+            snapshotStyle = snap.style
             let composed = await Task.detached(priority: .userInitiated) { Self.compose(snap) }.value
             guard !Task.isCancelled else { return }   // a newer rebuild superseded this one
             // Favorites (prompt 162): re-read the rows each rebuild (picks up a backup restore) and move
@@ -869,10 +921,27 @@ struct ClipsFeedView: View {
             activityCounts = ClipFeedComposer.activityClipCounts(composed.posts)
             reactions.migrateLegacy(posts: composed.posts)
             cachedPosts = composed.posts
-            cachedHRContext = composed.hr
+            // The first pass only carries the newest sessions' HR + overlays; keep the previous build's for the
+            // rest until the second pass replaces them, so a rebuild never blanks overlays further down (prompt 202).
+            cachedHRContext = composed.hr.merging(cachedHRContext) { new, _ in new }
             cachedHRTiles = composed.tiles
-            cachedPayloads = composed.payloads
+            cachedPayloads = composed.payloads.merging(cachedPayloads) { new, _ in new }
             builtKey = key
+            // Second pass (prompt 202): every other session's HR + overlays, off main, merged in when ready.
+            guard !snap.laterGym.isEmpty || !snap.laterKilter.isEmpty else {
+                cachedHRContext = composed.hr; cachedPayloads = composed.payloads
+                return
+            }
+            let container = context.container
+            let posts = composed.posts
+            let later = await Task.detached(priority: .userInitiated) {
+                let hr = Self.laterHR(container: container, gym: snap.laterGym, kilter: snap.laterKilter)
+                return (hr, Self.payloads(for: posts, hr: hr, tiles: snap.tiles, style: snap.style))
+            }.value
+            guard !Task.isCancelled else { return }
+            // Exactly this build's results — an overlay that went away (a clip baked since) doesn't linger.
+            cachedHRContext = composed.hr.merging(later.0) { a, _ in a }
+            cachedPayloads = composed.payloads.merging(later.1) { a, _ in a }
         }
     }
 
