@@ -282,13 +282,20 @@ struct FestivalScanView: View {
 
     var body: some View {
         NavigationStack {
-            SnappetScannerView(
-                prompt: "Point at a friend's Snappet lineup QR code.",
-                foreignHint: "That isn't a Snappet lineup code.",
-                decode: { SharedLineup(decoding: $0) },
-                onScan: { decoded in onScan(decoded); dismiss() })
-                .padding(.top, 8)
-                .accessibilityIdentifier("festival.scanner")
+            VStack(spacing: 14) {
+                SnappetScannerView(
+                    prompt: "Point at a friend's Snappet lineup QR code.",
+                    foreignHint: "That isn't a Snappet code.",
+                    decode: { SharedLineup(decoding: $0) },
+                    onScan: { decoded in onScan(decoded); dismiss() })
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("festival.scanner")
+                // A screenshot of a lineup code works too (prompt 201).
+                PhotoCodePickerRow(idPrefix: "festival.scanner", tint: SnappetColor.festival,
+                                   decode: { SharedLineup(decoding: $0) },
+                                   onFound: { decoded in onScan(decoded); dismiss() })
+            }
+            .padding(.bottom, 12)
                 .navigationTitle("Scan a lineup")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

@@ -77,11 +77,16 @@ final class RoutineQRScheduleTests: XCTestCase {
         }
     }
 
+    /// Photo → payloads → the generic pick (prompt 201; routines since prompt 138).
+    private func pick(_ data: Data) async -> SnappetCodeImport.Outcome<SharedRoutine> {
+        SnappetCodeImport.pick(await QRImageDecoder.payloads(in: data), decode: { SharedRoutine(decoding: $0) })
+    }
+
     func testDecodesARoutineFromAScreenshot() async throws {
         let shared = SharedRoutine(name: "Push Day", detail: nil, exercises: blocks, schedule: schedule)
-        let qr = try XCTUnwrap(QRCodeImage.make(for: shared.encoded))
-        let result = await RoutinePhotoImport.routine(fromImageData: screenshot(with: qr))
-        let routine = try result.get()
+        // The https form — what the share sheet's QR carries since prompt 200.
+        let qr = try XCTUnwrap(QRCodeImage.make(for: SnappetWebLink.webForm(shared.encoded)))
+        guard case .value(let routine) = await pick(screenshot(with: qr)) else { return XCTFail("no routine") }
         XCTAssertEqual(routine.name, "Push Day")
         XCTAssertEqual(routine.schedule?.repeatRule, schedule.repeatRule)
     }
@@ -90,27 +95,36 @@ final class RoutineQRScheduleTests: XCTestCase {
         let blank = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { ctx in
             UIColor.gray.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
         }
-        let result = await RoutinePhotoImport.routine(fromImageData: png(blank))
-        XCTAssertEqual(result.failureValue, .noCode)
+        guard case .failure(.noCode) = await pick(png(blank)) else { return XCTFail("expected noCode") }
     }
 
-    func testForeignQRIsNotARoutine() async throws {
+    func testForeignQRIsNotSnappet() async throws {
         let qr = try XCTUnwrap(QRCodeImage.make(for: "https://example.com/not-a-routine"))
-        let result = await RoutinePhotoImport.routine(fromImageData: png(qr))
-        XCTAssertEqual(result.failureValue, .notARoutine)
+        guard case .failure(.notSnappet) = await pick(png(qr)) else { return XCTFail("expected notSnappet") }
+    }
+
+    func testAnotherKindOfSnappetCodeIsHandedOn() async throws {
+        let climb = KilterClimbLink(uuid: "11111111-1111-4111-8111-111111111111", angle: 40)
+        let qr = try XCTUnwrap(QRCodeImage.make(for: SnappetWebLink.webForm(climb.encoded)))
+        guard case .otherLink(let link) = await pick(png(qr)) else { return XCTFail("expected otherLink") }
+        XCTAssertEqual(link, climb.encoded, "handed on in its snappet:// form")
     }
 
     func testFirstRoutineAmongSeveralPayloadsWins() {
         let shared = SharedRoutine(name: "Legs", detail: nil, exercises: blocks)
-        let result = RoutinePhotoImport.routine(from: ["https://example.com", shared.encoded])
-        XCTAssertEqual(try? result.get().name, "Legs")
-        XCTAssertEqual(RoutinePhotoImport.routine(from: []).failureValue, .noCode)
+        let climb = KilterClimbLink(uuid: "11111111-1111-4111-8111-111111111111").encoded
+        let outcome = SnappetCodeImport.pick(["https://example.com", climb, shared.encoded],
+                                             decode: { SharedRoutine(decoding: $0) })
+        guard case .value(let r) = outcome else { return XCTFail("the routine wins over another kind") }
+        XCTAssertEqual(r.name, "Legs")
+        guard case .failure(.noCode) = SnappetCodeImport.pick([], decode: { SharedRoutine(decoding: $0) }) else {
+            return XCTFail("expected noCode")
+        }
     }
-}
 
-private extension Result {
-    var failureValue: Failure? {
-        if case .failure(let e) = self { return e }
-        return nil
+    func testDescribesWhatALinkOpens() {
+        XCTAssertEqual(SnappetCodeImport.describe("https://harshal2802.github.io/Snappet/open/kilter/climb/x"), "a Kilter climb")
+        XCTAssertEqual(SnappetCodeImport.describe("snappet://routine/v1/abc"), "a workout routine")
+        XCTAssertNil(SnappetCodeImport.snappetLink("https://example.com/x"))
     }
 }

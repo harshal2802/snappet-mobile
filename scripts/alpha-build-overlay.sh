@@ -16,6 +16,7 @@ cd "$(dirname "$0")/../ios/App"
 sed -i '' \
   -e 's|com.snappet.app.watchkitapp|com.snappet.app.alpha.watchkitapp|g' \
   -e 's|com.snappet.app.widgets|com.snappet.app.alpha.widgets|g' \
+  -e 's|com.snappet.app.share|com.snappet.app.alpha.share|g' \
   -e 's|PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app$|PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.alpha|' \
   -e 's|INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.snappet.app|INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.snappet.app.alpha|' \
   -e "s|CURRENT_PROJECT_VERSION: \"[0-9][0-9]*\"|CURRENT_PROJECT_VERSION: \"${BUILD}\"|g" \

@@ -128,7 +128,7 @@ struct WorkoutHomeView: View {
     /// Routines ＋ → Import from Photos (prompt 138).
     @State private var pickingRoutinePhoto = false
     @State private var routinePhoto: PhotosPickerItem?
-    @State private var routinePhotoError: RoutinePhotoImportError?
+    @State private var routinePhotoError: SnappetCodeImport.Failure?
     /// The Video Studio opened from the module level (#74) — dashboard candidates or a History
     /// row's swipe shortcut. Same find-or-create + full-screen presentation as the session detail.
     @State private var studioProject: StudioProject?
@@ -285,18 +285,7 @@ struct WorkoutHomeView: View {
         .onChange(of: routinePhoto) { _, item in
             guard let item else { return }
             routinePhoto = nil
-            Task { @MainActor in
-                let result: Result<SharedRoutine, RoutinePhotoImportError>
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    result = await RoutinePhotoImport.routine(fromImageData: data)
-                } else {
-                    result = .failure(.noCode)
-                }
-                switch result {
-                case .success(let shared): section = .routines; importingRoutine = shared
-                case .failure(let error): routinePhotoError = error
-                }
-            }
+            Task { await importRoutinePhoto(item) }
         }
         .alert("Couldn't import", isPresented: Binding(get: { routinePhotoError != nil },
                                                        set: { if !$0 { routinePhotoError = nil } })) {
@@ -614,6 +603,19 @@ struct WorkoutHomeView: View {
     /// Start a freeform (routineless) session — an empty `WorkoutSession` you grow on the fly in
     /// `FreeformPlayerView` (add exercises + sets / climb attempts). If a workout is already active,
     /// resume it instead of stacking a second one. (dynamic-sessions D3)
+    /// A routine QR from a photo (prompt 138); another kind of Snappet code opens where it belongs (prompt 201).
+    private func importRoutinePhoto(_ item: PhotosPickerItem) async {
+        var payloads: [String] = []
+        if let data = try? await item.loadTransferable(type: Data.self) {
+            payloads = await QRImageDecoder.payloads(in: data)
+        }
+        switch SnappetCodeImport.pick(payloads, decode: { SharedRoutine(decoding: $0) }) {
+        case .value(let shared): section = .routines; importingRoutine = shared
+        case .otherLink(let link): router.pendingLink = URL(string: link)
+        case .failure(let error): routinePhotoError = error
+        }
+    }
+
     private func startFreeform() {
         if let active = activeSession { resume(active); return }
         let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])

@@ -42,6 +42,9 @@ final class SuiteRouter {
     var pendingQuickStart = false
     /// One-shot "finish the running workout" (prompt 199 — Shortcuts / Siri / `snappet://finish`).
     var pendingFinishSession = false
+    /// A Snappet link an in-app scanner read that ISN'T its own kind (a routine code in the climb scanner) — the shell
+    /// routes it like a tapped link (prompt 201).
+    var pendingLink: URL?
 
     /// One-shot QR/URL deep-link intent (#75, the `pendingWorkoutResume` pattern): the shell's
     /// `onOpenURL` sets this before `open(module: "kilter")`, and `KilterRootView` consumes it on
