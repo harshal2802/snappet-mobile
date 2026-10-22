@@ -84,10 +84,10 @@ final class AppActionInboxTests: XCTestCase {
         let registered = Set(["pomodoro", "habit", "journal", "workout-log", "workout",
                               "kilter", "budget", "expense", "tip"])
         for choice in ModuleChoice.allCases {
-            XCTAssertTrue(registered.contains(AppActionRouter.route(for: .openModule(choice.moduleID)).moduleID))
+            XCTAssertTrue(registered.contains(AppActionRouter.route(for: .openModule(choice.moduleID)).moduleID ?? ""))
         }
-        XCTAssertTrue(registered.contains(AppActionRouter.route(for: .startRoutine).moduleID))
-        XCTAssertTrue(registered.contains(AppActionRouter.route(for: .startPomodoro).moduleID))
+        XCTAssertTrue(registered.contains(AppActionRouter.route(for: .startRoutine).moduleID ?? ""))
+        XCTAssertTrue(registered.contains(AppActionRouter.route(for: .startPomodoro).moduleID ?? ""))
     }
 
     // MARK: - HabitEntity mapping

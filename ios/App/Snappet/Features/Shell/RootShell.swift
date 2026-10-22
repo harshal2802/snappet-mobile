@@ -83,6 +83,11 @@ struct RootShell: View {
         // intent rides the router one-shot (consumed by `KilterRootView`, which owns the
         // destination + catalog knowledge for the graceful missing-climb landing).
         .onOpenURL { url in handle(url) }
+        .onChange(of: router.pendingLink) { _, url in
+            guard let url else { return }
+            router.pendingLink = nil
+            handle(url)
+        }
         // Scheduled-routine notification actions (prompt 136). `initial: true` catches a cold start
         // from a tapped action (set by the delegate before this view existed).
         .onChange(of: app.routineReminders.pendingAction, initial: true) { _, action in
@@ -215,11 +220,14 @@ struct RootShell: View {
             router.pendingQuickStart = true
         case .finishSession:
             router.pendingFinishSession = true
+        case .openLink(let link):
+            // A QR code read from a photo shared to Snappet (prompt 201) — the same router as a scanned / tapped link.
+            if let url = URL(string: link) { handle(url) }
         default:
             break
         }
         if let compose = route.journalCompose { router.pendingJournalCompose = compose }
-        router.open(module: route.moduleID)
+        if let id = route.moduleID { router.open(module: id) }
     }
 
     /// A `snappet://` workout link (prompt 199): quick / finish go through the same one-shots as the App Intents; log /

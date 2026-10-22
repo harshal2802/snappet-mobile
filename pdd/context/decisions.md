@@ -10125,3 +10125,18 @@ stripes, and the panel read as an opaque slab.
 - The AASA lives on the user site, not the Snappet project site: Apple only fetches it from the domain root.
   Without the app the link falls to the Snappet site's GitHub Pages 404.html, which shows the "Open in Snappet"
   page for `/open/` paths. No new route in the web app.
+
+## 2026-10-21 — Photos with a QR code (prompt 201)
+
+- iOS has no API for a share extension to open its own app. The extension calls `openURL:options:completionHandler:`
+  on the app object it finds on the responder chain (the public method, unavailable to extensions at compile time),
+  and checks the completion. If that ever stops working, or App Review objects, the link lands in the action inbox
+  and runs on the next launch. The feature degrades to one extra tap, never to nothing. The inbox entry is written
+  ONLY when the open failed, so a link never runs twice.
+- A scanner no longer refuses another kind of Snappet code. It hands the link to the shell's router after its sheet
+  is gone (650 ms): the link's own sheet (an import preview) can't be presented in the same update as the scanner
+  dismisses.
+- The photo picker sits beside each scanner, not inside `SnappetScannerView`. The scanners' container
+  accessibility ids would flatten its ids.
+- `QRImageDecoder` stays in the app target and the extension lists it by path: `Shared/` also compiles into the
+  watch, which has no Vision.

@@ -6,8 +6,9 @@ import Foundation
 /// applies the result through `SuiteRouter`. Unit-tested in `AppActionInboxTests`.
 enum AppActionRouter {
     struct Route: Equatable {
-        /// The module to open (`SuiteRouter.open(module:)` / `ModuleRegistry` id).
-        var moduleID: String
+        /// The module to open (`SuiteRouter.open(module:)` / `ModuleRegistry` id); nil when the action routes itself
+        /// (a link goes through the shell's one link router — prompt 201).
+        var moduleID: String?
         /// Set `SuiteRouter.pendingPomodoroStart` before opening (start the focus timer).
         var startPomodoro: Bool = false
         /// Set `SuiteRouter.pendingJournalCompose` before opening (compose a new entry).
@@ -24,6 +25,8 @@ enum AppActionRouter {
             return Route(moduleID: "journal", journalCompose: JournalComposeRequest(text: text))
         case .startRoutine, .startQuickSession, .finishSession:
             return Route(moduleID: "workout-log")   // WorkoutTrackerModule.id (#74); the shell sets the one-shot (199)
+        case .openLink:
+            return Route(moduleID: nil)
         }
     }
 }

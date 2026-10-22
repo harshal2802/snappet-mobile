@@ -12,12 +12,19 @@ struct KilterScannerView: View {
 
     var body: some View {
         NavigationStack {
-            SnappetScannerView(
-                prompt: "Point at a Kilter climb QR code.",
-                foreignHint: "That isn't a Snappet climb code.",
-                decode: { KilterClimbLink(decoding: $0) },
-                onScan: { link in onScan(link); dismiss() })
-                .accessibilityIdentifier("kilter.scanner")
+            VStack(spacing: 14) {
+                SnappetScannerView(
+                    prompt: "Point at a Kilter climb QR code.",
+                    foreignHint: "That isn't a Snappet code.",
+                    decode: { KilterClimbLink(decoding: $0) },
+                    onScan: { link in onScan(link); dismiss() })
+                    .accessibilityIdentifier("kilter.scanner")
+                // A screenshot of a climb code works too (prompt 201).
+                PhotoCodePickerRow(idPrefix: "kilter.scanner", tint: SnappetColor.kilter,
+                                   decode: { KilterClimbLink(decoding: $0) },
+                                   onFound: { link in onScan(link); dismiss() })
+            }
+            .padding(.vertical, 12)
                 .navigationTitle("Scan climb")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }

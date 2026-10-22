@@ -91,6 +91,11 @@ final class WorkoutIntentTests: XCTestCase {
     func testActionsRouteToTheGymTracker() {
         XCTAssertEqual(AppActionRouter.route(for: .startQuickSession("x")).moduleID, "workout-log")
         XCTAssertEqual(AppActionRouter.route(for: .finishSession).moduleID, "workout-log")
+        // A link from a photo shared to Snappet routes itself through the shell's link router (prompt 201).
+        XCTAssertNil(AppActionRouter.route(for: .openLink("snappet://finish")).moduleID)
+        let data = try? JSONEncoder().encode(PendingAppAction.openLink("snappet://kilter/climb/x"))
+        XCTAssertEqual(data.flatMap { try? JSONDecoder().decode(PendingAppAction.self, from: $0) },
+                       .openLink("snappet://kilter/climb/x"))
     }
 
     /// The `snappet://log` path end-to-end against the UI-test seed: route → resolve "Bench" → logged + worded the

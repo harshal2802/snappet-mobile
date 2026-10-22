@@ -42,6 +42,9 @@ targets:
       # (live-workout-studio A2).
       - target: SnappetWidgets
         embed: true
+      # "Share → Snappet" (prompt 201): a photo with a Snappet QR code opens the app on it.
+      - target: SnappetShare
+        embed: true
     settings:
       base:
         INFOPLIST_FILE: Snappet/Resources/Info.plist
@@ -151,6 +154,33 @@ targets:
         # Same App Group as the app target — the widget reads the shared Today snapshot
         # (#81 Phase 1) and, from Phase 2, writes the interactive-check-off outbox the app
         # reconciles into SwiftData on next foreground.
+        com.apple.security.application-groups: [group.com.snappet.app]
+  # Share Extension (prompt 201): "Share → Snappet" on a photo / screenshot holding a Snappet QR code. Reads the code
+  # on-device (QRImageDecoder — Vision isn't on watchOS, so it's listed here rather than moved to Shared/), then opens
+  # the app on the link; if iOS won't open it from here, the link waits in the App-Group action inbox.
+  SnappetShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: SnappetShare
+      - path: Shared
+      - path: Snappet/Services/QRImageDecoder.swift
+    settings:
+      base:
+        INFOPLIST_FILE: SnappetShare/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.share
+        DEVELOPMENT_TEAM: NFUS5W8QC6
+        INFOPLIST_KEY_CFBundleDisplayName: Snappet
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+    entitlements:
+      path: SnappetShare/SnappetShare.entitlements
+      properties:
         com.apple.security.application-groups: [group.com.snappet.app]
   # App unit tests for the PURE pieces (no device): WorkoutActivityMapping +
   # the LiveWorkoutService HR-buffer offset math. Distinct from HighlightEngineTests,

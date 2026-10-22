@@ -8,9 +8,18 @@ import Vision
 /// small codes in a big photo); Core Image's QR detector is the fallback for the images Vision misses.
 /// Returns every QR string found, in detection order; the caller decides which one is "ours".
 enum QRImageDecoder {
-    static func payloads(in data: Data) async -> [String] {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
+    /// `maxPixelSize` decodes a downscaled, upright copy instead of the full image — the share extension's memory
+    /// limit (~120 MB) can't hold a 48 MP photo's pixels. A code still reads at 3000 px on the long side.
+    static func payloads(in data: Data, maxPixelSize: Int? = nil) async -> [String] {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return [] }
+        if let maxPixelSize {
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                            kCGImageSourceCreateThumbnailWithTransform: true,
+                                            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return [] }
+            return await payloads(in: image, orientation: .up)
+        }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
         let orientation = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])?[
             kCGImagePropertyOrientation] as? UInt32
         return await payloads(in: image, orientation: orientation.flatMap(CGImagePropertyOrientation.init) ?? .up)
