@@ -23,7 +23,10 @@ platform :ios do
       export_options: "ExportOptions.plist",
       output_directory: "build",
       output_name: "Snappet.ipa",
-      xcargs: "-allowProvisioningUpdates"
+      # The API key lets Xcode create / refresh its managed profiles with no Apple ID signed in — needed whenever an
+      # App ID gains a capability or a new extension appears (build 24: Associated Domains + the share extension).
+      xcargs: "-allowProvisioningUpdates -authenticationKeyPath #{ENV.fetch("ASC_KEY_PATH")} " \
+              "-authenticationKeyID #{ENV.fetch("ASC_KEY_ID")} -authenticationKeyIssuerID #{ENV.fetch("ASC_ISSUER_ID")}"
     )
     upload_to_testflight(
       api_key: api_key,
