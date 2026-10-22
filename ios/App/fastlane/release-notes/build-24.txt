@@ -1,0 +1,33 @@
+A big one: a new camera, a new Library, Clips that read like posts, and Snappet working with Shortcuts, Siri and QR codes.
+
+CAMERA
+• Snappet now has its own camera (sharper video than before), like the iPhone Camera: slo-mo / video / photo, HD or 4K and frame rate, the .5 / 1× / 3 lenses with pinch zoom, torch, timer, grid, tap to focus. It remembers your last settings.
+• Recording during a workout tags the clip to the set you're on, shows your heart rate, and "Stop & log" logs that set or climb attempt.
+
+LIBRARY AND PROGRESS
+• Gym Tracker → Library: Yours | Explore, sorting, and one entry per climb (a gym's climbs reset after 28 days, adjustable).
+• Pin, rename, merge or hide activities, and create your own. The exercise pickers are now the Library.
+• Every activity has a page: Progress (trend, records, Then vs Now, a progress reel), Clips and About. Kilter board climbs get one too.
+
+CLIPS
+• Posts now show what you did: sets, weights, PRs, climb results, plus your own caption and #tags.
+• Choose how the feed is grouped: Sessions, Activities or Exercises (a then-vs-now album per exercise).
+• Grid: Photos-style pinch zoom (All / Months / Year), month scrubber, long-press preview, select several and act on them.
+• Search by grade, angle, outcome or date; hide clips with undo; one-tap share with heart rate; a default overlay style.
+• Opening Clips is much faster.
+
+SHORTCUTS, SIRI AND QR CODES
+• Shortcuts app: Start a Quick Session, Log a Set, Log a Climb Attempt, Finish Workout. Log a Set works without opening the app.
+• Shared climb, routine and lineup QR codes and links now open Snappet straight from the Camera, Messages or Notes. Without the app they open a page to get it.
+• Share a photo or screenshot of a Snappet QR code to Snappet (Share → Snappet), or use "Choose from Photos" in any scanner.
+
+FIXES
+• The Lock Screen no longer shows a workout as running after you've stopped it.
+• Crashes opening the camera and tapping a routine reminder are fixed.
+• A weight you type is kept when you log the set.
+
+WHAT WOULD HELP MOST
+• Record a set with the new camera during a workout. Did it tag the right set and log it?
+• Scan a shared climb or routine QR with the iPhone Camera. Did "Open in Snappet" take you to it?
+• Try Log a Set from the Shortcuts app with Snappet closed, then open Snappet. Was the set there?
+• Open Clips and scroll. Does it feel fast, and do the heart-rate overlays look right?
