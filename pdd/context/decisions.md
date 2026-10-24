@@ -10151,3 +10151,23 @@ stripes, and the panel read as an opaque slab.
   first screen is complete.
 - The second pass REPLACES the caches with this build's results; it doesn't merge. A carried-over overlay would
   outlive a clip that was baked since. Between the passes the previous build's overlays stay, so nothing blanks.
+
+## 2026-10-23 — Racket sports (prompt 203)
+
+- A match's result is DERIVED from its logged units (`RacketScoring.state`), never stored — editing or deleting a
+  game can't leave a stale "won 3–1". Only a retirement / walkover is stored (`racketEndRaw`), because no score
+  expresses it.
+- Scores are checked but never blocked: an 11–10 or a 6–5 shows an amber warning and still saves. Real matches have
+  retirements, house rules and typos fixed later.
+- A match's Library activity is its SPORT ("Table tennis match"), not the opponent — the page shows "vs Alex Chen",
+  the Library row shows the record across every opponent. Head-to-head is computed separately.
+- `racketBestOf`: `nil` = the sport's default, `0` = open play. A plain optional couldn't tell "unset" from "open".
+- HealthKit has no padel type; an Apple Watch records padel as tennis, the session keeps the real sport. With only
+  the discipline in hand (no sport) the mapping returns `.other`, never a guessed sport.
+- A Quick Session that starts empty still starts the watch as before (strength); an HKWorkoutSession can't change type,
+  so a racket entity added later doesn't retype it. "Log it now" from the Library does start the right type.
+- HR back-fill from Apple Health is for ANY finished gym session (not just racket): only sessions with no/sparse HR,
+  not imported, not BLE, ended ≤ 3 days ago; it saves only when Health added samples. The user wears a Fitbit
+  (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:
+  whether Fitbit writes HR samples (not just the workout) — check after the first real session.
+- Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
