@@ -739,7 +739,6 @@ struct RacketScoreSheet: View {
                 (mine, theirs) = RacketScoring.initialScore(format: format, superTiebreak: isSTB)
             }
         }
-        .accessibilityIdentifier("racket.scoreSheet")
     }
 
     private func column(_ who: String, value: Binding<Int>, winning: Bool, id: String) -> some View {
@@ -963,7 +962,6 @@ struct RacketRecapCards: View {
             }
             .padding()
             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-            .accessibilityIdentifier("racket.recap")
         }
     }
 

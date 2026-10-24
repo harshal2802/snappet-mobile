@@ -64,6 +64,7 @@ struct SessionDetailView: View {
     @FocusState private var keypadFocused: Bool
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
+    @Environment(AppModel.self) private var app
     private let mediaLibrary = MediaLibraryService()
 
     // The type-adaptive recap header (E2) — shared with the post-Finish summary via `SessionRecap`.
@@ -175,6 +176,8 @@ struct SessionDetailView: View {
         .sheet(item: $pastClipsFor) { target in
             ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
         }
+        // A wearable that synced since the session (Fitbit / Google Health …) fills in its HR (prompt 203).
+        .task { await app.backfillWorkoutHR(sessionID: session.id) }
         .task {
             let identity = ActivityIdentity(sessions: history + [session])
             activityIdentity = identity
@@ -342,6 +345,9 @@ private struct HeartRateSummarySection: View {
                 if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
                     Spacer()
                     Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
+                } else if sourceRaw == WorkoutHRBackfill.healthSourceRaw {
+                    Spacer()
+                    Text("via Apple Health").font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -528,6 +534,7 @@ private struct SessionMediaSection: View {
                                 id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind,
                                        discipline: ex.discipline, unit: unit,
+                                       effortNoun: QuickSessionPager.effortNoun(for: ex).capitalized,
                                        distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
@@ -540,6 +547,7 @@ private struct SessionMediaSection: View {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind,
                                        discipline: ex.discipline, unit: unit,
+                                       effortNoun: QuickSessionPager.effortNoun(for: ex).capitalized,
                                        distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
@@ -553,7 +561,7 @@ private struct SessionMediaSection: View {
                     }
                 } header: {
                     HStack {
-                        Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        Text(ex.isRacketMatch ? RacketStats.postTitle(ex) : resolver.name(for: ex.exerciseId, override: ex.displayName))
                         Spacer()
                         if let key = activityIdentity?.key(for: ex, loggedAt: session.startedAt) {
                             Button {
@@ -974,6 +982,8 @@ private struct SetTileRow: View {
     /// The owning exercise's discipline (Workout-Type Parity) — a `.run` leg renders distance · time · pace.
     var discipline: WorkoutDiscipline = .strength
     let unit: WeightUnit
+    /// "Set" / "Attempt" / "Game" (racket, prompt 203) — the tile's label.
+    var effortNoun: String = "Set"
     /// Distance unit for a running leg's pace/distance rendering.
     var distanceUnit: DistanceUnit = .km
     let bpm: Double?
@@ -992,7 +1002,7 @@ private struct SetTileRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Text("Set \(index)").font(.subheadline.weight(.medium))
+                Text("\(effortNoun) \(index)").font(.subheadline.weight(.medium))
                 Spacer()
                 if let editDraft, let keypadFocus {
                     SetEditFields(draft: editDraft, discipline: discipline, kind: kind,
@@ -1049,6 +1059,8 @@ private struct SetEditFields: View {
         Group {
             if discipline == .run {
                 runFields
+            } else if discipline == .racket {
+                racketFields
             } else {
                 switch kind {
                 case .repsWeight:   repsWeightFields
@@ -1092,6 +1104,33 @@ private struct SetEditFields: View {
             TextField("M:SS", text: $draft.duration)
                 .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 72)
                 .focused(focus).accessibilityIdentifier("session.editDuration")
+        }
+    }
+
+    /// A match unit's score (you – them), or a drill block's made / tried or rally (prompt 203).
+    @ViewBuilder private var racketFields: some View {
+        if !draft.scoreFor.isEmpty || !draft.scoreAgainst.isEmpty {
+            HStack(spacing: 6) {
+                TextField("You", text: $draft.scoreFor)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editScoreFor")
+                Text("–").foregroundStyle(.secondary)
+                TextField("Them", text: $draft.scoreAgainst)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editScoreAgainst")
+            }
+        } else if !draft.drillTried.isEmpty {
+            HStack(spacing: 6) {
+                TextField("Made", text: $draft.drillMade)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editMade")
+                Text("/").foregroundStyle(.secondary)
+                TextField("Tried", text: $draft.drillTried)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editTried")
+            }
+        } else {
+            durationField
         }
     }
 

@@ -148,7 +148,7 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
-        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, showsHR: showsHR)
+        case .racket:   RacketRecapCards(session: session, maxHR: maxHR)
         case .none:     EmptyView()
         }
     }

@@ -20,6 +20,8 @@ struct ClipFeedPostStats: Sendable, Equatable {
     var bestKg: Double? = nil
     /// A whole-session post's PR count ("▲ 2 PRs", prompt 197); 0 elsewhere (an activity post uses `isPR`).
     var prCount: Int = 0
+    /// What one effort is called on the clip labels ("Game" / "Set" / "Block" for racket, prompt 203); nil ⇒ "Set".
+    var effortNoun: String? = nil
 }
 
 enum ClipPostStats {
@@ -28,7 +30,10 @@ enum ClipPostStats {
     static func make(_ ex: SessionExercise, title: String, key: ActivityKey?, priorBestKg: Double?,
                      unit: WeightUnit) -> ClipFeedPostStats? {
         let distanceUnit: DistanceUnit = unit == .lb ? .mi : .km
-        guard let line = LibraryCatalog.lastLine(ex, unit: unit, distanceUnit: distanceUnit) else { return nil }
+        // A match's line is its event + game scores (the title already carries the result, prompt 203).
+        let racketLine = ex.isRacketMatch ? RacketStats.postSubtitle(ex) : nil
+        guard let line = racketLine.flatMap({ $0.isEmpty ? nil : $0 })
+                ?? LibraryCatalog.lastLine(ex, unit: unit, distanceUnit: distanceUnit) else { return nil }
         var detail: [Int: String] = [:]
         for (i, set) in ex.sets.enumerated() where set.completedAt != nil {
             detail[i] = SetMeasure.displaySummary(set, discipline: ex.discipline, kind: ex.kind, unit: unit,
@@ -36,8 +41,14 @@ enum ClipPostStats {
         }
         var pr = false
         if ex.discipline == .strength, let prior = priorBestKg, let best = bestKg(ex) { pr = best > prior + 0.01 }
-        return ClipFeedPostStats(line: line, isPR: pr, setDetail: detail, activityKey: key, activityTitle: title,
-                                 bestKg: bestKg(ex))
+        var stats = ClipFeedPostStats(line: line, isPR: pr, setDetail: detail, activityKey: key, activityTitle: title,
+                                      bestKg: bestKg(ex))
+        if ex.discipline == .racket {
+            stats.effortNoun = ex.isRacketMatch ? ex.racketFormat.sport.unit.noun.capitalized : "Block"
+            // The Activity page is the sport's match activity, not this one opponent.
+            if ex.isRacketMatch { stats.activityTitle = RacketStats.matchActivityName(ex.racketFormat.sport) }
+        }
+        return stats
     }
 
     /// An exercise's best est. 1RM (kg) this session — the PR yardstick.

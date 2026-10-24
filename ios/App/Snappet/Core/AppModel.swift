@@ -276,6 +276,40 @@ final class AppModel {
         // follow-up that closes the gap intentionally.
         await WatchWorkoutImportService(health: health, sessionMedia: sessionMedia)
             .reconcile(context: context, profileMaxHR: userProfile.profile.resolvedMaxHR)
+        // Same wake-ups: a wearable that synced since (Fitbit / Google Health …) fills in HR (prompt 203).
+        await backfillWorkoutHR()
+    }
+
+    /// Back-fill finished gym sessions' heart rate from Apple Health (prompt 203): any wearable that writes
+    /// HR to Health — not just an Apple Watch streaming live — ends up on the session, its per-game splits
+    /// and its clips. Runs on launch / foreground / HealthKit wake (via `reconcileWatchWorkouts`) and when a
+    /// session's detail opens (`sessionID`). Idempotent: `WorkoutHRBackfill` skips dense, imported, BLE and
+    /// stale sessions, and only saves when Health added samples. A no-op without Health read access.
+    func backfillWorkoutHR(sessionID: UUID? = nil) async {
+        guard let context = modelContainer?.mainContext else { return }
+        let now = Date.now
+        let cutoff = now.addingTimeInterval(-WorkoutHRBackfill.lookbackDays * 86_400)
+        let finished = (try? context.fetch(FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.completedAt != nil }))) ?? []
+        var changed = false
+        for s in finished where (sessionID == nil || s.id == sessionID) && (s.completedAt ?? .distantPast) >= cutoff {
+            let candidate = WorkoutHRBackfill.Candidate(
+                startedAt: s.startedAt, completedAt: s.completedAt, metricsSourceRaw: s.metricsSourceRaw,
+                isImportedFromHealth: s.isImportedFromHealth, hrSeries: s.hrSeries)
+            guard WorkoutHRBackfill.wants(candidate, now: now), let end = s.completedAt else { continue }
+            let samples = (try? await health.heartRateSamples(start: s.startedAt, end: end)) ?? []
+            guard let merged = WorkoutHRBackfill.merged(stored: s.hrSeries,
+                                                        health: WorkoutHRStats.points(from: samples)) else { continue }
+            // A session with no live source now has Health's HR — say so, and zone it off the profile.
+            if s.hrSeries.isEmpty {
+                s.metricsSourceRaw = WorkoutHRBackfill.healthSourceRaw
+                s.maxHR = s.maxHR ?? userProfile.profile.resolvedMaxHR
+                s.restHR = s.restHR ?? userProfile.profile.restingBound
+            }
+            s.hrSeries = merged
+            changed = true
+        }
+        if changed { try? context.save() }
     }
 
     /// Register HealthKit background delivery for workouts (P2): the watch finishing a workout wakes the

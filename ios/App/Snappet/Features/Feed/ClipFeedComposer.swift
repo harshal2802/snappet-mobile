@@ -353,7 +353,7 @@ enum ClipFeedComposer {
                             if let st, st.isSend { label = "Attempt \(s + 1) · \(st.label)" }
                             else { label = "Attempt \(s + 1)" }
                         } else {
-                            label = "Set \(s + 1)"
+                            label = "\(bundle.exerciseStats[key]?.effortNoun ?? "Set") \(s + 1)"
                         }
                     }
                     else { label = ordered.count > 1 ? "Clip \(i + 1)" : nil }
