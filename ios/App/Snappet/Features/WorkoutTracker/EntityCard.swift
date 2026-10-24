@@ -12,7 +12,7 @@ import SwiftUI
 extension WorkoutDiscipline {
     /// The view-layer wayfinding accent for this discipline (kept out of the pure enum). Pulled onto the
     /// curated `SnappetColor` module ramp: strength→ember, climb→Kilter amber, run→azure, timed→tomato,
-    /// dance→violet, other→teal.
+    /// dance→violet, other→teal, racket→tennis-ball lime (the household ramp colour; prompt 203).
     var accent: Color {
         switch self {
         case .strength: return SnappetColor.workout
@@ -21,6 +21,7 @@ extension WorkoutDiscipline {
         case .timed:    return SnappetColor.pomodoro
         case .dance:    return SnappetColor.journal
         case .other:    return SnappetColor.expenses
+        case .racket:   return SnappetColor.household
         }
     }
 }

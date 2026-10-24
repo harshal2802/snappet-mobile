@@ -46,6 +46,8 @@ enum SessionRecap {
                     stats.duration]
         case .dance, .other:
             return [stats.headline, stats.duration, stats.sets]
+        case .racket:
+            return [stats.headline, stats.duration, Stat(value: "\(RacketStats.summary(session.exercises)?.units ?? 0)", label: "Games")]
         case .none:
             return [stats.duration, stats.sets, stats.headline]
         }
@@ -146,6 +148,7 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
+        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, showsHR: showsHR)
         case .none:     EmptyView()
         }
     }

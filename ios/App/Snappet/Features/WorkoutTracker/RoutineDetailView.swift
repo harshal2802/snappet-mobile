@@ -241,7 +241,7 @@ struct RoutineBlockRow: View {
                 return SetMeasure.formatDistance(m, unit: du)
             }
             return "Open run"
-        case .dance, .other:
+        case .dance, .other, .racket:
             return "\(item.sets) × time"
         }
     }

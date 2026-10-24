@@ -200,7 +200,7 @@ struct RoutineBlockEditor: View {
             case .climb:    climbFields
             case .timed:    timedFields
             case .run:      runFields
-            case .dance, .other: timedFields
+            case .dance, .other, .racket: timedFields
             }
 
             Section("Notes & name") {

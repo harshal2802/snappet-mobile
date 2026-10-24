@@ -343,6 +343,23 @@ struct SetLog: Codable, Hashable, Sendable {
     var handModeRaw: String?
     /// Measured force per rep when a force sensor was connected (prompt 145); `nil` ⇒ not measured.
     var forceReps: [ForceRepRecord]?
+
+    // Racket sports (prompt 203) — additive Optionals like every field above. A match's effort is one
+    // scored unit: a game (points) or a tennis/padel set (games, + an optional tiebreak). The match
+    // result is derived from these by `RacketScoring.state`, never stored.
+    /// Your points (a game) or games (a set).
+    var scoreFor: Int?
+    /// The opponent's points / games.
+    var scoreAgainst: Int?
+    /// A 7–6 set's tiebreak points (yours / theirs).
+    var tiebreakFor: Int?
+    var tiebreakAgainst: Int?
+    /// This unit was a deciding super tiebreak (to 10) — its score IS the tiebreak points.
+    var superTiebreak: Bool?
+    /// A drill block's made / tried counts (accuracy %) and its longest rally.
+    var drillMade: Int?
+    var drillTried: Int?
+    var longestRally: Int?
 }
 
 /// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.
@@ -415,6 +432,32 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var timedSpecData: Data?
     /// `TimedExerciseCategory.rawValue`; `nil` ⇒ `.other` (legacy/default).
     var timedCategory: String?
+
+    // MARK: - Racket metadata (prompt 203). A `.racket` entity IS a match or a drill; its `sets` are the
+    // games/sets (match) or blocks (drill) logged underneath it. All additive Optionals (the climb-fields
+    // precedent) — old blobs decode with `nil`, and a nil optional is omitted on encode.
+    /// `RacketSport.rawValue`.
+    var racketSportRaw: String?
+    /// `RacketMode.rawValue` — match / drill; `nil` ⇒ match.
+    var racketModeRaw: String?
+    /// The opponent(s), free text ("Alex Chen" / "Jordan & Lee").
+    var opponent: String?
+    /// Your doubles partner; `nil` ⇒ singles.
+    var partner: String?
+    /// Best of N units. `nil` ⇒ the sport's default; `0` ⇒ open play (log every game, never auto-decided).
+    var racketBestOf: Int?
+    /// Points per game (games per set); `nil` ⇒ the sport's default.
+    var racketPointsTo: Int?
+    /// Tennis / padel: the deciding set is a super tiebreak to 10.
+    var racketSuperTiebreak: Bool?
+    /// Tournament / league / event name ("City Open"), shared by the matches of one day.
+    var racketEvent: String?
+    /// The round within the event ("R16", "QF").
+    var racketRound: String?
+    /// `RacketMatchEnd.rawValue` for a retirement / walkover; `nil` ⇒ played out.
+    var racketEndRaw: String?
+    /// `RacketDrillMeasure.rawValue` for a drill; `nil` ⇒ time only.
+    var drillMeasureRaw: String?
 
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
 

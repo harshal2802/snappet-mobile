@@ -61,6 +61,8 @@ enum SessionToRoutine {
         case .timed:    return timedBlock(se, completed: completed)
         case .run:      return runBlock(se, completed: completed)
         case .dance, .other: return openEffortBlock(se, completed: completed)
+        // A match / drill isn't a routine prescription in v1 (prompt 203) — routines stay racket-free.
+        case .racket: return nil
         }
     }
 
@@ -79,6 +81,7 @@ enum SessionToRoutine {
         case .timed:    return "Timed session"
         case .dance:    return "Dance session"
         case .other:    return "Workout session"
+        case .racket:   return "Racket session"
         case .none:     return "New routine"
         }
     }
@@ -227,7 +230,7 @@ enum SessionToRoutine {
         switch discipline {
         case .strength:            return 90
         case .climb:               return 180
-        case .timed, .dance, .other: return 45
+        case .timed, .dance, .other, .racket: return 45
         case .run:                 return 0
         }
     }
@@ -235,6 +238,12 @@ enum SessionToRoutine {
     /// Lowercased generic session names that should NOT be reused as a routine name (so we suggest a
     /// discipline label instead). Mirrors the freeform player's default title ("Quick session").
     private static let genericSessionNames: Set<String> = ["quick session", "freeform session", "workout"]
+
+    /// Whether `name` is a placeholder title (empty / "Quick session"), so a feature may name the session.
+    static func isGenericName(_ name: String) -> Bool {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty || genericSessionNames.contains(t.lowercased())
+    }
 
     // MARK: - Draft
 

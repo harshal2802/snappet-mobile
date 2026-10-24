@@ -52,7 +52,8 @@ enum QuickSessionPager {
     /// The plan state for an exercise, or `nil` when the plan axis doesn't apply (climbs — attempts
     /// aren't planned; the climb page shows the attempt count instead).
     static func planState(for ex: SessionExercise) -> PlanState? {
-        guard ex.discipline != .climb else { return nil }
+        // Climbs and matches have no plan — attempts aren't planned, and a match's format is its plan.
+        guard ex.discipline != .climb, !ex.isRacketMatch else { return nil }
         return PlanState(done: ex.completedSetCount, planned: plannedCount(for: ex))
     }
 
@@ -69,7 +70,9 @@ enum QuickSessionPager {
     /// protocol run — the protocol already rested between its reps and sets; stacking the block's rest on
     /// top was the "double rest" (prompt 139).
     static func startsRestAfterLog(_ ex: SessionExercise) -> Bool {
-        !(ex.discipline == .timed && ex.timedSpec?.mode.isStructured == true)
+        // A match's games run back to back with their own change of ends — no rest timer (prompt 203).
+        if ex.isRacketMatch { return false }
+        return !(ex.discipline == .timed && ex.timedSpec?.mode.isStructured == true)
     }
 
     /// The per-discipline noun for plan labels and ledgers ("set" / "leg" / "round").
@@ -78,6 +81,7 @@ enum QuickSessionPager {
         switch ex.discipline {
         case .climb: return "Record an attempt"
         case .run: return "Record a leg"
+        case .racket: return ex.isRacketMatch ? "Record a \(ex.racketFormat.sport.unit.noun)" : "Record a block"
         default: return "Record a set"
         }
     }
@@ -86,6 +90,7 @@ enum QuickSessionPager {
         switch ex.discipline {
         case .run:   return "leg"
         case .climb: return "attempt"
+        case .racket: return ex.isRacketMatch ? ex.racketFormat.sport.unit.noun : "block"
         default:     return ex.timedSpec?.mode.isStructured == true ? "round" : "set"
         }
     }
@@ -114,6 +119,7 @@ enum QuickSessionPager {
     /// Unfinished = an explicit plan not yet met, or no logged effort at all. Reads the unified
     /// planned count (`plannedSets` ?? routine `targetSets`) so a routine's prescription counts as a plan.
     static func isUnfinished(_ ex: SessionExercise) -> Bool {
+        if ex.isRacketMatch { return !ex.racketState.isDecided }
         if let planned = plannedCount(for: ex), planned > 0 { return ex.completedSetCount < planned }
         return ex.completedSetCount == 0
     }
@@ -143,16 +149,20 @@ enum QuickSessionPager {
         for ex in exercises {
             let plan = planState(for: ex)
             let detail: String? = {
+                if ex.isRacketMatch {
+                    let s = ex.racketState
+                    return s.playedUnits > 0 || s.end != nil ? (s.isDecided ? s.shortResult : s.scoreLabel) : nil
+                }
                 if let plan, let planned = plan.planned, planned > 0 { return "\(plan.done)/\(planned)" }
                 let n = ex.completedSetCount
                 return n > 0 ? "\(n)" : nil
             }()
             chips.append(RailChip(
                 page: .exercise(ex.id),
-                symbol: ex.discipline == .climb ? ex.climbType.symbol : ex.discipline.symbol,
+                symbol: ex.discipline == .climb ? ex.climbType.symbol : ex.racketSport?.symbol ?? ex.discipline.symbol,
                 title: railTitle(for: ex, name: names(ex)),
                 detail: detail,
-                done: plan?.isComplete ?? false))
+                done: plan?.isComplete ?? (ex.isRacketMatch && ex.racketState.isDecided)))
         }
         chips.append(RailChip(page: .add, symbol: "plus", title: "Add", detail: nil, done: false))
         return chips
@@ -162,6 +172,8 @@ enum QuickSessionPager {
     /// word, ellipsized past 10 characters so the rail never scrolls for one long name.
     static func railTitle(for ex: SessionExercise, name: String) -> String {
         if ex.discipline == .climb, let grade = ex.climbGradeLabel, !grade.isEmpty { return grade }
+        // A match reads as its opponent ("Alex"), not the activity name every match shares.
+        let name = ex.isRacketMatch ? (ex.opponent?.isEmpty == false ? ex.opponent! : "Match") : name
         let word = name.split(separator: " ").first.map(String.init) ?? name
         return word.count > 10 ? String(word.prefix(9)) + "…" : word
     }
