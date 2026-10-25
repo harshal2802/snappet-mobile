@@ -384,7 +384,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             // The remembered board's pending connect won the race against the scan → it's the one.
             if peripheral.identifier == racingRememberedID, state == .scanning {
                 selection?.cancel(); selection = nil
-                central.stopScan()
+                self.central?.stopScan()
                 racingRememberedID = nil
                 lastAdvertisedName = nil
                 state = .connecting
