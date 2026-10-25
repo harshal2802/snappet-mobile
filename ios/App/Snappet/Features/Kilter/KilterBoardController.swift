@@ -104,6 +104,8 @@ final class KilterBoardController: NSObject {
     private var candidates: [UUID: (peripheral: CBPeripheral, rssi: Int, name: String?)] = [:]
     private var selection: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    /// Lets a dropped board go after `KilterConnectPolicy.reconnectWindow`.
+    private var reconnectGiveUp: Task<Void, Never>?
     /// The link dropped and iOS is reconnecting on its own (auto-reconnect). The UI says "Reconnecting…".
     private(set) var isReconnecting = false
     /// Set on a reconnect so the board isn't "recognized" (and its confirm ribbon shown) a second time.
@@ -249,8 +251,23 @@ final class KilterBoardController: NSObject {
         }
     }
 
+    /// Let go of a board that dropped and is still reconnecting (prompt 204): after
+    /// `KilterConnectPolicy.reconnectWindow`, when the session ends, or when the app goes to the background.
+    /// Cancelling the connection also stops iOS's auto-reconnect, so the board is free for someone else's
+    /// phone. A no-op unless a reconnect is in flight — a live link is never cut by this.
+    func releaseIfReconnecting() {
+        guard isReconnecting else { return }
+        wantsToConnect = false
+        retryTask?.cancel(); retryTask = nil
+        isReconnecting = false
+        tearDownLink()
+        state = .failed(KilterConnectPolicy.gaveUpReconnectMessage)
+        onConnectionChange?(false)
+    }
+
     /// Stop everything in flight for this attempt (scan, selection, watchdog, the link) — not the intent.
     private func tearDownLink() {
+        reconnectGiveUp?.cancel(); reconnectGiveUp = nil
         timeout?.cancel(); timeout = nil
         selection?.cancel(); selection = nil
         central?.stopScan()
@@ -436,6 +453,12 @@ extension KilterBoardController: CBCentralManagerDelegate {
                 // If the returning link then fails discovery, allow one fresh attempt (a rescan).
                 wantsToConnect = true
                 attempt = KilterConnectPolicy.maxAttempts - 1
+                reconnectGiveUp?.cancel()
+                reconnectGiveUp = Task { [weak self] in
+                    try? await Task.sleep(for: KilterConnectPolicy.reconnectWindow)
+                    guard !Task.isCancelled else { return }
+                    self?.releaseIfReconnecting()
+                }
                 return
             }
             if state.isBusy || self.isReconnecting {
@@ -485,6 +508,7 @@ extension KilterBoardController: CBPeripheralDelegate {
             wantsToConnect = false
             let reconnected = isReconnecting
             isReconnecting = false
+            reconnectGiveUp?.cancel(); reconnectGiveUp = nil
             writeChar = characteristic
             // Remember this board now that it's confirmed (right write characteristic) — only here,
             // so the identifier-based path never targets a device that wasn't really a board.

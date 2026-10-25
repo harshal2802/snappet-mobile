@@ -34,6 +34,11 @@ enum KilterConnectPolicy {
     static let scanTimeout: Duration = .seconds(15)
     static let connectTimeout: Duration = .seconds(10)
     static let retryDelay: Duration = .milliseconds(600)
+    /// How long a dropped board gets to come back on its own before Snappet lets it go. A board takes one
+    /// connection at a time, so an endless reconnect would hold a shared gym board long after you've left.
+    static let reconnectWindow: Duration = .seconds(60)
+    /// Why the board was let go (the strip's subtitle).
+    static let gaveUpReconnectMessage = "The board dropped and didn't come back, so Snappet let it go. Tap Connect to reconnect."
     /// Attempts per tap of Connect (the first + one automatic retry).
     static let maxAttempts = 2
     /// Weaker than this is the far side of a big gym — ignored unless nothing else is there.

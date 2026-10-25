@@ -55,5 +55,8 @@ final class KilterConnectPolicyTests: XCTestCase {
     func testTimingsAreSane() {
         XCTAssertLessThan(KilterConnectPolicy.selectionWindow, KilterConnectPolicy.rememberedGrace)
         XCTAssertLessThan(KilterConnectPolicy.rememberedGrace, KilterConnectPolicy.scanTimeout)
+        // A dropped board is released within a minute, so a shared board isn't held after you leave.
+        XCTAssertLessThanOrEqual(KilterConnectPolicy.reconnectWindow, .seconds(60))
+        XCTAssertTrue(KilterConnectPolicy.gaveUpReconnectMessage.contains("Tap Connect"))
     }
 }

@@ -30,10 +30,14 @@ User report: connecting to the Kilter board "fails often or takes a long time". 
 - `KilterBoardController`: system-connected adopt → else scan, racing a pending connect to the remembered
   board on the first attempt; auto-reconnect (`CBConnectPeripheralOptionEnableAutoReconnect`, iOS 17+) with
   "Reconnecting…" and the current climb re-lit on return; fail fast on missing service/characteristic.
+- Shared boards (user decision 2026-10-25): auto-reconnect gives up after 60 s, and a still-reconnecting board is
+  released when the session ends or the app is backgrounded (`releaseIfReconnecting`), so Snappet never holds a
+  gym board after you've left.
 - `KilterRootView`: pass `KilterBoardMemory`'s ids as known boards; "Reconnecting…" copy.
 
 ## Acceptance
 
 - [x] `KilterConnectPolicyTests` green; build clean.
 - [ ] Device (owed — needs the real board): a second connect is fast; board off → clear message in ≤ 15 s;
-      switching the board off and on mid-session reconnects and re-lights the climb.
+      switching the board off and on mid-session reconnects and re-lights the climb; a board left off for > 60 s is
+      released with "Tap Connect to reconnect".

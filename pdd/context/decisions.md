@@ -10162,4 +10162,8 @@ stripes, and the panel read as an opaque slab.
 - One automatic retry for link/discovery failures, none for an empty scan (a rescan won't make a board appear).
 - Mid-session drops use iOS 17 auto-reconnect; the session stays open (it never closed on a BLE drop anyway) and
   the current climb's holds are re-sent when the link returns. The board isn't "recognized" a second time.
+- Auto-reconnect is capped: a board takes ONE connection, so an endless reconnect would hold a shared gym board
+  after you've walked away. A dropped board gets 60 s to come back; it's also let go the moment the Kilter session
+  ends or the app goes to the background. Cancelling the connection stops iOS's auto-reconnect too. A live link is
+  never cut by these rules.
 - Unverified on hardware: everything above is CoreBluetooth behaviour that only a real board can confirm.
