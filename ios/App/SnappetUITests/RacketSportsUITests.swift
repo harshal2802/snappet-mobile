@@ -65,6 +65,8 @@ final class RacketSportsUITests: XCTestCase {
         let tt = app.buttons["racket.sport.tableTennis"]
         XCTAssertTrue(tt.waitForExistence(timeout: 5), "the sport picker should open")
         tt.tap()
+        // The last-used mode is remembered across launches (UserDefaults), so choose Match explicitly.
+        app.segmentedControls["racket.mode"].buttons["Match"].tap()
         shot("01-sport")
         app.buttons["racket.next"].tap()
 
@@ -143,5 +145,24 @@ final class RacketSportsUITests: XCTestCase {
         app.buttons.matching(identifier: "freeform.rail.0").firstMatch.tap()
         XCTAssertTrue(any("freeform.disciplineRibbon").waitForExistence(timeout: 5), "the overview rolls the day up")
         shot("09-overview")
+
+        // Finish → the session's detail → remove the match from the finished session (its drill stays).
+        app.buttons["freeform.finishSession"].tap()
+        let viewDetail = app.buttons["freeform.viewDetail"]
+        tapWhenHittable(viewDetail)
+        let menu = app.buttons["session.exerciseMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 8), "each exercise header should have a ⋯ menu")
+        XCTAssertTrue(app.staticTexts["R16 vs Alex Chen · Won 3–1"].exists, "the match header carries its result")
+        shot("10-session-detail")
+        menu.tap()
+        XCTAssertTrue(app.buttons["session.editMatch"].waitForExistence(timeout: 3), "a match offers Match details")
+        app.buttons["session.removeExercise"].tap()
+        let confirm = app.buttons["session.confirmRemoveExercise"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 4), "removal is confirmed first")
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["R16 vs Alex Chen · Won 3–1"].waitForNonExistence(timeout: 5),
+                      "the match is gone from the session")
+        XCTAssertTrue(app.buttons["session.exerciseMenu"].firstMatch.exists, "the drill is still there")
+        shot("11-after-remove")
     }
 }

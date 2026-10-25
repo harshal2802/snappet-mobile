@@ -59,6 +59,10 @@ struct SessionDetailView: View {
     @State private var pastClipsFor: ActivityClipsTarget?
     /// Which activity each entity is (prompt 183 — climbs need history + the reset window).
     @State private var activityIdentity: ActivityIdentity?
+    /// The exercise / match the user asked to remove from this finished session (confirmed first).
+    @State private var pendingExerciseRemoval: SessionExercise?
+    /// A finished match's details being edited (opponent / round / event / format — prompt 203).
+    @State private var racketEdit: RacketSetupTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
@@ -125,7 +129,12 @@ struct SessionDetailView: View {
                                 pastClipCounts: pastClipCounts,
                                 activityIdentity: activityIdentity,
                                 onOpenPastClips: { pastClipsFor = $0 },
-                                onOpenDashboard: { router.push($0) })
+                                onOpenDashboard: { router.push($0) },
+                                onRemoveExercise: { pendingExerciseRemoval = $0 },
+                                onEditMatch: { ex in
+                                    racketEdit = RacketSetupTarget(start: .editMatch(RacketMatchParams(from: ex)),
+                                                                   editingExerciseID: ex.id)
+                                })
         }
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
@@ -176,6 +185,27 @@ struct SessionDetailView: View {
         .sheet(item: $pastClipsFor) { target in
             ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
         }
+        // Remove one exercise / match from a finished session — hosted on the List (a stable host), confirmed.
+        .confirmationDialog(
+            "Remove \(pendingExerciseRemoval.map(removalNoun) ?? "this")?",
+            isPresented: Binding(get: { pendingExerciseRemoval != nil },
+                                 set: { if !$0 { pendingExerciseRemoval = nil } }),
+            titleVisibility: .visible, presenting: pendingExerciseRemoval
+        ) { ex in
+            Button("Remove \(removalNoun(ex))", role: .destructive) { removeExercise(ex) }
+                .accessibilityIdentifier("session.confirmRemoveExercise")
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Its sets are deleted from this session. Its photos and videos stay, under General.")
+        }
+        .sheet(item: $racketEdit) { target in
+            RacketSetupSheet(start: target.start,
+                             recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history) },
+                             recentEvents: RacketStats.recentEvents(history: history),
+                             recentDrills: { _ in [] },
+                             onMatch: { params in updateMatch(target.editingExerciseID, params) },
+                             onDrill: { _, _, _ in })
+        }
         // A wearable that synced since the session (Fitbit / Google Health …) fills in its HR (prompt 203).
         .task { await app.backfillWorkoutHR(sessionID: session.id) }
         .task {
@@ -185,6 +215,33 @@ struct SessionDetailView: View {
                                                        media: ActivityMediaStore.snapshot(context: context),
                                                        excludingSession: session.id, identity: identity)
         }
+    }
+
+    private func removalNoun(_ ex: SessionExercise) -> String {
+        ex.isRacketMatch ? "this match" : ex.isRacketDrill ? "this drill" : "\(resolver.name(for: ex.exerciseId, override: ex.displayName))"
+    }
+
+    /// Drop one entity from the finished session. Its media is untied to General (never deleted) — the live
+    /// player's "Remove exercise" convention — so the clips stay on the session and in Clips.
+    private func removeExercise(_ ex: SessionExercise) {
+        session.exercises = SessionSetEditing.removing(ex.id, from: session.exercises)
+        let sid = session.id, exID = ex.id
+        let tagged = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.assignedExerciseID == exID }))) ?? []
+        for row in tagged {
+            row.assignedExerciseID = nil
+            row.assignedSetIndex = nil
+            row.assignmentSource = .general
+        }
+        try? context.save()
+    }
+
+    private func updateMatch(_ exID: UUID?, _ params: RacketMatchParams) {
+        guard let exID, let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        params.apply(to: &session.exercises[idx])
+        session.exercises[idx].exerciseId = RacketStats.matchExerciseId(params.sport)
+        session.exercises[idx].displayName = RacketStats.matchActivityName(params.sport)
+        try? context.save()
     }
 
     /// The per-workout-type detail under the insights header (prompt 146): strength compares each
@@ -460,6 +517,9 @@ private struct SessionMediaSection: View {
     let onOpenPastClips: (ActivityClipsTarget) -> Void
     /// Push the activity's dashboard (prompt 179).
     let onOpenDashboard: (ActivityRoute) -> Void
+    /// Ask the parent to confirm removing one exercise / match, or to edit a match's details.
+    let onRemoveExercise: (SessionExercise) -> Void
+    let onEditMatch: (SessionExercise) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -489,7 +549,11 @@ private struct SessionMediaSection: View {
          pastClipCounts: [ActivityKey: Int] = [:],
          activityIdentity: ActivityIdentity? = nil,
          onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in },
-         onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in }) {
+         onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in },
+         onRemoveExercise: @escaping (SessionExercise) -> Void = { _ in },
+         onEditMatch: @escaping (SessionExercise) -> Void = { _ in }) {
+        self.onRemoveExercise = onRemoveExercise
+        self.onEditMatch = onEditMatch
         self.pastClipCounts = pastClipCounts
         self.activityIdentity = activityIdentity
         self.onOpenDashboard = onOpenDashboard
@@ -583,6 +647,22 @@ private struct SessionMediaSection: View {
                             }
                             .textCase(nil)
                         }
+                        Menu {
+                            if ex.isRacketMatch {
+                                Button { onEditMatch(ex) } label: { Label("Match details", systemImage: "pencil") }
+                                    .accessibilityIdentifier("session.editMatch")
+                            }
+                            Button(role: .destructive) { onRemoveExercise(ex) } label: {
+                                Label(ex.isRacketMatch ? "Remove match" : ex.isRacketDrill ? "Remove drill" : "Remove exercise",
+                                      systemImage: "trash")
+                            }
+                            .accessibilityIdentifier("session.removeExercise")
+                        } label: {
+                            Image(systemName: "ellipsis.circle").font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("session.exerciseMenu")
+                        .accessibilityLabel("Exercise options")
                     }
                 }
             }

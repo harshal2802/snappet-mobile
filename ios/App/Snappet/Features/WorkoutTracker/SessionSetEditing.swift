@@ -161,6 +161,12 @@ enum SessionSetEditing {
         }
     }
 
+    /// The session's exercises without one entity (removing a match / exercise from a finished session). Every
+    /// other entity — and its sets — is untouched; media is keyed by exercise id, so no index shifts.
+    static func removing(_ id: UUID, from exercises: [SessionExercise]) -> [SessionExercise] {
+        exercises.filter { $0.id != id }
+    }
+
     /// A stored weight re-expressed in the display unit. Same-unit values pass through raw; a
     /// cross-unit value converts via kg rounded to one decimal (the `LastSetLookup` hint's rule),
     /// so float noise never seeds an edit field.
