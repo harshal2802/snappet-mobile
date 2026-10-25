@@ -39,12 +39,6 @@ final class KilterBoardController: NSObject {
     nonisolated(unsafe) private static let gattServiceUUID = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
     nonisolated(unsafe) private static let writeUUID = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
-    /// How long to look for a board before giving up, and how long a single GATT
-    /// connect + discovery may take. CoreBluetooth's own `connect(_:)` never times out, so without
-    /// these a missing/asleep board leaves the UI wedged on "Connecting…" forever (the reported bug).
-    private static let scanTimeout: Duration = .seconds(12)
-    private static let connectTimeout: Duration = .seconds(12)
-
     /// The simulator has no BLE radio, but CoreBluetooth only reports `.unsupported` after a
     /// `CBCentralManager` exists — and creating one is deferred to the first `connect()` so the
     /// permission prompt never fires from mere browsing. Seed the known-at-compile-time answer
@@ -86,16 +80,34 @@ final class KilterBoardController: NSObject {
     /// Set the moment the user taps Connect; lets us start scanning as soon as the radio reports
     /// `.poweredOn` (which can arrive after the tap on first launch / permission prompt).
     private var wantsToConnect = false
-    /// Identifier of the last board we successfully reached, persisted across launches. Used as the
-    /// second adopt path (`retrievePeripherals(withIdentifiers:)`) for a paired board that iOS hasn't
-    /// cached our service for — so `retrieveConnectedPeripherals(withServices:)` misses it.
+    /// Identifier of the last board we successfully reached, persisted across launches. Tried in
+    /// parallel with the scan (`retrievePeripherals(withIdentifiers:)`) for a board iOS hasn't cached
+    /// our service for — so `retrieveConnectedPeripherals(withServices:)` misses it.
     private static let lastBoardKey = "kilter.lastBoardID"
     private var lastBoardIdentifier: UUID? {
         get { UserDefaults.standard.string(forKey: Self.lastBoardKey).flatMap(UUID.init(uuidString:)) }
         set { UserDefaults.standard.set(newValue?.uuidString, forKey: Self.lastBoardKey) }
     }
+    /// Boards connected before (the view passes `KilterBoardMemory`'s ids) — connect at once when heard,
+    /// and win over a stranger's board (prompt 204).
+    var knownBoardIDs: Set<UUID> = []
     /// Watchdog that fails the attempt if scan/connect/discovery stalls.
     private var timeout: Task<Void, Never>?
+
+    // MARK: Attempt bookkeeping (prompt 204 — `KilterConnectPolicy` makes the calls)
+    /// Attempts made for the current tap of Connect (first + automatic retries).
+    private var attempt = 0
+    /// The remembered board's pending connect, racing the scan. `nil` once something is chosen.
+    private var racingRememberedID: UUID?
+    private var scanStartedAt: Date?
+    /// Boards heard in this scan, with their latest signal.
+    private var candidates: [UUID: (peripheral: CBPeripheral, rssi: Int, name: String?)] = [:]
+    private var selection: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    /// The link dropped and iOS is reconnecting on its own (auto-reconnect). The UI says "Reconnecting…".
+    private(set) var isReconnecting = false
+    /// Set on a reconnect so the board isn't "recognized" (and its confirm ribbon shown) a second time.
+    private var hasRecognizedThisLink = false
 
     /// Whether an advertising peripheral looks like an Aurora-family board (Kilter/Tension/etc).
     /// Pure so it can be unit-tested off-device. Aurora boards generally do **not** advertise their
@@ -107,10 +119,13 @@ final class KilterBoardController: NSObject {
         return ["kilter", "aurora", "tension", "grasshopper", "decoy", "soill"].contains { name.contains($0) }
     }
 
-    /// Begin scanning for a board (lazily creates the central manager → triggers the permission prompt).
+    /// Begin connecting (lazily creates the central manager → triggers the permission prompt).
     /// Reflects intent immediately so the UI shows progress even before the radio finishes powering on.
     func connect() {
+        guard !state.isBusy, state != .connected else { return }
         wantsToConnect = true
+        attempt = 0
+        hasRecognizedThisLink = false
         if central == nil {
             central = CBCentralManager(delegate: self, queue: nil)   // nil queue → main
         }
@@ -124,96 +139,166 @@ final class KilterBoardController: NSObject {
         }
     }
 
-    /// Adopt a board that's **already connected at the system level** (paired in Settings, or held by
-    /// the official Aurora/Kilter app) before falling back to a scan. Such a board has stopped
-    /// advertising, so a scan would never re-discover it — this was the reported "won't connect, but
-    /// the Kilter app connects fine" case. Two adopt paths, then scan:
-    ///
-    /// 1. `retrieveConnectedPeripherals(withServices:)` — returns the board when iOS has cached that it
-    ///    exposes our service (typically because the official app discovered it).
-    /// 2. `retrievePeripherals(withIdentifiers:)` with our last-connected board's id — covers a paired
-    ///    board iOS *hasn't* cached our service for, so path 1 comes back empty. `connect(_:)` then
-    ///    reaches it if it's available (the watchdog fails the attempt otherwise).
+    /// One attempt. A board **already connected at the system level** (paired, or held by the official
+    /// app on this phone) has stopped advertising, so it's adopted directly. Otherwise SCAN — and, on a
+    /// first attempt, race a pending connect to the remembered board alongside it: an awake remembered
+    /// board connects in well under a second, while an asleep / out-of-range / stale one no longer
+    /// strands the attempt (it used to wait out the watchdog and fail without ever scanning).
     private func beginConnect() {
-        guard let central, central.state == .poweredOn else { return }
+        guard let central, central.state == .poweredOn, wantsToConnect else { return }
+        attempt += 1
+        resetAttempt()
         let knownServices = [Self.gattServiceUUID, Self.advertisedServiceUUID]
         if let existing = central.retrieveConnectedPeripherals(withServices: knownServices).first {
             lastAdvertisedName = nil   // adopted, not scanned — no advert to read a serial from
-            connect(to: existing)
-        } else if let known = lastBoardIdentifier,
-                  let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
-            lastAdvertisedName = nil
-            connect(to: remembered)
-        } else {
-            beginScan()
+            choose(existing)
+            return
+        }
+        state = .scanning
+        scanStartedAt = .now
+        // No service filter: Aurora boards advertise by name, not service UUID (see `isLikelyBoard`).
+        central.scanForPeripherals(withServices: nil,
+                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+        startTimeout(KilterConnectPolicy.scanTimeout) { [weak self] in self?.attemptFailed(.scan) }
+        if attempt == 1, let known = lastBoardIdentifier,
+           let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
+            racingRememberedID = remembered.identifier
+            peripheral = remembered
+            remembered.delegate = self
+            central.connect(remembered, options: Self.connectOptions)
         }
     }
 
-    /// Connect to a chosen peripheral (from a system-connected lookup or a scan match) and start the
-    /// watchdog over connect + discovery.
-    private func connect(to peripheral: CBPeripheral) {
+    /// Commit to one board: stop scanning, drop the racing remembered connect if it's a different board,
+    /// connect, and watch connect + discovery.
+    private func choose(_ chosen: CBPeripheral) {
+        selection?.cancel(); selection = nil
         central?.stopScan()
-        self.peripheral = peripheral
-        peripheral.delegate = self
+        if let racing = racingRememberedID, racing != chosen.identifier, let p = peripheral {
+            central?.cancelPeripheralConnection(p)
+        }
+        racingRememberedID = nil
+        peripheral = chosen
+        chosen.delegate = self
         state = .connecting
-        central?.connect(peripheral)
-        startTimeout(Self.connectTimeout,
-                     message: "Couldn't reach the board. Move closer and try again.")
+        // Always ask, even for a board another app on this phone holds: CoreBluetooth then hands this
+        // app the link (didConnect fires at once).
+        if chosen.state != .connecting { central?.connect(chosen, options: Self.connectOptions) }
+        startTimeout(KilterConnectPolicy.connectTimeout) { [weak self] in self?.attemptFailed(.connect) }
     }
 
-    private func beginScan() {
-        guard let central, central.state == .poweredOn else { return }
-        state = .scanning
-        // No service filter: Aurora boards advertise by name, not service UUID (see `isLikelyBoard`).
-        central.scanForPeripherals(withServices: nil)
-        startTimeout(Self.scanTimeout,
-                     message: "No board found nearby. Make sure it's powered on and within range.")
+    /// iOS 17+: if the link drops later, the system reconnects by itself (we're told via
+    /// `isReconnecting`), so a board that blinks off mid-session comes back without a tap.
+    private static let connectOptions: [String: Any] = [CBConnectPeripheralOptionEnableAutoReconnect: true]
+
+    /// The scan heard a board. A known board connects at once; otherwise collect adverts for a short
+    /// window and take the strongest (`KilterConnectPolicy.pick`). While the remembered board's connect is
+    /// still pending, a different board must wait out its grace period first.
+    private func heard(_ p: CBPeripheral, rssi: Int, name: String?) {
+        guard state == .scanning else { return }
+        if p.identifier == racingRememberedID { return }   // its pending connect will complete on its own
+        candidates[p.identifier] = (p, rssi, name)
+        let candidate = KilterConnectPolicy.Candidate(id: p.identifier, rssi: rssi, isKnown: isKnown(p.identifier))
+        if KilterConnectPolicy.connectsImmediately(candidate) && racingRememberedID == nil {
+            lastAdvertisedName = name
+            choose(p)
+            return
+        }
+        guard selection == nil else { return }
+        let grace: Duration = racingRememberedID == nil ? .zero
+            : max(.zero, KilterConnectPolicy.rememberedGrace - .seconds(Date.now.timeIntervalSince(scanStartedAt ?? .now)))
+        selection = Task { [weak self] in
+            try? await Task.sleep(for: max(KilterConnectPolicy.selectionWindow, grace))
+            guard !Task.isCancelled else { return }
+            self?.selectBest()
+        }
     }
 
-    /// Cancel an in-flight scan/connect and return to idle (the user backing out of a stuck attempt).
-    func cancel() {
-        wantsToConnect = false
+    private func selectBest() {
+        selection = nil
+        guard state == .scanning else { return }
+        let list = candidates.values.map {
+            KilterConnectPolicy.Candidate(id: $0.peripheral.identifier, rssi: $0.rssi, isKnown: isKnown($0.peripheral.identifier))
+        }
+        guard let best = KilterConnectPolicy.pick(list), let entry = candidates[best.id] else { return }
+        lastAdvertisedName = entry.name
+        choose(entry.peripheral)
+    }
+
+    private func isKnown(_ id: UUID) -> Bool { knownBoardIDs.contains(id) || id == lastBoardIdentifier }
+
+    /// An attempt stopped at `stage`: tear it down, then retry once (rescanning — the remembered board isn't
+    /// raced again) or surface why.
+    private func attemptFailed(_ stage: KilterConnectPolicy.Stage) {
+        guard state.isBusy || isReconnecting else { return }
+        let retry = wantsToConnect && KilterConnectPolicy.shouldRetry(after: stage, attempt: attempt)
+        let wasReconnecting = isReconnecting
+        tearDownLink()
+        isReconnecting = false
+        if wasReconnecting && !retry { onConnectionChange?(false) }
+        if retry {
+            state = .connecting
+            retryTask = Task { [weak self] in
+                try? await Task.sleep(for: KilterConnectPolicy.retryDelay)
+                guard !Task.isCancelled else { return }
+                self?.beginConnect()
+            }
+        } else {
+            wantsToConnect = false
+            state = .failed(KilterConnectPolicy.failureMessage(stage))
+        }
+    }
+
+    /// Stop everything in flight for this attempt (scan, selection, watchdog, the link) — not the intent.
+    private func tearDownLink() {
         timeout?.cancel(); timeout = nil
+        selection?.cancel(); selection = nil
         central?.stopScan()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         peripheral = nil
         writeChar = nil
+        racingRememberedID = nil
+    }
+
+    private func resetAttempt() {
+        candidates = [:]
+        racingRememberedID = nil
+        selection?.cancel(); selection = nil
+        retryTask?.cancel(); retryTask = nil
+    }
+
+    /// Cancel an in-flight scan/connect/reconnect and return to idle (the user backing out).
+    func cancel() {
+        wantsToConnect = false
+        retryTask?.cancel(); retryTask = nil
+        let wasReconnecting = isReconnecting
+        isReconnecting = false
+        tearDownLink()
         if state != .unsupported && state != .unauthorized && state != .bluetoothOff { state = .idle }
+        if wasReconnecting { onConnectionChange?(false) }
     }
 
     func disconnect() {
         wantsToConnect = false
-        timeout?.cancel(); timeout = nil
-        central?.stopScan()
+        retryTask?.cancel(); retryTask = nil
         // Capture before mutating: `cancelPeripheralConnection` triggers `didDisconnectPeripheral`
         // only *after* this returns, by which point `isConnected` is already false — so the session
         // is closed here, not there.
-        let wasConnected = isConnected
-        if let peripheral { central?.cancelPeripheralConnection(peripheral) }
-        peripheral = nil
-        writeChar = nil
+        let wasConnected = isConnected || isReconnecting
+        isReconnecting = false
+        tearDownLink()
         state = .idle
         if wasConnected { onConnectionChange?(false) }
     }
 
-    /// Watchdog: fail the attempt (and tear down any half-open connection) if a step stalls.
-    private func startTimeout(_ duration: Duration, message: String) {
+    /// Watchdog: run `onFire` if the step it guards stalls.
+    private func startTimeout(_ duration: Duration, onFire: @escaping @MainActor () -> Void) {
         timeout?.cancel()
-        timeout = Task { [weak self] in
+        timeout = Task {
             try? await Task.sleep(for: duration)
             guard !Task.isCancelled else { return }
-            self?.timedOut(message)
+            onFire()
         }
-    }
-
-    private func timedOut(_ message: String) {
-        guard state.isBusy else { return }
-        central?.stopScan()
-        if let peripheral { central?.cancelPeripheralConnection(peripheral) }
-        peripheral = nil
-        writeChar = nil
-        wantsToConnect = false
-        state = .failed(message)
     }
 
     /// Light the given holds on the board (no-op unless connected). Stores them if the characteristic
@@ -257,11 +342,17 @@ extension KilterBoardController: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 // Radio came up after the user tapped Connect (state was the placeholder `.scanning`
-                // or `.idle`) → adopt a system-connected board or start the scan. Don't disturb an
-                // in-flight connect/connected.
-                if wantsToConnect && state != .connecting && state != .connected { beginConnect() }
+                // or `.idle`) → start the attempt. Don't disturb an in-flight connect/connected.
+                if wantsToConnect && state != .connecting && state != .connected {
+                    attempt = 0
+                    beginConnect()
+                }
             case .poweredOff:
+                let wasLinked = isConnected || isReconnecting
+                isReconnecting = false
+                tearDownLink()
                 state = .bluetoothOff
+                if wasLinked { onConnectionChange?(false) }
             case .unauthorized:
                 state = .unauthorized
             case .unsupported:
@@ -276,67 +367,106 @@ extension KilterBoardController: CBCentralManagerDelegate {
                                     advertisementData: [String: Any], rssi RSSI: NSNumber) {
         nonisolated(unsafe) let peripheral = peripheral
         let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let rssi = RSSI.intValue
         // CBUUID isn't Sendable; the assumeIsolated closure runs synchronously on this (main) thread.
         nonisolated(unsafe) let advertisedServices = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
         MainActor.assumeIsolated {
             guard state == .scanning,
                   Self.isLikelyBoard(name: localName ?? peripheral.name,
                                      advertisedServiceUUIDs: advertisedServices) else { return }
-            // Keep the advertised name so the confirmed-connect hook can parse the board's `#serial`
-            // (a reinstall cross-check). The system-connected adopt paths clear it (they don't scan).
-            lastAdvertisedName = localName ?? peripheral.name
-            connect(to: peripheral)
+            heard(peripheral, rssi: rssi, name: localName ?? peripheral.name)
         }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
+            // The remembered board's pending connect won the race against the scan → it's the one.
+            if peripheral.identifier == racingRememberedID, state == .scanning {
+                selection?.cancel(); selection = nil
+                central.stopScan()
+                racingRememberedID = nil
+                lastAdvertisedName = nil
+                state = .connecting
+            }
+            guard peripheral.identifier == self.peripheral?.identifier else { return }
             // Keep the watchdog running across service/characteristic discovery — that's where a board
             // with an unexpected GATT layout would otherwise hang silently.
-            startTimeout(Self.connectTimeout,
-                         message: "Connected, but the board didn't respond. Try again.")
+            startTimeout(KilterConnectPolicy.connectTimeout) { [weak self] in self?.attemptFailed(.discovery) }
             peripheral.discoverServices([Self.gattServiceUUID])
         }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                                     error: Error?) {
+        nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            timeout?.cancel(); timeout = nil
-            wantsToConnect = false
-            self.peripheral = nil
-            state = .failed(error?.localizedDescription ?? "Couldn't connect to the board.")
+            // The remembered board's racing connect failing is fine — the scan carries on.
+            if peripheral.identifier == racingRememberedID, state == .scanning {
+                racingRememberedID = nil
+                self.peripheral = nil
+                return
+            }
+            guard peripheral.identifier == self.peripheral?.identifier else { return }
+            attemptFailed(.connect)
         }
     }
 
+    /// iOS 17+ disconnect callback (replaces the plain one when implemented): `isReconnecting` says the
+    /// system is already bringing the link back (we connected with auto-reconnect).
     nonisolated func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
-                                    error: Error?) {
+                                    timestamp: CFAbsoluteTime, isReconnecting: Bool, error: Error?) {
+        nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            timeout?.cancel(); timeout = nil
-            wantsToConnect = false
+            // The remembered board's racing connect dropping is fine — the scan carries on.
+            if peripheral.identifier == racingRememberedID, state == .scanning {
+                racingRememberedID = nil
+                self.peripheral = nil
+                return
+            }
+            guard peripheral.identifier == self.peripheral?.identifier else { return }
             let wasConnected = isConnected
-            self.peripheral = nil
             writeChar = nil
-            // An unexpected drop (error) while connected is worth surfacing; a clean disconnect isn't.
+            if wasConnected && isReconnecting {
+                // A mid-session drop iOS is repairing: hold the session, say so, re-light on return.
+                self.isReconnecting = true
+                state = .connecting
+                pendingHolds = lastHolds.isEmpty ? nil : lastHolds
+                timeout?.cancel(); timeout = nil
+                // If the returning link then fails discovery, allow one fresh attempt (a rescan).
+                wantsToConnect = true
+                attempt = KilterConnectPolicy.maxAttempts - 1
+                return
+            }
+            if state.isBusy || self.isReconnecting {
+                // Dropped before the board was ready — routine BLE flakiness; retry once.
+                attemptFailed(.connect)
+                return
+            }
+            timeout?.cancel(); timeout = nil
+            self.peripheral = nil
             if let error, wasConnected {
-                state = .failed("The board disconnected: \(error.localizedDescription)")
+                state = .failed("The board disconnected: \(error.localizedDescription). Tap Connect to reconnect.")
             } else if case .failed = state {
-                // A watchdog timeout already set a failure message and *initiated* this disconnect
-                // (its own `cancelPeripheralConnection`). Don't wipe that message back to idle.
+                // A watchdog failure already set its message and initiated this disconnect.
             } else {
                 state = .idle
             }
             if wasConnected { onConnectionChange?(false) }
         }
     }
+
 }
 
 extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            for service in peripheral.services ?? [] where service.uuid == Self.gattServiceUUID {
+            let services = (peripheral.services ?? []).filter { $0.uuid == Self.gattServiceUUID }
+            // No lighting service (or an error) → fail fast (and retry once) instead of waiting out the
+            // watchdog in silence.
+            guard error == nil, !services.isEmpty else { attemptFailed(.discovery); return }
+            for service in services {
                 peripheral.discoverCharacteristics([Self.writeUUID], for: service)
             }
         }
@@ -347,25 +477,29 @@ extension KilterBoardController: CBPeripheralDelegate {
         nonisolated(unsafe) let peripheral = peripheral
         nonisolated(unsafe) let service = service
         MainActor.assumeIsolated {
-            for characteristic in service.characteristics ?? [] where characteristic.uuid == Self.writeUUID {
-                timeout?.cancel(); timeout = nil
-                wantsToConnect = false
-                writeChar = characteristic
-                // Remember this board now that it's confirmed (right write characteristic) — only here,
-                // so the identifier-based adopt path never targets a device that wasn't really a board.
-                lastBoardIdentifier = peripheral.identifier
-                state = .connected
-                // Recognize the board (P1): hand the view the stable identifier + the `#serial` parsed
-                // from the advertised name, so it can restore the remembered layout/size + pre-select the
-                // usual angle. Fires before `onConnectionChange` so a restore is ready when the session
-                // opens. Additive — a nil hook leaves the connect flow byte-identical to before.
+            guard let characteristic = (service.characteristics ?? []).first(where: { $0.uuid == Self.writeUUID }) else {
+                attemptFailed(.discovery)
+                return
+            }
+            timeout?.cancel(); timeout = nil
+            wantsToConnect = false
+            let reconnected = isReconnecting
+            isReconnecting = false
+            writeChar = characteristic
+            // Remember this board now that it's confirmed (right write characteristic) — only here,
+            // so the identifier-based path never targets a device that wasn't really a board.
+            lastBoardIdentifier = peripheral.identifier
+            state = .connected
+            // Recognize the board (P1) once per link — a reconnect is the same board, no second ribbon.
+            if !reconnected || !hasRecognizedThisLink {
+                hasRecognizedThisLink = true
                 onBoardRecognized?(peripheral.identifier,
                                    KilterBoardMemory.serial(fromLocalName: lastAdvertisedName))
-                onConnectionChange?(true)
-                if let pending = pendingHolds {
-                    pendingHolds = nil
-                    send(pending, to: peripheral, characteristic: characteristic)
-                }
+            }
+            onConnectionChange?(true)
+            if let pending = pendingHolds {
+                pendingHolds = nil
+                send(pending, to: peripheral, characteristic: characteristic)
             }
         }
     }

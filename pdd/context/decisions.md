@@ -10151,3 +10151,15 @@ stripes, and the panel read as an opaque slab.
   first screen is complete.
 - The second pass REPLACES the caches with this build's results; it doesn't merge. A carried-over overlay would
   outlive a clip that was baked since. Between the passes the previous build's overlays stay, so nothing blanks.
+
+## 2026-10-25 — Kilter connect reliability (prompt 204)
+
+- The remembered board is RACED against a scan, not tried instead of one: `retrievePeripherals(withIdentifiers:)`
+  can't tell an awake board from an asleep or stale one, and CoreBluetooth's `connect` never times out. Its pending
+  connect wins when the board is awake; a different board found in the scan is accepted after a 3 s grace.
+- A known board (in `KilterBoardMemory`, or the last one) connects the moment it's heard; a stranger only after a
+  1.2 s window, choosing the strongest signal. Boards weaker than −92 dBm are ignored unless nothing else is heard.
+- One automatic retry for link/discovery failures, none for an empty scan (a rescan won't make a board appear).
+- Mid-session drops use iOS 17 auto-reconnect; the session stays open (it never closed on a BLE drop anyway) and
+  the current climb's holds are re-sent when the link returns. The board isn't "recognized" a second time.
+- Unverified on hardware: everything above is CoreBluetooth behaviour that only a real board can confirm.

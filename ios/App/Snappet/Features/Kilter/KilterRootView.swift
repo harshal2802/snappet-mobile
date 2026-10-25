@@ -455,6 +455,8 @@ struct KilterRootView: View {
             // P1: on a confirmed connect, recognize the board and (if known) restore its layout/size +
             // pre-select the usual angle, then surface the one-tap confirm ribbon. An unknown board is
             // remembered from scratch on this first connect (no restore, nothing overwritten).
+            // Boards connected before connect the moment they're heard, and win over a stranger's (prompt 204).
+            board.knownBoardIDs = Set(boardMemory.boards.keys)
             board.onBoardRecognized = { identifier, serial in
                 recognizeBoard(identifier: identifier, serial: serial)
             }
@@ -895,7 +897,7 @@ struct KilterRootView: View {
         switch board.state {
         case .connected: return connectedBoardLabel ?? "Board connected"
         case .scanning: return "Searching for your board…"
-        case .connecting: return "Connecting…"
+        case .connecting: return board.isReconnecting ? "Reconnecting…" : "Connecting…"
         case .failed: return "Couldn't connect"
         case .bluetoothOff: return "Bluetooth is off"
         case .unauthorized: return "Bluetooth access needed"
@@ -906,7 +908,8 @@ struct KilterRootView: View {
     private var boardStripSubtitle: String {
         switch board.state {
         case .connected: return "Connected — climbs light up as you open them"
-        case .scanning, .connecting: return "Keep Bluetooth on · usually a few seconds"
+        case .scanning, .connecting:
+            return board.isReconnecting ? "The board dropped — reconnecting on its own" : "Keep Bluetooth on · usually a few seconds"
         case .failed(let message): return message
         case .bluetoothOff: return "Turn it on in Control Center to connect"
         case .unauthorized: return "Allow Bluetooth for Snappet in Settings"
