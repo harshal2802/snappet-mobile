@@ -134,12 +134,24 @@ extension WorkoutHRStats {
         }
         entries.sort { $0.completedAt < $1.completedAt }
 
+        // A racket game / set lasts minutes and its score is entered after play stops, so it can't use the
+        // 2-minute strength lookback (2026-10-26: per-game peaks were the break, not the rally). It scores the same
+        // window the racket recap does — `RacketStats.unitWindows`.
+        var racketStarts: [SetRef: Double] = [:]
+        for ex in exercises where ex.discipline == .racket {
+            for w in RacketStats.unitWindows(ex, sessionStart: sessionStart) {
+                racketStarts[SetRef(exerciseID: ex.id, setIndex: w.index)] = w.start
+            }
+        }
+
         var result: [SetRef: ClimbEffort] = [:]
         var previousCompletedAt: Date?
         for e in entries {
             let endOffset = max(0, e.completedAt.timeIntervalSince(sessionStart))
             let lookback: Double
-            if e.kind == .duration, let d = e.durationSec, d > 0 {
+            if let start = racketStarts[e.ref] {
+                lookback = max(0, endOffset - start)
+            } else if e.kind == .duration, let d = e.durationSec, d > 0 {
                 lookback = d
             } else if let prev = previousCompletedAt {
                 lookback = min(maxLookback, max(0, e.completedAt.timeIntervalSince(prev)))

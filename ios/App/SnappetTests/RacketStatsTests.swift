@@ -1,5 +1,6 @@
 import XCTest
 @testable import Snappet
+import HighlightEngine
 
 /// Unit tests for the **pure** racket read model (prompt 203): entity accessors + Codable round-trip,
 /// records / head-to-head, the session summary, titles, drills, Library headlines, and per-unit HR
@@ -162,6 +163,27 @@ final class RacketStatsTests: XCTestCase {
         XCTAssertEqual(w.map(\.end), [700, 1300, 1500])
         let first = RacketStats.unitWindows(match(games: [game(11, 7, at: 200)]), sessionStart: t0)
         XCTAssertEqual(first.first?.start, 0)              // fallback clipped to the session start
+    }
+
+    /// 2026-10-26 tournament: the first game of a match gets the match's typical game length, not a flat
+    /// 10 minutes that reaches back into the break before the match.
+    func testFirstGameUsesTheMatchsTypicalLength() {
+        let ex = match(games: [game(9, 11, at: 3000), game(9, 11, at: 3260), game(7, 11, at: 3530)])
+        let w = RacketStats.unitWindows(ex, sessionStart: t0)
+        XCTAssertEqual(w.map(\.start), [3000 - 265, 3000, 3260])   // median of 260 / 270
+        let lone = RacketStats.unitWindows(match(games: [game(11, 7, at: 2000)]), sessionStart: t0)
+        XCTAssertEqual(lone.first?.start, 1700, "one untimed game → the 5-minute default")
+    }
+
+    /// Per-game HR in session detail / the dashboard scores the whole game, like the racket recap — not the
+    /// strength 2-minute lookback.
+    func testSetEffortsScoreTheWholeGame() {
+        let ex = match(games: [game(11, 7, at: 300), game(9, 11, at: 600)])
+        // Hard rally early in game 2 (t 320–400), easy last two minutes.
+        let hr = stride(from: 0.0, through: 600, by: 5).map { HRSample(t: $0, bpm: ($0 > 320 && $0 < 400) ? 185 : 130) }
+        let efforts = WorkoutHRStats.setEfforts(for: [ex], sessionStart: t0, hr: hr)
+        XCTAssertGreaterThan(efforts[.init(exerciseID: ex.id, setIndex: 1)]?.peakBpm ?? 0, 170,
+                             "the peak early in the game counts")
     }
 
     func testUnitHR() {

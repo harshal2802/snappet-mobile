@@ -228,23 +228,38 @@ enum RacketStats {
     }
 
     /// Each logged unit's window on the session timeline. A unit ends when it was logged; it starts at its
-    /// timed duration back from there, else when the previous unit ended (the first falls back to
-    /// `fallbackSec` before its end, clipped to the session start).
+    /// timed duration back from there, else when the previous unit ended. The FIRST untimed unit has no previous
+    /// end — it gets this match's typical unit length (the median of its other units), else `fallbackSec`, so
+    /// the rest before a match isn't counted as play (2026-10-26: a flat 10 min pulled in the break between
+    /// tournament matches). Clipped to the session start.
     static func unitWindows(_ ex: SessionExercise, sessionStart: Date,
-                            fallbackSec: Double = 600) -> [UnitWindow] {
+                            fallbackSec: Double = 300) -> [UnitWindow] {
+        let logged = ex.sets.enumerated().compactMap { i, set in
+            set.completedAt.map { (index: i, end: $0.timeIntervalSince(sessionStart), duration: set.durationSec) }
+        }
+        var lengths: [Double] = []
+        for (j, u) in logged.enumerated() {
+            if let d = u.duration, d > 0 { lengths.append(d) }
+            else if j > 0 { lengths.append(u.end - logged[j - 1].end) }
+        }
+        let typical = median(lengths.filter { $0 > 0 }) ?? fallbackSec
         var out: [UnitWindow] = []
         var previousEnd: Double?
-        for (i, set) in ex.sets.enumerated() {
-            guard let done = set.completedAt else { continue }
-            let end = done.timeIntervalSince(sessionStart)
+        for u in logged {
             let start: Double
-            if let d = set.durationSec, d > 0 { start = end - d }
+            if let d = u.duration, d > 0 { start = u.end - d }
             else if let p = previousEnd { start = p }
-            else { start = end - fallbackSec }
-            out.append(UnitWindow(index: i, start: max(0, min(start, end)), end: max(0, end)))
-            previousEnd = end
+            else { start = u.end - typical }
+            out.append(UnitWindow(index: u.index, start: max(0, min(start, u.end)), end: max(0, u.end)))
+            previousEnd = u.end
         }
         return out
+    }
+
+    private static func median(_ xs: [Double]) -> Double? {
+        guard !xs.isEmpty else { return nil }
+        let s = xs.sorted(), m = s.count / 2
+        return s.count % 2 == 1 ? s[m] : (s[m - 1] + s[m]) / 2
     }
 
     /// Average / peak bpm inside each unit window (units with no samples are left out).

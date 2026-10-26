@@ -10177,6 +10177,11 @@ stripes, and the panel read as an opaque slab.
   two matches had no HR and the old "skip BLE" rule left them empty); it saves only when Health added samples. The user wears a Fitbit
   (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:
   whether Fitbit writes HR samples (not just the workout) — check after the first real session.
+- One per-game HR window everywhere (2026-10-26, from the user's tournament chart): session detail and the activity
+  dashboard used the strength rule (≤ 2 min before the set was logged), the racket recap used its own. A game /
+  set now scores from the previous unit's end (or its timed duration); a match's first untimed unit gets the
+  match's median unit length (else 5 min) instead of a flat 10 min that reached into the break. Win rate /
+  accuracy charts are 0–100 %, and the effort card says "per game" for a match.
 - Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
 
 ## 2026-10-25 — Makefile simulator destination by id (prompt 206)

@@ -508,8 +508,21 @@ struct ActivityDashboardView: View {
                         RuleMark(x: .value("Date", s.date)).foregroundStyle(.secondary.opacity(0.4))
                     }
                 }
-                .chartYScale(domain: .automatic(includesZero: false, reversed: !d.metric.higherIsBetter))
-                .chartYAxis(d.metric == .hardestSend ? .hidden : .automatic)
+                .chartYScale(domain: d.metric == .winRate || d.metric == .accuracy
+                             ? .automatic(includesZero: true, reversed: false)
+                             : .automatic(includesZero: false, reversed: !d.metric.higherIsBetter))
+                .chartYAxis {
+                    if d.metric == .hardestSend {
+                        AxisMarks { _ in }
+                    } else if d.metric == .winRate || d.metric == .accuracy {
+                        // A share: 0–100 %, never "−0.2" (2026-10-26).
+                        AxisMarks(values: [0, 0.25, 0.5, 0.75, 1]) { v in
+                            AxisGridLine(); AxisValueLabel { Text("\(Int(((v.as(Double.self) ?? 0) * 100).rounded()))%") }
+                        }
+                    } else {
+                        AxisMarks()
+                    }
+                }
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         Rectangle().fill(.clear).contentShape(Rectangle())
@@ -603,7 +616,7 @@ struct ActivityDashboardView: View {
             .frame(height: 90)
             Text(e.referenceKg != nil
                  ? "The same weight costing fewer beats means you're fitter."
-                 : "Average peak heart rate across your sets each session.")
+                 : "Average peak heart rate across your \(e.unitNoun)s each session.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .contain)

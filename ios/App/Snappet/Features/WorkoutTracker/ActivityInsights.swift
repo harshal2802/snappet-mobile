@@ -26,6 +26,8 @@ enum ActivityInsights {
         let referenceKg: Double?
         /// Oldest → newest; ≥ 2 points.
         let points: [EffortPoint]
+        /// "set", or a racket match's "game" / "set" — for the caption.
+        var unitNoun: String = "set"
         /// Last minus first, rounded bpm.
         var change: Int { Int((points.last!.bpm - points.first!.bpm).rounded()) }
         /// The same load now costs ≥ 3 bpm less — the only case worth calling "fitter".
@@ -41,8 +43,11 @@ enum ActivityInsights {
 
         // Per session: (weightKg?, peak bpm) for each completed set of the activity.
         var perSession: [(WorkoutSession, [(kg: Double?, bpm: Double)])] = []
+        var racketUnit: RacketUnit?
         for s in sessions {
-            let ids = Set(s.exercises.filter { identity.matches(key, $0) }.map(\.id))
+            let matching = s.exercises.filter { identity.matches(key, $0) }
+            racketUnit = racketUnit ?? matching.first { $0.discipline == .racket }?.racketSport?.unit
+            let ids = Set(matching.map(\.id))
             guard !ids.isEmpty else { continue }
             let hr = s.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) }
             let efforts = WorkoutHRStats.setEfforts(for: s.exercises, sessionStart: s.startedAt, hr: hr,
@@ -71,8 +76,10 @@ enum ActivityInsights {
             return EffortPoint(sessionID: s.id, date: s.startedAt, bpm: pool.map(\.bpm).reduce(0, +) / Double(pool.count))
         }
         guard points.count >= 2 else { return nil }
-        let title = reference.map { "Peak ♥ at \(ActivityDashboard.weightLabel(kg: $0, unit: unit))" } ?? "Peak ♥ per set"
-        return Effort(title: title, referenceKg: reference, points: points)
+        // A match is scored in games (tennis / padel: sets) — "per set" reads wrong on a table tennis match.
+        let perUnit = "Peak ♥ per \(racketUnit?.noun ?? "set")"
+        let title = reference.map { "Peak ♥ at \(ActivityDashboard.weightLabel(kg: $0, unit: unit))" } ?? perUnit
+        return Effort(title: title, referenceKg: reference, points: points, unitNoun: racketUnit?.noun ?? "set")
     }
 
     /// Loads compare at 0.5 kg resolution so 60 and 60.0001 (a lb round-trip) are one load.
