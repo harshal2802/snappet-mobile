@@ -123,6 +123,12 @@ struct KilterSizeBox: Hashable, Sendable {
     }
 }
 
+/// One of the climber's boards for the download filter: its layout + its size's fit box (prompt 205).
+struct KilterBoardFit: Hashable, Sendable {
+    let layoutId: Int
+    let box: KilterSizeBox
+}
+
 /// A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
 /// so the LED mapping matches their board — each size addresses its LEDs differently, so the wrong
 /// size lights the wrong holds.

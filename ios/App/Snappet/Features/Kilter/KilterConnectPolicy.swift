@@ -56,6 +56,31 @@ enum KilterConnectPolicy {
     /// Connect the moment this board is heard (no selection window): it's one we've connected before.
     static func connectsImmediately(_ c: Candidate) -> Bool { c.isKnown }
 
+    /// Prompt 205 (user's Q2: "whenever 2+ boards are in range"): the boards worth offering — everything not
+    /// at the far edge of the gym (unless that's all there is), strongest first.
+    static func nearby(_ candidates: [Candidate]) -> [Candidate] {
+        func strength(_ c: Candidate) -> Int { c.rssi == 127 ? Int.min / 2 : c.rssi }
+        let near = candidates.filter { $0.rssi == 127 || $0.rssi >= farRSSI }
+        return (near.isEmpty ? candidates : near).sorted { strength($0) > strength($1) }
+    }
+
+    /// Ask which board instead of picking: two or more boards are in range.
+    static func showsChooser(_ candidates: [Candidate]) -> Bool { nearby(candidates).count >= 2 }
+
+    /// Signal strength as 0…4 bars for the chooser.
+    static func bars(rssi: Int) -> Int {
+        switch rssi {
+        case 127: return 1
+        case (-60)...: return 4
+        case (-70)...: return 3
+        case (-80)...: return 2
+        default: return 1
+        }
+    }
+
+    /// How long "Flash" keeps a board's corners lit before letting it go.
+    static let flashDuration: Duration = .seconds(5)
+
     /// Where an attempt stopped.
     enum Stage: Equatable, Sendable {
         /// Nothing board-like was heard.

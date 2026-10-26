@@ -242,6 +242,19 @@ final class KilterBoardMemory {
         if let serial, !serial.isEmpty { return "Board \(serial)" }
         return "Kilter board"
     }
+
+    /// Prompt 205 (Q1): a skipped name defaults to the board's size plus its serial — "12 × 12 (#4821)" —
+    /// so two boards of the same size are still told apart. Falls back gracefully when either is unknown.
+    nonisolated static func defaultLabel(sizeName: String?, serial: String?) -> String {
+        let size = sizeName?.trimmingCharacters(in: .whitespaces) ?? ""
+        let tag = (serial ?? "").isEmpty ? nil : "#\(serial!)"
+        switch (size.isEmpty, tag) {
+        case (false, let t?): return "\(size) (\(t))"
+        case (false, nil): return size
+        case (true, let t?): return "Kilter board (\(t))"
+        case (true, nil): return "Kilter board"
+        }
+    }
 }
 
 /// Pure place-match rules, isolated so they unit-test with **no `CoreLocation`, no device** (the same
@@ -253,9 +266,16 @@ enum KilterPlaceMatcher {
     /// older one at the same gym). `nil` when nothing matches — the graceful BLE-only fall-through.
     static func suggestion(for place: CoarsePlace,
                            in boards: [(id: UUID, board: RememberedBoard)]) -> (id: UUID, board: RememberedBoard)? {
+        suggestions(for: place, in: boards).first
+    }
+
+    /// Every remembered board at this coarse place, most recently seen first — with more than one, the
+    /// arrival card asks which (prompt 205) instead of guessing the last one.
+    static func suggestions(for place: CoarsePlace,
+                            in boards: [(id: UUID, board: RememberedBoard)]) -> [(id: UUID, board: RememberedBoard)] {
         boards
             .filter { $0.board.coarsePlace?.matches(place) == true }
-            .max { $0.board.lastSeen < $1.board.lastSeen }
+            .sorted { $0.board.lastSeen > $1.board.lastSeen }
     }
 }
 

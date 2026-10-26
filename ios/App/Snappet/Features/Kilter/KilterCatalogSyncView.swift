@@ -217,6 +217,12 @@ struct KilterCatalogDownloadSheet: View {
 
     @State private var boards: [CatalogBoardEntry] = []
     @State private var loadingBoards = true
+    /// Prompt 205: the climber's boards. The first is the layout/size pickers above (+ a name); these are the
+    /// others ("Add another board"). The download keeps every climb that fits ANY of them.
+    @State private var firstName = ""
+    @State private var firstBoardID = UUID()
+    @State private var firstLinked: UUID?
+    @State private var extraBoards: [KilterMyBoard] = []
 
     /// "How many climbs to keep" presets — the source is one ~80 MB file, so this caps the *installed* size.
     private static let caps = [1000, 2000, 5000, 10000, 0]   // 0 = everything that fits
@@ -242,7 +248,7 @@ struct KilterCatalogDownloadSheet: View {
                     Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
             }
-            .onAppear(perform: syncSize)
+            .onAppear { loadMyBoards(); syncSize() }
             // Keep the size valid for the chosen board (seed the board's default on a layout switch).
             .onChange(of: layoutId) { syncSize() }
             .task(id: host) {
@@ -255,9 +261,12 @@ struct KilterCatalogDownloadSheet: View {
 
     // MARK: - Sections
 
-    /// "Your board": the layout + size — the only two download filters (your physical board).
+    /// "Your boards" (prompt 205): every board you climb on — a name, layout + size each. The download keeps
+    /// the climbs that fit any of them; browse later filters to whichever board you're on.
     @ViewBuilder private var boardSection: some View {
         Section {
+            TextField("Name (e.g. Home, Gym)", text: $firstName)
+                .accessibilityIdentifier("kilter.dl.name")
             Picker("Board", selection: $layoutId) {
                 ForEach(KilterCatalogOptions.boards) { Text($0.name).tag($0.layoutId) }
             }
@@ -267,11 +276,70 @@ struct KilterCatalogDownloadSheet: View {
             }
             .accessibilityIdentifier("kilter.dl.size")
         } header: {
-            Text("Your board")
+            Text(extraBoards.isEmpty ? "Your board" : "Your boards")
         } footer: {
-            Text("Pick the Kilter board you climb on — we'll get the climbs that fit it. The size is "
-                 + "printed on the board (and shown in the official Kilter app).")
+            if extraBoards.isEmpty {
+                Text("Pick the Kilter board you climb on — we'll get the climbs that fit it. The size is "
+                     + "printed on the board (and shown in the official Kilter app).")
+            }
         }
+        ForEach($extraBoards) { $b in
+            Section {
+                TextField("Name (e.g. Gym)", text: $b.name)
+                    .accessibilityIdentifier("kilter.dl.extraName")
+                Picker("Board", selection: $b.layoutId) {
+                    ForEach(KilterCatalogOptions.boards) { Text($0.name).tag($0.layoutId) }
+                }
+                .onChange(of: b.layoutId) {
+                    let board = KilterCatalogOptions.board(b.layoutId)
+                    if !board.sizes.contains(where: { $0.id == b.productSizeId }) { b.productSizeId = board.defaultSizeId }
+                }
+                Picker("Size", selection: $b.productSizeId) {
+                    ForEach(KilterCatalogOptions.board(b.layoutId).sizes) { Text($0.name).tag($0.id) }
+                }
+                Button("Remove this board", role: .destructive) {
+                    extraBoards.removeAll { $0.id == b.id }
+                }
+            }
+        }
+        Section {
+            Button {
+                let size = KilterCatalogOptions.board(1).defaultSizeId
+                let sizeName = KilterCatalogOptions.sizeName(layoutId: 1, sizeId: size) ?? "Board"
+                extraBoards.append(KilterMyBoard(
+                    name: KilterMyBoards.suggestedName(sizeName: sizeName, existing: allBoards),
+                    layoutId: 1, productSizeId: size))
+            } label: {
+                Label("Add another board", systemImage: "plus.circle.fill")
+            }
+            .accessibilityIdentifier("kilter.dl.addBoard")
+        } footer: {
+            if !extraBoards.isEmpty {
+                Text("We'll keep every climb that fits at least one of your boards. When you're climbing, the list "
+                     + "shows only the ones that fit the board you're on.")
+            }
+        }
+    }
+
+    /// All the climber's boards, first + others, as saved for "which of your boards is this?".
+    private var allBoards: [KilterMyBoard] {
+        let firstSize = KilterCatalogOptions.sizeName(layoutId: layoutId, sizeId: sizeId) ?? "My board"
+        let first = KilterMyBoard(id: firstBoardID,
+                                  name: firstName.trimmingCharacters(in: .whitespaces).isEmpty ? firstSize : firstName,
+                                  layoutId: layoutId, productSizeId: sizeId, linkedBoardID: firstLinked)
+        return [first] + extraBoards
+    }
+
+    /// Seed from the saved boards (or the current single-board choice) when the sheet opens.
+    private func loadMyBoards() {
+        let saved = KilterMyBoards.load()
+        guard let first = saved.first else { return }
+        firstBoardID = first.id
+        firstName = first.name
+        firstLinked = first.linkedBoardID
+        layoutId = first.layoutId
+        sizeId = first.productSizeId
+        extraBoards = Array(saved.dropFirst())
     }
 
     /// "How many climbs" — a friendly cap on the *installed* catalog (the source download is one file).
@@ -313,6 +381,7 @@ struct KilterCatalogDownloadSheet: View {
             }
             Button {
                 guard let board = kilterBoard else { return }
+                KilterMyBoards.save(allBoards)   // prompt 205: remembered for "which of your boards is this?"
                 onSubmit(board, buildFilter(), host)
             } label: {
                 Label("Download", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
@@ -349,6 +418,16 @@ struct KilterCatalogDownloadSheet: View {
         var f = CatalogFilter()
         f.layoutIds = [layoutId]
         if let size = selectedSize { f.sizeId = size.id; f.sizeBox = size.box }
+        if !extraBoards.isEmpty {
+            // Several boards (prompt 205): keep climbs that fit ANY of them.
+            f.boardFits = allBoards.compactMap { b in
+                KilterCatalogOptions.board(b.layoutId).sizes.first { $0.id == b.productSizeId }
+                    .map { KilterBoardFit(layoutId: b.layoutId, box: $0.box) }
+            }
+            f.layoutIds = Array(Set(allBoards.map(\.layoutId))).sorted()
+            f.sizeId = nil
+            f.sizeBox = nil
+        }
         f.maxClimbs = maxClimbs
         return f
     }
@@ -356,7 +435,9 @@ struct KilterCatalogDownloadSheet: View {
     /// A short library name for the Settings catalog list, e.g. "Kilter · Original · 12 × 14 · top 2000".
     static func name(for f: CatalogFilter) -> String {
         var parts = ["Kilter"]
-        if let layout = f.layoutIds.first {
+        if !f.boardFits.isEmpty {
+            parts.append("\(f.boardFits.count) boards")
+        } else if let layout = f.layoutIds.first {
             parts.append(KilterCatalogOptions.board(layout).name.replacingOccurrences(of: "Kilter ", with: ""))
             if let sizeId = f.sizeId, let size = KilterCatalogOptions.sizeName(layoutId: layout, sizeId: sizeId) {
                 parts.append(size)

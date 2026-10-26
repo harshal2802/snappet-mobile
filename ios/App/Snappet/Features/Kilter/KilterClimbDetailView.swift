@@ -194,6 +194,8 @@ struct KilterClimbDetailView: View {
             if board.isConnected { illuminateAndCapture() }
         }
         .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
+        .kilterBoardChooser(board: board, catalog: catalog, layoutId: climb?.layoutId ?? activeLayoutId,
+                            sizeId: productSizeId)
     }
 
     /// The "Set up this board" verifier, seeded with the open climb's own layout (so a matching board lights
@@ -210,7 +212,14 @@ struct KilterClimbDetailView: View {
             boardLabel: board.connectedIdentifier.flatMap { boardMemory.recall(identifier: $0) }?.label ?? "this board",
             initialLayoutId: climb?.layoutId ?? activeLayoutId,
             initialSizeId: productSizeId,
-            onConfirm: { layoutId, sizeId in confirmBoardSetup(layoutId: layoutId, sizeId: sizeId) })
+            myBoards: KilterMyBoards.unlinked(KilterMyBoards.load()),
+            onConfirm: { layoutId, sizeId, name, mine in
+                confirmBoardSetup(layoutId: layoutId, sizeId: sizeId)
+                if let id = board.connectedIdentifier {
+                    boardMemory.rename(identifier: id, to: name)      // prompt 205: named on first connect
+                    if let mine { KilterMyBoards.save(KilterMyBoards.link(mine, to: id, in: KilterMyBoards.load())) }
+                }
+            })
     }
 
     @ViewBuilder private func content(_ climb: KilterClimb) -> some View {

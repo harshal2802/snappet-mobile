@@ -10167,3 +10167,20 @@ stripes, and the panel read as an opaque slab.
   ends or the app goes to the background. Cancelling the connection stops iOS's auto-reconnect too. A live link is
   never cut by these rules.
 - Unverified on hardware: everything above is CoreBluetooth behaviour that only a real board can confirm.
+
+## 2026-10-25 — Kilter, more than one board (prompt 205)
+
+- With 2+ boards in range Connect ASKS, even when one is known (user's Q2). A known board therefore no longer
+  connects the instant it's heard: every connect waits the 1.2 s selection window, unless the racing remembered
+  board connects first and nothing else was heard. That's ~1 s slower on a lone known board — accepted for not
+  lighting the neighbour's wall.
+- "Nearby" drops boards weaker than −92 dBm unless they're all there is (same rule as `pick`). A board someone is
+  connected to has stopped advertising, so it can't appear in the list — the copy doesn't promise it.
+- Flash is a real (short) connection: connect → send the calibration holds → 5 s → send nothing → disconnect. It
+  overwrites what that board shows; a board takes one connection, so Flash can't run on two boards at once.
+- "Your boards" (`KilterMyBoards`) are the climber's own description, separate from `KilterBoardMemory` (physical
+  boards keyed by Bluetooth id). One links to the other on first connect; one physical board links to at most one
+  entry. UserDefaults JSON, no SwiftData / backup change.
+- Download with several boards: an OR of `(layout_id = ? AND <strict fit box>)` per board, so a box only applies to
+  its own layout. Strict fit stays strict (prompt 154).
+- Default name = size + serial ("12 × 12 (#4821)") so two same-size boards differ out of the box.
