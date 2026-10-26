@@ -414,6 +414,9 @@ struct FreeformPlayerView: View {
             recomputePrefills()
             recomputeClimbStats()
             rebuildPreviousClimbs()
+            // An empty Quick Session started the watch as strength; its first entry decides the real type
+            // (a table tennis match records Table Tennis). Only empty → first, so a routine's type is kept.
+            if old == 0, new > 0 { app.liveWorkout.retypeIfFresh(session) }
             // Auto-advance the pager to a newly added exercise so its hero is immediately loggable.
             if new > old, let last = session.exercises.last {
                 withAnimation { page = .exercise(last.id) }

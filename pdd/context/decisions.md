@@ -10164,8 +10164,13 @@ stripes, and the panel read as an opaque slab.
 - `racketBestOf`: `nil` = the sport's default, `0` = open play. A plain optional couldn't tell "unset" from "open".
 - HealthKit has no padel type; an Apple Watch records padel as tennis, the session keeps the real sport. With only
   the discipline in hand (no sport) the mapping returns `.other`, never a guessed sport.
-- A Quick Session that starts empty still starts the watch as before (strength); an HKWorkoutSession can't change type,
-  so a racket entity added later doesn't retype it. "Log it now" from the Library does start the right type.
+- A Quick Session that starts empty still starts the watch as strength (nothing says otherwise yet). Follow-up
+  2026-10-26: when its FIRST entry arrives and nothing is logged, the phone sends `retype`; an HKWorkoutSession
+  can't change type, so the watch ends + DISCARDS the empty workout and starts the new type from the SAME start
+  time (timer and relayed `t` offsets carry on; the phone's HR buffer is kept). Rules: only empty → first entry
+  (a routine's type is never touched), only with nothing logged (a workout with real sets is never discarded),
+  a stop during the switch wins. Unverified: whether Health keeps the HR samples the discarded builder collected
+  in those first minutes — Snappet's own session HR doesn't depend on it.
 - HR back-fill from Apple Health is for ANY finished gym session (not just racket): only sessions with no/sparse HR,
   not imported, not BLE, ended ≤ 3 days ago; it saves only when Health added samples. The user wears a Fitbit
   (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:

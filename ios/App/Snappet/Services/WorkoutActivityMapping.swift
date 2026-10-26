@@ -85,6 +85,16 @@ enum WorkoutActivityMapping {
         return activityType(for: entity.discipline)
     }
 
+    /// Prompt 203: an empty Quick Session starts the watch before anything is in it (as strength). When its
+    /// FIRST entry is a different type — a table tennis match — the watch should record that instead. Only
+    /// while nothing has been logged: once a set or game is in, the workout has real data and is left alone.
+    /// `nil` = keep the current type.
+    static func retypeTarget(current: HKWorkoutActivityType?, firstEntry: HKWorkoutActivityType?,
+                             loggedAnything: Bool) -> HKWorkoutActivityType? {
+        guard let current, let firstEntry, !loggedAnything, firstEntry != current else { return nil }
+        return firstEntry
+    }
+
     /// Resolve the activity type for a **discipline-aware** routine (E4). Prefers the routine's own
     /// disciplines over the legacy `SportTag`/category signals — the discipline is the explicit per-block
     /// label the user chose. A single-discipline routine records that discipline's type; a **mixed** routine

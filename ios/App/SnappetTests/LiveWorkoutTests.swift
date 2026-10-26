@@ -190,6 +190,40 @@ final class LiveWorkoutOffsetTests: XCTestCase {
         XCTAssertNil(LiveWorkoutMessage(payload: ["kind": "metrics", "hrBpm": 100.0]))
     }
 
+    func testRetypeMessageRoundTrips() {
+        let r = LiveWorkoutMessage.retype(activityType: HKWorkoutActivityType.tableTennis.rawValue)
+        XCTAssertEqual(LiveWorkoutMessage(payload: r.payload), r)
+        XCTAssertNil(LiveWorkoutMessage(payload: ["kind": "retype"]), "no type → dropped, never a guess")
+    }
+
+    /// Prompt 203: an empty Quick Session (watch started as strength) retypes to its first entry's type —
+    /// only while nothing is logged, and only on a real change.
+    func testRetypeTargetOnlyWhileNothingIsLogged() {
+        typealias M = WorkoutActivityMapping
+        XCTAssertEqual(M.retypeTarget(current: .traditionalStrengthTraining, firstEntry: .tableTennis,
+                                      loggedAnything: false), .tableTennis)
+        XCTAssertNil(M.retypeTarget(current: .traditionalStrengthTraining, firstEntry: .tableTennis,
+                                    loggedAnything: true), "a workout with real data is left alone")
+        XCTAssertNil(M.retypeTarget(current: .traditionalStrengthTraining, firstEntry: .traditionalStrengthTraining,
+                                    loggedAnything: false), "same type → nothing to do")
+        XCTAssertNil(M.retypeTarget(current: nil, firstEntry: .tableTennis, loggedAnything: false),
+                     "no watch workout running")
+        XCTAssertNil(M.retypeTarget(current: .traditionalStrengthTraining, firstEntry: nil, loggedAnything: false))
+    }
+
+    func testSourceTracksTypeAcrossStartRetypeStop() {
+        let service = AppleWatchMetricsSource()
+        service.retype(.tableTennis)
+        XCTAssertNil(service.activityType, "no retype without a live session")
+        service.start(activityType: .traditionalStrengthTraining, sessionStart: .now)
+        service.ingest(hrBpm: 120, energyKcal: 1, watchOffset: 0)
+        service.retype(.tableTennis)
+        XCTAssertEqual(service.activityType, .tableTennis)
+        XCTAssertEqual(service.samples.count, 1, "the HR buffer survives a retype (same session timeline)")
+        service.stop()
+        XCTAssertNil(service.activityType)
+    }
+
     func testPauseResumeMessagesRoundTrip() {
         // The bidirectional pause/resume control must survive the WCSession dictionary round-trip.
         XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.pause.payload), .pause)

@@ -46,9 +46,14 @@ heart rate back-filled from Apple Health; all six sports in v1, tennis/padel inc
 - [x] The day reads as one tournament: overview ribbon, summary, session detail, Clips post per match.
 - [x] A session with no live HR picks up Health's HR once the wearable syncs; per-game HR in the recap.
 - [x] Unit tests: `RacketScoringTests`, `RacketStatsTests`, `WorkoutHRBackfillTests`; UI: `RacketSportsUITests`.
-- [ ] Device legs (owed): a real tournament with Fitbit HR sync; filmed games; Apple Watch live type.
+- [x] Follow-up (2026-10-26, user asked): an empty Quick Session whose first entry is a match retypes the
+      Apple Watch workout (`LiveWorkoutMessage.retype`; the watch discards the empty workout and restarts the
+      right type from the same start time). Pure rule `WorkoutActivityMapping.retypeTarget`, tested.
+- [ ] Device legs (owed): a real tournament with Fitbit HR sync; filmed games; Apple Watch: start an empty
+      Quick Session, add a match → the watch shows Table Tennis, Health has ONE table tennis workout (no stray
+      strength one) covering the whole session.
 
 ## Out of scope (v1)
 
 Point-by-point scoring, a live scoreboard mode, opponent profiles beyond name + H2H, racket blocks in
-routines, changing the watch's workout type mid-session, Android.
+routines, changing the watch's workout type once something is logged, Android.
