@@ -10171,3 +10171,10 @@ stripes, and the panel read as an opaque slab.
   (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:
   whether Fitbit writes HR samples (not just the workout) — check after the first real session.
 - Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
+
+## 2026-10-25 — Makefile simulator destination by id (prompt 206)
+
+- `DEST_SIM` resolves `SIMULATOR` to a device id instead of passing `name=`: a bare name resolves with
+  `OS:latest`, so every new runtime that ships without that device broke `make ios-test`. Resolving the id beats
+  pinning `OS=26.5`, which would break again on the next runtime change. The newest runtime that has the device
+  wins; with no match, the `name=` destination is kept so the error stays xcodebuild's own.
