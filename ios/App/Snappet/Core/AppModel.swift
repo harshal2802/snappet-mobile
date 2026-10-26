@@ -284,7 +284,7 @@ final class AppModel {
     /// HR to Health — not just an Apple Watch streaming live — ends up on the session, its per-game splits
     /// and its clips. Runs on launch / foreground / HealthKit wake (via `reconcileWatchWorkouts`) and when a
     /// session's detail opens (`sessionID`). Idempotent: `WorkoutHRBackfill` skips dense, imported, BLE and
-    /// stale sessions, and only saves when Health added samples. A no-op without Health read access.
+    /// stale sessions (a BLE session only has its gaps filled), and only saves when Health added samples. A no-op without Health read access.
     func backfillWorkoutHR(sessionID: UUID? = nil) async {
         guard let context = modelContainer?.mainContext else { return }
         let now = Date.now
@@ -299,7 +299,9 @@ final class AppModel {
             guard WorkoutHRBackfill.wants(candidate, now: now), let end = s.completedAt else { continue }
             let samples = (try? await health.heartRateSamples(start: s.startedAt, end: end)) ?? []
             guard let merged = WorkoutHRBackfill.merged(stored: s.hrSeries,
-                                                        health: WorkoutHRStats.points(from: samples)) else { continue }
+                                                        health: WorkoutHRStats.points(from: samples),
+                                                        keepLive: s.metricsSourceRaw == "ble",
+                                                        duration: end.timeIntervalSince(s.startedAt)) else { continue }
             // A session with no live source now has Health's HR — say so, and zone it off the profile.
             if s.hrSeries.isEmpty {
                 s.metricsSourceRaw = WorkoutHRBackfill.healthSourceRaw

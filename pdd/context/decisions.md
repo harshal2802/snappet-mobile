@@ -10172,7 +10172,9 @@ stripes, and the panel read as an opaque slab.
   a stop during the switch wins. Unverified: whether Health keeps the HR samples the discarded builder collected
   in those first minutes — Snappet's own session HR doesn't depend on it.
 - HR back-fill from Apple Health is for ANY finished gym session (not just racket): only sessions with no/sparse HR,
-  not imported, not BLE, ended ≤ 3 days ago; it saves only when Health added samples. The user wears a Fitbit
+  not imported, ended ≤ 7 days ago (was 3; a tournament is reviewed days later); a BLE session keeps every live
+  sample and only its gaps > 60 s are filled (2026-10-26: the band connected 2 h into the tournament morning, so
+  two matches had no HR and the old "skip BLE" rule left them empty); it saves only when Health added samples. The user wears a Fitbit
   (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:
   whether Fitbit writes HR samples (not just the workout) — check after the first real session.
 - Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).

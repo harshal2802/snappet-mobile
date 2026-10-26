@@ -23,10 +23,11 @@ final class WorkoutHRBackfillTests: XCTestCase {
     func testSkips() {
         let dense = stride(from: 0.0, to: 600, by: 1).map { HRPoint(t: $0, bpm: 120) }
         XCTAssertFalse(WorkoutHRBackfill.wants(candidate(series: dense), now: now))          // already dense
-        XCTAssertFalse(WorkoutHRBackfill.wants(candidate(source: "ble"), now: now))          // BLE carries RR
+        let fullBLE = stride(from: 0.0, to: 3600, by: 1).map { HRPoint(t: $0, bpm: 120) }
+        XCTAssertFalse(WorkoutHRBackfill.wants(candidate(source: "ble", series: fullBLE), now: now)) // BLE, no gaps
         XCTAssertFalse(WorkoutHRBackfill.wants(candidate(imported: true), now: now))         // importer read it
         XCTAssertFalse(WorkoutHRBackfill.wants(candidate(active: true), now: now))           // still running
-        XCTAssertFalse(WorkoutHRBackfill.wants(candidate(endedAgo: 4 * 86_400), now: now))   // too old
+        XCTAssertFalse(WorkoutHRBackfill.wants(candidate(endedAgo: 8 * 86_400), now: now))   // too old
     }
 
     func testMergeOnlyWhenHealthAddsSamples() {
@@ -34,6 +35,27 @@ final class WorkoutHRBackfillTests: XCTestCase {
         XCTAssertEqual(WorkoutHRBackfill.merged(stored: [], health: health), health)
         XCTAssertNil(WorkoutHRBackfill.merged(stored: health, health: []))
         XCTAssertNil(WorkoutHRBackfill.merged(stored: health, health: [HRPoint(t: 1, bpm: 99)]))
+    }
+
+    /// 2026-10-26 tournament: the band connected ~2 h into a 2 h 20 min session, so the first matches had no HR.
+    func testBLESessionWithAGapIsFilledOnlyInTheGap() {
+        let late = stride(from: 6900.0, to: 8400, by: 1).map { HRPoint(t: $0, bpm: 150) }
+        XCTAssertTrue(WorkoutHRBackfill.wants(candidate(source: "ble", series: late), now: now))
+        XCTAssertEqual(WorkoutHRBackfill.gaps(in: late, duration: 8413).count, 1)
+
+        let health = [HRPoint(t: 600, bpm: 130), HRPoint(t: 7000, bpm: 99)]   // 7000 overlaps the live band
+        let merged = WorkoutHRBackfill.merged(stored: late, health: health, keepLive: true, duration: 8413)
+        XCTAssertEqual(merged?.count, late.count + 1, "Health fills the gap; the band's own samples are kept")
+        XCTAssertEqual(merged?.first, HRPoint(t: 600, bpm: 130))
+        XCTAssertFalse(merged?.contains(HRPoint(t: 7000, bpm: 99)) ?? true)
+        XCTAssertNil(WorkoutHRBackfill.merged(stored: late, health: [HRPoint(t: 7000, bpm: 99)],
+                                              keepLive: true, duration: 8413), "nothing new in the gap → no save")
+    }
+
+    func testGapsFindStartMiddleAndEnd() {
+        let s = [HRPoint(t: 100, bpm: 1), HRPoint(t: 110, bpm: 1), HRPoint(t: 300, bpm: 1)]
+        XCTAssertEqual(WorkoutHRBackfill.gaps(in: s, duration: 500), [0...100, 110...300, 300...500])
+        XCTAssertEqual(WorkoutHRBackfill.gaps(in: [], duration: 30), [], "a short silent session isn't a gap")
     }
 
     // MARK: - Racket set editing / display
