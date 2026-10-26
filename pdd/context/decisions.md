@@ -10151,3 +10151,10 @@ stripes, and the panel read as an opaque slab.
   first screen is complete.
 - The second pass REPLACES the caches with this build's results; it doesn't merge. A carried-over overlay would
   outlive a clip that was baked since. Between the passes the previous build's overlays stay, so nothing blanks.
+
+## 2026-10-25 — Makefile simulator destination by id (prompt 206)
+
+- `DEST_SIM` resolves `SIMULATOR` to a device id instead of passing `name=`: a bare name resolves with
+  `OS:latest`, so every new runtime that ships without that device broke `make ios-test`. Resolving the id beats
+  pinning `OS=26.5`, which would break again on the next runtime change. The newest runtime that has the device
+  wins; with no match, the `name=` destination is kept so the error stays xcodebuild's own.
