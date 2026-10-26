@@ -51,6 +51,8 @@ heart rate back-filled from Apple Health; all six sports in v1, tennis/padel inc
       right type from the same start time). Pure rule `WorkoutActivityMapping.retypeTarget`, tested.
 - [x] Follow-up (2026-10-26, from the real tournament data): a BLE session's HR gaps are filled from Health
       (band connected late → the first matches had none); look-back 3 → 7 days. `WorkoutHRBackfillTests`.
+- [x] Follow-up (2026-10-26, user asked): singles / doubles split into separate activities; dashboard charts
+      spaced by session. `RacketStatsTests.testDoublesIsItsOwnActivity`, `ActivityDashboardAxisTests`.
 - [ ] Device legs (owed): a real tournament with Fitbit HR sync; filmed games; Apple Watch: start an empty
       Quick Session, add a match → the watch shows Table Tennis, Health has ONE table tennis workout (no stray
       strength one) covering the whole session.

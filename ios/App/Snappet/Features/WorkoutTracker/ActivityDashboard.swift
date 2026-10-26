@@ -48,6 +48,28 @@ struct ActivityDashboard: Equatable, Sendable {
         var id: UUID { sessionID }
     }
 
+    /// X-axis labels for a chart spaced by SESSION, not clock time (2026-10-26: a tournament day's three sessions
+    /// sat at 11 AM / 2 PM / 5 PM and read like a trend over hours). Index → "24 Oct", or "24 Oct · 2" when that day
+    /// has several sessions. At most `maxLabels`, evenly spread, always the first and the last.
+    static func sessionAxisLabels(_ dates: [Date], calendar: Calendar = .current, maxLabels: Int = 4,
+                                  day: (Date) -> String = { $0.formatted(.dateTime.day().month(.abbreviated)) })
+        -> [Int: String] {
+        guard !dates.isEmpty else { return [:] }
+        let days = dates.map { calendar.startOfDay(for: $0) }
+        var perDay: [Date: Int] = [:]
+        for d in days { perDay[d, default: 0] += 1 }
+        var seen: [Date: Int] = [:]
+        var all: [String] = []
+        for (i, d) in days.enumerated() {
+            seen[d, default: 0] += 1
+            all.append((perDay[d] ?? 0) > 1 ? "\(day(dates[i])) · \(seen[d]!)" : day(dates[i]))
+        }
+        let n = dates.count
+        let picks: [Int] = n <= maxLabels ? Array(0..<n)
+            : Array(Set((0..<maxLabels).map { Int((Double($0) * Double(n - 1) / Double(maxLabels - 1)).rounded()) })).sorted()
+        return Dictionary(uniqueKeysWithValues: picks.map { ($0, all[$0]) })
+    }
+
     struct KPI: Equatable, Sendable {
         let title: String
         let value: String

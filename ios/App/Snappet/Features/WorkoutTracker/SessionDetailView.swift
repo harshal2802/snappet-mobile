@@ -239,8 +239,7 @@ struct SessionDetailView: View {
     private func updateMatch(_ exID: UUID?, _ params: RacketMatchParams) {
         guard let exID, let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
         params.apply(to: &session.exercises[idx])
-        session.exercises[idx].exerciseId = RacketStats.matchExerciseId(params.sport)
-        session.exercises[idx].displayName = RacketStats.matchActivityName(params.sport)
+        RacketStats.applyMatchIdentity(&session.exercises[idx])
         try? context.save()
     }
 

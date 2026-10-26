@@ -278,6 +278,24 @@ final class AppModel {
             .reconcile(context: context, profileMaxHR: userProfile.profile.resolvedMaxHR)
         // Same wake-ups: a wearable that synced since (Fitbit / Google Health …) fills in HR (prompt 203).
         await backfillWorkoutHR()
+        fileRacketDoublesOnce()
+    }
+
+    /// Once (2026-10-26): matches logged before singles and doubles were split are re-filed — a match with a
+    /// partner moves to "<sport> doubles". New and edited matches are filed as they're saved.
+    func fileRacketDoublesOnce() {
+        let flag = "racket.doublesSplit.v1"
+        guard !UserDefaults.standard.bool(forKey: flag), let context = modelContainer?.mainContext else { return }
+        let sessions = (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        var changed = false
+        for s in sessions where s.exercises.contains(where: \.isRacketMatch) {
+            var exercises = s.exercises
+            var touched = false
+            for i in exercises.indices where RacketStats.applyMatchIdentity(&exercises[i]) { touched = true }
+            if touched { s.exercises = exercises; changed = true }
+        }
+        if changed { try? context.save() }
+        UserDefaults.standard.set(true, forKey: flag)
     }
 
     /// Back-fill finished gym sessions' heart rate from Apple Health (prompt 203): any wearable that writes

@@ -10182,6 +10182,13 @@ stripes, and the panel read as an opaque slab.
   set now scores from the previous unit's end (or its timed duration); a match's first untimed unit gets the
   match's median unit length (else 5 min) instead of a flat 10 min that reached into the break. Win rate /
   accuracy charts are 0–100 %, and the effort card says "per game" for a match.
+- Singles and doubles are separate activities (2026-10-26, user asked after the tournament chart mixed them):
+  a match with a partner is filed under `adhoc-racket-doubles-<sport>` / "<sport> doubles" — stored on the entity
+  (so the Library, dashboard, head-to-head and launch all follow without a derived key), refreshed on every
+  create/edit, and applied once at launch to matches logged before (`racket.doublesSplit.v1`).
+- Activity dashboard charts are spaced by SESSION, not clock time: a tournament day's sessions read
+  "24 Oct · 1/2/3" instead of 11 AM / 2 PM / 5 PM, and straight segments replace the smoothed curve (no invented
+  values between sessions). The tapped point shows its date and time.
 - Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
 
 ## 2026-10-25 — Makefile simulator destination by id (prompt 206)

@@ -1601,6 +1601,7 @@ struct FreeformPlayerView: View {
             kindRaw: SetKind.duration.rawValue)
         entity.disciplineRaw = WorkoutDiscipline.racket.rawValue
         params.apply(to: &entity)
+        RacketStats.applyMatchIdentity(&entity)   // a partner files it under doubles
         session.exercises.append(entity)
         // A tournament day reads as its event (an untouched "Quick session" title only).
         if let event = entity.racketEvent, SessionToRoutine.isGenericName(session.routineName) {
@@ -1615,8 +1616,7 @@ struct FreeformPlayerView: View {
     private func updateRacketMatch(_ exID: UUID, _ params: RacketMatchParams) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
         params.apply(to: &session.exercises[idx])
-        session.exercises[idx].exerciseId = RacketStats.matchExerciseId(params.sport)
-        session.exercises[idx].displayName = RacketStats.matchActivityName(params.sport)
+        RacketStats.applyMatchIdentity(&session.exercises[idx])
         persist()
         pushLiveActivity()
     }

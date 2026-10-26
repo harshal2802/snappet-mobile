@@ -6,12 +6,35 @@ import Foundation
 /// `SetLog` only — Foundation, unit-tested in `RacketStatsTests`.
 enum RacketStats {
 
-    /// Ids a racket entity is logged under. A match's activity is the SPORT (every opponent is the same
-    /// "Table tennis match" in the Library); a drill's is the sport + its name.
-    static func matchExerciseId(_ sport: RacketSport) -> String { "adhoc-racket-match-\(sport.rawValue)" }
+    /// Ids a racket entity is logged under. A match's activity is the SPORT + singles/doubles (every opponent
+    /// is the same "Table tennis match" in the Library; doubles is its own "Table tennis doubles" — a different
+    /// game, so its win rate and heart rate don't blur into singles, 2026-10-26); a drill's is the sport + name.
+    static func matchExerciseId(_ sport: RacketSport, doubles: Bool = false) -> String {
+        "adhoc-racket-\(doubles ? "doubles" : "match")-\(sport.rawValue)"
+    }
     static func drillExerciseId(_ sport: RacketSport) -> String { "adhoc-racket-drill-\(sport.rawValue)" }
     /// The display name a match entity carries (its activity name — the page shows the opponent instead).
-    static func matchActivityName(_ sport: RacketSport) -> String { "\(sport.label) match" }
+    static func matchActivityName(_ sport: RacketSport, doubles: Bool = false) -> String {
+        "\(sport.label) \(doubles ? "doubles" : "match")"
+    }
+
+    /// A match with a partner is doubles.
+    static func isDoubles(_ ex: SessionExercise) -> Bool {
+        !(ex.partner ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// File a match under its activity (sport + singles/doubles) — on create, on edit, and once at launch for
+    /// matches logged before the split. `true` when the id or name changed. Drills and non-racket: untouched.
+    @discardableResult
+    static func applyMatchIdentity(_ ex: inout SessionExercise) -> Bool {
+        guard ex.isRacketMatch, let sport = ex.racketSport else { return false }
+        let doubles = isDoubles(ex)
+        let id = matchExerciseId(sport, doubles: doubles), name = matchActivityName(sport, doubles: doubles)
+        guard ex.exerciseId != id || ex.displayName != name else { return false }
+        ex.exerciseId = id
+        ex.displayName = name
+        return true
+    }
 
     // MARK: - Records
 

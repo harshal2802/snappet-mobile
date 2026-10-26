@@ -165,6 +165,22 @@ final class RacketStatsTests: XCTestCase {
         XCTAssertEqual(first.first?.start, 0)              // fallback clipped to the session start
     }
 
+    /// 2026-10-26: doubles is its own activity — a partner files the match under "Table tennis doubles".
+    func testDoublesIsItsOwnActivity() {
+        var singles = match()
+        XCTAssertFalse(RacketStats.applyMatchIdentity(&singles), "already filed")
+        var doubles = match(); doubles.partner = "Ch"
+        XCTAssertTrue(RacketStats.applyMatchIdentity(&doubles))
+        XCTAssertEqual(doubles.exerciseId, "adhoc-racket-doubles-tableTennis")
+        XCTAssertEqual(doubles.displayName, "Table tennis doubles")
+        XCTAssertNotEqual(ActivityKey.plain(doubles), ActivityKey.plain(singles))
+        doubles.partner = "  "
+        XCTAssertTrue(RacketStats.applyMatchIdentity(&doubles), "partner removed → back to singles")
+        XCTAssertEqual(doubles.displayName, "Table tennis match")
+        var d = drill()
+        XCTAssertFalse(RacketStats.applyMatchIdentity(&d), "drills are untouched")
+    }
+
     /// 2026-10-26 tournament: the first game of a match gets the match's typical game length, not a flat
     /// 10 minutes that reaches back into the break before the match.
     func testFirstGameUsesTheMatchsTypicalLength() {
