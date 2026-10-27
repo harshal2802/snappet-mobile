@@ -35,6 +35,7 @@ struct KilterRootView: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(SnappetCore.self) private var core
     @Query private var favorites: [KilterFavorite]
     /// Newest first, so the per-render memo signatures read the newest entry in O(1) (prompt 153).
@@ -428,6 +429,10 @@ struct KilterRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
             reloadCatalog()
         }
+        // A dropped board that's still reconnecting is let go when the session ends or the app leaves the
+        // foreground — a board takes one connection, so don't hold a shared gym board after you've left
+        // (prompt 204). A live link is untouched.
+        .modifier(ReleaseDroppedBoard(board: board, sessionActive: sessions.isActive, scenePhase: scenePhase))
         // The session manager arrives already bound to the live-metrics / Live-Activity / media
         // services (once, in `AppModel.init`) — binding here would reintroduce the appear-order
         // dependency a plan deep link skips (#71 pre-merge review).
@@ -455,6 +460,8 @@ struct KilterRootView: View {
             // P1: on a confirmed connect, recognize the board and (if known) restore its layout/size +
             // pre-select the usual angle, then surface the one-tap confirm ribbon. An unknown board is
             // remembered from scratch on this first connect (no restore, nothing overwritten).
+            // Boards connected before connect the moment they're heard, and win over a stranger's (prompt 204).
+            board.knownBoardIDs = Set(boardMemory.boards.keys)
             board.onBoardRecognized = { identifier, serial in
                 recognizeBoard(identifier: identifier, serial: serial)
             }
@@ -895,7 +902,7 @@ struct KilterRootView: View {
         switch board.state {
         case .connected: return connectedBoardLabel ?? "Board connected"
         case .scanning: return "Searching for your board…"
-        case .connecting: return "Connecting…"
+        case .connecting: return board.isReconnecting ? "Reconnecting…" : "Connecting…"
         case .failed: return "Couldn't connect"
         case .bluetoothOff: return "Bluetooth is off"
         case .unauthorized: return "Bluetooth access needed"
@@ -906,7 +913,8 @@ struct KilterRootView: View {
     private var boardStripSubtitle: String {
         switch board.state {
         case .connected: return "Connected — climbs light up as you open them"
-        case .scanning, .connecting: return "Keep Bluetooth on · usually a few seconds"
+        case .scanning, .connecting:
+            return board.isReconnecting ? "The board dropped — reconnecting on its own" : "Keep Bluetooth on · usually a few seconds"
         case .failed(let message): return message
         case .bluetoothOff: return "Turn it on in Control Center to connect"
         case .unauthorized: return "Allow Bluetooth for Snappet in Settings"
@@ -1522,5 +1530,19 @@ struct KilterFiltersSheet: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+}
+
+/// Lets go of a dropped, still-reconnecting board when the session ends or the app leaves the foreground
+/// (prompt 204). Its own modifier so `KilterRootView.body` stays type-checkable.
+private struct ReleaseDroppedBoard: ViewModifier {
+    let board: KilterBoardController
+    let sessionActive: Bool
+    let scenePhase: ScenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: sessionActive) { _, active in if !active { board.releaseIfReconnecting() } }
+            .onChange(of: scenePhase) { _, phase in if phase == .background { board.releaseIfReconnecting() } }
     }
 }
