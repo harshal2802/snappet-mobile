@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDD Team Mode</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; each section is a diagram plus a short caption. Snappet Pulse tokens. */
+:root{
+  --paper:#FBFAF8; --surface:#FFFFFF; --muted:#F2F1EE; --hair:#E7E5E1;
+  --ink:#1A1A1E; --ink2:#6B6A66;
+  --brand:#FF5A4D; --brand-soft:#FFE8E5;
+  --journal:#7C5CD6; --journal-soft:#EFEAFB;
+  --budget:#2A7DE1; --budget-soft:#E6F0FC;
+  --habits:#3F9D55; --habits-soft:#E6F4E9;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+  --ink:#F4F3F1; --ink2:#A6A5A1;
+  --brand:#FF7A6B; --brand-soft:#3A2220;
+  --journal:#9D82F0; --journal-soft:#2A2440;
+  --budget:#589BF2; --budget-soft:#1D2A3C;
+  --habits:#5BC074; --habits-soft:#1E3024; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+  --ink:#F4F3F1; --ink2:#A6A5A1;
+  --brand:#FF7A6B; --brand-soft:#3A2220;
+  --journal:#9D82F0; --journal-soft:#2A2440;
+  --budget:#589BF2; --budget-soft:#1D2A3C;
+  --habits:#5BC074; --habits-soft:#1E3024; color-scheme:dark}
+
+body{background:var(--paper);color:var(--ink);font:17px/1.55 var(--body)}
+.wrap{max-width:860px;margin:0 auto;padding-block:40px 64px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(30px,5vw,44px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:26px;font-weight:800;letter-spacing:-.01em}
+h3{font-size:17px;font-weight:600}
+p{margin:0;max-width:65ch}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--brand)}
+.lede{color:var(--ink2);font-size:19px}
+section{display:flex;flex-direction:column;gap:18px}
+code{font-family:var(--mono);font-size:.88em;background:var(--muted);padding:1px 5px;border-radius:4px}
+.cap{color:var(--ink2);font-size:15px}
+
+/* answer banner */
+.answer{border:1.5px solid var(--brand);background:var(--brand-soft);border-radius:14px;padding:20px 22px;display:flex;flex-direction:column;gap:8px}
+.answer strong{font-family:var(--display);font-size:20px}
+
+/* diagram 1: skill vs agent */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tile{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.tile .tag{font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.tile.skill .tag{color:var(--journal)} .tile.agent .tag{color:var(--budget)}
+.mini{border-radius:10px;padding:12px;font:13px/1.45 var(--mono);display:flex;flex-direction:column;gap:6px}
+.skill .mini{background:var(--journal-soft)} .agent .mini{background:var(--budget-soft)}
+.chat{border:1px dashed var(--ink2);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.workers{display:flex;gap:6px;flex-wrap:wrap}
+.workers span{background:var(--surface);border:1px solid var(--budget);border-radius:8px;padding:4px 8px}
+.tile ul{margin:0;padding-left:18px;font-size:15px;display:flex;flex-direction:column;gap:4px}
+
+/* diagram 2: layers */
+.stack{display:flex;flex-direction:column;gap:0}
+.layer{border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:180px 1fr;gap:16px;align-items:start}
+.layer + .arrow{display:none}
+.l-skill{background:var(--journal-soft);border:1px solid var(--journal)}
+.l-repo{background:var(--brand-soft);border:1px solid var(--brand)}
+.l-run{background:var(--habits-soft);border:1px solid var(--habits)}
+.layer .who{display:flex;flex-direction:column;gap:4px}
+.layer .who b{font-family:var(--display);font-size:18px}
+.layer .who small{font:12px/1.3 var(--mono);color:var(--ink2)}
+.files{font:13px/1.6 var(--mono);display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.files em{font-style:normal;color:var(--ink2)}
+.joint{align-self:center;font:600 12px/1 var(--mono);color:var(--ink2);padding:8px 0;letter-spacing:.04em}
+
+/* diagram 3: workflow → role map */
+.map{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;gap:8px}
+.cell{background:var(--surface);border:1px solid var(--hair);border-radius:10px;padding:10px 14px;font-size:15px;min-width:0}
+.cell b{display:block;font-weight:600}
+.cell small{color:var(--ink2);font-size:13px}
+.cell.new{border:1.5px dashed var(--brand);background:var(--brand-soft)}
+.cell.repo{border-left:4px solid var(--brand)}
+.to{text-align:center;color:var(--ink2);font-family:var(--mono)}
+.maphead{display:grid;grid-template-columns:1fr 36px 1fr;gap:8px;font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+
+/* diagram 4: flow */
+.flow{display:flex;flex-direction:column;gap:0;counter-reset:s}
+.step{display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:start;position:relative;padding-bottom:18px}
+.step:not(:last-child)::after{content:"";position:absolute;left:21px;top:44px;bottom:0;width:2px;background:var(--hair)}
+.dot{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:800 17px var(--display);background:var(--surface);border:2px solid var(--brand);color:var(--brand)}
+.step.you .dot{background:var(--brand);color:var(--paper)}
+.par{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.par span{font:12px/1 var(--mono);border:1px solid var(--hair);background:var(--surface);border-radius:6px;padding:6px 8px}
+.step p{font-size:15.5px}
+.step h3{margin-bottom:2px}
+
+/* diagram 5: options */
+.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.opt{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.opt.pick{border:2px solid var(--brand)}
+.pill{align-self:flex-start;font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:999px;background:var(--muted);color:var(--ink2)}
+.opt.pick .pill{background:var(--brand);color:var(--paper)}
+.opt ul{margin:0;padding-left:18px;font-size:14.5px;display:flex;flex-direction:column;gap:4px}
+.pro{color:var(--habits)} .con{color:var(--ink2)}
+
+@media (max-width:640px){
+  .pair,.opts{grid-template-columns:1fr}
+  .layer{grid-template-columns:1fr;gap:8px}
+  .row,.maphead{grid-template-columns:1fr 24px 1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header style="display:flex;flex-direction:column;gap:14px">
+  <span class="eyebrow">Snappet Mobile · agent team</span>
+  <h1>Turning the agent company into a skill</h1>
+  <p class="lede">The team is the PDD lifecycle with a different worker assigned to each step. So the cleanest home for it is a new workflow inside the PDD skill, with the Snappet-specific team files kept in the repo.</p>
+</header>
+
+<div class="answer">
+  <strong>Short answer: yes to both, split in two layers.</strong>
+  <p>The PDD skill holds the generic playbook ("how a team runs a PDD job"). The repo holds who is on the team and what each role may touch. A separate standalone skill would repeat the PDD rules and drift from them.</p>
+</div>
+
+<!-- 1 -->
+<section>
+  <span class="eyebrow">First, the two building blocks</span>
+  <h2>A skill is a playbook. An agent is a worker.</h2>
+  <div class="pair">
+    <div class="tile skill">
+      <span class="tag">Skill · .claude/skills/&lt;name&gt;/SKILL.md</span>
+      <div class="mini">
+        <div class="chat">your conversation<br>+ the playbook loaded into it</div>
+        <div>one brain, follows the steps</div>
+      </div>
+      <ul>
+        <li>Instructions loaded into the current session</li>
+        <li>Triggered by <code>/name</code> or when the task matches</li>
+        <li>Portable: works in any repo</li>
+      </ul>
+    </div>
+    <div class="tile agent">
+      <span class="tag">Agent · .claude/agents/&lt;role&gt;.md</span>
+      <div class="mini">
+        <div class="chat">lead session</div>
+        <div class="workers"><span>pm</span><span>ios-eng</span><span>qa</span><span>scribe</span></div>
+        <div>separate brains, run in parallel</div>
+      </div>
+      <ul>
+        <li>Own context window, tools and model</li>
+        <li>Write access limited to its own paths</li>
+        <li>Project-specific by nature</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cap">They combine: a skill can tell the lead session which agents to launch and in what order. That is what "team mode" is.</p>
+</section>
+
+<!-- 2 -->
+<section>
+  <span class="eyebrow">Where each piece lives</span>
+  <h2>Three layers, from generic to running</h2>
+  <div class="stack">
+    <div class="layer l-skill">
+      <div class="who"><b>PDD skill</b><small>generic · any project</small></div>
+      <div class="files">
+        <span>workflows: scaffold · context · prompt · update · review</span>
+        <span><b>+ team mode</b> <em>← new: the orchestration playbook</em></span>
+        <span><b>+ role templates</b> <em>← cto / pm / eng / qa / scribe skeletons</em></span>
+      </div>
+    </div>
+    <div class="joint">↓ scaffold fills the templates from pdd/context</div>
+    <div class="layer l-repo">
+      <div class="who"><b>Snappet repo</b><small>specific · committed</small></div>
+      <div class="files">
+        <span>pdd/context/*.md <em>← already exists</em></span>
+        <span>.claude/agents/cto.md, pm.md, ios-eng.md, qa.md, scribe.md</span>
+        <span><em>paths each role owns · make targets · "iOS needs a Mac"</em></span>
+      </div>
+    </div>
+    <div class="joint">↓ claude --agent cto  "ship the weekly diff"</div>
+    <div class="layer l-run">
+      <div class="who"><b>A job</b><small>one prompt = one PR</small></div>
+      <div class="files">
+        <span>pdd/prompts/features/NNN-*.md + code + tests + graph + decisions</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section>
+  <span class="eyebrow">Why it fits PDD</span>
+  <h2>Most roles are PDD workflows you already have</h2>
+  <div class="map">
+    <div class="maphead"><span>PDD skill workflow</span><span></span><span>Team role</span></div>
+    <div class="row"><div class="cell"><b>Scaffold project</b><small>creates pdd/</small></div><div class="to">→</div><div class="cell"><b>One-time setup</b><small>also creates .claude/agents/</small></div></div>
+    <div class="row"><div class="cell"><b>Generate feature prompt</b></div><div class="to">→</div><div class="cell"><b>pm.md</b><small>writes the prompt before code</small></div></div>
+    <div class="row"><div class="cell"><b>Update existing prompt</b></div><div class="to">→</div><div class="cell"><b>pm.md</b><small>when scope changes mid-job</small></div></div>
+    <div class="row"><div class="cell"><b>Review AI output</b></div><div class="to">→</div><div class="cell"><b>qa.md</b><small>runs gates, reviews the diff</small></div></div>
+    <div class="row"><div class="cell"><b>Write context files</b></div><div class="to">→</div><div class="cell"><b>scribe.md</b><small>context, decisions, knowledge graph</small></div></div>
+    <div class="row"><div class="cell new"><b>Team mode</b><small>new workflow</small></div><div class="to">→</div><div class="cell"><b>cto.md</b><small>runs the sequence, merges reports</small></div></div>
+    <div class="row"><div class="cell" style="opacity:.55"><b>none</b></div><div class="to">→</div><div class="cell repo"><b>ios-eng.md · android-eng.md</b><small>the only purely Snappet roles</small></div></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section>
+  <span class="eyebrow">One job, end to end</span>
+  <h2>"Add a weekly 'past you' diff to Home"</h2>
+  <div class="flow">
+    <div class="step you"><div class="dot">1</div><div><h3>You ask the CTO</h3><p>One sentence. The CTO reads <code>pdd/context/</code> and splits it into one-PR jobs.</p></div></div>
+    <div class="step"><div class="dot">2</div><div><h3>PM writes the feature prompt</h3><p>From the template, with acceptance criteria and linked decisions. The CTO checks it before any code.</p></div></div>
+    <div class="step"><div class="dot">3</div><div><h3>Engineers build in parallel</h3><p>Each in its own git worktree, each limited to its own folders.</p><div class="par"><span>ios-eng → ios/**</span><span>android-eng → android/**</span></div></div></div>
+    <div class="step"><div class="dot">4</div><div><h3>QA runs the gates</h3><p>Real commands, output pasted. On Linux only engine and Android tests run, so iOS is marked "not verified here".</p><div class="par"><span>make engine-test</span><span>make ios-test-unit</span><span>make android-test</span></div></div></div>
+    <div class="step"><div class="dot">5</div><div><h3>Scribe updates the docs</h3><p>Knowledge graph node and edge, <code>decisions.md</code>, <code>project.md</code>.</p></div></div>
+    <div class="step you"><div class="dot">6</div><div><h3>You approve</h3><p>One report: what shipped, test output, open questions. Pushes and TestFlight uploads stay with you.</p></div></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section>
+  <span class="eyebrow">The three ways to package it</span>
+  <h2>Options compared</h2>
+  <div class="opts">
+    <div class="opt">
+      <span class="pill">A · agents only</span>
+      <h3>Role files in the repo</h3>
+      <ul><li class="pro">Fastest to start</li><li class="con">Orchestration rules live in the CTO file, so they don't carry to other projects</li></ul>
+    </div>
+    <div class="opt">
+      <span class="pill">B · new skill</span>
+      <h3>Standalone "dev team" skill</h3>
+      <ul><li class="pro">Portable</li><li class="con">Restates the PDD prompt and context rules, so the two can drift</li></ul>
+    </div>
+    <div class="opt pick">
+      <span class="pill">C · recommended</span>
+      <h3>Team mode in the PDD skill + role files in the repo</h3>
+      <ul><li class="pro">One source of truth for the lifecycle</li><li class="pro">Any PDD project can scaffold a team</li><li class="con">Needs edit access to the PDD skill</li></ul>
+    </div>
+  </div>
+  <p class="cap">If the PDD skill is the read-only built-in version, option C still works as a small project skill in <code>.claude/skills/pdd-team/</code> that says "follow the PDD skill, plus these team steps". It can move upstream later.</p>
+</section>
+
+</div>
+</body>
+</html>
