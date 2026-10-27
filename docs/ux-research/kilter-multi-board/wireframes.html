@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Kilter: several boards in one place (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+</head>
+<body>
+<style>
+  .hero3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:6px 0 10px;flex:0 0 auto}
+  .hc{background:var(--surface);border-radius:14px;padding:9px 8px;text-align:center}
+  .hc .v{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .hc .l{font-size:10.5px;color:var(--t2)}
+  .d{font-size:10.5px;font-weight:800;margin-top:2px}
+  .up{color:#5BC074}.dn{color:#ff7a6b}.eq{color:var(--t3)}
+  .chipline{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;flex:0 0 auto}
+  .ach{display:flex;gap:7px;overflow:hidden;margin-bottom:10px;flex:0 0 auto}
+  .badge{min-width:112px;background:linear-gradient(160deg,rgba(255,150,69,.28),rgba(255,150,69,.08));border:1px solid rgba(255,150,69,.4);border-radius:14px;padding:8px 9px}
+  .badge.g{background:linear-gradient(160deg,rgba(91,192,116,.28),rgba(91,192,116,.08));border-color:rgba(91,192,116,.45)}
+  .badge.b{background:linear-gradient(160deg,rgba(90,169,255,.28),rgba(90,169,255,.08));border-color:rgba(90,169,255,.45)}
+  .badge .i{font-size:18px}.badge .t{font-size:11.5px;font-weight:800;margin-top:2px}.badge .s{font-size:10px;color:var(--t2)}
+  .spark{height:74px;position:relative;margin:6px 0 2px}
+  .spark svg{position:absolute;inset:0}
+  .meter{height:8px;border-radius:4px;background:var(--muted);overflow:hidden;margin-top:6px}
+  .meter i{display:block;height:100%;background:var(--ember);border-radius:4px}
+  .exc{background:var(--surface);border-radius:14px;padding:10px 12px;margin-bottom:8px;flex:0 0 auto}
+  .exc .h{display:flex;justify-content:space-between;align-items:baseline}
+  .exc .n{font-weight:800;font-size:13.5px}
+  .exc .r{font-size:11.5px;color:var(--t2)}
+  .setr{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid var(--hair)}
+  .grid{display:grid;grid-template-columns:42px repeat(3,1fr);gap:4px;font-size:11px;margin-top:6px}
+  .grid div{text-align:center;padding:5px 0;border-radius:6px}
+  .grid .hdr{color:var(--t3);font-weight:700}
+  .heat3{background:rgba(255,150,69,.75);color:#2a1405;font-weight:800}
+  .heat2{background:rgba(255,150,69,.5);color:#2a1405;font-weight:800}
+  .heat1{background:rgba(255,150,69,.28);color:#ffd2ad;font-weight:800}
+  .pyr{margin-top:6px}
+  .pyr .row{display:flex;align-items:center;gap:6px;font-size:11px;padding:0;border:0}
+  .pyr .bar{height:12px;border-radius:4px;background:var(--ember)}
+  .pyr .ghost{height:12px;border-radius:4px;border:1px dashed rgba(255,255,255,.35)}
+  .disc{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:8px;flex:0 0 auto}
+  .ring{width:76px;height:76px;border-radius:50%;background:conic-gradient(var(--ember) 0 82%,var(--muted) 82% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .ring div{width:60px;height:60px;border-radius:50%;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800}
+</style>
+<style>
+  .mini{height:118px;border-radius:12px;background:#26262B;position:relative;flex:0 0 auto;
+    background-image:radial-gradient(circle,#3a3a40 1.4px,transparent 2px);background-size:13px 13px}
+  .corner{position:absolute;width:13px;height:13px;border-radius:50%;background:#5AA9FF;box-shadow:0 0 12px 4px rgba(90,169,255,.75)}
+  .brow{display:flex;align-items:center;gap:9px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .brow:last-child{border-bottom:0}
+  .brow .nm{font-size:14px;font-weight:750}
+  .brow .sub{font-size:11px;color:var(--t2)}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:14px;flex:0 0 auto}
+  .bars i{display:block;width:3px;border-radius:1px;background:#5BC074}
+  .bars i.off{background:#3a3a42}
+  .flash{font-size:11.5px;font-weight:800;padding:5px 9px;border-radius:999px;background:rgba(90,169,255,.18);color:#9cc8ff;flex:0 0 auto}
+  .flash.on{background:#5AA9FF;color:#081525}
+  .namefield{background:var(--surface);border-radius:12px;padding:10px 12px;font-size:16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;flex:0 0 auto}
+  .namefield .cur{width:2px;height:18px;background:var(--ember);display:inline-block;margin-left:2px;vertical-align:middle}
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;flex:0 0 auto}
+  .chiprow span{font-size:12px;font-weight:700;padding:6px 10px;border-radius:999px;background:var(--muted);color:#e7e7ea}
+  .chiprow span.on{background:rgba(255,150,69,.22);color:var(--ember)}
+  .connpill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;padding:6px 11px;border-radius:999px;background:rgba(0,0,0,.4);color:#8CE09F;border:1px solid rgba(255,255,255,.14)}
+  .tag{font-size:10px;font-weight:800;padding:2px 6px;border-radius:6px;background:rgba(91,192,116,.18);color:#8CE09F}
+  .tag.new{background:rgba(255,150,69,.18);color:var(--ember)}
+  .arrive{background:linear-gradient(135deg,rgba(90,169,255,.22),rgba(90,169,255,.07));border:1px solid rgba(90,169,255,.4);border-radius:16px;padding:11px 12px;flex:0 0 auto;margin-bottom:9px}
+  .arrive .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:#9cc8ff;text-transform:uppercase}
+  .arrive .n{font-size:15px;font-weight:800;margin:2px 0 8px}
+  .pickbtn{display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.25);border-radius:11px;padding:9px 11px;margin-bottom:6px;font-size:13px;font-weight:700}
+  .pickbtn span{font-size:11px;color:var(--t2);font-weight:500}
+</style>
+<header class="page">
+  <h1 class="title">Kilter — several boards in one place</h1>
+  <p class="sub">At a gym with more than one Kilter board, today's app gets confusing. New boards are all called <b>"Kilter board"</b> (or "Board" plus a serial number). You can only rename one later, in Settings. <b>Connect</b> silently picks a board you've used before, otherwise the strongest signal, so you can end up on the neighbour's. And the "you've arrived" card guesses the board you used last. This also fixes a first-open gap: the download only keeps climbs that fit <b>one</b> board size. It adds four things: <b>name a board the first time you connect</b>, <b>choose from a list when more than one board is in range</b>, <b>Flash</b> a board's corners to see which physical wall it is, and <b>ask which board</b> on arrival.</p>
+  <div class="scopebox"><b>Builds on PR #398</b> (the Kilter connect fix): it already scans and ranks boards by signal and by which ones you've used before, so this only adds the choice and the names. <b>Unchanged:</b> with only one board in range, Connect still connects straight away.</div>
+</header>
+<div class="wrap">
+
+<h2 class="part">0 · First open: download for every board you climb on</h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">A</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Download climbs</span><span></span></div>
+        <div class="glbl">Your boards</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:rgba(255,150,69,.2)">1</span><span><b>Gym</b><br><span style="font-size:11px;color:var(--t2)">Kilter Original · 12 x 12 with kickboard</span></span></span><span class="v">›</span></div>
+          <div class="row"><span class="l"><span class="ic" style="background:rgba(91,192,116,.2)">2</span><span><b>Home</b><br><span style="font-size:11px;color:var(--t2)">Kilter Original · 8 x 12</span></span></span><span class="v">›</span></div>
+          <div class="row"><span style="color:var(--ember);font-weight:700">＋ Add another board</span><span></span></div>
+        </div>
+        <div class="foot">Pick every board you climb on. Each board's size is printed on it (and shown in the official Kilter app).</div>
+        <div class="glbl">How many climbs</div>
+        <div class="group"><div class="row"><span>Climbs to keep</span><span class="v e">Everything that fits ›</span></div></div>
+        <div class="card" style="margin-top:9px"><div class="name" style="font-size:13.5px">220,412 climbs fit at least one of your boards</div>
+          <div class="s">Home (8 x 12) alone: 65,339. The gym board adds 155,073 more.</div></div>
+        <div class="btn">Download</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The download takes more than one board.</b> <span class="new">CHANGED</span> Today you pick <b>one</b> board, and only climbs that fit it are kept. Pick the 8 x 12 at home and the gym's 12 x 12 climbs are <b>missing</b>. Now you list every board you climb on, give each a name, and get every climb that fits <b>any</b> of them. Real numbers from the catalog: 65,339 for the 8 x 12 alone vs 220,412 for both. Browse still filters to whichever board you're on, so the list doesn't get cluttered.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">B</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Later</span><span class="title">New board</span><span class="lnk b">Save</span></div>
+        <div class="mini"><div class="corner" style="left:8px;top:8px"></div><div class="corner" style="right:8px;top:8px"></div><div class="corner" style="left:8px;bottom:8px"></div><div class="corner" style="right:8px;bottom:8px"></div></div>
+        <div style="font-size:11.5px;color:var(--t2);margin:6px 2px 8px">Its four corners are lit blue right now.</div>
+        <div class="glbl">Which of your boards is this?</div>
+        <div class="group">
+          <div class="row"><span><b>Gym</b> <span style="font-size:11px;color:var(--t2)">· 12 x 12 with kickboard</span></span><span class="v e" style="font-size:16px">◉</span></div>
+          <div class="row"><span><b>Home</b> <span style="font-size:11px;color:var(--t2)">· 8 x 12</span></span><span class="v" style="font-size:16px">○</span></div>
+          <div class="row"><span>A different board…</span><span class="v" style="font-size:16px">○</span></div>
+        </div>
+        <div class="foot">Picking one sets this board's name, layout and size in one tap. "A different board" opens the name + layout + size form (frame 1).</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>First connect: "which of your boards is this?"</b> <span class="new">NEW</span> The boards you listed at download become one-tap answers the first time you connect to each real board. The board lights its corners, you tap "Gym", and Snappet saves this physical board as Gym with the right layout and size. No typing, no guessing sizes. Boards you didn't list go through frame 1.</p>
+  </div>
+
+</div>
+
+<h2 class="part">1 · Name it the first time <span class="tag2" style="font-size:13px;font-weight:800;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)">first connect</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Later</span><span class="title">New board</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Name this board</div>
+        <div class="namefield"><span>Gym · left<span class="cur"></span></span><span style="font-size:12px;color:var(--t3)">✕</span></div>
+        <div class="chiprow"><span>Home</span><span class="on">Gym · left</span><span>Gym · right</span><span>Spray wall</span><span>12 x 12 (#4821)</span></div>
+        <div class="glbl">Check it's the right board</div>
+        <div class="mini"><div class="corner" style="left:8px;top:8px"></div><div class="corner" style="right:8px;top:8px"></div><div class="corner" style="left:8px;bottom:8px"></div><div class="corner" style="right:8px;bottom:8px"></div></div>
+        <div style="font-size:11.5px;color:var(--t2);margin:6px 2px 8px">Its four corners are lit blue right now. If that's the wall in front of you, you're on the right board.</div>
+        <div class="group">
+          <div class="row"><span>Layout</span><span class="v e">Kilter Original ›</span></div>
+          <div class="row"><span>Size</span><span class="v e">12 x 12 with kickboard ›</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The first connect to a board you haven't used before.</b> <span class="new">NEW</span> The existing "Set up this board" sheet gets a <b>name field</b>. It's pre-filled with the size and the board's serial number, e.g. "12 x 12 (#4821)", and has quick picks like Home, Gym · left and Gym · right. The board lights its <b>four corners</b> while the sheet is open, so you can see it's the right wall before you save. "Later" keeps the default name.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Back</span><span class="title">Clone Wars</span><span class="circ">★</span></div>
+        <div class="mini" style="height:240px;position:relative">
+          <span class="connpill" style="position:absolute;right:8px;top:8px">● Gym · left</span>
+        </div>
+        <div style="height:9px"></div>
+        <div class="group">
+          <div class="row"><span>Board</span><span class="v e">Gym · left ⌄</span></div>
+          <div class="row"><span>Angle</span><span class="v e">40° ›</span></div>
+        </div>
+        <div class="foot">Tap the board name to switch to another board nearby, or to rename this one.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The name, everywhere.</b> <span class="new">NEW</span> When connected, the chip shows the <b>board's name</b> ("● Gym · left") instead of "On the board". Tapping it lets you switch to another board in range, or rename this one. Settings still lists every board with Rename and Forget.</p>
+  </div>
+
+</div>
+
+<h2 class="part">2 · More than one board in range</h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind"><div class="mini" style="height:260px"></div></div>
+      <div class="dim"></div>
+      <div class="sheet half" style="height:66%"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">3 boards nearby</span><span></span></div>
+        <div class="group">
+          <div class="brow"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i style="height:11px"></i><i style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">Gym · left <span class="tag">used 14×</span></div><div class="sub">12 x 12 · 40° · last Tue</div></div><span class="flash">Flash</span></div>
+          <div class="brow"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i style="height:11px"></i><i class="off" style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">Gym · right <span class="tag">used 3×</span></div><div class="sub">7 x 10 · 25°</div></div><span class="flash">Flash</span></div>
+          <div class="brow"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i class="off" style="height:11px"></i><i class="off" style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">New board <span class="tag new">#7710</span></div><div class="sub">Never connected</div></div><span class="flash">Flash</span></div>
+        </div>
+        <div class="foot">Tap a board to connect. Strongest signal first; boards you've used are marked.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Connect with several boards in range.</b> <span class="new">NEW</span> Instead of picking silently, a short list shows each board with its <b>name</b>, <b>signal strength</b>, and whether you've used it (and how it was set up). Tap a board to connect. With only one board in range nothing changes: it connects straight away.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind"><div class="mini" style="height:260px"></div></div>
+      <div class="dim"></div>
+      <div class="sheet half" style="height:66%"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">3 boards nearby</span><span></span></div>
+        <div class="group">
+          <div class="brow"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i style="height:11px"></i><i style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">Gym · left</div><div class="sub">12 x 12 · 40°</div></div><span class="flash">Flash</span></div>
+          <div class="brow" style="background:rgba(90,169,255,.08)"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i style="height:11px"></i><i class="off" style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">Gym · right</div><div class="sub" style="color:#9cc8ff">Corners lit for 5 s. Look for the blue lights.</div></div><span class="flash on">Flashing…</span></div>
+          <div class="brow"><div class="bars"><i style="height:5px"></i><i style="height:8px"></i><i class="off" style="height:11px"></i><i class="off" style="height:14px"></i></div>
+            <div style="flex:1"><div class="nm">New board</div><div class="sub">#7710</div></div><span class="flash">Flash</span></div>
+        </div>
+        <div class="mini" style="margin-top:9px;height:96px"><div class="corner" style="left:8px;top:8px"></div><div class="corner" style="right:8px;top:8px"></div><div class="corner" style="left:8px;bottom:8px"></div><div class="corner" style="right:8px;bottom:8px"></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Flash: which wall is which?</b> <span class="new">NEW</span> Flash briefly connects to that board, lights its <b>four corners in blue for 5 seconds</b>, then lets go. You can look up and see which physical board it is before picking it. Two limits: a board takes <b>one phone at a time</b>, and a board someone else is connected to usually stops advertising, so it <b>won't appear in this list</b> at all; and the flash <b>replaces whatever is lit</b> on that board for those 5 seconds.</p>
+  </div>
+
+</div>
+
+<h2 class="part">3 · Arriving at a place with several boards</h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="bigtitle">Kilter</div>
+        <div class="arrive"><div class="k">At Movement Gym</div><div class="n">You've used 2 boards here. Which one?</div>
+          <div class="pickbtn">Gym · left <span>12 x 12 · 40° · last Tue</span></div>
+          <div class="pickbtn">Gym · right <span>7 x 10 · 25°</span></div>
+          <div style="font-size:11.5px;color:#9cc8ff;font-weight:700;margin-top:2px">Not now</div></div>
+        <div class="card"><div class="name">Climb of the day</div><div class="s">Clone Wars · 7a/V6</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The arrival card asks instead of guessing.</b> <span class="new">CHANGED</span> If you've used more than one board at this place, the card lists them and you pick. That sets up the layout, size and usual angle for that board without connecting. With one board there, it stays a single "Set it up".</p>
+  </div>
+
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Kilter</span><span class="title">Settings</span><span></span></div>
+        <div class="glbl">Remembered boards</div>
+        <div class="group">
+          <div class="row" style="flex-direction:column;align-items:flex-start;gap:1px"><b style="font-size:14px">Gym · left</b><span style="font-size:11.5px;color:var(--t2)">Kilter Original · 12 x 12 · 40° · Movement Gym · last Tue</span></div>
+          <div class="row" style="flex-direction:column;align-items:flex-start;gap:1px"><b style="font-size:14px">Gym · right</b><span style="font-size:11.5px;color:var(--t2)">Kilter Original · 7 x 10 · 25° · Movement Gym</span></div>
+          <div class="row" style="flex-direction:column;align-items:flex-start;gap:1px"><b style="font-size:14px">Home</b><span style="font-size:11.5px;color:var(--t2)">Kilter Original · 8 x 12 · 35° · home</span></div>
+        </div>
+        <div class="foot">Swipe to rename or forget. A forgotten board is learned again the next time you connect.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Settings, unchanged except for names.</b> The list now shows the names you gave, plus <b>where</b> each board is ("Movement Gym", "home"), so boards with the same size are easy to tell apart. Rename and Forget work as before.</p>
+  </div>
+
+</div>
+
+<h2 class="part">Your calls</h2>
+<div class="q"><b>Q1 · Default name</b> when you skip naming: <b>A</b> size + serial number, e.g. "12 x 12 (#4821)" · <b>B</b> "Kilter board 1", "Kilter board 2" (as today, numbered). <span class="rec">My pick: A.</span> The size tells boards of different sizes apart, and the serial tells apart two of the same size.</div>
+<div class="q"><b>Q2 · When to show the chooser:</b> <b>A</b> whenever 2+ boards are in range (as drawn) · <b>B</b> only when none of them is a board you've used before. <span class="rec">My pick: A.</span> In a gym, the board you used last time isn't necessarily the one you're standing at.</div>
+<div class="q"><b>Q4 · First open (frames A–B):</b> list every board you climb on at download time (get climbs that fit any of them) and pick from that list on first connect. <span class="rec">My pick: yes.</span> It fixes the missing-climbs gap, and naming becomes one tap.</div>
+<div class="q"><b>Q3 · Flash pattern:</b> <b>A</b> four corners, 5 seconds (as drawn) · <b>B</b> the whole board pulsing. <span class="rec">My pick: A.</span> Easy to spot at a glance, and over quickly. Either way it replaces what's lit for those seconds.</div>
+</div>
+</body></html>

@@ -151,6 +151,7 @@ struct CreateClimbView: View {
                 reloadBoard()
             }
             .onChange(of: productSizeId) { reloadBoard(); liveLight(manualLitHolds) }
+            .kilterBoardChooser(optionalBoard: board, catalog: catalog, layoutId: layoutId, sizeId: productSizeId)
             // "Connect board" from the generate panel means "light this one": do it once connected.
             .onChange(of: board?.isConnected == true) { _, connected in
                 guard connected, lightAfterConnect else { return }

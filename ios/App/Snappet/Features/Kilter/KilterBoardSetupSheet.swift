@@ -17,23 +17,40 @@ struct KilterBoardSetupSheet: View {
     let climb: KilterClimb?
     /// The board's friendly label (from `KilterBoardMemory` at connect), shown in the confirmation.
     let boardLabel: String
-    /// Invoked with the confirmed `(layoutId, productSizeId)` on "This looks right". The caller persists it
-    /// and updates the active layout/size.
-    let onConfirm: (_ layoutId: Int, _ sizeId: Int) -> Void
+    /// Boards you listed when downloading that aren't matched to a physical board yet (prompt 205) — offered
+    /// as one-tap answers to "which of your boards is this?".
+    let myBoards: [KilterMyBoard]
+    /// Invoked on "This looks right" with the confirmed layout + size, the board's name, and the "my board" it
+    /// was matched to (if any). The caller persists them and updates the active layout/size.
+    let onConfirm: (_ layoutId: Int, _ sizeId: Int, _ name: String, _ myBoardID: UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var layoutId: Int
     @State private var sizeId: Int
+    @State private var name: String
+    @State private var matchedMyBoard: UUID?
+    private let defaultName: String
 
     init(board: KilterBoardController, catalog: KilterCatalog, climb: KilterClimb?, boardLabel: String,
-         initialLayoutId: Int, initialSizeId: Int, onConfirm: @escaping (Int, Int) -> Void) {
+         initialLayoutId: Int, initialSizeId: Int, myBoards: [KilterMyBoard] = [],
+         onConfirm: @escaping (Int, Int, String, UUID?) -> Void) {
         self.board = board
         self.catalog = catalog
         self.climb = climb
         self.boardLabel = boardLabel
+        self.myBoards = myBoards
         self.onConfirm = onConfirm
+        self.defaultName = boardLabel
         _layoutId = State(initialValue: initialLayoutId)
         _sizeId = State(initialValue: catalog.effectiveSizeId(forLayout: initialLayoutId, requested: initialSizeId))
+        _name = State(initialValue: boardLabel)
+    }
+
+    /// Quick names for the name field (prompt 205 frame 1).
+    private var nameSuggestions: [String] {
+        var out = ["Home", "Gym · left", "Gym · right", "Spray wall"]
+        if !out.contains(defaultName) { out.append(defaultName) }
+        return out
     }
 
     private var layouts: [KilterLayout] { catalog.layouts() }
@@ -61,6 +78,8 @@ struct KilterBoardSetupSheet: View {
             ScrollView {
                 VStack(spacing: 16) {
                     header
+                    if !myBoards.isEmpty { myBoardsSection }
+                    nameSection
                     pickers
                     preview
                     hint
@@ -92,12 +111,84 @@ struct KilterBoardSetupSheet: View {
         VStack(spacing: 6) {
             Image(systemName: "bolt.badge.checkmark")
                 .font(.largeTitle).foregroundStyle(SnappetColor.moduleAccent("kilter"))
-            Text("Which board is this?").font(.title3.weight(.bold))
+            Text("Set up this board").font(.title3.weight(.bold))
             Text("Pick a layout and size, then look at the wall. When the lit holds match your board, tap confirm.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// "Which of your boards is this?" — one tap sets the name, layout and size (prompt 205 frame B).
+    private var myBoardsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("WHICH OF YOUR BOARDS IS THIS?").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+            ForEach(myBoards) { mine in
+                Button {
+                    matchedMyBoard = mine.id
+                    name = mine.name
+                    layoutId = mine.layoutId
+                    sizeId = catalog.effectiveSizeId(forLayout: mine.layoutId, requested: mine.productSizeId)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(mine.name).font(.subheadline.weight(.semibold))
+                            Text(KilterCatalogOptions.sizeName(layoutId: mine.layoutId, sizeId: mine.productSizeId) ?? "")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: matchedMyBoard == mine.id ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kilter.setup.myBoard")
+                Divider()
+            }
+            Button {
+                matchedMyBoard = nil
+                name = defaultName
+            } label: {
+                HStack {
+                    Text("A different board…").font(.subheadline)
+                    Spacer()
+                    Image(systemName: matchedMyBoard == nil ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("kilter.setup.differentBoard")
+        }
+        .padding()
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+    }
+
+    /// Name this board (prompt 205 frame 1): pre-filled with its size + serial; quick picks for the usual names.
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NAME THIS BOARD").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            TextField("Board name", text: $name)
+                .font(.body.weight(.semibold))
+                .textInputAutocapitalization(.words)
+                .padding(10)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityIdentifier("kilter.setup.name")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(nameSuggestions, id: \.self) { suggestion in
+                        Button(suggestion) { name = suggestion }
+                            .font(.caption.weight(.semibold))
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .tint(name == suggestion ? SnappetColor.moduleAccent("kilter") : .secondary)
+                    }
+                }
+            }
+        }
     }
 
     private var pickers: some View {
@@ -158,7 +249,8 @@ struct KilterBoardSetupSheet: View {
             .accessibilityIdentifier("kilter.setup.light")
 
             Button {
-                onConfirm(layoutId, sizeId)
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                onConfirm(layoutId, sizeId, trimmed.isEmpty ? defaultName : trimmed, matchedMyBoard)
                 Haptics.success()
                 dismiss()
             } label: {

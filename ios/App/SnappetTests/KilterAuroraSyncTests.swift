@@ -107,4 +107,26 @@ final class KilterAuroraSyncTests: XCTestCase {
             }
         }
     }
+
+    /// Prompt 205 (Q4): several boards at download keep every climb that fits ANY of them — an OR of
+    /// per-layout size boxes, not one box.
+    func testBoardFitsKeepClimbsThatFitAnyListedBoard() throws {
+        let tall = KilterSizeBox(left: 0, right: 24, bottom: 0, top: 24)
+        let short = KilterSizeBox(left: 0, right: 24, bottom: 4, top: 12)
+
+        var either = CatalogFilter()
+        either.layoutIds = [1]
+        either.boardFits = [KilterBoardFit(layoutId: 1, box: short), KilterBoardFit(layoutId: 1, box: tall)]
+        let out = try filteredFromFixture(either)
+        defer { try? FileManager.default.removeItem(at: out) }
+        XCTAssertEqual(try KilterCatalogValidator.validate(out).climbCount, 4, "fits the tall board, so kept")
+
+        var wrongLayout = CatalogFilter()
+        wrongLayout.layoutIds = [1, 2]
+        wrongLayout.boardFits = [KilterBoardFit(layoutId: 1, box: short), KilterBoardFit(layoutId: 2, box: tall)]
+        XCTAssertThrowsError(try filteredFromFixture(wrongLayout),
+                             "a box only applies to its own layout") { error in
+            guard case HostedCatalogError.noCatalogData = error else { return XCTFail("got \(error)") }
+        }
+    }
 }

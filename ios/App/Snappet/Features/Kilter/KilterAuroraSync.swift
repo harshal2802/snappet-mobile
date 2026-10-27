@@ -46,6 +46,9 @@ struct CatalogFilter: Sendable, Equatable {
     /// its resolved `product_sizes.edge_*` box (mirrors the Board Explorer's `withResolvedSize`).
     var sizeId: Int?
     var sizeBox: KilterSizeBox?
+    /// Several boards (prompt 205): keep climbs that fit ANY of them — each a `(layout, size box)`. When set,
+    /// it replaces `layoutIds` + `sizeBox` (a climb is kept if it's on one board's layout and fits its box).
+    var boardFits: [KilterBoardFit] = []
     var angle: Int?                    // specific board angle, nil = any
     var gradeMin: Int?
     var gradeMax: Int?
@@ -298,11 +301,16 @@ final class HostedCatalogClient {
         var params: [Any] = []
         if f.listedOnly { conds.append("c.is_listed = 1") }
         if f.singleFrameOnly { conds.append("c.frames_count = 1") }
-        if !f.layoutIds.isEmpty {
+        if !f.boardFits.isEmpty {
+            // Several boards: (on board 1's layout AND fits its box) OR (board 2 …) — prompt 205.
+            conds.append("(" + f.boardFits.map { _ in "(c.layout_id = ? AND \(KilterSizeBox.fitSQL))" }
+                .joined(separator: " OR ") + ")")
+            for fit in f.boardFits { params.append(fit.layoutId); params.append(contentsOf: fit.box.params) }
+        } else if !f.layoutIds.isEmpty {
             conds.append("c.layout_id IN (\(f.layoutIds.map { String($0) }.joined(separator: ",")))")
         }
         // Board size: keep only climbs whose bounding box fits strictly inside the size's box. The box is bound in [left, right, bottom, top] order.
-        if let box = f.sizeBox {
+        if f.boardFits.isEmpty, let box = f.sizeBox {
             conds.append(KilterSizeBox.fitSQL)   // strict — see KilterSizeBox
             params.append(contentsOf: box.params)
         }

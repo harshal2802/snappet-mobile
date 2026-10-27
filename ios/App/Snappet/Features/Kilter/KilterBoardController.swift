@@ -111,6 +111,27 @@ final class KilterBoardController: NSObject {
     /// Set on a reconnect so the board isn't "recognized" (and its confirm ribbon shown) a second time.
     private var hasRecognizedThisLink = false
 
+    // MARK: Several boards in range (prompt 205)
+
+    /// A board heard in this scan, for the "N boards nearby" chooser.
+    struct NearbyBoard: Identifiable, Equatable, Sendable {
+        let id: UUID
+        var advertisedName: String?
+        var serial: String?
+        var rssi: Int
+        var isKnown: Bool
+    }
+    /// Two or more boards are in range: the UI asks which one (the scan keeps running to refresh signal).
+    private(set) var isChoosing = false
+    /// The boards on offer while choosing, strongest first.
+    private(set) var nearbyBoards: [NearbyBoard] = []
+    /// The board currently lit by "Flash", if any.
+    private(set) var flashingID: UUID?
+    private var flashPeripheral: CBPeripheral?
+    private var flashTask: Task<Void, Never>?
+    /// What "Flash" lights (corners + center for the current layout/size) — set by the view.
+    var flashHolds: [KilterHold] = []
+
     /// Whether an advertising peripheral looks like an Aurora-family board (Kilter/Tension/etc).
     /// Pure so it can be unit-tested off-device. Aurora boards generally do **not** advertise their
     /// primary service UUID, only a local name — so name matching is the primary signal and scanning
@@ -175,6 +196,8 @@ final class KilterBoardController: NSObject {
     /// connect, and watch connect + discovery.
     private func choose(_ chosen: CBPeripheral) {
         selection?.cancel(); selection = nil
+        isChoosing = false
+        nearbyBoards = []
         central?.stopScan()
         if let racing = racingRememberedID, racing != chosen.identifier, let p = peripheral {
             central?.cancelPeripheralConnection(p)
@@ -198,14 +221,16 @@ final class KilterBoardController: NSObject {
     /// still pending, a different board must wait out its grace period first.
     private func heard(_ p: CBPeripheral, rssi: Int, name: String?) {
         guard state == .scanning else { return }
-        if p.identifier == racingRememberedID { return }   // its pending connect will complete on its own
+        let isNew = candidates[p.identifier] == nil
         candidates[p.identifier] = (p, rssi, name)
-        let candidate = KilterConnectPolicy.Candidate(id: p.identifier, rssi: rssi, isKnown: isKnown(p.identifier))
-        if KilterConnectPolicy.connectsImmediately(candidate) && racingRememberedID == nil {
-            lastAdvertisedName = name
-            choose(p)
+        if isChoosing {
+            // Keep the list fresh (new boards, signal) without re-rendering on every advert.
+            if isNew || abs((nearbyBoards.first { $0.id == p.identifier }?.rssi ?? rssi) - rssi) >= 4 { refreshNearby() }
             return
         }
+        if p.identifier == racingRememberedID { return }   // its pending connect may complete on its own
+        // Prompt 205 (Q2): even a known board waits out the short window — with 2+ boards in range the
+        // climber picks; with one it connects as before.
         guard selection == nil else { return }
         let grace: Duration = racingRememberedID == nil ? .zero
             : max(.zero, KilterConnectPolicy.rememberedGrace - .seconds(Date.now.timeIntervalSince(scanStartedAt ?? .now)))
@@ -218,13 +243,86 @@ final class KilterBoardController: NSObject {
 
     private func selectBest() {
         selection = nil
-        guard state == .scanning else { return }
-        let list = candidates.values.map {
-            KilterConnectPolicy.Candidate(id: $0.peripheral.identifier, rssi: $0.rssi, isKnown: isKnown($0.peripheral.identifier))
+        guard state == .scanning, !isChoosing else { return }
+        let list = candidateList
+        if KilterConnectPolicy.showsChooser(list) {
+            beginChoosing()
+            return
         }
+        // One board: if it's the remembered one still connecting, let that finish; else connect to it.
         guard let best = KilterConnectPolicy.pick(list), let entry = candidates[best.id] else { return }
+        if best.id == racingRememberedID { return }
         lastAdvertisedName = entry.name
         choose(entry.peripheral)
+    }
+
+    private var candidateList: [KilterConnectPolicy.Candidate] {
+        candidates.values.map {
+            KilterConnectPolicy.Candidate(id: $0.peripheral.identifier, rssi: $0.rssi, isKnown: isKnown($0.peripheral.identifier))
+        }
+    }
+
+    /// Stop guessing: show the nearby boards and let the climber pick (the scan keeps refreshing the list).
+    private func beginChoosing() {
+        timeout?.cancel(); timeout = nil          // no scan watchdog while the climber decides
+        if let racing = racingRememberedID, let p = peripheral, p.identifier == racing {
+            central?.cancelPeripheralConnection(p)
+            peripheral = nil
+        }
+        racingRememberedID = nil
+        isChoosing = true
+        refreshNearby()
+    }
+
+    private func refreshNearby() {
+        nearbyBoards = KilterConnectPolicy.nearby(candidateList).compactMap { c in
+            guard let entry = candidates[c.id] else { return nil }
+            return NearbyBoard(id: c.id, advertisedName: entry.name,
+                               serial: KilterBoardMemory.serial(fromLocalName: entry.name),
+                               rssi: c.rssi, isKnown: c.isKnown)
+        }
+    }
+
+    /// The climber picked a board from the chooser.
+    func pick(_ id: UUID) {
+        guard isChoosing, let entry = candidates[id] else { return }
+        endFlash()
+        lastAdvertisedName = entry.name
+        choose(entry.peripheral)
+    }
+
+    /// Briefly light a board's corners so the climber can see which wall it is, then let it go (prompt 205).
+    /// Replaces whatever that board shows for `KilterConnectPolicy.flashDuration`.
+    func flash(_ id: UUID) {
+        guard isChoosing, flashingID == nil, let entry = candidates[id] else { return }
+        flashingID = id
+        flashPeripheral = entry.peripheral
+        entry.peripheral.delegate = self
+        central?.connect(entry.peripheral)
+        flashTask?.cancel()
+        flashTask = Task { [weak self] in        // give up if the board never answers
+            try? await Task.sleep(for: KilterConnectPolicy.connectTimeout)
+            guard !Task.isCancelled else { return }
+            self?.endFlash()
+        }
+    }
+
+    private func endFlash() {
+        flashTask?.cancel(); flashTask = nil
+        if let p = flashPeripheral { central?.cancelPeripheralConnection(p) }
+        flashPeripheral = nil
+        flashingID = nil
+    }
+
+    private func flashLinkReady(_ p: CBPeripheral, _ characteristic: CBCharacteristic) {
+        send(flashHolds, to: p, characteristic: characteristic)
+        flashTask?.cancel()
+        flashTask = Task { [weak self] in
+            try? await Task.sleep(for: KilterConnectPolicy.flashDuration)
+            guard !Task.isCancelled, let self else { return }
+            self.send([], to: p, characteristic: characteristic)   // lights off before letting go
+            self.endFlash()
+        }
     }
 
     private func isKnown(_ id: UUID) -> Bool { knownBoardIDs.contains(id) || id == lastBoardIdentifier }
@@ -267,6 +365,9 @@ final class KilterBoardController: NSObject {
 
     /// Stop everything in flight for this attempt (scan, selection, watchdog, the link) — not the intent.
     private func tearDownLink() {
+        endFlash()
+        isChoosing = false
+        nearbyBoards = []
         reconnectGiveUp?.cancel(); reconnectGiveUp = nil
         timeout?.cancel(); timeout = nil
         selection?.cancel(); selection = nil
@@ -398,6 +499,16 @@ extension KilterBoardController: CBCentralManagerDelegate {
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
+            if peripheral.identifier == flashingID, peripheral.identifier == flashPeripheral?.identifier {
+                peripheral.discoverServices([Self.gattServiceUUID])
+                return
+            }
+            // Prompt 205: other boards are in range too → ask, don't take the remembered one silently.
+            if peripheral.identifier == racingRememberedID, state == .scanning,
+               candidates.keys.contains(where: { $0 != peripheral.identifier }) {
+                selectBest()
+                if isChoosing { return }
+            }
             // The remembered board's pending connect won the race against the scan → it's the one.
             if peripheral.identifier == racingRememberedID, state == .scanning {
                 selection?.cancel(); selection = nil
@@ -418,6 +529,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
                                     error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
+            if peripheral.identifier == flashingID { endFlash(); return }
             // The remembered board's racing connect failing is fine — the scan carries on.
             if peripheral.identifier == racingRememberedID, state == .scanning {
                 racingRememberedID = nil
@@ -435,6 +547,11 @@ extension KilterBoardController: CBCentralManagerDelegate {
                                     timestamp: CFAbsoluteTime, isReconnecting: Bool, error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
+            if peripheral.identifier == flashingID, peripheral.identifier != self.peripheral?.identifier {
+                flashTask?.cancel(); flashTask = nil
+                flashPeripheral = nil; flashingID = nil
+                return
+            }
             // The remembered board's racing connect dropping is fine — the scan carries on.
             if peripheral.identifier == racingRememberedID, state == .scanning {
                 racingRememberedID = nil
@@ -485,6 +602,12 @@ extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
+            if peripheral.identifier == flashingID, peripheral.identifier != self.peripheral?.identifier {
+                let services = (peripheral.services ?? []).filter { $0.uuid == Self.gattServiceUUID }
+                guard error == nil, !services.isEmpty else { endFlash(); return }
+                for service in services { peripheral.discoverCharacteristics([Self.writeUUID], for: service) }
+                return
+            }
             let services = (peripheral.services ?? []).filter { $0.uuid == Self.gattServiceUUID }
             // No lighting service (or an error) → fail fast (and retry once) instead of waiting out the
             // watchdog in silence.
@@ -500,6 +623,12 @@ extension KilterBoardController: CBPeripheralDelegate {
         nonisolated(unsafe) let peripheral = peripheral
         nonisolated(unsafe) let service = service
         MainActor.assumeIsolated {
+            if peripheral.identifier == flashingID, peripheral.identifier != self.peripheral?.identifier {
+                guard let characteristic = (service.characteristics ?? []).first(where: { $0.uuid == Self.writeUUID })
+                else { endFlash(); return }
+                flashLinkReady(peripheral, characteristic)
+                return
+            }
             guard let characteristic = (service.characteristics ?? []).first(where: { $0.uuid == Self.writeUUID }) else {
                 attemptFailed(.discovery)
                 return

@@ -74,6 +74,8 @@ struct KilterRootView: View {
     /// A remembered board suggested on arrival at a known coarse place, BEFORE BLE connects. A suggestion
     /// only — "Set it up" applies it; "Not now" dismisses it for this visit.
     @State private var arrivalSuggestion: (id: UUID, board: RememberedBoard)?
+    /// Every remembered board at this place (prompt 205): with more than one, the arrival card asks which.
+    @State private var arrivalChoices: [(id: UUID, board: RememberedBoard)] = []
     /// Dismiss the arrival suggestion for the rest of this visit once acted on / declined.
     @State private var arrivalDismissed = false
     /// The coarse place the arrival suggestion was last **resolved** at (set up / dismissed / connected),
@@ -375,6 +377,8 @@ struct KilterRootView: View {
             KilterScannerView { link in open(link: link) }
         }
         .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
+        // Two or more boards in range → ask which (prompt 205).
+        .kilterBoardChooser(board: board, catalog: catalog, layoutId: layoutId, sizeId: productSizeId)
         // Graceful landing for a shared climb this device can't resolve (#75): explain instead of
         // a dead detail screen. Reads right over the catalog gate too (install first, then rescan).
         .alert("Climb not in your catalog",
@@ -608,7 +612,10 @@ struct KilterRootView: View {
             board: board, catalog: catalog, climb: nil,
             boardLabel: connectedBoardLabel ?? "this board",
             initialLayoutId: layoutId, initialSizeId: productSizeId,
-            onConfirm: { newLayout, newSize in confirmBoardSetup(layoutId: newLayout, sizeId: newSize) })
+            myBoards: KilterMyBoards.unlinked(KilterMyBoards.load()),
+            onConfirm: { newLayout, newSize, name, mine in
+                confirmBoardSetup(layoutId: newLayout, sizeId: newSize, name: name, myBoardID: mine)
+            })
     }
 
     /// Persist a confirmed layout/size for the connected board and **apply it as the active board+layout**:
@@ -616,10 +623,14 @@ struct KilterRootView: View {
     /// layout) and remaps the LEDs (`productSizeId`). Mirroring the size into the per-layout memory BEFORE
     /// the `layoutId` change lets `syncBoardSize` keep the just-confirmed size instead of restoring an older
     /// one. Marks the board verified so no future connect / light re-prompts.
-    private func confirmBoardSetup(layoutId newLayout: Int, sizeId newSize: Int) {
+    private func confirmBoardSetup(layoutId newLayout: Int, sizeId newSize: Int, name: String, myBoardID: UUID?) {
         if let id = setupBoardId ?? board.connectedIdentifier {
             boardMemory.confirmSetup(identifier: id, layoutId: newLayout, productSizeId: newSize)
-            connectedBoardLabel = boardMemory.recall(identifier: id)?.label ?? connectedBoardLabel
+            boardMemory.rename(identifier: id, to: name)      // prompt 205: named on first connect
+            if let mine = myBoardID {
+                KilterMyBoards.save(KilterMyBoards.link(mine, to: id, in: KilterMyBoards.load()))
+            }
+            connectedBoardLabel = boardMemory.recall(identifier: id)?.label ?? name
         }
         sizeMemory.remember(sizeId: newSize, forLayout: newLayout)
         layoutId = newLayout
@@ -630,11 +641,9 @@ struct KilterRootView: View {
     /// at the call site (the view has the catalog) so two boards at two gyms aren't both the generic
     /// "Kilter board" — e.g. "Original 8×12" or "Board A1B2C3" when a serial is known.
     private func defaultBoardLabel(serial: String?) -> String {
-        if let serial, !serial.isEmpty { return "Board \(serial)" }
-        let layoutName = layouts.first { $0.id == layoutId }?.name
+        // Prompt 205 (Q1): size + serial, e.g. "12 x 12 (#4821)" — tells same-size boards apart.
         let sizeName = catalog.sizes(forLayout: layoutId).first { $0.id == productSizeId }?.name
-        let parts = [layoutName, sizeName].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "Kilter board" : parts.joined(separator: " ")
+        return KilterBoardMemory.defaultLabel(sizeName: sizeName, serial: serial)
     }
 
     /// Restore a remembered board's selection through the same `effectiveSizeId` guard the render + LED
@@ -676,13 +685,17 @@ struct KilterRootView: View {
     /// returning suggests again). Never while a confirm ribbon (a real connect) is already up.
     private func updateArrivalSuggestion(_ place: CoarsePlace?) {
         guard suggestOnArrival, pendingConfirm == nil, let place else { return }
-        let match = KilterPlaceMatcher.suggestion(for: place, in: boardMemory.rememberedSorted)
+        let matches = KilterPlaceMatcher.suggestions(for: place, in: boardMemory.rememberedSorted)
+        let match = matches.first
         let out = KilterArrivalGate.evaluate(place: place, resolved: arrivalResolvedPlace,
                                              dismissedThisVisit: arrivalDismissed, hasMatch: match != nil)
         setArrivalResolved(out.resolvedPlace)
         arrivalDismissed = out.dismissedThisVisit
         if out.showSuggestion, let match {
-            withAnimation(.snappy) { arrivalSuggestion = (id: match.id, board: match.board) }
+            withAnimation(.snappy) {
+                arrivalChoices = matches
+                arrivalSuggestion = (id: match.id, board: match.board)
+            }
         }
     }
 
@@ -690,12 +703,13 @@ struct KilterRootView: View {
     /// restore a connect does) WITHOUT a BLE connection, then dismiss the card.
     private func acceptArrivalSuggestion() {
         if let s = arrivalSuggestion { applyRestore(s.board) }
+        arrivalChoices = []
         dismissArrivalSuggestion()
     }
 
     private func dismissArrivalSuggestion() {
         markArrivalResolved()
-        withAnimation(.snappy) { arrivalSuggestion = nil }
+        withAnimation(.snappy) { arrivalSuggestion = nil; arrivalChoices = [] }
     }
 
     /// Mark the arrival resolved for the current place — the suggestion won't re-pop here (even across app
@@ -735,7 +749,8 @@ struct KilterRootView: View {
             // P1 board-detect surfaces (suggestion-not-overwrite, never blocking):
             //  • the pre-connect arrival suggestion at a remembered coarse place, and
             //  • the post-connect confirm ribbon when a known board restored its layout/size.
-            if let suggestion = arrivalSuggestion { arrivalSuggestionCard(suggestion) }
+            if arrivalChoices.count > 1 { arrivalChoiceCard }
+            else if let suggestion = arrivalSuggestion { arrivalSuggestionCard(suggestion) }
             if let pending = pendingConfirm { boardConfirmRibbon(pending) }
             // The slot between the filters and the list belongs to the board + session: the green
             // live bar when a session is active (now carrying the connected board's name), and the
@@ -1044,6 +1059,41 @@ struct KilterRootView: View {
     }
 
     // MARK: - P1 board-detect surfaces
+
+    /// Several boards remembered at this place (prompt 205 frame 5): ask which, instead of guessing the last.
+    @ViewBuilder private var arrivalChoiceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "mappin.circle.fill").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                Text("You've used \(arrivalChoices.count) boards here. Which one?").font(.headline)
+            }
+            ForEach(arrivalChoices, id: \.id) { choice in
+                Button {
+                    applyRestore(choice.board)
+                    dismissArrivalSuggestion()
+                } label: {
+                    HStack {
+                        Text(choice.board.label).font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(restoreSummary(choice.board)).font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                    .padding(.vertical, 8).padding(.horizontal, 10)
+                    .background(.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kilter.arrival.choice")
+            }
+            Button { dismissArrivalSuggestion() } label: {
+                Text("NOT NOW").font(.caption.weight(.bold)).tracking(0.5).foregroundStyle(SnappetColor.textSecondary)
+            }
+            .accessibilityIdentifier("kilter.arrival.dismiss")
+        }
+        .padding(12)
+        .pulseGlassChrome(reduceTransparency: reduceTransparency)
+        .padding(.horizontal).padding(.top, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .accessibilityIdentifier("kilter.arrivalChoices")
+    }
 
     /// Pre-connect arrival suggestion (wireframe `01c_arrival`): "Looks like you're at <gym>. Set up your
     /// usual board?" — a single coral CTA + a quiet "Not now", and the on-device privacy reassurance. A
