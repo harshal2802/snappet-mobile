@@ -114,20 +114,19 @@ struct RacketGameHRSheet: View {
                         .foregroundStyle((HeartRateZone(rawValue: z)?.color ?? .gray).opacity(0.08))
                 }
             }
-            // The previous game, stretched to this game's length so the two read side by side.
+            // The previous game, stretched to this game's length so the two read side by side. ONE series each:
+            // per-segment series (for zone colours) got joined across to this dashed line (device, 2026-10-26).
             ForEach(Array(ghost.enumerated()), id: \.offset) { _, p in
                 LineMark(x: .value("t", p.t / max(1, previous?.duration ?? 1) * duration), y: .value("bpm", p.bpm),
                          series: .value("game", "previous"))
                     .foregroundStyle(.gray.opacity(0.6))
                     .lineStyle(StrokeStyle(lineWidth: 1.3, dash: [3, 3]))
             }
-            // This game: each segment takes the zone colour of its higher end.
-            ForEach(Array(zip(g.points, g.points.dropFirst()).enumerated()), id: \.offset) { i, pair in
-                let c = HeartRateZone.forBpm(max(pair.0.bpm, pair.1.bpm), maxHR: maxHR).color
-                LineMark(x: .value("t", pair.0.t), y: .value("bpm", pair.0.bpm), series: .value("seg", i))
-                    .foregroundStyle(c).lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round))
-                LineMark(x: .value("t", pair.1.t), y: .value("bpm", pair.1.bpm), series: .value("seg", i))
-                    .foregroundStyle(c).lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round))
+            // This game: one line, coloured by zone with a vertical gradient over its own bpm range.
+            ForEach(Array(g.points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("t", p.t), y: .value("bpm", p.bpm), series: .value("game", "this"))
+                    .foregroundStyle(Self.zoneGradient(g.points.map(\.bpm), maxHR: maxHR))
+                    .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
             }
             if g.isSparse {
                 ForEach(Array(g.points.enumerated()), id: \.offset) { _, p in
@@ -148,7 +147,8 @@ struct RacketGameHRSheet: View {
         .chartXAxis {
             AxisMarks(values: [0, duration / 2, duration]) { v in
                 AxisGridLine()
-                AxisValueLabel { Text(Self.clock(v.as(Double.self) ?? 0)) }
+                let t = v.as(Double.self) ?? 0
+                AxisValueLabel(anchor: t >= duration ? .topTrailing : t <= 0 ? .topLeading : .top) { Text(Self.clock(t)) }
             }
         }
         .frame(height: 190)
@@ -210,6 +210,25 @@ struct RacketGameHRSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(tint.opacity(0.3)))
+    }
+
+    /// A bottom-to-top gradient over the line's own bpm range whose colour changes at the zone boundaries, so one
+    /// line shows its zones. Swift Charts maps a mark's gradient onto that line's bounding box (its min…max bpm).
+    static func zoneGradient(_ bpms: [Double], maxHR: Double) -> LinearGradient {
+        guard let lo = bpms.min(), let hi = bpms.max(), hi > lo else {
+            let c = HeartRateZone.forBpm(bpms.first, maxHR: maxHR).color
+            return LinearGradient(colors: [c, c], startPoint: .bottom, endPoint: .top)
+        }
+        var stops: [Gradient.Stop] = []
+        var bpm = lo
+        let edges = [0.6, 0.7, 0.8, 0.9].map { $0 * maxHR }.filter { $0 > lo && $0 < hi }
+        for edge in edges + [hi] {
+            let c = HeartRateZone.forBpm((bpm + edge) / 2, maxHR: maxHR).color
+            stops.append(.init(color: c, location: (bpm - lo) / (hi - lo)))
+            stops.append(.init(color: c, location: (edge - lo) / (hi - lo)))
+            bpm = edge
+        }
+        return LinearGradient(stops: stops, startPoint: .bottom, endPoint: .top)
     }
 
     static func clock(_ seconds: Double) -> String {
