@@ -575,7 +575,7 @@ private struct LibraryFilterSheet: View {
                 case .run:
                     chipSection("Terrain", RunTerrain.allCases, label: \.display,
                                 isOn: { facets.runTerrains.contains($0) }, toggle: { toggle(\.runTerrains, $0) })
-                case .dance, .other:
+                case .dance, .other, .racket:
                     Section { Text("No filters for this type yet.").foregroundStyle(.secondary) }
                 }
             }

@@ -341,6 +341,8 @@ enum LibraryCatalog {
         case .dance, .other:
             let t = done.compactMap(\.durationSec).reduce(0, +)
             return t > 0 ? (SetMeasure.formatDuration(t), t) : (nil, nil)
+        case .racket:
+            return RacketStats.headline(ents)
         }
     }
 
@@ -373,6 +375,8 @@ enum LibraryCatalog {
         case .dance, .other:
             let t = done.compactMap(\.durationSec).reduce(0, +)
             return t > 0 ? SetMeasure.formatDuration(t) : nil
+        case .racket:
+            return RacketStats.lastLine(ex)
         }
     }
 

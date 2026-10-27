@@ -10200,3 +10200,61 @@ stripes, and the panel read as an opaque slab.
 - All light gates moved from `isConnected` to `canLight` (connected or let go), so swiping to a climb or building a
   draft still lights it — a 10 s idle would otherwise strand the auto-lights. On-the-Board capture follows the same
   gate. Unverified on hardware: reconnect latency and the busy detection.
+
+## 2026-10-23 — Racket sports (prompt 203)
+
+- A match's result is DERIVED from its logged units (`RacketScoring.state`), never stored — editing or deleting a
+  game can't leave a stale "won 3–1". Only a retirement / walkover is stored (`racketEndRaw`), because no score
+  expresses it.
+- Scores are checked but never blocked: an 11–10 or a 6–5 shows an amber warning and still saves. Real matches have
+  retirements, house rules and typos fixed later.
+- A match's Library activity is its SPORT ("Table tennis match"), not the opponent — the page shows "vs Alex Chen",
+  the Library row shows the record across every opponent. Head-to-head is computed separately.
+- `racketBestOf`: `nil` = the sport's default, `0` = open play. A plain optional couldn't tell "unset" from "open".
+- HealthKit has no padel type; an Apple Watch records padel as tennis, the session keeps the real sport. With only
+  the discipline in hand (no sport) the mapping returns `.other`, never a guessed sport.
+- A Quick Session that starts empty still starts the watch as strength (nothing says otherwise yet). Follow-up
+  2026-10-26: when its FIRST entry arrives and nothing is logged, the phone sends `retype`; an HKWorkoutSession
+  can't change type, so the watch ends + DISCARDS the empty workout and starts the new type from the SAME start
+  time (timer and relayed `t` offsets carry on; the phone's HR buffer is kept). Rules: only empty → first entry
+  (a routine's type is never touched), only with nothing logged (a workout with real sets is never discarded),
+  a stop during the switch wins. Unverified: whether Health keeps the HR samples the discarded builder collected
+  in those first minutes — Snappet's own session HR doesn't depend on it.
+- HR back-fill from Apple Health is for ANY finished gym session (not just racket): only sessions with no/sparse HR,
+  not imported, ended ≤ 7 days ago (was 3; a tournament is reviewed days later); a BLE session keeps every live
+  sample and only its gaps > 60 s are filled (2026-10-26: the band connected 2 h into the tournament morning, so
+  two matches had no HR and the old "skip BLE" rule left them empty); it saves only when Health added samples. The user wears a Fitbit
+  (Google Health writes HR to Health), so this is what makes per-game HR possible for them. Unverified on device:
+  whether Fitbit writes HR samples (not just the workout) — check after the first real session.
+- One per-game HR window everywhere (2026-10-26, from the user's tournament chart): session detail and the activity
+  dashboard used the strength rule (≤ 2 min before the set was logged), the racket recap used its own. A game /
+  set now scores from the previous unit's end (or its timed duration); a match's first untimed unit gets the
+  match's median unit length (else 5 min) instead of a flat 10 min that reached into the break. Win rate /
+  accuracy charts are 0–100 %, and the effort card says "per game" for a match.
+- Singles and doubles are separate activities (2026-10-26, user asked after the tournament chart mixed them):
+  a match with a partner is filed under `adhoc-racket-doubles-<sport>` / "<sport> doubles" — stored on the entity
+  (so the Library, dashboard, head-to-head and launch all follow without a derived key), refreshed on every
+  create/edit, and applied once at launch to matches logged before (`racket.doublesSplit.v1`).
+- Activity dashboard charts are spaced by SESSION, not clock time: a tournament day's sessions read
+  "24 Oct · 1/2/3" instead of 11 AM / 2 PM / 5 PM, and straight segments replace the smoothed curve (no invented
+  values between sessions). The tapped point shows its date and time.
+- Game heart-rate sheet (2026-10-26, wireframe `docs/ux-research/racket-sports/game-hr/`, user picks Q1–Q3 "yes"):
+  tap a recap game row or a game tile → the game's line coloured by zone, previous game dashed (stretched to this
+  game's length), avg / peak / time in Z5, a one-line comparison, swipe between the match's games. Sparse readings
+  (median gap > 10 s — a Health back-fill from a wrist band) are dots joined by straight lines plus a note; no
+  smoothing invents a curve. The sheet is presented by the session detail ROOT, not inside its lazy List: a sheet
+  owned by a list row was dropped on the next re-render (it closed mid-swipe in the UI test).
+- HRV on every heart-rate surface, but only when a chest strap streams beat-to-beat RR (2026-10-26, user: "if the
+  band supports HRV, make it available on all the views"). The capture gate is unchanged — optical bands (Fitbit,
+  Apple Watch) carry no trusted RR, so nothing shows for them. `HRVReads` is the one source: live (last 60 s, ≥ 20
+  beats) in the pager chip + live panel; session RMSSD in session detail; per set (gym: the rest before it; racket:
+  the game's own window, since the gap before an untimed game isn't known); per-game in the recap rows, tiles and the
+  game sheet (+ comparison); per-session mean in an activity-dashboard HRV card. Unverified on hardware.
+- Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
+
+## 2026-10-25 — Makefile simulator destination by id (prompt 206)
+
+- `DEST_SIM` resolves `SIMULATOR` to a device id instead of passing `name=`: a bare name resolves with
+  `OS:latest`, so every new runtime that ships without that device broke `make ios-test`. Resolving the id beats
+  pinning `OS=26.5`, which would break again on the next runtime change. The newest runtime that has the device
+  wins; with no match, the `name=` destination is kept so the error stays xcodebuild's own.

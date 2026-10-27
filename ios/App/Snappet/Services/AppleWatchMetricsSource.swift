@@ -71,6 +71,8 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     /// the `WorkoutSession.startedAt` timeline so the buffer matches the post-hoc
     /// `HealthKitService` convention (HRSample.t = seconds since the session began).
     private var sessionStart: Date?
+    /// The type the watch was last asked to record (start / retype), so a retype is sent only on a change.
+    private(set) var activityType: HKWorkoutActivityType?
 
     #if canImport(WatchConnectivity)
     private let session: WCSession?
@@ -106,6 +108,7 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     func start(activityType: HKWorkoutActivityType, sessionStart: Date,
                maxHR: Double? = nil, restHR: Double? = nil) {
         self.sessionStart = sessionStart
+        self.activityType = activityType
         samples.removeAll()
         latestHR = nil
         energy = 0
@@ -119,8 +122,18 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     func stop() {
         send(.stop)
         sessionStart = nil
+        activityType = nil
         isPaused = false
         if connectionState == .workoutRunning { connectionState = .active }
+    }
+
+    /// Switch the running watch workout to another type (prompt 203) — only while a session is live and the
+    /// type actually changes. The watch keeps the original start time, so the relayed `t` offsets stay on the
+    /// session timeline and the HR buffer is kept as is.
+    func retype(_ type: HKWorkoutActivityType) {
+        guard sessionStart != nil, activityType != type else { return }
+        activityType = type
+        send(.retype(activityType: type.rawValue))
     }
 
     /// Pause the workout on the watch (UI-initiated on the phone). Tells the watch to pause its
@@ -250,7 +263,7 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
             Task { @MainActor [weak self] in self?.setPaused(true, propagate: false) }
         case .resume?:
             Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
-        case .start?, .stop?:
+        case .start?, .stop?, .retype?:
             break   // start/stop flow phone → watch only
         case .none:
             // A chore ticked on the watch (household prompt 04): into the outbox, applied on the main actor.

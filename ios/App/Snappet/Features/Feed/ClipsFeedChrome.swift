@@ -343,6 +343,7 @@ extension ClipFeedPost.Discipline {
         case .climbing: return SnappetColor.kilter
         case .strength: return SnappetColor.workout
         case .cardio: return SnappetColor.budget
+        case .racket: return SnappetColor.household
         case .dance: return SnappetColor.journal
         case .mobility: return SnappetColor.tip
         case .festival: return SnappetColor.festival

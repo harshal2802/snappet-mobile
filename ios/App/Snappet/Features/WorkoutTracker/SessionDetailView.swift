@@ -59,11 +59,17 @@ struct SessionDetailView: View {
     @State private var pastClipsFor: ActivityClipsTarget?
     /// Which activity each entity is (prompt 183 — climbs need history + the reset window).
     @State private var activityIdentity: ActivityIdentity?
+    /// The exercise / match the user asked to remove from this finished session (confirmed first).
+    @State private var pendingExerciseRemoval: SessionExercise?
+    /// A finished match's details being edited (opponent / round / event / format — prompt 203).
+    @State private var gameTarget: RacketGameTarget?
+    @State private var racketEdit: RacketSetupTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
+    @Environment(AppModel.self) private var app
     private let mediaLibrary = MediaLibraryService()
 
     // The type-adaptive recap header (E2) — shared with the post-Finish summary via `SessionRecap`.
@@ -124,7 +130,13 @@ struct SessionDetailView: View {
                                 pastClipCounts: pastClipCounts,
                                 activityIdentity: activityIdentity,
                                 onOpenPastClips: { pastClipsFor = $0 },
-                                onOpenDashboard: { router.push($0) })
+                                onOpenDashboard: { router.push($0) },
+                                onRemoveExercise: { pendingExerciseRemoval = $0 },
+                                onEditMatch: { ex in
+                                    racketEdit = RacketSetupTarget(start: .editMatch(RacketMatchParams(from: ex)),
+                                                                   editingExerciseID: ex.id)
+                                },
+                                onOpenGame: { gameTarget = $0 })
         }
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
@@ -175,6 +187,33 @@ struct SessionDetailView: View {
         .sheet(item: $pastClipsFor) { target in
             ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
         }
+        // Remove one exercise / match from a finished session — hosted on the List (a stable host), confirmed.
+        .confirmationDialog(
+            "Remove \(pendingExerciseRemoval.map(removalNoun) ?? "this")?",
+            isPresented: Binding(get: { pendingExerciseRemoval != nil },
+                                 set: { if !$0 { pendingExerciseRemoval = nil } }),
+            titleVisibility: .visible, presenting: pendingExerciseRemoval
+        ) { ex in
+            Button("Remove \(removalNoun(ex))", role: .destructive) { removeExercise(ex) }
+                .accessibilityIdentifier("session.confirmRemoveExercise")
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Its sets are deleted from this session. Its photos and videos stay, under General.")
+        }
+        // A racket game's heart-rate sheet — owned here, not inside the lazy list, so a re-render can't drop it.
+        .sheet(item: $gameTarget) {
+            RacketGameHRSheet(session: session, target: $0, maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
+        }
+        .sheet(item: $racketEdit) { target in
+            RacketSetupSheet(start: target.start,
+                             recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history) },
+                             recentEvents: RacketStats.recentEvents(history: history),
+                             recentDrills: { _ in [] },
+                             onMatch: { params in updateMatch(target.editingExerciseID, params) },
+                             onDrill: { _, _, _ in })
+        }
+        // A wearable that synced since the session (Fitbit / Google Health …) fills in its HR (prompt 203).
+        .task { await app.backfillWorkoutHR(sessionID: session.id) }
         .task {
             let identity = ActivityIdentity(sessions: history + [session])
             activityIdentity = identity
@@ -182,6 +221,32 @@ struct SessionDetailView: View {
                                                        media: ActivityMediaStore.snapshot(context: context),
                                                        excludingSession: session.id, identity: identity)
         }
+    }
+
+    private func removalNoun(_ ex: SessionExercise) -> String {
+        ex.isRacketMatch ? "this match" : ex.isRacketDrill ? "this drill" : "\(resolver.name(for: ex.exerciseId, override: ex.displayName))"
+    }
+
+    /// Drop one entity from the finished session. Its media is untied to General (never deleted) — the live
+    /// player's "Remove exercise" convention — so the clips stay on the session and in Clips.
+    private func removeExercise(_ ex: SessionExercise) {
+        session.exercises = SessionSetEditing.removing(ex.id, from: session.exercises)
+        let sid = session.id, exID = ex.id
+        let tagged = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.assignedExerciseID == exID }))) ?? []
+        for row in tagged {
+            row.assignedExerciseID = nil
+            row.assignedSetIndex = nil
+            row.assignmentSource = .general
+        }
+        try? context.save()
+    }
+
+    private func updateMatch(_ exID: UUID?, _ params: RacketMatchParams) {
+        guard let exID, let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        params.apply(to: &session.exercises[idx])
+        RacketStats.applyMatchIdentity(&session.exercises[idx])
+        try? context.save()
     }
 
     /// The per-workout-type detail under the insights header (prompt 146): strength compares each
@@ -200,15 +265,16 @@ struct SessionDetailView: View {
                 ForceGridCard(grid: grid, lastFatigue: last)
             }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false)
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
         case .climb:
             let rows = SessionInsights.pyramid(session, history: history)
             if !rows.isEmpty { PyramidCompareCard(rows: rows) }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty)
+                              milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty,
+                              onOpenGame: { gameTarget = $0 })
         case .timed, .run, .other:
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false)
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
         }
     }
 
@@ -342,6 +408,9 @@ private struct HeartRateSummarySection: View {
                 if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
                     Spacer()
                     Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
+                } else if sourceRaw == WorkoutHRBackfill.healthSourceRaw {
+                    Spacer()
+                    Text("via Apple Health").font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -357,6 +426,16 @@ private struct HeartRateSummarySection: View {
                 hrStat("Avg", bpm: stats.avgBpm)
                 hrStat("Max", bpm: stats.maxBpm)
                 hrStat("Min", bpm: stats.minBpm)
+                // Whole-session HRV — only with a chest strap's beat-to-beat data (2026-10-26).
+                if let rmssd = HRVReads.session(series).rmssd {
+                    VStack(spacing: 2) {
+                        Text("\(Int(rmssd.rounded())) ms")
+                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                        Text("HRV").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("sessionHRV")
+                }
             }
             .frame(maxWidth: .infinity)
 
@@ -454,6 +533,11 @@ private struct SessionMediaSection: View {
     let onOpenPastClips: (ActivityClipsTarget) -> Void
     /// Push the activity's dashboard (prompt 179).
     let onOpenDashboard: (ActivityRoute) -> Void
+    /// Ask the parent to confirm removing one exercise / match, or to edit a match's details.
+    let onRemoveExercise: (SessionExercise) -> Void
+    let onEditMatch: (SessionExercise) -> Void
+    /// Open a racket game's heart-rate sheet (presented by the detail view).
+    let onOpenGame: (RacketGameTarget) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -483,7 +567,13 @@ private struct SessionMediaSection: View {
          pastClipCounts: [ActivityKey: Int] = [:],
          activityIdentity: ActivityIdentity? = nil,
          onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in },
-         onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in }) {
+         onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in },
+         onRemoveExercise: @escaping (SessionExercise) -> Void = { _ in },
+         onEditMatch: @escaping (SessionExercise) -> Void = { _ in },
+         onOpenGame: @escaping (RacketGameTarget) -> Void = { _ in }) {
+        self.onRemoveExercise = onRemoveExercise
+        self.onEditMatch = onEditMatch
+        self.onOpenGame = onOpenGame
         self.pastClipCounts = pastClipCounts
         self.activityIdentity = activityIdentity
         self.onOpenDashboard = onOpenDashboard
@@ -513,8 +603,8 @@ private struct SessionMediaSection: View {
         let efforts = WorkoutHRStats.setEfforts(
             for: session.exercises, sessionStart: session.startedAt,
             hr: hrSamples, maxHR: session.maxHR, restHR: session.restHR)
-        // Per-set rest HRV (Phase 3): the recovery-quality signal between sets; empty without trusted RR.
-        let restHRV = WorkoutHRStats.setRestHRV(
+        // Per-set HRV: the rest before a gym set (Phase 3), a racket game's own window; empty without a chest strap.
+        let restHRV = HRVReads.perSet(
             for: session.exercises, sessionStart: session.startedAt, hr: hrSamples)
         Group {
             actionsSection
@@ -528,6 +618,7 @@ private struct SessionMediaSection: View {
                                 id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind,
                                        discipline: ex.discipline, unit: unit,
+                                       effortNoun: QuickSessionPager.effortNoun(for: ex).capitalized,
                                        distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
@@ -540,20 +631,23 @@ private struct SessionMediaSection: View {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind,
                                        discipline: ex.discipline, unit: unit,
+                                       effortNoun: QuickSessionPager.effortNoun(for: ex).capitalized,
                                        distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR,
                                        editDraft: draftBinding(exerciseID: ex.id, setIndex: i),
-                                       keypadFocus: keypadFocus)
+                                       keypadFocus: keypadFocus,
+                                       onShowHR: ex.isRacketMatch && set.completedAt != nil && !session.hrSeries.isEmpty
+                                           ? { onOpenGame(RacketGameTarget(exerciseID: ex.id, index: i)) } : nil)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
                     }
                 } header: {
                     HStack {
-                        Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        Text(ex.isRacketMatch ? RacketStats.postTitle(ex) : resolver.name(for: ex.exerciseId, override: ex.displayName))
                         Spacer()
                         if let key = activityIdentity?.key(for: ex, loggedAt: session.startedAt) {
                             Button {
@@ -575,6 +669,22 @@ private struct SessionMediaSection: View {
                             }
                             .textCase(nil)
                         }
+                        Menu {
+                            if ex.isRacketMatch {
+                                Button { onEditMatch(ex) } label: { Label("Match details", systemImage: "pencil") }
+                                    .accessibilityIdentifier("session.editMatch")
+                            }
+                            Button(role: .destructive) { onRemoveExercise(ex) } label: {
+                                Label(ex.isRacketMatch ? "Remove match" : ex.isRacketDrill ? "Remove drill" : "Remove exercise",
+                                      systemImage: "trash")
+                            }
+                            .accessibilityIdentifier("session.removeExercise")
+                        } label: {
+                            Image(systemName: "ellipsis.circle").font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("session.exerciseMenu")
+                        .accessibilityLabel("Exercise options")
                     }
                 }
             }
@@ -974,6 +1084,8 @@ private struct SetTileRow: View {
     /// The owning exercise's discipline (Workout-Type Parity) — a `.run` leg renders distance · time · pace.
     var discipline: WorkoutDiscipline = .strength
     let unit: WeightUnit
+    /// "Set" / "Attempt" / "Game" (racket, prompt 203) — the tile's label.
+    var effortNoun: String = "Set"
     /// Distance unit for a running leg's pace/distance rendering.
     var distanceUnit: DistanceUnit = .km
     let bpm: Double?
@@ -988,11 +1100,25 @@ private struct SetTileRow: View {
     /// read-only tile. Paired with the host's shared keypad focus for the Done toolbar.
     var editDraft: Binding<SessionSetEditing.Draft>? = nil
     var keypadFocus: FocusState<Bool>.Binding? = nil
+    /// A racket game opens its own heart-rate sheet (2026-10-26); `nil` = not tappable.
+    var onShowHR: (() -> Void)? = nil
 
     var body: some View {
+        if let onShowHR, editDraft == nil {
+            tile
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onShowHR)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("racket.game.openHR")
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Text("Set \(index)").font(.subheadline.weight(.medium))
+                Text("\(effortNoun) \(index)").font(.subheadline.weight(.medium))
                 Spacer()
                 if let editDraft, let keypadFocus {
                     SetEditFields(draft: editDraft, discipline: discipline, kind: kind,
@@ -1012,6 +1138,9 @@ private struct SetTileRow: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(zone.color.opacity(0.15), in: Capsule())
                     .accessibilityIdentifier("setHRBadge")
+                }
+                if onShowHR != nil, editDraft == nil {
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
                 }
             }
             // Peak effort + recovery for the set, plus rest HRV (shared with the Kilter per-climb row).
@@ -1049,6 +1178,8 @@ private struct SetEditFields: View {
         Group {
             if discipline == .run {
                 runFields
+            } else if discipline == .racket {
+                racketFields
             } else {
                 switch kind {
                 case .repsWeight:   repsWeightFields
@@ -1092,6 +1223,33 @@ private struct SetEditFields: View {
             TextField("M:SS", text: $draft.duration)
                 .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 72)
                 .focused(focus).accessibilityIdentifier("session.editDuration")
+        }
+    }
+
+    /// A match unit's score (you – them), or a drill block's made / tried or rally (prompt 203).
+    @ViewBuilder private var racketFields: some View {
+        if !draft.scoreFor.isEmpty || !draft.scoreAgainst.isEmpty {
+            HStack(spacing: 6) {
+                TextField("You", text: $draft.scoreFor)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editScoreFor")
+                Text("–").foregroundStyle(.secondary)
+                TextField("Them", text: $draft.scoreAgainst)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editScoreAgainst")
+            }
+        } else if !draft.drillTried.isEmpty {
+            HStack(spacing: 6) {
+                TextField("Made", text: $draft.drillMade)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editMade")
+                Text("/").foregroundStyle(.secondary)
+                TextField("Tried", text: $draft.drillTried)
+                    .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 48)
+                    .focused(focus).accessibilityIdentifier("session.editTried")
+            }
+        } else {
+            durationField
         }
     }
 
