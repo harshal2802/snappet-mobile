@@ -1,4 +1,5 @@
 import Foundation
+import HighlightEngine
 
 /// **Pure racket-sports read model** (prompt 203): the numbers every surface shows — the session's
 /// tournament record, head-to-head against an opponent, a drill's accuracy, the Library headline, the Clips
@@ -309,5 +310,54 @@ enum RacketStats {
             }
             return UnitHR(index: w.index, avg: avg, peak: inside.map(\.bpm).max() ?? avg, zoneSeconds: zones)
         }
+    }
+
+    // MARK: - One game's heart rate (the game sheet, 2026-10-26)
+
+    /// Everything the game sheet shows for one logged unit. `points` are on the GAME's timeline (0 = its start).
+    struct GameHR: Equatable, Sendable, Identifiable {
+        var index: Int
+        var start: Double
+        var end: Double
+        var points: [HRPoint]
+        var avg: Double?
+        var peak: Double?
+        /// Seconds per zone 1…5.
+        var zoneSeconds: [Double]
+        var hrv: HRVMetrics
+        var id: Int { index }
+        var duration: Double { max(1, end - start) }
+        /// Median seconds between readings — a Health back-fill from a wrist band is ~25 s, a strap ~1 s.
+        var medianGap: Double? {
+            let ts = points.map(\.t).sorted()
+            let gaps = zip(ts, ts.dropFirst()).map { $1 - $0 }.sorted()
+            return gaps.isEmpty ? nil : gaps[gaps.count / 2]
+        }
+        /// Too few readings for a curve: draw the readings as dots joined by straight lines and say why.
+        var isSparse: Bool { (medianGap ?? 0) > 10 }
+    }
+
+    /// Every logged unit of `ex`, with its readings (empty when the game had no heart rate).
+    static func games(_ ex: SessionExercise, series: [HRPoint], sessionStart: Date, maxHR: Double) -> [GameHR] {
+        let pts = series.sorted { $0.t < $1.t }
+        let hr = unitHR(ex, series: series, sessionStart: sessionStart, maxHR: maxHR)
+        let samples = pts.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+        return unitWindows(ex, sessionStart: sessionStart).map { w in
+            let inside = pts.filter { $0.t >= w.start && $0.t <= w.end }
+                .map { HRPoint(t: $0.t - w.start, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+            let u = hr.first { $0.index == w.index }
+            return GameHR(index: w.index, start: w.start, end: w.end, points: inside, avg: u?.avg, peak: u?.peak,
+                          zoneSeconds: u?.zoneSeconds ?? Array(repeating: 0, count: 5),
+                          hrv: HRVMetrics.make(from: samples, start: w.start, end: w.end))
+        }
+    }
+
+    /// "Avg +5 · peak +5 vs game 2" — against the previous game of the same match; `nil` without both.
+    static func comparison(_ game: GameHR, previous: GameHR?, unit: RacketUnit) -> String? {
+        guard let p = previous, let a = game.avg, let pa = p.avg, let k = game.peak, let pk = p.peak else { return nil }
+        func signed(_ v: Double) -> String { let r = Int(v.rounded()); return r > 0 ? "+\(r)" : r < 0 ? "−\(-r)" : "±0" }
+        var line = "Avg \(signed(a - pa)) · peak \(signed(k - pk)) vs \(unit.noun) \(p.index + 1)"
+        if let h = game.hrv.rmssd, let ph = p.hrv.rmssd { line += " · HRV \(signed(h - ph)) ms" }
+        return line
     }
 }

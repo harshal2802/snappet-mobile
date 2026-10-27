@@ -82,6 +82,32 @@ enum ActivityInsights {
         return Effort(title: title, referenceKg: reference, points: points, unitNoun: racketUnit?.noun ?? "set")
     }
 
+    /// HRV per session for an activity (2026-10-26) — the mean RMSSD over its sets / games that have one
+    /// (`HRVReads.perSet`). Only sessions recorded with a chest strap carry RR, so this is `nil` for everyone
+    /// else (the card hides). Oldest → newest; needs two sessions.
+    struct HRVPoint: Identifiable, Equatable, Sendable {
+        let sessionID: UUID
+        let date: Date
+        let rmssd: Double
+        var id: UUID { sessionID }
+    }
+
+    static func hrv(key: ActivityKey, history: [WorkoutSession],
+                    identity: ActivityIdentity? = nil) -> [HRVPoint]? {
+        let identity = identity ?? ActivityIdentity(sessions: history)
+        var points: [HRVPoint] = []
+        for s in history.filter({ !$0.isActive && !$0.hrSeries.isEmpty }).sorted(by: { $0.startedAt < $1.startedAt }) {
+            let ids = Set(s.exercises.filter { identity.matches(key, $0) }.map(\.id))
+            guard !ids.isEmpty else { continue }
+            let hr = s.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+            let perSet = HRVReads.perSet(for: s.exercises, sessionStart: s.startedAt, hr: hr)
+            guard let mean = HRVReads.meanRMSSD(perSet.filter { ids.contains($0.key.exerciseID) }.map(\.value))
+            else { continue }
+            points.append(HRVPoint(sessionID: s.id, date: s.startedAt, rmssd: mean))
+        }
+        return points.count >= 2 ? points : nil
+    }
+
     /// Loads compare at 0.5 kg resolution so 60 and 60.0001 (a lb round-trip) are one load.
     static func roundLoad(_ kg: Double) -> Double { (kg * 2).rounded() / 2 }
 }

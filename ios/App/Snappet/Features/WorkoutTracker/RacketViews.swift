@@ -1,4 +1,5 @@
 import SwiftUI
+import HighlightEngine
 
 // MARK: - Racket sports views (prompt 203)
 //
@@ -947,6 +948,9 @@ struct RacketRecapCards: View {
     var maxHR: Double = HeartRateZone.defaultMaxHR
     /// Per-game HR rows (the session detail shows them; the in-cover summary may too).
     var showsHR: Bool = true
+    /// Tapping a game row: the host presents the sheet (session detail — outside its lazy list); `nil` = this card does.
+    var onOpenGame: ((RacketGameTarget) -> Void)? = nil
+    @State private var gameTarget: RacketGameTarget?
 
     private var summary: RacketStats.SessionSummary? { RacketStats.summary(session.exercises) }
     private var matches: [SessionExercise] { session.exercises.filter(\.isRacketMatch) }
@@ -962,6 +966,7 @@ struct RacketRecapCards: View {
             }
             .padding()
             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .sheet(item: $gameTarget) { RacketGameHRSheet(session: session, target: $0, maxHR: maxHR) }
         }
     }
 
@@ -1031,38 +1036,55 @@ struct RacketRecapCards: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("racket.recap.hrWaiting")
         } else {
+            // HRV per game — only with a chest strap's beat-to-beat data; `[:]` otherwise.
+            let hrv = HRVReads.perSet(for: session.exercises, sessionStart: session.startedAt,
+                                      hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) })
             ForEach(rows.filter { !$0.hr.isEmpty }, id: \.ex.id) { row in
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Heart rate · \(RacketStats.matchRowTitle(row.ex))".uppercased())
                         .font(.system(size: 10, weight: .heavy)).tracking(0.9).foregroundStyle(.secondary)
-                    ForEach(row.hr, id: \.index) { u in unitHRRow(row.ex, u) }
+                    ForEach(row.hr, id: \.index) { u in
+                        unitHRRow(row.ex, u, hrv: hrv[.init(exerciseID: row.ex.id, setIndex: u.index)] ?? .empty)
+                    }
                 }
             }
         }
     }
 
-    private func unitHRRow(_ ex: SessionExercise, _ u: RacketStats.UnitHR) -> some View {
+    private func unitHRRow(_ ex: SessionExercise, _ u: RacketStats.UnitHR, hrv: HRVMetrics) -> some View {
         let unit = ex.racketFormat.sport.unit
         let score = u.index < ex.sets.count ? ex.sets[u.index].racketScore?.label : nil
         let total = max(1, u.zoneSeconds.reduce(0, +))
-        return HStack(spacing: 8) {
-            Text("\(unit.shortPrefix)\(u.index + 1)\(score.map { " \($0)" } ?? "")")
-                .font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.secondary)
-                .frame(width: 78, alignment: .leading)
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    ForEach(0..<5, id: \.self) { z in
-                        Rectangle().fill(HeartRateZone(rawValue: z + 1)?.color ?? .gray)
-                            .frame(width: geo.size.width * u.zoneSeconds[z] / total)
+        return Button {
+            let t = RacketGameTarget(exerciseID: ex.id, index: u.index)
+            if let onOpenGame { onOpenGame(t) } else { gameTarget = t }
+        } label: {
+            HStack(spacing: 8) {
+                Text("\(unit.shortPrefix)\(u.index + 1)\(score.map { " \($0)" } ?? "")")
+                    .font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.secondary)
+                    .frame(width: 78, alignment: .leading)
+                GeometryReader { geo in
+                    HStack(spacing: 0) {
+                        ForEach(0..<5, id: \.self) { z in
+                            Rectangle().fill(HeartRateZone(rawValue: z + 1)?.color ?? .gray)
+                                .frame(width: geo.size.width * u.zoneSeconds[z] / total)
+                        }
                     }
+                    .clipShape(Capsule())
                 }
-                .clipShape(Capsule())
+                .frame(height: 8)
+                if let rmssd = hrv.rmssd {
+                    Text("\(Int(rmssd.rounded())) ms").font(.caption2.weight(.bold).monospacedDigit())
+                        .foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                        .accessibilityIdentifier("racket.recap.unitHRV")
+                }
+                Text("avg \(Int(u.avg.rounded()))").font(.caption.weight(.bold).monospacedDigit())
+                    .frame(width: 60, alignment: .trailing)
+                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
             }
-            .frame(height: 8)
-            Text("avg \(Int(u.avg.rounded()))").font(.caption.weight(.bold).monospacedDigit())
-                .frame(width: 60, alignment: .trailing)
+            .contentShape(Rectangle())
         }
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("racket.recap.unitHR")
     }
 }

@@ -126,6 +126,8 @@ struct SessionRecapCards: View {
     var showsHR: Bool = true
     /// The session detail shows its own pyramid against the last 30 days (prompt 146) → hides this one.
     var showsPyramid: Bool = true
+    /// A racket game row was tapped — the host presents the game sheet; `nil` = the racket card presents it.
+    var onOpenGame: ((RacketGameTarget) -> Void)? = nil
 
     private var stats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
     private var dominant: FreeformSummary.Dominant { stats.dominant }
@@ -148,7 +150,7 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
-        case .racket:   RacketRecapCards(session: session, maxHR: maxHR)
+        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame)
         case .none:     EmptyView()
         }
     }

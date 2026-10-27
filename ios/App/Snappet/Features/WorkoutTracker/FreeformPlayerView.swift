@@ -672,6 +672,12 @@ struct FreeformPlayerView: View {
                         Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
                             .frame(width: 8, height: 8)
                     }
+                    // Live HRV over the last minute — chest strap only (2026-10-26).
+                    if let rmssd = HRVReads.rolling(app.liveWorkout.ble.samples).rmssd {
+                        Text("HRV \(Int(rmssd.rounded()))").font(.caption2.weight(.bold).monospacedDigit())
+                            .foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                            .accessibilityIdentifier("freeform.hrvChip")
+                    }
                 }
             }
             .buttonStyle(.plain)

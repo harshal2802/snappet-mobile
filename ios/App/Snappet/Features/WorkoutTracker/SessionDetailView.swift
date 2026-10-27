@@ -62,6 +62,7 @@ struct SessionDetailView: View {
     /// The exercise / match the user asked to remove from this finished session (confirmed first).
     @State private var pendingExerciseRemoval: SessionExercise?
     /// A finished match's details being edited (opponent / round / event / format — prompt 203).
+    @State private var gameTarget: RacketGameTarget?
     @State private var racketEdit: RacketSetupTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
@@ -134,7 +135,8 @@ struct SessionDetailView: View {
                                 onEditMatch: { ex in
                                     racketEdit = RacketSetupTarget(start: .editMatch(RacketMatchParams(from: ex)),
                                                                    editingExerciseID: ex.id)
-                                })
+                                },
+                                onOpenGame: { gameTarget = $0 })
         }
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
@@ -198,6 +200,10 @@ struct SessionDetailView: View {
         } message: { _ in
             Text("Its sets are deleted from this session. Its photos and videos stay, under General.")
         }
+        // A racket game's heart-rate sheet — owned here, not inside the lazy list, so a re-render can't drop it.
+        .sheet(item: $gameTarget) {
+            RacketGameHRSheet(session: session, target: $0, maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
+        }
         .sheet(item: $racketEdit) { target in
             RacketSetupSheet(start: target.start,
                              recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history) },
@@ -259,15 +265,16 @@ struct SessionDetailView: View {
                 ForceGridCard(grid: grid, lastFatigue: last)
             }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false)
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
         case .climb:
             let rows = SessionInsights.pyramid(session, history: history)
             if !rows.isEmpty { PyramidCompareCard(rows: rows) }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty)
+                              milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty,
+                              onOpenGame: { gameTarget = $0 })
         case .timed, .run, .other:
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false)
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
         }
     }
 
@@ -419,6 +426,16 @@ private struct HeartRateSummarySection: View {
                 hrStat("Avg", bpm: stats.avgBpm)
                 hrStat("Max", bpm: stats.maxBpm)
                 hrStat("Min", bpm: stats.minBpm)
+                // Whole-session HRV — only with a chest strap's beat-to-beat data (2026-10-26).
+                if let rmssd = HRVReads.session(series).rmssd {
+                    VStack(spacing: 2) {
+                        Text("\(Int(rmssd.rounded())) ms")
+                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                        Text("HRV").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("sessionHRV")
+                }
             }
             .frame(maxWidth: .infinity)
 
@@ -519,6 +536,8 @@ private struct SessionMediaSection: View {
     /// Ask the parent to confirm removing one exercise / match, or to edit a match's details.
     let onRemoveExercise: (SessionExercise) -> Void
     let onEditMatch: (SessionExercise) -> Void
+    /// Open a racket game's heart-rate sheet (presented by the detail view).
+    let onOpenGame: (RacketGameTarget) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -550,9 +569,11 @@ private struct SessionMediaSection: View {
          onOpenPastClips: @escaping (ActivityClipsTarget) -> Void = { _ in },
          onOpenDashboard: @escaping (ActivityRoute) -> Void = { _ in },
          onRemoveExercise: @escaping (SessionExercise) -> Void = { _ in },
-         onEditMatch: @escaping (SessionExercise) -> Void = { _ in }) {
+         onEditMatch: @escaping (SessionExercise) -> Void = { _ in },
+         onOpenGame: @escaping (RacketGameTarget) -> Void = { _ in }) {
         self.onRemoveExercise = onRemoveExercise
         self.onEditMatch = onEditMatch
+        self.onOpenGame = onOpenGame
         self.pastClipCounts = pastClipCounts
         self.activityIdentity = activityIdentity
         self.onOpenDashboard = onOpenDashboard
@@ -582,8 +603,8 @@ private struct SessionMediaSection: View {
         let efforts = WorkoutHRStats.setEfforts(
             for: session.exercises, sessionStart: session.startedAt,
             hr: hrSamples, maxHR: session.maxHR, restHR: session.restHR)
-        // Per-set rest HRV (Phase 3): the recovery-quality signal between sets; empty without trusted RR.
-        let restHRV = WorkoutHRStats.setRestHRV(
+        // Per-set HRV: the rest before a gym set (Phase 3), a racket game's own window; empty without a chest strap.
+        let restHRV = HRVReads.perSet(
             for: session.exercises, sessionStart: session.startedAt, hr: hrSamples)
         Group {
             actionsSection
@@ -617,7 +638,9 @@ private struct SessionMediaSection: View {
                                        restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR,
                                        editDraft: draftBinding(exerciseID: ex.id, setIndex: i),
-                                       keypadFocus: keypadFocus)
+                                       keypadFocus: keypadFocus,
+                                       onShowHR: ex.isRacketMatch && set.completedAt != nil && !session.hrSeries.isEmpty
+                                           ? { onOpenGame(RacketGameTarget(exerciseID: ex.id, index: i)) } : nil)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
@@ -1077,8 +1100,22 @@ private struct SetTileRow: View {
     /// read-only tile. Paired with the host's shared keypad focus for the Done toolbar.
     var editDraft: Binding<SessionSetEditing.Draft>? = nil
     var keypadFocus: FocusState<Bool>.Binding? = nil
+    /// A racket game opens its own heart-rate sheet (2026-10-26); `nil` = not tappable.
+    var onShowHR: (() -> Void)? = nil
 
     var body: some View {
+        if let onShowHR, editDraft == nil {
+            tile
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onShowHR)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("racket.game.openHR")
+        } else {
+            tile
+        }
+    }
+
+    private var tile: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 Text("\(effortNoun) \(index)").font(.subheadline.weight(.medium))
@@ -1101,6 +1138,9 @@ private struct SetTileRow: View {
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(zone.color.opacity(0.15), in: Capsule())
                     .accessibilityIdentifier("setHRBadge")
+                }
+                if onShowHR != nil, editDraft == nil {
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
                 }
             }
             // Peak effort + recovery for the set, plus rest HRV (shared with the Kilter per-climb row).

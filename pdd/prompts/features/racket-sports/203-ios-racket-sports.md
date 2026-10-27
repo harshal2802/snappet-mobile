@@ -53,6 +53,9 @@ heart rate back-filled from Apple Health; all six sports in v1, tennis/padel inc
       (band connected late → the first matches had none); look-back 3 → 7 days. `WorkoutHRBackfillTests`.
 - [x] Follow-up (2026-10-26, user asked): singles / doubles split into separate activities; dashboard charts
       spaced by session. `RacketStatsTests.testDoublesIsItsOwnActivity`, `ActivityDashboardAxisTests`.
+- [x] Follow-up (2026-10-26, wireframe approved): the game heart-rate sheet (`RacketGameHRSheet`) from the recap rows
+      and game tiles; HRV everywhere a chest strap provides RR (`HRVReads`: live chip + panel, session, per set /
+      game, dashboard). `HRVReadsTests`, `RacketGameHRUITests` (seed `-uiTestSeedRacketHR`).
 - [ ] Device legs (owed): a real tournament with Fitbit HR sync; filmed games; Apple Watch: start an empty
       Quick Session, add a match → the watch shows Table Tennis, Health has ONE table tennis workout (no stray
       strength one) covering the whole session.

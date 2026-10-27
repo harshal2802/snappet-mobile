@@ -73,6 +73,8 @@ struct ActivityDashboardView: View {
     @State private var groups: [ActivitySessionGroup] = []
     /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
     @State private var effort: ActivityInsights.Effort?
+    /// HRV per session (chest-strap sessions only); `nil` hides the card.
+    @State private var hrvTrend: [ActivityInsights.HRVPoint]?
     @State private var climbs: [LibraryCatalog.Row] = []
     @State private var loaded = false
     @State private var selected: UUID?
@@ -148,6 +150,7 @@ struct ActivityDashboardView: View {
             groups = ActivityMediaIndex.groups(for: key, history: source, media: media, unit: unit,
                                                distanceUnit: unit == .lb ? .mi : .km)
             effort = ActivityInsights.effort(key: key, history: source, unit: unit)
+            hrvTrend = ActivityInsights.hrv(key: key, history: source)
             if key.disciplineScope == .climb {
                 let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
                                                unit: unit, title: LibraryCatalog.fallbackTitle)
@@ -438,6 +441,7 @@ struct ActivityDashboardView: View {
                     kpiRow(d)
                     chartCard(d)
                     if let effort { effortCard(effort) }
+                    if let hrvTrend { hrvCard(hrvTrend) }
                     if !allClips.isEmpty { clipsCard }
                     if !climbs.isEmpty { climbsCard }
                     recordsCard(d)
@@ -602,6 +606,25 @@ struct ActivityDashboardView: View {
         }
         .accessibilityElement(children: .contain)   // keeps the buttons' own identifiers
         .accessibilityIdentifier("activity.dashboard.clips")
+    }
+
+    /// HRV per session (2026-10-26) — only sessions recorded with a chest strap have one.
+    private func hrvCard(_ points: [ActivityInsights.HRVPoint]) -> some View {
+        let delta = Int((points.last!.rmssd - points.first!.rmssd).rounded())
+        return card("HRV", trailing: delta == 0 ? "steady" : "\(delta > 0 ? "+" : "−")\(abs(delta)) ms") {
+            Chart(Array(points.enumerated()), id: \.element.id) { i, p in
+                LineMark(x: .value("Session", i), y: .value("ms", p.rmssd)).foregroundStyle(SnappetColor.perfFresh)
+                PointMark(x: .value("Session", i), y: .value("ms", p.rmssd))
+                    .foregroundStyle(HRVBadge.recoveryColor(p.rmssd)).symbolSize(20)
+            }
+            .sessionXAxis(count: points.count, labels: ActivityDashboard.sessionAxisLabels(points.map(\.date)))
+            .chartYScale(domain: .automatic(includesZero: false))
+            .frame(height: 90)
+            Text("Average beat-to-beat variability (RMSSD) across your sets each session — higher usually means better recovered. From a chest strap.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("activity.dashboard.hrv")
     }
 
     private func effortCard(_ e: ActivityInsights.Effort) -> some View {

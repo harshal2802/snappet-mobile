@@ -131,6 +131,11 @@ struct LiveMetricsPanel: View {
             stat(summary.maxBpm.map(String.init) ?? "—", "Max")
             stat("\(Int((summary.redlineFraction * 100).rounded()))%", "Redline")
             if let kcal { stat("\(kcal)", "kcal") }
+            // Last minute's HRV — only when a chest strap streams beat-to-beat data (2026-10-26).
+            if let rmssd = summary.hrv.rmssd {
+                stat("\(Int(rmssd.rounded()))", "HRV ms").foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                    .accessibilityIdentifier("live.hrv")
+            }
         }
     }
 

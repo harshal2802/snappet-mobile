@@ -10189,6 +10189,18 @@ stripes, and the panel read as an opaque slab.
 - Activity dashboard charts are spaced by SESSION, not clock time: a tournament day's sessions read
   "24 Oct · 1/2/3" instead of 11 AM / 2 PM / 5 PM, and straight segments replace the smoothed curve (no invented
   values between sessions). The tapped point shows its date and time.
+- Game heart-rate sheet (2026-10-26, wireframe `docs/ux-research/racket-sports/game-hr/`, user picks Q1–Q3 "yes"):
+  tap a recap game row or a game tile → the game's line coloured by zone, previous game dashed (stretched to this
+  game's length), avg / peak / time in Z5, a one-line comparison, swipe between the match's games. Sparse readings
+  (median gap > 10 s — a Health back-fill from a wrist band) are dots joined by straight lines plus a note; no
+  smoothing invents a curve. The sheet is presented by the session detail ROOT, not inside its lazy List: a sheet
+  owned by a list row was dropped on the next re-render (it closed mid-swipe in the UI test).
+- HRV on every heart-rate surface, but only when a chest strap streams beat-to-beat RR (2026-10-26, user: "if the
+  band supports HRV, make it available on all the views"). The capture gate is unchanged — optical bands (Fitbit,
+  Apple Watch) carry no trusted RR, so nothing shows for them. `HRVReads` is the one source: live (last 60 s, ≥ 20
+  beats) in the pager chip + live panel; session RMSSD in session detail; per set (gym: the rest before it; racket:
+  the game's own window, since the gap before an untimed game isn't known); per-game in the recap rows, tiles and the
+  game sheet (+ comparison); per-session mean in an activity-dashboard HRV card. Unverified on hardware.
 - Racket blocks are not routine prescriptions in v1 (`SessionToRoutine` / `ActivityLauncher.routineBlock` return nil).
 
 ## 2026-10-25 — Makefile simulator destination by id (prompt 206)
