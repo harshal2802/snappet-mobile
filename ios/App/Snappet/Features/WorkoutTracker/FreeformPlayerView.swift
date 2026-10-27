@@ -50,6 +50,15 @@ struct FreeformPlayerView: View {
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
+    // MARK: Racket sports (prompt 203)
+    /// The racket setup sheet (sport + mode → match details | drill picker), also Edit details / Next match.
+    @State private var racketSetup: RacketSetupTarget?
+    /// A match unit's score sheet (new or edit).
+    @State private var racketScoring: RacketScoreTarget?
+    /// When each match's current game / drill's current block started timing (`nil` ⇒ not timing).
+    @State private var racketTimers: [UUID: Date] = [:]
+    @AppStorage("racket.lastSport") private var lastRacketSportRaw = ""
+    @AppStorage("racket.lastMode") private var lastRacketModeRaw = ""
     // MARK: Pager state (prompt 109)
     /// The current pager page — overview · one page per exercise (added order) · the add page.
     /// Simple value state; the pages themselves are light (no players), so the Clips-feed
@@ -209,6 +218,26 @@ struct FreeformPlayerView: View {
         .sheet(isPresented: $addingTimed) {
             PickTimedExerciseSheet { params in addTimedFromSheet(params) }
         }
+        // Racket sports (prompt 203): sport + mode → a match's details or a drill — also Edit details and
+        // Next match (prefilled), and one unit's score sheet.
+        .sheet(item: $racketSetup) { target in
+            RacketSetupSheet(
+                start: target.start,
+                recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history + [session]) },
+                recentEvents: RacketStats.recentEvents(history: history + [session]),
+                recentDrills: { RacketStats.recentDrills(sport: $0, history: history + [session]) },
+                onMatch: { params in
+                    if let exID = target.editingExerciseID { updateRacketMatch(exID, params) } else { addRacketMatch(params) }
+                },
+                onDrill: { sport, name, measure in addRacketDrill(sport: sport, name: name, measure: measure) })
+        }
+        .sheet(item: $racketScoring) { target in
+            if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
+                RacketScoreSheet(ex: ex, unitIndex: target.unitIndex, durationSec: target.durationSec) { log in
+                    saveRacketUnit(log, target: target)
+                }
+            }
+        }
         // The live timed-attempt FOCUS cover (Quick Session redesign Phase 2): a dark, glass, full-screen
         // moment that times ONE attempt off the wall clock, then reveals a 2×2 outcome grid. Replaces the
         // old half-sheet; commits through the same `logAttempt` funnel (stamps grade + completedAt + haptic).
@@ -295,6 +324,7 @@ struct FreeformPlayerView: View {
             Button("Timed exercise") { addingTimed = true }
             Button("Dance") { addOpenEffort(.dance) }
             Button("Other") { addOpenEffort(.other) }
+            Button("Racket sport") { openRacketSetup() }
             Button("Cancel", role: .cancel) {}
         }
         // Deep-tap clip deletion (prompt 11), ported VERBATIM from `SessionDetailView` (incl. the Photos
@@ -384,6 +414,9 @@ struct FreeformPlayerView: View {
             recomputePrefills()
             recomputeClimbStats()
             rebuildPreviousClimbs()
+            // An empty Quick Session started the watch as strength; its first entry decides the real type
+            // (a table tennis match records Table Tennis). Only empty → first, so a routine's type is kept.
+            if old == 0, new > 0 { app.liveWorkout.retypeIfFresh(session) }
             // Auto-advance the pager to a newly added exercise so its hero is immediately loggable.
             if new > old, let last = session.exercises.last {
                 withAnimation { page = .exercise(last.id) }
@@ -482,7 +515,8 @@ struct FreeformPlayerView: View {
                 onRunning: { addRun() },
                 onTimed: { addingTimed = true },
                 onDance: { addOpenEffort(.dance) },
-                onOther: { addOpenEffort(.other) })
+                onOther: { addOpenEffort(.other) },
+                onRacket: { openRacketSetup() })
                 .tag(QuickSessionPager.Page.add)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
@@ -638,6 +672,12 @@ struct FreeformPlayerView: View {
                         Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
                             .frame(width: 8, height: 8)
                     }
+                    // Live HRV over the last minute — chest strap only (2026-10-26).
+                    if let rmssd = HRVReads.rolling(app.liveWorkout.ble.samples).rmssd {
+                        Text("HRV \(Int(rmssd.rounded()))").font(.caption2.weight(.bold).monospacedDigit())
+                            .foregroundStyle(HRVBadge.recoveryColor(rmssd))
+                            .accessibilityIdentifier("freeform.hrvChip")
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -714,7 +754,7 @@ struct FreeformPlayerView: View {
     private func overviewRow(_ ex: SessionExercise) -> some View {
         Button { withAnimation { page = .exercise(ex.id) } } label: {
             HStack(spacing: 11) {
-                Image(systemName: ex.discipline == .climb ? ex.climbType.symbol : ex.discipline.symbol)
+                Image(systemName: ex.discipline == .climb ? ex.climbType.symbol : ex.racketSport?.symbol ?? ex.discipline.symbol)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(railTint(.init(page: .exercise(ex.id), symbol: "", title: "",
                                                     detail: nil, done: false)))
@@ -722,7 +762,7 @@ struct FreeformPlayerView: View {
                     .background(.white.opacity(0.06),
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                    Text(ex.isRacketMatch ? RacketStats.matchRowTitle(ex) : resolver.name(for: ex.exerciseId, override: ex.displayName))
                         .font(.subheadline.weight(.bold)).lineLimit(1)
                         .foregroundStyle(SnappetColor.ink)
                     Text(overviewMetrics(ex))
@@ -760,6 +800,11 @@ struct FreeformPlayerView: View {
                 s += " · " + SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit)
             }
             return s
+        case .racket:
+            if ex.isRacketDrill { return RacketStats.drillLine(ex) ?? "Not started" }
+            let state = ex.racketState
+            guard state.playedUnits > 0 || state.end != nil else { return "Not started" }
+            return [state.shortResult, RacketStats.unitsLine(ex)].filter { !$0.isEmpty }.joined(separator: " · ")
         case .strength:
             guard let top = StrengthStats.topSet(ex) else { return "Not started" }
             let plan = QuickSessionPager.planState(for: ex)
@@ -832,7 +877,7 @@ struct FreeformPlayerView: View {
             HStack {
                 Text(ex.discipline == .climb
                      ? "\(ex.climbType.label) · \(ex.gym?.isEmpty == false ? ex.gym! : "Climb")"
-                     : ex.discipline.label)
+                     : ex.discipline == .racket ? racketTag(ex) : ex.discipline.label)
                     .font(.system(size: 10, weight: .heavy)).tracking(1.2)
                     .textCase(.uppercase)
                     .foregroundStyle(ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent)
@@ -840,7 +885,7 @@ struct FreeformPlayerView: View {
                 pageMenu(ex)
             }
             HStack(spacing: 8) {
-                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                Text(ex.isRacketMatch ? ex.racketMatchTitle : resolver.name(for: ex.exerciseId, override: ex.displayName))
                     .font(.title2.bold()).lineLimit(2)
                     .accessibilityIdentifier(nameIdentifier(ex))
                 if ex.discipline == .climb { colorSwatch(ex) }
@@ -863,6 +908,10 @@ struct FreeformPlayerView: View {
                     if let time = climbTimeOnWall(ex) {
                         Text("· \(time)").font(.caption).foregroundStyle(.secondary)
                     }
+                }
+            } else if ex.isRacketMatch {
+                if let event = ex.racketEvent, !event.isEmpty {
+                    Label(event, systemImage: "trophy").font(.caption2).foregroundStyle(.secondary)
                 }
             } else {
                 planRow(ex)
@@ -914,6 +963,10 @@ struct FreeformPlayerView: View {
             } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
                 .accessibilityIdentifier("freeform.entityMenu")
                 .accessibilityLabel("Exercise options")
+        case .racket:
+            Menu { racketMenuContent(ex) } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                .accessibilityIdentifier("freeform.entityMenu")
+                .accessibilityLabel(ex.isRacketMatch ? "Match options" : "Drill options")
         default:
             Menu {
                 Button(role: .destructive) { removeExercise(ex) } label: {
@@ -959,6 +1012,7 @@ struct FreeformPlayerView: View {
         case .climb:    climbHero(ex)
         case .run:      runHero(ex)
         case .timed, .dance, .other: timedHero(ex)
+        case .racket:   racketHero(ex)
         }
     }
 
@@ -1216,6 +1270,9 @@ struct FreeformPlayerView: View {
         case .climb:    return SetMeasure.attemptRow(set, type: ex.climbType)
         case .run:      return SetMeasure.runSummary(set, unit: distanceUnit)
         case .strength: return SetMeasure.summary(set, kind: .repsWeight, unit: unit)
+        case .racket:
+            if ex.isRacketDrill { return RacketStats.blockLine(set, measure: ex.drillMeasure) }
+            return set.racketScore.map { $0.superTiebreak ? "STB \($0.label)" : $0.label } ?? "—"
         default:        return SetMeasure.summary(set, kind: .duration, unit: unit)
         }
     }
@@ -1258,6 +1315,13 @@ struct FreeformPlayerView: View {
             let sets = session.completedSetCount
             return ("timer", WorkoutDiscipline.timed.accent,
                     "TUT \(SetMeasure.formatDuration(tut)) · \(sets) \(sets == 1 ? "set" : "sets")")
+        case .racket:
+            guard let sum = RacketStats.summary(session.exercises) else { return nil }
+            var parts: [String] = []
+            if sum.matches > 0 { parts.append(sum.record.label) }
+            if sum.units > 0 { parts.append("\(sum.units) \(sum.sport?.usesSets == true ? "sets" : "games")") }
+            if sum.drills > 0 { parts.append("\(sum.drills) \(sum.drills == 1 ? "drill" : "drills")") }
+            return parts.isEmpty ? nil : ("tennis.racket", WorkoutDiscipline.racket.accent, parts.joined(separator: " · "))
         default:
             return nil   // climbing has its own ribbon; dance/other rely on the command-bar duration
         }
@@ -1456,6 +1520,169 @@ struct FreeformPlayerView: View {
         let stamps = ex.sets.compactMap(\.completedAt).sorted()
         guard let first = stamps.first, let last = stamps.last, last > first else { return nil }
         return SetMeasure.formatDuration(last.timeIntervalSince(first))
+    }
+
+    // MARK: - Racket sports (prompt 203)
+
+    /// "Table tennis · Match · R16" / "Badminton · Drill".
+    private func racketTag(_ ex: SessionExercise) -> String {
+        [ex.racketSport?.label ?? "Racket", ex.racketMode.label, ex.isRacketMatch ? ex.racketRound : nil]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func racketHero(_ ex: SessionExercise) -> some View {
+        if ex.isRacketMatch {
+            RacketMatchHero(
+                ex: ex,
+                unitStartedAt: racketTimers[ex.id],
+                headToHead: RacketStats.headToHead(opponent: ex.opponent, sport: ex.racketSport,
+                                                   history: history, including: [ex]),
+                clipUnits: Set(mediaRows(assignedTo: ex.id).compactMap(\.assignedSetIndex)),
+                onStartUnit: { racketTimers[ex.id] = .now; Haptics.tap() },
+                onEndUnit: {
+                    let duration = racketTimers[ex.id].map { Date.now.timeIntervalSince($0) }
+                    racketScoring = RacketScoreTarget(exerciseID: ex.id, unitIndex: ex.sets.count, durationSec: duration)
+                },
+                onEditUnit: { i in
+                    racketScoring = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil)
+                },
+                onNextMatch: {
+                    racketSetup = RacketSetupTarget(start: .nextMatch(RacketMatchParams(from: ex).next()))
+                },
+                onFinish: { withAnimation { page = .overview } })
+        } else {
+            let previous = QuickSessionPager.lastSessionSets(exerciseId: ex.exerciseId, displayName: ex.displayName,
+                                                             history: history)
+            let lastAcc = previous.flatMap { sets -> Double? in
+                let made = sets.compactMap(\.drillMade).reduce(0, +), tried = sets.compactMap(\.drillTried).reduce(0, +)
+                return RacketScoring.accuracy(made: made, tried: tried)
+            }
+            RacketDrillHero(
+                ex: ex,
+                seed: ex.sets.last ?? previous?.last,
+                lastTimeAccuracy: lastAcc,
+                blockStartedAt: racketTimers[ex.id],
+                onLog: { log in
+                    racketTimers[ex.id] = nil
+                    appendLog(log, toExerciseID: ex.id)
+                },
+                onToggleTimer: { racketTimers[ex.id] = racketTimers[ex.id] == nil ? .now : nil })
+                // Re-seed the steppers from the latest block after each log (the strength hero's rule).
+                .id("drill-\(ex.id)-\(ex.sets.count)")
+        }
+    }
+
+    @ViewBuilder
+    private func racketMenuContent(_ ex: SessionExercise) -> some View {
+        if ex.isRacketMatch {
+            Button {
+                racketSetup = RacketSetupTarget(start: .editMatch(RacketMatchParams(from: ex)), editingExerciseID: ex.id)
+            } label: { Label("Match details", systemImage: "pencil") }
+                .accessibilityIdentifier("racket.editMatch")
+            Menu {
+                ForEach(RacketMatchEnd.allCases, id: \.self) { end in
+                    Button(end.label) { setRacketEnd(ex.id, end) }
+                }
+                if ex.racketEnd != nil {
+                    Button("Played out (clear)") { setRacketEnd(ex.id, nil) }
+                }
+            } label: { Label("Retired / walkover", systemImage: "flag") }
+        }
+        Button(role: .destructive) { removeExercise(ex) } label: {
+            Label(ex.isRacketMatch ? "Remove match" : "Remove drill", systemImage: "trash")
+        }
+    }
+
+    private func openRacketSetup() {
+        racketSetup = RacketSetupTarget(start: .new(lastSport: RacketSport(rawValue: lastRacketSportRaw),
+                                                    lastMode: RacketMode(rawValue: lastRacketModeRaw)))
+    }
+
+    /// Create a match entity: the sport's shared activity id + name, the match identity from the sheet.
+    private func addRacketMatch(_ params: RacketMatchParams) {
+        var entity = SessionExercise(
+            exerciseId: RacketStats.matchExerciseId(params.sport), targetSets: 0, targetReps: "",
+            targetRestSeconds: 0, sets: [], displayName: RacketStats.matchActivityName(params.sport),
+            kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = WorkoutDiscipline.racket.rawValue
+        params.apply(to: &entity)
+        RacketStats.applyMatchIdentity(&entity)   // a partner files it under doubles
+        session.exercises.append(entity)
+        // A tournament day reads as its event (an untouched "Quick session" title only).
+        if let event = entity.racketEvent, SessionToRoutine.isGenericName(session.routineName) {
+            session.routineName = event
+        }
+        lastRacketSportRaw = params.sport.rawValue
+        lastRacketModeRaw = RacketMode.match.rawValue
+        persist()
+        pushLiveActivity()
+    }
+
+    private func updateRacketMatch(_ exID: UUID, _ params: RacketMatchParams) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        params.apply(to: &session.exercises[idx])
+        RacketStats.applyMatchIdentity(&session.exercises[idx])
+        persist()
+        pushLiveActivity()
+    }
+
+    private func addRacketDrill(sport: RacketSport, name: String, measure: RacketDrillMeasure) {
+        var entity = SessionExercise(
+            exerciseId: RacketStats.drillExerciseId(sport), targetSets: 0, targetReps: "",
+            targetRestSeconds: 0, sets: [], displayName: name, kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = WorkoutDiscipline.racket.rawValue
+        entity.racketSportRaw = sport.rawValue
+        entity.racketModeRaw = RacketMode.drill.rawValue
+        entity.drillMeasureRaw = measure.rawValue
+        session.exercises.append(entity)
+        lastRacketSportRaw = sport.rawValue
+        lastRacketModeRaw = RacketMode.drill.rawValue
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Save a unit's score: a new unit appends through `appendLog` (stamp + clip claim + haptic); an edit
+    /// rewrites the score in place, keeping when it was logged. Celebrates the moment a match is decided.
+    private func saveRacketUnit(_ log: SetLog, target: RacketScoreTarget) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == target.exerciseID }) else { return }
+        let wasDecided = session.exercises[idx].racketState.isDecided
+        if target.unitIndex < session.exercises[idx].sets.count {
+            var set = session.exercises[idx].sets[target.unitIndex]
+            set.scoreFor = log.scoreFor
+            set.scoreAgainst = log.scoreAgainst
+            set.tiebreakFor = log.tiebreakFor
+            set.tiebreakAgainst = log.tiebreakAgainst
+            set.superTiebreak = log.superTiebreak
+            session.exercises[idx].sets[target.unitIndex] = set
+            persist()
+            pushLiveActivity()
+        } else {
+            racketTimers[target.exerciseID] = nil
+            appendLog(log, toExerciseID: target.exerciseID)
+        }
+        let state = session.exercises[idx].racketState
+        if !wasDecided, let won = state.result {
+            celebrateRacket("\(won ? "Match won" : "Match lost") \(state.scoreLabel)", won: won)
+        }
+    }
+
+    private func setRacketEnd(_ exID: UUID, _ end: RacketMatchEnd?) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        session.exercises[idx].racketEndRaw = end?.rawValue
+        racketTimers[exID] = nil
+        persist()
+        pushLiveActivity()
+    }
+
+    /// The match-decided moment: a win gets the burst + banner; a loss just the banner.
+    private func celebrateRacket(_ headline: String, won: Bool) {
+        withAnimation { liveMilestoneHeadline = headline }
+        if won { milestoneTrigger += 1 }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if liveMilestoneHeadline == headline { withAnimation { liveMilestoneHeadline = nil } }
+        }
     }
 
     // MARK: - Completion moment (§D)
@@ -1758,6 +1985,21 @@ struct FreeformPlayerView: View {
             .max { $0.offsetSec < $1.offsetSec }?.durationSec
         if ex.discipline == .climb {
             recordedAttemptFor = RecordedAttemptTarget(exerciseID: id, type: ex.climbType, durationSec: duration)
+            return
+        }
+        // A filmed game asks for its score; a filmed drill block logs with last block's counts (prompt 203).
+        if ex.isRacketMatch {
+            racketTimers[id] = nil
+            racketScoring = RacketScoreTarget(exerciseID: id, unitIndex: ex.sets.count, durationSec: duration)
+            return
+        }
+        if ex.isRacketDrill {
+            var log = SetLog(durationSec: duration)
+            log.drillMade = ex.sets.last?.drillMade
+            log.drillTried = ex.sets.last?.drillTried
+            log.longestRally = ex.sets.last?.longestRally
+            racketTimers[id] = nil
+            appendLog(log, toExerciseID: id)
             return
         }
         switch ex.kind {

@@ -36,7 +36,7 @@ final class WorkoutDisciplineTests: XCTestCase {
         for d in WorkoutDiscipline.allCases {
             XCTAssertEqual(WorkoutDiscipline(rawValue: d.rawValue), d)
         }
-        XCTAssertEqual(WorkoutDiscipline.allCases.count, 6)
+        XCTAssertEqual(WorkoutDiscipline.allCases.count, 7)   // + racket (prompt 203)
     }
 
     func testLabelsAndSymbolsAreNonEmpty() {

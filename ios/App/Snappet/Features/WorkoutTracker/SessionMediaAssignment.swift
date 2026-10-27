@@ -101,6 +101,7 @@ func clipMoveTargets(for ex: SessionExercise) -> [ClipMoveTarget] {
     switch ex.discipline {
     case .climb: noun = "Attempt"
     case .run:   noun = "Leg"
+    case .racket: noun = ex.isRacketMatch ? ex.racketFormat.sport.unit.noun.capitalized : "Block"
     default:     noun = "Set"
     }
     return ex.sets.indices.map { i in

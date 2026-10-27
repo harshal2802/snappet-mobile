@@ -351,8 +351,9 @@ struct WorkoutDashboardSection: View {
         case .timed:    singular = "timed session"
         case .dance:    singular = "dance"
         case .other:    singular = "session"
+        case .racket:   singular = "match"
         }
-        return count == 1 ? singular : (singular == "dance" ? "dances" : singular + "s")
+        return count == 1 ? singular : (singular == "dance" ? "dances" : singular == "match" ? "matches" : singular + "s")
     }
 
     static func weekdayInitial(_ date: Date, cal: Calendar) -> String {

@@ -73,6 +73,8 @@ struct ActivityDashboardView: View {
     @State private var groups: [ActivitySessionGroup] = []
     /// HR-per-set trend and (for a climbing overview) the named climbs inside it — prompt 181.
     @State private var effort: ActivityInsights.Effort?
+    /// HRV per session (chest-strap sessions only); `nil` hides the card.
+    @State private var hrvTrend: [ActivityInsights.HRVPoint]?
     @State private var climbs: [LibraryCatalog.Row] = []
     @State private var loaded = false
     @State private var selected: UUID?
@@ -148,6 +150,7 @@ struct ActivityDashboardView: View {
             groups = ActivityMediaIndex.groups(for: key, history: source, media: media, unit: unit,
                                                distanceUnit: unit == .lb ? .mi : .km)
             effort = ActivityInsights.effort(key: key, history: source, unit: unit)
+            hrvTrend = ActivityInsights.hrv(key: key, history: source)
             if key.disciplineScope == .climb {
                 let all = LibraryCatalog.yours(history: history, identity: ActivityIdentity(sessions: history),
                                                unit: unit, title: LibraryCatalog.fallbackTitle)
@@ -438,6 +441,7 @@ struct ActivityDashboardView: View {
                     kpiRow(d)
                     chartCard(d)
                     if let effort { effortCard(effort) }
+                    if let hrvTrend { hrvCard(hrvTrend) }
                     if !allClips.isEmpty { clipsCard }
                     if !climbs.isEmpty { climbsCard }
                     recordsCard(d)
@@ -489,27 +493,42 @@ struct ActivityDashboardView: View {
     }
 
     private func chartCard(_ d: ActivityDashboard) -> some View {
-        let selectedPoint = d.points.first { $0.sessionID == selected }
+        let selectedIndex = d.points.firstIndex { $0.sessionID == selected }
+        let selectedPoint = selectedIndex.map { d.points[$0] }
+        let labels = ActivityDashboard.sessionAxisLabels(d.points.map(\.date))
         return card(d.metric.title, trailing: d.points.contains(where: \.hasMedia) ? "📷 = has clips" : nil) {
             if d.points.count >= 2 {
                 Chart {
-                    ForEach(d.points) { p in
-                        LineMark(x: .value("Date", p.date), y: .value(d.metric.title, p.value))
+                    ForEach(Array(d.points.enumerated()), id: \.element.id) { i, p in
+                        LineMark(x: .value("Session", i), y: .value(d.metric.title, p.value))
                             .foregroundStyle(accent)
-                            .interpolationMethod(.monotone)
-                        PointMark(x: .value("Date", p.date), y: .value(d.metric.title, p.value))
+                        PointMark(x: .value("Session", i), y: .value(d.metric.title, p.value))
                             .foregroundStyle(p.hasMedia ? SnappetColor.brand : accent)
                             .symbolSize(p.hasMedia ? 110 : 30)
                             .annotation(position: .top, spacing: 2) {
                                 if p.hasMedia { Image(systemName: "video.fill").font(.system(size: 8)).foregroundStyle(SnappetColor.brand) }
                             }
                     }
-                    if let s = selectedPoint {
-                        RuleMark(x: .value("Date", s.date)).foregroundStyle(.secondary.opacity(0.4))
+                    if let i = selectedIndex {
+                        RuleMark(x: .value("Session", i)).foregroundStyle(.secondary.opacity(0.4))
                     }
                 }
-                .chartYScale(domain: .automatic(includesZero: false, reversed: !d.metric.higherIsBetter))
-                .chartYAxis(d.metric == .hardestSend ? .hidden : .automatic)
+                .sessionXAxis(count: d.points.count, labels: labels)
+                .chartYScale(domain: d.metric == .winRate || d.metric == .accuracy
+                             ? .automatic(includesZero: true, reversed: false)
+                             : .automatic(includesZero: false, reversed: !d.metric.higherIsBetter))
+                .chartYAxis {
+                    if d.metric == .hardestSend {
+                        AxisMarks { _ in }
+                    } else if d.metric == .winRate || d.metric == .accuracy {
+                        // A share: 0–100 %, never "−0.2" (2026-10-26).
+                        AxisMarks(values: [0, 0.25, 0.5, 0.75, 1]) { v in
+                            AxisGridLine(); AxisValueLabel { Text("\(Int(((v.as(Double.self) ?? 0) * 100).rounded()))%") }
+                        }
+                    } else {
+                        AxisMarks()
+                    }
+                }
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         Rectangle().fill(.clear).contentShape(Rectangle())
@@ -530,7 +549,7 @@ struct ActivityDashboardView: View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
                 Text(p.label).font(.subheadline.weight(.bold)).monospacedDigit()
-                Text(p.date, format: .dateTime.day().month(.abbreviated).year()).font(.caption).foregroundStyle(.secondary)
+                Text(p.date, format: .dateTime.day().month(.abbreviated).year().hour().minute()).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if p.hasMedia {
@@ -589,21 +608,41 @@ struct ActivityDashboardView: View {
         .accessibilityIdentifier("activity.dashboard.clips")
     }
 
+    /// HRV per session (2026-10-26) — only sessions recorded with a chest strap have one.
+    private func hrvCard(_ points: [ActivityInsights.HRVPoint]) -> some View {
+        let delta = Int((points.last!.rmssd - points.first!.rmssd).rounded())
+        return card("HRV", trailing: delta == 0 ? "steady" : "\(delta > 0 ? "+" : "−")\(abs(delta)) ms") {
+            Chart(Array(points.enumerated()), id: \.element.id) { i, p in
+                LineMark(x: .value("Session", i), y: .value("ms", p.rmssd)).foregroundStyle(SnappetColor.perfFresh)
+                PointMark(x: .value("Session", i), y: .value("ms", p.rmssd))
+                    .foregroundStyle(HRVBadge.recoveryColor(p.rmssd)).symbolSize(20)
+            }
+            .sessionXAxis(count: points.count, labels: ActivityDashboard.sessionAxisLabels(points.map(\.date)))
+            .chartYScale(domain: .automatic(includesZero: false))
+            .frame(height: 90)
+            Text("Average beat-to-beat variability (RMSSD) across your sets each session — higher usually means better recovered. From a chest strap.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("activity.dashboard.hrv")
+    }
+
     private func effortCard(_ e: ActivityInsights.Effort) -> some View {
         let delta = e.change
         let trailing = delta == 0 ? "steady" : "\(delta > 0 ? "+" : "−")\(abs(delta)) bpm\(e.fitter ? " · fitter" : "")"
         return card(e.title, trailing: trailing) {
-            Chart(e.points) { p in
-                LineMark(x: .value("Date", p.date), y: .value("bpm", p.bpm))
-                    .foregroundStyle(SnappetColor.perfHard).interpolationMethod(.monotone)
-                PointMark(x: .value("Date", p.date), y: .value("bpm", p.bpm))
+            Chart(Array(e.points.enumerated()), id: \.element.id) { i, p in
+                LineMark(x: .value("Session", i), y: .value("bpm", p.bpm))
+                    .foregroundStyle(SnappetColor.perfHard)
+                PointMark(x: .value("Session", i), y: .value("bpm", p.bpm))
                     .foregroundStyle(SnappetColor.perfHard).symbolSize(20)
             }
+            .sessionXAxis(count: e.points.count, labels: ActivityDashboard.sessionAxisLabels(e.points.map(\.date)))
             .chartYScale(domain: .automatic(includesZero: false))
             .frame(height: 90)
             Text(e.referenceKg != nil
                  ? "The same weight costing fewer beats means you're fitter."
-                 : "Average peak heart rate across your sets each session.")
+                 : "Average peak heart rate across your \(e.unitNoun)s each session.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .contain)
@@ -679,13 +718,26 @@ struct ActivityDashboardView: View {
     private func select(at location: CGPoint, proxy: ChartProxy, geo: GeometryProxy, points: [ActivityDashboard.Point]) {
         guard let plot = proxy.plotFrame else { return }
         let x = location.x - geo[plot].origin.x
-        guard let date: Date = proxy.value(atX: x) else { return }
-        selected = points.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }?.sessionID
+        guard let v: Double = proxy.value(atX: x), !points.isEmpty else { return }
+        selected = points[min(points.count - 1, max(0, Int(v.rounded())))].sessionID
     }
 
     /// Play every clip of the activity, starting at the first clip of `session`.
     private func play(session: UUID) {
         guard let start = allClips.firstIndex(where: { $0.sessionID == session }) else { return }
         viewing = ViewerRequest(clips: allClips, start: start)
+    }
+}
+
+private extension View {
+    /// Space a chart's points one per session (index 0…count−1), labelled by `ActivityDashboard.sessionAxisLabels`.
+    func sessionXAxis(count: Int, labels: [Int: String]) -> some View {
+        chartXScale(domain: -0.3...(Double(max(count, 2) - 1) + 0.3))
+            .chartXAxis {
+                AxisMarks(values: labels.keys.sorted()) { v in
+                    AxisGridLine()
+                    AxisValueLabel { Text(v.as(Int.self).flatMap { labels[$0] } ?? "") }
+                }
+            }
     }
 }
