@@ -24,7 +24,7 @@ enum FreeformSummary {
     /// (`lifting`/`climbing`/`timed` keep their names for back-compat with the done-screen; `running`/
     /// `dance`/`other` are the Workout-Type Parity additions.)
     enum Dominant: String, Equatable, Sendable {
-        case lifting, climbing, timed, running, dance, other, none
+        case lifting, climbing, timed, running, dance, other, racket, none
     }
 
     /// One value+label cell for the completion summary (mirrors the guided done-screen `stat(_:_:)`).
@@ -56,7 +56,7 @@ enum FreeformSummary {
         }
         let order: [(WorkoutDiscipline, Dominant)] = [
             (.strength, .lifting), (.climb, .climbing), (.run, .running),
-            (.timed, .timed), (.dance, .dance), (.other, .other),
+            (.timed, .timed), (.racket, .racket), (.dance, .dance), (.other, .other),
         ]
         // First discipline in `order` with a strictly-greater count wins → deterministic ties in the
         // documented order; `.none` when nothing is logged (best.count stays 0).
@@ -95,6 +95,13 @@ enum FreeformSummary {
         case .other:
             headline = Stat(value: SetMeasure.formatDuration(activeSeconds(session, discipline: .other)),
                             label: "Active")
+        case .racket:
+            let sum = RacketStats.summary(session.exercises)
+            if let sum, sum.matches > 0 {
+                headline = Stat(value: sum.record.shortLabel, label: "Won–lost")
+            } else {
+                headline = Stat(value: SetMeasure.formatDuration(activeSeconds(session, discipline: .racket)), label: "Active")
+            }
         case .none:
             headline = Stat(value: "—", label: "—")
         }
@@ -120,7 +127,7 @@ enum FreeformSummary {
     /// distance/pace, not time-under-tension, so it must not inflate a timed session's TUT.
     static func holdTimeSeconds(_ session: WorkoutSession) -> Double {
         var total = 0.0
-        for ex in session.exercises where ex.kind == .duration && ex.discipline != .run {
+        for ex in session.exercises where ex.kind == .duration && ex.discipline != .run && ex.discipline != .racket {
             for set in ex.sets where set.completedAt != nil { total += set.durationSec ?? 0 }
         }
         return total

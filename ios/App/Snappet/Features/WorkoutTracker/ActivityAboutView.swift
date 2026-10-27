@@ -95,6 +95,12 @@ struct ActivityAboutView: View {
             if total > 0 {
                 LabeledContent("Total", value: SetMeasure.formatDistance(total, unit: unit == .lb ? .mi : .km))
             }
+        case .racket:
+            let r = RacketStats.record(all.map(\.exercise))
+            if r.played > 0 { LabeledContent("Record", value: r.label) }
+            if let sport = all.first?.exercise.racketSport { LabeledContent("Sport", value: sport.label) }
+            let time = all.flatMap(\.exercise.sets).compactMap(\.durationSec).reduce(0, +)
+            if time > 0 { LabeledContent("Time played", value: SetMeasure.formatDuration(time)) }
         case .dance, .other:
             let time = all.flatMap(\.exercise.sets).compactMap(\.durationSec).reduce(0, +)
             if time > 0 { LabeledContent("Total time", value: SetMeasure.formatDuration(time)) }

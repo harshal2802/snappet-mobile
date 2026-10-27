@@ -40,6 +40,10 @@ enum ActivityLauncher {
             ex.id = UUID()
             ex.sets = []
             ex.skipped = false
+            // A match starts fresh: same sport, format and event, a new opponent and no result (prompt 203).
+            if ex.isRacketMatch {
+                ex.opponent = nil; ex.racketRound = nil; ex.racketEndRaw = nil
+            }
             // Plan the same number of efforts as last time (not for climbs — attempts aren't planned).
             if ex.discipline != .climb {
                 let done = last.sets.filter { $0.completedAt != nil }.count
@@ -89,6 +93,8 @@ enum ActivityLauncher {
             return RoutineExercise(exerciseId: last.exerciseId, sets: 1, reps: "", restSeconds: 0,
                                    displayName: name, discipline: .run,
                                    targetDistanceMeters: meters > 0 ? meters : template?.targetDistanceMeters)
+        case .racket:
+            return nil   // routines stay racket-free in v1 (prompt 203)
         case .dance, .other:
             return RoutineExercise(exerciseId: last.exerciseId, sets: 1, reps: "", restSeconds: 0,
                                    displayName: name, discipline: last.discipline,

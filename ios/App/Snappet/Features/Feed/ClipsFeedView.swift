@@ -659,7 +659,9 @@ struct ClipsFeedView: View {
         var exerciseName: [UUID: String] = [:]
         for w in workoutSessions {
             for ex in w.exercises {
-                exerciseName[ex.id] = ex.displayName ?? ExerciseCatalog.byID[ex.exerciseId]?.name ?? ex.exerciseId
+                // A match's post reads "R16 vs Alex Chen · Won 3–1" (prompt 203).
+                exerciseName[ex.id] = ex.isRacketMatch ? RacketStats.postTitle(ex)
+                    : ex.displayName ?? ExerciseCatalog.byID[ex.exerciseId]?.name ?? ex.exerciseId
             }
         }
 

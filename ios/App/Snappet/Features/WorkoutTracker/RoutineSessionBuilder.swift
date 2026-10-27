@@ -69,7 +69,7 @@ enum RoutineSessionBuilder {
         case .timed:
             se.timedSpecData = re.timedSpecData
             se.timedCategory = re.timedCategory
-        case .run, .dance, .other, .strength:
+        case .run, .dance, .other, .strength, .racket:
             break
         }
         return se

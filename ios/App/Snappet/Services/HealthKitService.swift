@@ -323,6 +323,12 @@ final class HealthKitService: @unchecked Sendable {
         case .boxing:                      return "Boxing"
         case .jumpRope:                    return "Jump Rope"
         case .stairs, .stepTraining:       return "Stairs"
+        case .tableTennis:                 return "Table Tennis"
+        case .badminton:                   return "Badminton"
+        case .tennis:                      return "Tennis"
+        case .squash:                      return "Squash"
+        case .pickleball:                  return "Pickleball"
+        case .racquetball:                 return "Racquetball"
         default:                           return "Workout"
         }
     }

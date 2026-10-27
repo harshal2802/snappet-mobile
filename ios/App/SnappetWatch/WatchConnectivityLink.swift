@@ -13,6 +13,7 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     /// resolved max HR (Phase 2) for the on-wrist HR zone and resting HR (Phase 4) for the
     /// recovery-ready nudge — either `nil` when the phone has no profile bound.
     var onStart: ((UInt, Double?, Double?) -> Void)?
+    var onRetype: ((UInt) -> Void)?
     /// Phone asked to stop the workout.
     var onStop: (() -> Void)?
     /// Phone asked to pause the workout (applied without echoing back).
@@ -94,6 +95,7 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
         switch LiveWorkoutMessage(payload: payload) {
         case .start(let activityType, let maxHR, let restHR): onStart?(activityType, maxHR, restHR)
         case .stop: onStop?()
+        case .retype(let activityType): onRetype?(activityType)
         case .pause: onPause?()
         case .resume: onResume?()
         case .metrics, .none: break   // metrics flow watch → phone only

@@ -61,7 +61,38 @@ enum WorkoutActivityMapping {
         case .dance:    return .cardioDance
         case .timed:    return .highIntensityIntervalTraining
         case .other:    return .other
+        // A racket entity's real type needs its sport (`activityType(for: RacketSport)`); with only the
+        // discipline in hand, `.other` is the honest fallback — never a guessed sport.
+        case .racket:   return .other
         }
+    }
+
+    /// **Racket sport → `HKWorkoutActivityType`** (prompt 203). HealthKit has a native type for every sport
+    /// but padel, which records as tennis (the Snappet session keeps the real sport).
+    static func activityType(for sport: RacketSport) -> HKWorkoutActivityType {
+        switch sport {
+        case .tableTennis: return .tableTennis
+        case .badminton:   return .badminton
+        case .tennis, .padel: return .tennis
+        case .pickleball:  return .pickleball
+        case .squash:      return .squash
+        }
+    }
+
+    /// The type for one entity — its racket sport when it has one, else its discipline (prompt 203).
+    static func activityType(for entity: SessionExercise) -> HKWorkoutActivityType {
+        if entity.discipline == .racket, let sport = entity.racketSport { return activityType(for: sport) }
+        return activityType(for: entity.discipline)
+    }
+
+    /// Prompt 203: an empty Quick Session starts the watch before anything is in it (as strength). When its
+    /// FIRST entry is a different type — a table tennis match — the watch should record that instead. Only
+    /// while nothing has been logged: once a set or game is in, the workout has real data and is left alone.
+    /// `nil` = keep the current type.
+    static func retypeTarget(current: HKWorkoutActivityType?, firstEntry: HKWorkoutActivityType?,
+                             loggedAnything: Bool) -> HKWorkoutActivityType? {
+        guard let current, let firstEntry, !loggedAnything, firstEntry != current else { return nil }
+        return firstEntry
     }
 
     /// Resolve the activity type for a **discipline-aware** routine (E4). Prefers the routine's own

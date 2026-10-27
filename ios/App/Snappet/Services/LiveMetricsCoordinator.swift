@@ -155,6 +155,17 @@ final class LiveMetricsCoordinator: MetricsSource {
             maxHR: maxHR, restHR: restHR))
     }
 
+    /// Prompt 203: retype the watch workout to the session's first entry while nothing is logged yet (an empty
+    /// Quick Session that becomes a table tennis match). No-op for a BLE band (it records no workout type).
+    func retypeIfFresh(_ session: WorkoutSession) {
+        guard isSessionActive, activeKind == .appleWatch else { return }
+        let first = session.exercises.first { !$0.skipped }.map(WorkoutActivityMapping.activityType(for:))
+        guard let target = WorkoutActivityMapping.retypeTarget(current: watch.activityType, firstEntry: first,
+                                                               loggedAnything: session.completedSetCount > 0)
+        else { return }
+        watch.retype(target)
+    }
+
     func stop() {
         isSessionActive = false
         bleDisplayPaused = false

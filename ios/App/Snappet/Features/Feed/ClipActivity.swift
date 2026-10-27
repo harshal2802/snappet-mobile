@@ -11,7 +11,7 @@ import Foundation
 //   1. festival-tagged set, or any clip from a festival night → festival
 //   2. a Kilter board session                                  → climbing
 //   3. a clip tagged to an exercise → that exercise's discipline (climb → climbing · strength → strength ·
-//      run → cardio · dance → dance · timed → strength — hangboard included, the user's call · other → other)
+//      run → cardio · racket → racket · dance → dance · timed → strength — hangboard included, the user's call · other → other)
 //   4. untagged clips / reels → the SESSION's activity: an Apple Health import by its workout type label
 //      (the importer's own closed label set, `HealthKitService.label`), a tracked session by its most common
 //      exercise activity.
@@ -23,7 +23,7 @@ enum ClipActivity {
     typealias Activity = ClipFeedPost.Discipline
 
     /// Display order for the chips (only activities that have posts are shown).
-    static let chipOrder: [Activity] = [.climbing, .strength, .cardio, .dance, .mobility, .festival, .general]
+    static let chipOrder: [Activity] = [.climbing, .strength, .cardio, .racket, .dance, .mobility, .festival, .general]
 
     /// One tracked exercise → its activity. `timed` (holds, hangboard, core) counts as strength.
     static func forExercise(_ discipline: WorkoutDiscipline) -> Activity {
@@ -33,6 +33,7 @@ enum ClipActivity {
         case .run: return .cardio
         case .dance: return .dance
         case .other: return .general
+        case .racket: return .racket
         }
     }
 
@@ -44,6 +45,7 @@ enum ClipActivity {
         case "Strength Training", "Functional Strength", "Core Training", "Kickboxing", "Boxing": return .strength
         case "Run", "Walk", "Hike", "Cycling", "Swim", "Rowing", "Elliptical", "HIIT", "Cardio",
              "Jump Rope", "Stairs": return .cardio
+        case "Table Tennis", "Badminton", "Tennis", "Squash", "Pickleball", "Racquetball": return .racket
         case "Dance", "Barre": return .dance
         case "Yoga", "Pilates", "Flexibility", "Cooldown": return .mobility
         default: return .general
@@ -71,6 +73,7 @@ extension ClipFeedPost.Discipline {
         case .climbing: return "Climbing"
         case .strength: return "Strength"
         case .cardio: return "Cardio"
+        case .racket: return "Racket"
         case .dance: return "Dance"
         case .mobility: return "Mobility"
         case .festival: return "Festival"
@@ -84,6 +87,7 @@ extension ClipFeedPost.Discipline {
         case .climbing: return "figure.climbing"
         case .strength: return "figure.strengthtraining.traditional"
         case .cardio: return "figure.run"
+        case .racket: return "tennis.racket"
         case .dance: return "figure.dance"
         case .mobility: return "figure.mind.and.body"
         case .festival: return "music.mic"
