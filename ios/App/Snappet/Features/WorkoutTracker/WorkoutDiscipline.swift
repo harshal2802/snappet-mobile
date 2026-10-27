@@ -16,6 +16,9 @@ import Foundation
 /// concern and lives with the views, not here.
 enum WorkoutDiscipline: String, Codable, CaseIterable, Sendable, Identifiable {
     case strength, climb, run, dance, timed, other
+    /// Racket sports (prompt 203) — a match (scored games/sets) or a drill. The sport rides on the entity
+    /// (`SessionExercise.racketSportRaw`); this axis only says "it's a racket entity".
+    case racket
     var id: String { rawValue }
 
     /// Derive a discipline from a legacy `SetKind` for entities saved before `disciplineRaw` existed
@@ -37,6 +40,7 @@ enum WorkoutDiscipline: String, Codable, CaseIterable, Sendable, Identifiable {
         case .dance:    return "Dance"
         case .timed:    return "Timed"
         case .other:    return "Other"
+        case .racket:   return "Racket"
         }
     }
 
@@ -49,6 +53,7 @@ enum WorkoutDiscipline: String, Codable, CaseIterable, Sendable, Identifiable {
         case .dance:    return "figure.dance"
         case .timed:    return "timer"
         case .other:    return "figure.mixed.cardio"
+        case .racket:   return "tennis.racket"
         }
     }
 
@@ -59,7 +64,7 @@ enum WorkoutDiscipline: String, Codable, CaseIterable, Sendable, Identifiable {
         switch self {
         case .strength: return .repsWeight
         case .climb:    return .climbAttempt
-        case .run, .dance, .timed, .other: return .duration
+        case .run, .dance, .timed, .other, .racket: return .duration
         }
     }
 
@@ -68,7 +73,7 @@ enum WorkoutDiscipline: String, Codable, CaseIterable, Sendable, Identifiable {
     var primaryAxis: MeasurementAxis {
         switch self {
         case .strength: return .repsWeight
-        case .climb:    return .outcome
+        case .climb, .racket: return .outcome
         case .run:      return .distance
         case .timed, .dance, .other: return .duration
         }

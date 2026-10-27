@@ -119,7 +119,7 @@ struct ClipFeedItem: Identifiable, Sendable, Equatable {
 /// One Clips-feed post = all of one exercise's / one climb's clips in a session.
 struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// The ACTIVITY the post was (prompt 170 — `ClipActivity` resolves it). `general` reads "Other".
-    enum Discipline: String, Sendable, Equatable, Hashable { case climbing, strength, cardio, dance, mobility, festival, general }
+    enum Discipline: String, Sendable, Equatable, Hashable { case climbing, strength, cardio, racket, dance, mobility, festival, general }
 
     /// Stable across reloads: `groupKey@sessionID` (same climb in two sessions ⇒ two posts).
     var id: String
@@ -353,7 +353,7 @@ enum ClipFeedComposer {
                             if let st, st.isSend { label = "Attempt \(s + 1) · \(st.label)" }
                             else { label = "Attempt \(s + 1)" }
                         } else {
-                            label = "Set \(s + 1)"
+                            label = "\(bundle.exerciseStats[key]?.effortNoun ?? "Set") \(s + 1)"
                         }
                     }
                     else { label = ordered.count > 1 ? "Clip \(i + 1)" : nil }

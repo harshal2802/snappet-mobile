@@ -634,6 +634,7 @@ struct AddExercisePage: View {
     let onTimed: () -> Void
     let onDance: () -> Void
     let onOther: () -> Void
+    var onRacket: () -> Void = {}
 
     var body: some View {
         ScrollView {
@@ -653,6 +654,9 @@ struct AddExercisePage: View {
                 typeCard("Timed", subtitle: "Stopwatch · Tabata · EMOM",
                          discipline: .timed, id: "freeform.cardTimed",
                          accLabel: "Start a timed exercise", action: onTimed)
+                typeCard("Racket", subtitle: "Table tennis · tennis · badminton · match or drill",
+                         discipline: .racket, id: "freeform.cardRacket",
+                         accLabel: "Start a racket sport", action: onRacket)
                 typeCard("Dance", subtitle: "Open effort on the clock",
                          discipline: .dance, id: "freeform.cardDance",
                          accLabel: "Start a dance session", action: onDance)

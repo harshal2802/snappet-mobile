@@ -20,6 +20,8 @@ struct LiveMetricsSummary: Equatable, Sendable {
     let stats: WorkoutHRStats?
     /// Recovery toward rest from the latest bpm + profile bounds; `.unknown` (hidden) without a profile.
     let recovery: RecoveryReadiness
+    /// HRV over the last minute (`HRVReads.rolling`) — `.empty` (hidden) unless a chest strap streams RR.
+    var hrv: HRVMetrics = .empty
 
     /// Running average bpm, rounded; `nil` until there's a buffer.
     var avgBpm: Int? { stats.map { Int($0.avgBpm.rounded()) } }
@@ -54,6 +56,7 @@ struct LiveMetricsSummary: Equatable, Sendable {
             currentBpm: currentBpm.flatMap { $0 > 0 ? Int($0.rounded()) : nil },
             zone: HeartRateZone.forBpm(currentBpm, maxHR: zoneMax),
             stats: stats,
-            recovery: RecoveryReadiness.evaluate(currentBpm: currentBpm, restBpm: restHR, maxBpm: maxHR))
+            recovery: RecoveryReadiness.evaluate(currentBpm: currentBpm, restBpm: restHR, maxBpm: maxHR),
+            hrv: HRVReads.rolling(samples))
     }
 }

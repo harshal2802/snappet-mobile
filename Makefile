@@ -40,7 +40,12 @@ IOS_DIR      := ios/App
 ENGINE_DIR   := ios/HighlightEngine
 PROJECT      := $(IOS_DIR)/Snappet.xcodeproj
 DERIVED_DATA := $(IOS_DIR)/build/DerivedData
-DEST_SIM     := platform=iOS Simulator,name=$(SIMULATOR)
+# Resolve SIMULATOR to a device id: newest iOS runtime that has a device of that name. A bare
+# `name=` resolves with OS:latest, which fails once a newer runtime (e.g. 27.1) is installed
+# without that device ("Unable to find a device matching the provided destination specifier").
+# Falls back to the name when nothing matches (or off macOS). Pin one with  make ios-test SIM_ID=<udid>.
+SIM_ID ?= $(shell xcrun simctl list devices available 2>/dev/null | awk -v n='$(SIMULATOR)' '/^-- /{ios=($$2=="iOS")} ios && index($$0,"    " n " (")==1{s=substr($$0,length(n)+7); id=substr(s,1,index(s,")")-1)} END{print id}')
+DEST_SIM      = $(if $(strip $(SIM_ID)),platform=iOS Simulator$(comma)id=$(strip $(SIM_ID)),platform=iOS Simulator$(comma)name=$(SIMULATOR))
 DEST_DEVICE  := generic/platform=iOS
 # The watch target only builds, so it needs no named device: the generic destination works with
 # whatever watch simulators are installed. Pin one with  make ios-watch WATCH_SIMULATOR='Apple Watch Series 11 (46mm)'.
@@ -86,7 +91,7 @@ help: ## List all targets (default)
 	@awk 'BEGIN {FS = ":.*##"; printf "\nSnappet Mobile — make targets\n\nUsage: \033[36mmake <target>\033[0m\n"} \
 		/^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } \
 		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
-	@printf "\nVariables: SIMULATOR=%s  CONFIG=%s  SCHEME=%s  (override on the CLI)\n\n" "$(SIMULATOR)" "$(CONFIG)" "$(SCHEME)"
+	@printf "\nVariables: SIMULATOR=%s (id %s)  CONFIG=%s  SCHEME=%s  (override on the CLI)\n\n" "$(SIMULATOR)" "$(SIM_ID)" "$(CONFIG)" "$(SCHEME)"
 
 .PHONY: doctor
 doctor: ## Report which toolchains are available on this machine
@@ -137,7 +142,7 @@ ios-watch: ios-generate ## Build the watchOS companion (SnappetWatch scheme) for
 ios-run: ios-sim ## Build, boot the simulator, install + launch the app
 	$(require_macos)
 	@open -a Simulator
-	@xcrun simctl boot '$(SIMULATOR)' 2>/dev/null || true
+	@xcrun simctl boot '$(if $(strip $(SIM_ID)),$(strip $(SIM_ID)),$(SIMULATOR))' 2>/dev/null || true
 	@APP=$$(find $(DERIVED_DATA)/Build/Products -name 'Snappet.app' -maxdepth 3 | head -1); \
 		echo "Installing $$APP"; \
 		xcrun simctl install booted "$$APP"; \

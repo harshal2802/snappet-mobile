@@ -11,6 +11,10 @@ import Foundation
 ///   - `start(activityType:)` — phone → watch: begin an `HKWorkoutSession` of this
 ///     `HKWorkoutActivityType` raw value.
 ///   - `stop` — phone → watch: end the session.
+///   - `retype(activityType:)` — phone → watch (prompt 203): the session started before anything was
+///     logged (an empty Quick Session → strength) and its first entry is another type (a table tennis
+///     match). `HKWorkoutSession` can't change type, so the watch discards the empty workout and starts
+///     the new type from the same start time. An older watch app ignores the unknown kind.
 ///   - `pause` / `resume` — **bidirectional** control: either side can pause/resume the
 ///     live workout (the watch pauses its `HKWorkoutSession`; the phone freezes its
 ///     overlay + Live Activity). The receiver applies the state *without* echoing it back,
@@ -25,6 +29,7 @@ enum LiveWorkoutMessage: Equatable, Sendable {
     /// nudge — back-compatible with senders that don't include them.
     case start(activityType: UInt, maxHR: Double?, restHR: Double?)
     case stop
+    case retype(activityType: UInt)
     case pause
     case resume
     case metrics(hrBpm: Double, energyKcal: Double, t: Double)
@@ -40,7 +45,7 @@ enum LiveWorkoutMessage: Equatable, Sendable {
     }
 
     private enum Kind: String {
-        case start, stop, pause, resume, metrics
+        case start, stop, retype, pause, resume, metrics
     }
 
     /// Property-list dictionary suitable for `WCSession.sendMessage`/`transferUserInfo`.
@@ -53,6 +58,8 @@ enum LiveWorkoutMessage: Equatable, Sendable {
             return d
         case .stop:
             return [Key.kind: Kind.stop.rawValue]
+        case .retype(let activityType):
+            return [Key.kind: Kind.retype.rawValue, Key.activityType: activityType]
         case .pause:
             return [Key.kind: Kind.pause.rawValue]
         case .resume:
@@ -79,6 +86,9 @@ enum LiveWorkoutMessage: Equatable, Sendable {
                           restHR: payload[Key.restHR] as? Double)
         case .stop:
             self = .stop
+        case .retype:
+            guard let type = payload[Key.activityType] as? UInt else { return nil }
+            self = .retype(activityType: type)
         case .pause:
             self = .pause
         case .resume:

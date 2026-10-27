@@ -74,7 +74,7 @@ enum SessionInsights {
             case .timed:
                 let isHang = ex.contains { $0.timedCategory == "hangboard" || $0.sets.contains { $0.loadKg != nil || $0.forceReps != nil } }
                 return isHang ? .hangboard : .timed
-            case .dance, .other: return .other
+            case .dance, .other, .racket: return .other
             }
         }
     }

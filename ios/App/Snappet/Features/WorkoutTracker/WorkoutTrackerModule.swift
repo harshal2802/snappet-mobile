@@ -416,9 +416,11 @@ struct WorkoutHomeView: View {
             let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [entity])
             context.insert(session)
             try? context.save()
-            app.liveWorkout.start(for: session, disciplines: [entity.discipline], sport: nil, category: nil,
-                                  maxHR: app.userProfile.profile.resolvedMaxHR,
-                                  restHR: app.userProfile.profile.restingBound)
+            // The entity's own type — a table tennis match records Table Tennis, not its bare discipline.
+            app.liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt,
+                                                     activityType: WorkoutActivityMapping.activityType(for: entity),
+                                                     maxHR: app.userProfile.profile.resolvedMaxHR,
+                                                     restHR: app.userProfile.profile.restingBound))
             startLiveActivity(for: session)
             playing = session
         }

@@ -30,6 +30,10 @@ enum SessionSetEditing {
         var grade: String = ""           // climb grade label
         var statusRaw: String? = nil     // KilterAscentStatus.rawValue
         var attempts: String = ""        // climb attempt count
+        var scoreFor: String = ""        // racket unit score (prompt 203)
+        var scoreAgainst: String = ""
+        var drillMade: String = ""       // racket drill block
+        var drillTried: String = ""
     }
 
     /// The display distance unit derived from the weight-unit preference (lb→mi), matching the detail view.
@@ -55,6 +59,18 @@ enum SessionSetEditing {
     static func draft(for set: SetLog, discipline: WorkoutDiscipline, kind: SetKind,
                       unit: WeightUnit, distanceUnit: DistanceUnit) -> Draft {
         var d = Draft()
+        if discipline == .racket {
+            // A match unit edits its score (tiebreaks stay as logged); a made/tried block its counts;
+            // anything else its time.
+            if let f = set.scoreFor, let a = set.scoreAgainst {
+                d.scoreFor = String(f); d.scoreAgainst = String(a)
+            } else if let t = set.drillTried {
+                d.drillMade = set.drillMade.map(String.init) ?? "0"; d.drillTried = String(t)
+            } else if let s = set.durationSec, s > 0 {
+                d.duration = SetMeasure.formatDuration(s)
+            }
+            return d
+        }
         if discipline == .run {
             d.distance = SetMeasure.distanceFieldText(set.distanceMeters ?? 0, unit: distanceUnit)
             if let s = set.durationSec, s > 0 { d.duration = SetMeasure.formatDuration(s) }
@@ -107,6 +123,14 @@ enum SessionSetEditing {
     static func apply(_ d: Draft, seed: Draft, to set: inout SetLog,
                       discipline: WorkoutDiscipline, kind: SetKind,
                       unit: WeightUnit, distanceUnit: DistanceUnit) {
+        if discipline == .racket {
+            if d.scoreFor != seed.scoreFor, let v = Int(d.scoreFor) { set.scoreFor = max(0, v) }
+            if d.scoreAgainst != seed.scoreAgainst, let v = Int(d.scoreAgainst) { set.scoreAgainst = max(0, v) }
+            if d.drillMade != seed.drillMade, let v = Int(d.drillMade) { set.drillMade = max(0, v) }
+            if d.drillTried != seed.drillTried, let v = Int(d.drillTried) { set.drillTried = max(0, v) }
+            if d.duration != seed.duration { set.durationSec = SetMeasure.parseDuration(d.duration) }
+            return
+        }
         if discipline == .run {
             if d.distance != seed.distance { set.distanceMeters = SetMeasure.parseDistance(d.distance, unit: distanceUnit) }
             if d.duration != seed.duration { set.durationSec = SetMeasure.parseDuration(d.duration) }
@@ -135,6 +159,12 @@ enum SessionSetEditing {
             if d.statusRaw != seed.statusRaw { set.climbStatusRaw = d.statusRaw }
             if d.attempts != seed.attempts { set.climbAttempts = SetMeasure.parseReps(d.attempts) }
         }
+    }
+
+    /// The session's exercises without one entity (removing a match / exercise from a finished session). Every
+    /// other entity — and its sets — is untouched; media is keyed by exercise id, so no index shifts.
+    static func removing(_ id: UUID, from exercises: [SessionExercise]) -> [SessionExercise] {
+        exercises.filter { $0.id != id }
     }
 
     /// A stored weight re-expressed in the display unit. Same-unit values pass through raw; a

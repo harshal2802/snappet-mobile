@@ -17,6 +17,8 @@ struct ActivityDashboard: Equatable, Sendable {
 
     enum Metric: String, Sendable, Equatable {
         case oneRepMax, maxReps, hardestSend, longestHold, pace, totalTime
+        /// Racket (prompt 203): a match activity's share of decided matches won; a drill's accuracy / rally.
+        case winRate, accuracy, longestRally
 
         var title: String {
             switch self {
@@ -26,6 +28,9 @@ struct ActivityDashboard: Equatable, Sendable {
             case .longestHold: return "Longest hold"
             case .pace: return "Pace"
             case .totalTime: return "Time"
+            case .winRate: return "Win rate"
+            case .accuracy: return "Accuracy"
+            case .longestRally: return "Longest rally"
             }
         }
         var higherIsBetter: Bool { self != .pace }
@@ -41,6 +46,28 @@ struct ActivityDashboard: Equatable, Sendable {
         /// The session has at least one clip of this activity — the chart's 📷 marker.
         let hasMedia: Bool
         var id: UUID { sessionID }
+    }
+
+    /// X-axis labels for a chart spaced by SESSION, not clock time (2026-10-26: a tournament day's three sessions
+    /// sat at 11 AM / 2 PM / 5 PM and read like a trend over hours). Index → "24 Oct", or "24 Oct · 2" when that day
+    /// has several sessions. At most `maxLabels`, evenly spread, always the first and the last.
+    static func sessionAxisLabels(_ dates: [Date], calendar: Calendar = .current, maxLabels: Int = 4,
+                                  day: (Date) -> String = { $0.formatted(.dateTime.day().month(.abbreviated)) })
+        -> [Int: String] {
+        guard !dates.isEmpty else { return [:] }
+        let days = dates.map { calendar.startOfDay(for: $0) }
+        var perDay: [Date: Int] = [:]
+        for d in days { perDay[d, default: 0] += 1 }
+        var seen: [Date: Int] = [:]
+        var all: [String] = []
+        for (i, d) in days.enumerated() {
+            seen[d, default: 0] += 1
+            all.append((perDay[d] ?? 0) > 1 ? "\(day(dates[i])) · \(seen[d]!)" : day(dates[i]))
+        }
+        let n = dates.count
+        let picks: [Int] = n <= maxLabels ? Array(0..<n)
+            : Array(Set((0..<maxLabels).map { Int((Double($0) * Double(n - 1) / Double(maxLabels - 1)).rounded()) })).sorted()
+        return Dictionary(uniqueKeysWithValues: picks.map { ($0, all[$0]) })
     }
 
     struct KPI: Equatable, Sendable {
@@ -126,6 +153,14 @@ struct ActivityDashboard: Equatable, Sendable {
         case .run: return .pace
         case .timed: return .longestHold
         case .dance, .other: return .totalTime
+        case .racket:
+            guard let first = entities.first else { return .totalTime }
+            if first.isRacketMatch { return .winRate }
+            switch first.drillMeasure {
+            case .madeTried: return .accuracy
+            case .longestRally: return .longestRally
+            case .time: return .totalTime
+            }
         }
     }
 
@@ -157,6 +192,13 @@ struct ActivityDashboard: Equatable, Sendable {
         case .totalTime:
             let t = done.compactMap(\.1.durationSec).reduce(0, +)
             return t > 0 ? t : nil
+        case .winRate:
+            return RacketStats.record(ents).winRate
+        case .accuracy:
+            let made = done.compactMap(\.1.drillMade).reduce(0, +), tried = done.compactMap(\.1.drillTried).reduce(0, +)
+            return RacketScoring.accuracy(made: made, tried: tried)
+        case .longestRally:
+            return done.compactMap(\.1.longestRally).max().map(Double.init)
         }
     }
 
@@ -175,6 +217,8 @@ struct ActivityDashboard: Equatable, Sendable {
             return String(format: "%.0f", v)
         case .longestHold, .totalTime: return SetMeasure.formatDuration(v)
         case .pace: return SetMeasure.formatPace(secPerKm: v, unit: distanceUnit)
+        case .winRate, .accuracy: return RacketStats.percent(v)
+        case .longestRally: return "\(Int(v))"
         }
     }
 
@@ -281,6 +325,11 @@ struct ActivityDashboard: Equatable, Sendable {
             if let h = heaviest {
                 out.append(Record(title: "Heaviest load", value: "+\(SetMeasure.formatWeight(h.kg)) kg",
                                   sessionID: h.s.id, date: h.s.startedAt))
+            }
+        case .racket:
+            let r = RacketStats.record(sessions.flatMap(\.1))
+            if r.played > 0, let last = sessions.last {
+                out.append(Record(title: "Record", value: r.label, sessionID: last.0.id, date: last.0.startedAt))
             }
         case .dance, .other: break
         }

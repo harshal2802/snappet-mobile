@@ -54,6 +54,10 @@ final class WorkoutWatchManager: NSObject {
     /// authorization window is open AND absorbs a stop arriving inside that window, so the
     /// stop cancels the start instead of being dropped (#272).
     private var gate = WatchWorkoutStartGate()
+    /// A retype (prompt 203) is discarding the old workout; the new one starts when that lands.
+    private var retyping = false
+    /// A stop arrived while retyping: don't start the new workout.
+    private var stopDuringRetype = false
 
     /// The relay back to the phone. The manager forwards each new HR/energy sample here.
     let link = WatchConnectivityLink()
@@ -75,6 +79,9 @@ final class WorkoutWatchManager: NSObject {
             Task { @MainActor [weak self] in
                 self?.start(activityType: activityType, maxHR: maxHR, restHR: restHR)
             }
+        }
+        link.onRetype = { [weak self] activityType in
+            Task { @MainActor [weak self] in self?.retype(activityType: activityType) }
         }
         link.onStop = { [weak self] in
             Task { @MainActor [weak self] in self?.end() }
@@ -129,6 +136,11 @@ final class WorkoutWatchManager: NSObject {
             resetState()
             return
         }
+        beginSession(activityType: activityType, start: Date())
+    }
+
+    /// Create + start the session and its live builder from `start` (now, or a retype's original start).
+    private func beginSession(activityType: HKWorkoutActivityType, start: Date) {
         let config = HKWorkoutConfiguration()
         config.activityType = activityType
         config.locationType = .unknown
@@ -141,10 +153,12 @@ final class WorkoutWatchManager: NSObject {
 
             self.session = session
             self.builder = builder
-            let start = Date()
             self.startDate = start
             session.startActivity(with: start)
-            builder.beginCollection(withStart: start) { _, _ in }
+            builder.beginCollection(withStart: start) { ok, _ in
+                // A past start (retype) the builder won't take: collect from now instead of not at all.
+                if !ok { builder.beginCollection(withStart: Date()) { _, _ in } }
+            }
             isRunning = true
             paused = false
             hrAverage.reset()
@@ -171,7 +185,34 @@ final class WorkoutWatchManager: NSObject {
         if propagate { link.sendControl(shouldPause ? .pause : .resume) }
     }
 
+    /// Prompt 203: the phone's empty Quick Session became another type (its first entry is a table tennis
+    /// match). An `HKWorkoutSession` can't change type, so end this one, DISCARD it (nothing logged yet —
+    /// no stray strength workout in Health) and start the new type from the same start time, so the timer
+    /// and the relayed `t` offsets carry on. A stop arriving meanwhile wins: no new workout.
+    func retype(activityType raw: UInt) {
+        guard isRunning, !retyping, let session, let builder, let start = startDate,
+              let type = HKWorkoutActivityType(rawValue: raw),
+              session.workoutConfiguration.activityType != type else { return }
+        retyping = true
+        stopDuringRetype = false
+        let wasPaused = paused
+        session.end()
+        builder.endCollection(withEnd: Date()) { [weak self] _, _ in
+            builder.discardWorkout()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.retyping = false
+                self.session = nil
+                self.builder = nil
+                if self.stopDuringRetype { self.resetState(); return }
+                self.beginSession(activityType: type, start: start)
+                if wasPaused { self.setPaused(true, propagate: false) }
+            }
+        }
+    }
+
     func end() {
+        if retyping { stopDuringRetype = true; return }
         guard let session, let builder else {
             // A stop with no live session yet: if a start's async window is open, absorb it
             // so startSession abandons instead of starting a workout that was already
@@ -224,7 +265,8 @@ extension WorkoutWatchManager: HKWorkoutSessionDelegate {
                                     from fromState: HKWorkoutSessionState,
                                     date: Date) {
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            // A retype's discarded session ending must not flip the new one (or the face) to stopped.
+            guard let self, workoutSession === self.session, !self.retyping else { return }
             // A paused session is still "running" for the UI (we keep showing the live face);
             // only an ended/stopped session clears it. `paused` tracks the pause sub-state.
             switch toState {
@@ -237,7 +279,10 @@ extension WorkoutWatchManager: HKWorkoutSessionDelegate {
     }
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        Task { @MainActor [weak self] in self?.resetState() }
+        Task { @MainActor [weak self] in
+            guard let self, workoutSession === self.session, !self.retyping else { return }
+            self.resetState()
+        }
     }
 }
 
@@ -265,7 +310,7 @@ extension WorkoutWatchManager: HKLiveWorkoutBuilderDelegate {
             newKcal = q.doubleValue(for: HKUnit.kilocalorie())
         }
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, workoutBuilder === self.builder else { return }
             if let newHR { self.latestHR = newHR }
             if let newKcal { self.energyKcal = newKcal }
             self.relay(hrUpdated: newHR != nil)

@@ -60,6 +60,13 @@ enum RecentSessions {
         case .timed:
             return [SetMeasure.formatDuration(FreeformSummary.holdTimeSeconds(s)),
                     "\(s.completedSetCount) sets", SessionRecap.bestHoldLabel(s)]
+        case .racket:
+            guard let sum = RacketStats.summary(s.exercises) else { return [] }
+            var facts: [String] = []
+            if sum.matches > 0 { facts.append(sum.record.label) }
+            if sum.units > 0 { facts.append("\(sum.units) games") }
+            if sum.drills > 0 { facts.append("\(sum.drills) \(sum.drills == 1 ? "drill" : "drills")") }
+            return facts
         case .dance, .other:
             return [SetMeasure.formatDuration(FreeformSummary.activeSeconds(s, discipline: discipline)),
                     "\(s.completedSetCount) sets"]
