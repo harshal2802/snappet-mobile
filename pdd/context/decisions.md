@@ -10184,3 +10184,19 @@ stripes, and the panel read as an opaque slab.
 - Download with several boards: an OR of `(layout_id = ? AND <strict fit box>)` per board, so a box only applies to
   its own layout. Strict fit stays strict (prompt 154).
 - Default name = size + serial ("12 × 12 (#4821)") so two same-size boards differ out of the box.
+
+## 2026-10-26 — Don't hog a shared Kilter board (prompt 207)
+
+- Snappet lets go of a board after an idle time with nothing lit (default 10 s, user's pick; 10 s–5 min per
+  board; off per board for a home board). A connected Aurora board stops advertising, so holding it hid it from
+  everyone else for a whole session. The climb stays lit after a disconnect (user-confirmed on hardware).
+- Letting go is NOT reported as a disconnect (`onConnectionChange` isn't called): the session, its board label and
+  the recognized-board state carry on; the bar says "· free". `disconnect()` / `cancel()` / a fresh `connect()`
+  forget the let-go board.
+- Lighting a let-go board reconnects directly by identifier (`retrievePeripherals`) — no scan, no multi-board
+  chooser, no "recognized" ribbon. No answer in 5 s means another phone holds it (it isn't advertising), so the
+  message says so instead of a generic failure; the board stays let-go so "Try again" works.
+- The idle countdown restarts on every light and on connect. Backgrounding lets go immediately when sharing is on.
+- All light gates moved from `isConnected` to `canLight` (connected or let go), so swiping to a climb or building a
+  draft still lights it — a 10 s idle would otherwise strand the auto-lights. On-the-Board capture follows the same
+  gate. Unverified on hardware: reconnect latency and the busy detection.

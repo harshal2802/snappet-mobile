@@ -58,6 +58,11 @@ struct RememberedBoard: Codable, Equatable, Sendable {
     /// board stored by a pre-120 build (no key) still decodes — it reads back `nil` ⇒ unverified ⇒ prompted
     /// once, which is exactly right (it was learned from a guess).
     var verifiedSetup: Bool? = nil
+    /// Prompt 207: let go of this board when idle so others can connect (`nil` = on, the default). Off for a home
+    /// board. Optional so boards stored before decode unchanged.
+    var letGoWhenIdle: Bool? = nil
+    /// Prompt 207: seconds idle before letting go (`nil` = `KilterBoardSharing.defaultIdleSeconds`).
+    var idleSeconds: Int? = nil
 
     /// The most-frequently-confirmed angle on this board (the pre-select), or `nil` with no history.
     var usualAngle: Int? { KilterBoardMemory.mostFrequentAngle(angleHistory) }
@@ -198,6 +203,16 @@ final class KilterBoardMemory {
         var map = boards
         guard var board = map[identifier] else { return }
         board.label = label
+        map[identifier] = board
+        boards = map
+    }
+
+    /// Prompt 207: this board's sharing setting (Settings → Remembered boards). No-op for an unknown id.
+    func setSharing(identifier: UUID, letGoWhenIdle: Bool, idleSeconds: Int) {
+        var map = boards
+        guard var board = map[identifier] else { return }
+        board.letGoWhenIdle = letGoWhenIdle
+        board.idleSeconds = idleSeconds
         map[identifier] = board
         boards = map
     }

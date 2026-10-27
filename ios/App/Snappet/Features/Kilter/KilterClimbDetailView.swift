@@ -191,7 +191,7 @@ struct KilterClimbDetailView: View {
             guard let c = climb else { return }
             holds = catalog.holds(for: c, sizeId: productSizeId)
             geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
-            if board.isConnected { illuminateAndCapture() }
+            if board.canLight { illuminateAndCapture() }
         }
         .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
         .kilterBoardChooser(board: board, catalog: catalog, layoutId: climb?.layoutId ?? activeLayoutId,
@@ -296,6 +296,9 @@ struct KilterClimbDetailView: View {
                     case .connected:
                         Image(systemName: "lightbulb.fill")
                         Text("On the board")
+                    case .idle where board.isReleased:
+                        Image(systemName: "person.2.fill")
+                        Text("Board free · Light")
                     case .scanning, .connecting:
                         ProgressView().controlSize(.mini)
                         Text("Connecting…")
@@ -311,7 +314,7 @@ struct KilterClimbDetailView: View {
                     }
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(board.isConnected ? .green : SnappetColor.moduleAccent("kilter"))
+                .foregroundStyle(board.canLight ? .green : SnappetColor.moduleAccent("kilter"))
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.15)))
@@ -326,6 +329,9 @@ struct KilterClimbDetailView: View {
         switch board.state {
         case .connected:
             if needsBoardSetup { showingBoardSetup = true; return }
+            illuminateAndCapture()
+            Haptics.tap()
+        case .idle where board.isReleased:
             illuminateAndCapture()
             Haptics.tap()
         case .idle, .failed:
@@ -682,6 +688,11 @@ struct KilterClimbDetailView: View {
         .accessibilityIdentifier("kilter.log.\(status.rawValue)")
     }
 
+    /// The connected or let-go board's name, for "Lighting on Gym · left…" (prompt 207).
+    private var sharedBoardLabel: String? {
+        (board.connectedIdentifier ?? board.releasedBoardID).flatMap { boardMemory.recall(identifier: $0)?.label }
+    }
+
     @ViewBuilder private var illuminateSection: some View {
         // Simulators / devices with no BLE radio never show the section — there's nothing to connect to.
         if board.state != .unsupported {
@@ -691,10 +702,35 @@ struct KilterClimbDetailView: View {
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
                         attemptLight()
                     }
+                    KilterBoardShareStatus(board: board)
                     Button("Set up this board") { showingBoardSetup = true }
                         .font(.caption)
                         .accessibilityIdentifier("kilter.board.setup")
                     wrongHoldsControl
+                    Button("Disconnect board") { board.disconnect() }
+                        .font(.caption)
+                        .accessibilityIdentifier("kilter.board.disconnect")
+
+                case .connecting where board.isRelighting:
+                    busyRow("Lighting on \(sharedBoardLabel ?? "the board")…")
+
+                case .idle where board.isReleased:
+                    // Prompt 207: let go while idle — the climb stays lit, the session carries on.
+                    if let busy = board.busyMessage {
+                        statusNote(busy, systemImage: "person.2.slash.fill", tint: .orange)
+                            .accessibilityIdentifier("kilter.board.busy")
+                        HStack {
+                            primaryButton("Try again", systemImage: "arrow.clockwise") { board.retryLight() }
+                            Button("Another board") { board.connect() }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("kilter.board.anotherBoard")
+                        }
+                    } else {
+                        statusNote("Still lit — the board is free for others. Light a climb and Snappet reconnects.",
+                                   systemImage: "person.2.fill", tint: .secondary)
+                            .accessibilityIdentifier("kilter.board.released")
+                        primaryButton("Light this climb", systemImage: "lightbulb.fill") { attemptLight() }
+                    }
                     Button("Disconnect board") { board.disconnect() }
                         .font(.caption)
                         .accessibilityIdentifier("kilter.board.disconnect")
@@ -875,7 +911,7 @@ struct KilterClimbDetailView: View {
         // swiping to a climb with a board on the wall lights it for real, so it counts as worked and is
         // captured for On the Board (prompt 121). Only fires with a board connected, so browsing on the
         // simulator (no wall-light) records nothing.
-        if board.isConnected { illuminateAndCapture() }
+        if board.canLight { illuminateAndCapture() }   // a released board reconnects to light it (prompt 207)
         // Mark this climb as the one being worked, for per-climb timing + the HUD / Live Activity.
         if sessions.isActive, let c = climb {
             let g = stats.first { $0.angle == selectedAngle }.map { catalog.gradeLabel($0.difficulty) } ?? ""
@@ -1002,7 +1038,7 @@ struct KilterClimbDetailView: View {
     /// is intentionally NOT routed through this, so design previews don't pollute the worked-climbs history.
     private func illuminateAndCapture() {
         board.illuminate(holds)
-        if board.isConnected { captureLitEvent() }
+        if board.canLight { captureLitEvent() }
     }
 
     /// Whether the "Set up this board" verifier should intercept a light: a board is connected but the user
