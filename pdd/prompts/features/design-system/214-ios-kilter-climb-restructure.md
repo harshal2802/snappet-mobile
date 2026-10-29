@@ -36,7 +36,8 @@ mockup maps every element), and add "Videos from this session" with tag / find f
 
 ## Acceptance
 
-- [ ] `KilterClipTaggingTests` + unit suite green.
-- [ ] Kilter UI classes + `LibraryKilterUITests` + `ActivityProgressUITests` (past clips id) green.
+- [x] `KilterClipTaggingTests` + unit suite green (2634).
+- [x] Kilter UI classes + `LibraryKilterUITests` + `ActivityProgressUITests` (past clips id): 26/27 in the batch,
+      the one miss (`testClimbDashboardAndClimbingOverview`, Gym History scroll) passes alone — flaky, not this change.
 - [x] Dark screenshots: top (session strip, board, climb card), log card, session videos, tag sheet, chart.
 - [ ] Device: real board states, a session with real clips → tag / find / edit.
