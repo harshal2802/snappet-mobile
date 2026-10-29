@@ -319,11 +319,13 @@ struct KilterPlanView: View {
         }
     }
 
-    /// "Based on your whole log — 16 climbs, 11 sent." Distinct climbs, not log entries.
+    /// "Based on your whole log — 16 climbs: 9 sent, 7 projects." Distinct climbs, not log entries; the same
+    /// numbers as the browse chips (Sent / Projects).
     static func historyLine(_ index: KilterAscentIndex) -> String {
-        let climbs = index.loggedUUIDs.count, sent = index.sentUUIDs.count
+        let climbs = index.loggedUUIDs.count, sent = index.sentUUIDs.count, projects = index.projectUUIDs.count
         guard climbs > 0 else { return "No climbs logged yet — starting from the catalog." }
-        return "Based on your whole log — \(climbs) climb\(climbs == 1 ? "" : "s"), \(sent) sent."
+        return "Based on your whole log — \(climbs) climb\(climbs == 1 ? "" : "s"): \(sent) sent, "
+            + "\(projects) project\(projects == 1 ? "" : "s")."
     }
 
     /// The climber's log per climb (prompt 208) — so a sent warm-up or a project reads as such in the preview.
