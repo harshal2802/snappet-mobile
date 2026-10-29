@@ -140,6 +140,76 @@ enum KilterPlanProgress {
         !items.isEmpty && items.allSatisfy { $0.status != .pending }
     }
 
+    // MARK: - Editing (prompt 209 — remove / add / reorder a planned session, before and during it)
+
+    private static let goalRank: [KilterRecommender.Goal: Int] = [.warmup: 0, .send: 1, .project: 2]
+
+    /// Renumber `order` so the plan reads warm-ups → sends → projects, keeping each section's own order. "Next up"
+    /// is the lowest-order pending pick, so this keeps it sensible after any edit.
+    static func normalized(_ items: [KilterPlanItem]) -> [KilterPlanItem] {
+        items.sorted { (goalRank[$0.goal] ?? 1, $0.order) < (goalRank[$1.goal] ?? 1, $1.order) }
+            .enumerated().map { i, item in var c = item; c.order = i; return c }
+    }
+
+    /// Whether a pick may be removed: anything in a draft; during a session only what's still pending (sent or
+    /// tried picks are history).
+    static func canRemove(_ item: KilterPlanItem, inSession: Bool) -> Bool {
+        !inSession || item.status == .pending || item.status == .skipped
+    }
+
+    static func removing(id: UUID, from items: [KilterPlanItem], inSession: Bool) -> [KilterPlanItem] {
+        guard let item = items.first(where: { $0.id == id }), canRemove(item, inSession: inSession) else { return items }
+        return normalized(items.filter { $0.id != id })
+    }
+
+    /// Add a climb at the end of `goal`'s section. A climb already in the plan isn't added twice.
+    static func adding(_ climb: KilterListItem, as goal: KilterRecommender.Goal,
+                       to items: [KilterPlanItem]) -> [KilterPlanItem] {
+        guard !items.contains(where: { $0.climbUUID == climb.uuid }) else { return items }
+        // Sections sort first (`normalized`), so one past the section's last order lands it at that section's end.
+        let next = (items.filter { $0.goal == goal }.map(\.order).max() ?? -1) + 1
+        let new = KilterPlanItem(order: next, goal: goal, climbUUID: climb.uuid, climbName: climb.name,
+                                 setter: climb.setter, gradeLabel: climb.gradeLabel, difficulty: climb.difficulty)
+        return normalized(items + [new])
+    }
+
+    /// Move a pick to another section (it lands at that section's end).
+    static func moving(id: UUID, to goal: KilterRecommender.Goal, in items: [KilterPlanItem]) -> [KilterPlanItem] {
+        guard let item = items.first(where: { $0.id == id }), item.goal != goal else { return items }
+        let last = items.filter { $0.goal == goal }.map(\.order).max() ?? 0
+        return normalized(items.map { i in
+            guard i.id == id else { return i }
+            var c = i
+            c.goalRaw = goal.rawValue
+            c.order = last + 1
+            return c
+        })
+    }
+
+    /// Reorder within one section (SwiftUI `onMove` offsets, relative to that section's sorted picks).
+    static func reordering(_ goal: KilterRecommender.Goal, from source: IndexSet, to destination: Int,
+                           in items: [KilterPlanItem]) -> [KilterPlanItem] {
+        var section = items.filter { $0.goal == goal }.sorted { $0.order < $1.order }
+        let moved = source.sorted().map { section[$0] }
+        let insertAt = destination - source.filter { $0 < destination }.count
+        section.removeAll { s in moved.contains { $0.id == s.id } }
+        section.insert(contentsOf: moved, at: min(max(0, insertAt), section.count))
+        let base = section.map(\.order).min() ?? 0
+        let reordered = Dictionary(uniqueKeysWithValues: section.enumerated().map { ($1.id, base + $0) })
+        return normalized(items.map { i in
+            guard let o = reordered[i.id] else { return i }
+            var c = i; c.order = o; return c
+        })
+    }
+
+    /// Q2: during a session, "+ Add a climb" files it by grade against the plan's working grade — below → warm-up,
+    /// at → send, above → project. Without a working grade it's a send.
+    static func goalForAdded(difficulty: Double, working: Double?) -> KilterRecommender.Goal {
+        guard let working else { return .send }
+        let d = Int(difficulty.rounded()), w = Int(working.rounded())
+        return d < w ? .warmup : (d > w ? .project : .send)
+    }
+
     private static func lowestOrderIndex(of climbUUID: String, status: KilterPlanItemStatus,
                                          in items: [KilterPlanItem]) -> Int? {
         items.indices

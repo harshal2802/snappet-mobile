@@ -1,0 +1,84 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edit Planned Session</title><style>:root{--coral:#FF7A6B;--paper:#121214;--surface:#1E1E22;--muted:#26262B;--ink:#F4F3F1;--t2:#A6A5A1;--glass:rgba(255,255,255,.07);--glasshair:rgba(255,255,255,.14)}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2030,#0b0c10 60%);color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;line-height:1.5;padding:0 0 60px}
+header{padding:48px 28px 6px;max-width:1460px;margin:0 auto}
+h1{font-size:36px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(92deg,#fff,#ffb9af 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#aeb2bd;font-size:16px;max-width:980px;margin:0}
+.gallery{display:flex;flex-wrap:wrap;gap:34px 40px;max-width:1560px;margin:34px auto 0;padding:0 28px}
+.step{width:330px;position:relative}
+.num{position:absolute;left:-10px;top:-12px;z-index:40;width:32px;height:32px;border-radius:50%;background:var(--coral);color:#1a0c0a;font-weight:800;display:flex;align-items:center;justify-content:center}
+.cap{margin:12px 4px 0;font-size:13.5px;color:#b8bcc6}.cap b{color:#fff}
+.device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset}
+.screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;background:radial-gradient(500px 340px at 80% -8%,rgba(255,150,69,.14),transparent 65%),var(--paper);color:var(--ink);display:flex;flex-direction:column}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 2px;font-size:13px;font-weight:650}
+.nav{display:flex;align-items:center;justify-content:space-between;margin:6px 12px 0;padding:9px 12px;border-radius:22px;background:var(--glass);border:1px solid var(--glasshair);font-size:14px;font-weight:750}
+.nb{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;font-size:13px}
+.content{padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border-radius:16px;padding:12px}
+.lab{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin-bottom:6px}
+.row{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:10px;font-size:12px}
+.row.tap{background:rgba(255,122,107,.16);outline:1.5px solid var(--coral)}
+.gl{width:66px;color:var(--t2);font-weight:600;font-variant-numeric:tabular-nums}
+.av{width:62px;white-space:nowrap;text-align:right;font-weight:750;font-variant-numeric:tabular-nums}
+.chev{color:var(--t2);font-weight:700}
+.zbar{flex:1;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#2b2b31}.zbar i{display:block;height:100%}
+.sheet .zbar{flex:none;height:9px;margin:8px 2px 0}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:118px;background:#1b1b1f;border-radius:26px 26px 0 0;padding:8px 16px 14px;box-shadow:0 -10px 40px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.grab{width:38px;height:5px;border-radius:3px;background:#4a4a52;margin:0 auto 10px}
+.shead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.st{font-size:18px;font-weight:800;letter-spacing:-.01em}.ss{font-size:12px;color:var(--t2)}
+.xbtn{width:28px;height:28px;border-radius:50%;background:#2c2c32;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--t2)}
+.chart{margin-top:4px}.chart .ax{font-size:9px;fill:#8b8f9a}.chart .pk{font-size:10px;font-weight:800;fill:#fff}.chart .zl{font-size:8.5px;font-weight:800}
+.legend2{display:flex;gap:14px;font-size:10.5px;color:var(--t2);margin:2px 2px 0}.legend2 i{display:inline-block;width:16px;height:0;vertical-align:middle;margin-right:5px}
+.lw{border-top:2.4px solid #FF9F0A}.lg{border-top:1.6px dashed #8b8f9a}
+.kpis{display:flex;gap:8px;margin-top:10px}.kpis div{flex:1;background:var(--muted);border-radius:12px;padding:8px 10px}
+.kpis b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}.kpis span{font-size:10.5px;color:var(--t2)}
+.cmp{margin-top:10px;font-size:12px;color:#e6e6ea;background:rgba(255,159,10,.10);border:1px solid rgba(255,159,10,.28);border-radius:12px;padding:8px 10px}
+.note{margin-top:10px;font-size:11.5px;color:#c9cbd2;background:rgba(10,132,255,.10);border:1px solid rgba(10,132,255,.3);border-radius:12px;padding:8px 10px}
+.pager{margin-top:auto;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--t2);font-weight:700;padding-top:10px}
+.pager i{width:7px;height:7px;border-radius:50%;background:#4a4a52;display:block}.pager i.on{background:#fff;width:18px;border-radius:4px}
+.tile{display:flex;justify-content:space-between;align-items:center;background:var(--muted);border-radius:12px;padding:10px 12px;font-size:13px}
+.tile.tap{outline:1.5px solid var(--coral);background:rgba(255,122,107,.14)}
+.pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,69,58,.18);color:#FF6961}
+.qs{max-width:1460px;margin:46px auto 0;padding:0 28px}.q{background:#16171c;border:1px solid #2a2c33;border-radius:16px;padding:14px 18px;margin:0 0 12px;max-width:980px}
+.q b{color:#fff}.q .rec{color:#9be3a8;font-weight:650}
+
+.hd{padding:6px 16px 0}.hd .t{font-size:17px;font-weight:800}.hd .s{font-size:11.5px;color:var(--t2)}
+.tb{display:flex;gap:6px;margin:8px 16px 0}.tb span{font-size:11.5px;font-weight:700;padding:6px 10px;border-radius:999px;background:#26262b}
+.tb .on{background:rgba(255,122,107,.2);color:#ffb3a9;outline:1px solid rgba(255,122,107,.6)}
+.sec{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin:10px 16px 2px}
+.pr{display:flex;align-items:center;gap:9px;padding:7px 16px;border-bottom:1px solid #222227;font-size:13px}
+.pr .g{width:38px;height:26px;border-radius:8px;background:#26262b;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;color:#FFB27A}
+.pr .n{flex:1}.pr .n b{display:block;font-weight:700}.pr .n i{font-style:normal;font-size:10.5px;color:var(--t2)}
+.rm{width:20px;height:20px;border-radius:50%;background:#ff453a;color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+.drag{color:#6b6b73;font-size:14px}
+.add{margin:4px 16px 0;padding:7px 10px;border-radius:10px;border:1px dashed #4a4a52;color:#ffb3a9;font-size:12px;font-weight:700}
+.badge{font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:999px}.b-new{background:rgba(255,122,107,.2);color:#ffb3a9}
+.b-done{background:rgba(91,192,116,.18);color:#7fd895}.b-proj{background:rgba(255,150,69,.18);color:#FFB27A}
+.newmark{outline:1.5px dashed rgba(255,122,107,.75);outline-offset:2px;border-radius:8px}
+.sheetx{position:absolute;left:0;right:0;bottom:0;top:120px;background:#1b1b1f;border-radius:26px 26px 0 0;padding:8px 0;box-shadow:0 -10px 40px rgba(0,0,0,.6)}
+.grab{width:38px;height:5px;border-radius:3px;background:#4a4a52;margin:0 auto 8px}
+.search{margin:6px 16px;background:#26262b;border-radius:10px;padding:7px 10px;font-size:12px;color:#8b8b92}
+.chips{display:flex;gap:6px;padding:2px 16px 6px;overflow:hidden}.chip{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;background:#26262b;white-space:nowrap}
+.chip.on{background:rgba(255,150,69,.22);color:#FFB27A}
+.plus{font-size:11.5px;font-weight:800;color:#1a0c0a;background:var(--coral);border-radius:999px;padding:4px 10px}
+.added{font-size:11px;font-weight:800;color:#7fd895}
+.swipe{display:flex;align-items:stretch}.swipe .pr{flex:1;transform:translateX(-70px);background:var(--paper)}
+.del{position:absolute;right:0;width:70px;background:#ff453a;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+.toast{margin:8px 16px;font-size:11.5px;color:#c9cbd2;background:rgba(10,132,255,.1);border:1px solid rgba(10,132,255,.3);border-radius:10px;padding:7px 9px}
+</style></head><body>
+<header><h1>Edit a planned session</h1>
+<p class="sub">Remove climbs you don’t want and add your own — before you start, and while the session runs. Dashed outlines mark what’s new. Climb names are placeholders.</p></header>
+<div class="gallery">
+<div class="step"><div class="num">1</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav"><div class="nb">‹</div><div>Plan a session</div><div class="nb">▶</div></div><div class="hd"><div class="t">Balanced · 6 climbs</div><div class="s">16 climbs logged — 9 sent (excluded), 7 projects (excluded)</div></div><div class="tb"><span>⤨ Shuffle</span><span>Adjust</span><span class="on newmark">✎ Edit</span></div><div class="sec">Warm-up</div><div class="pr"><div class="g">V4</div><div class="n"><b>Untried V4 #1 </b><i>by setter · ★★★</i></div></div><div class="pr"><div class="g">V4</div><div class="n"><b>Untried V4 #2 </b><i>by setter · ★★☆</i></div></div><div class="sec">Send</div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #1 </b><i>by setter</i></div></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #2 </b><i>by setter</i></div></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #3 </b><i>by setter</i></div></div><div class="sec">Project</div><div class="pr"><div class="g">V6</div><div class="n"><b>Untried V6 </b><i>by setter</i></div></div></div></div><p class="cap"><b>Preview.</b> A new <b>Edit</b> button next to Shuffle and Adjust.</p></div>
+<div class="step"><div class="num">2</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav"><div class="nb">‹</div><div>Plan a session</div><div class="nb">▶</div></div><div class="hd"><div class="t">Editing · 5 climbs</div><div class="s">16 climbs logged — 9 sent (excluded), 7 projects (excluded)</div></div><div class="tb"><span class="on">Done</span><span>Reset to suggestion</span></div><div class="sec">Warm-up</div><div class="pr"><div class="rm">−</div><div class="g">V4</div><div class="n"><b>Untried V4 #1 </b><i>by setter</i></div><span class="drag">≡</span></div><div class="pr"><div class="rm">−</div><div class="g">V4</div><div class="n"><b>Untried V4 #2 </b><i>by setter</i></div><span class="drag">≡</span></div><div class="add newmark">+ Add a warm-up</div><div class="sec">Send</div><div class="pr"><div class="rm">−</div><div class="g">V5</div><div class="n"><b>Untried V5 #1 </b><i>by setter</i></div><span class="drag">≡</span></div><div class="pr"><div class="rm">−</div><div class="g">V5</div><div class="n"><b>Untried V5 #2 </b><i>by setter</i></div><span class="drag">≡</span></div><div class="add newmark">+ Add a send</div><div class="sec">Project</div><div class="pr"><div class="rm">−</div><div class="g">V6</div><div class="n"><b>Untried V6 </b><i>by setter</i></div><span class="drag">≡</span></div><div class="add newmark">+ Add a project</div></div></div><p class="cap"><b>Editing.</b> ⊖ removes a climb, ≡ drags to reorder, “+ Add a …” per section. Once you edit, the plan stops rebuilding itself; Shuffle becomes <b>Reset to suggestion</b>.</p></div>
+<div class="step"><div class="num">3</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav"><div class="nb">‹</div><div>Plan a session</div><div class="nb">▶</div></div><div style="opacity:.35"><div class="hd"><div class="t">Balanced · 6 climbs</div><div class="s">16 climbs logged — 9 sent (excluded), 7 projects (excluded)</div></div></div><div class="sheetx"><div class="grab"></div><div style="padding:0 16px;font-size:16px;font-weight:800">Add a send</div><div class="search">Search climbs</div><div class="chips"><span class="chip">V4–V6</span><span class="chip on">Not tried</span><span class="chip">Projects 7</span><span class="chip">Sent 9</span><span class="chip">Classics</span></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #4</b><i>by setter · ★★★</i></div><span class="added">✓ Added</span></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #5</b><i>by setter · ★★☆</i></div><span class="plus">+ Add</span></div><div class="pr"><div class="g">V6</div><div class="n"><b>Untried V6 #2</b><i>by setter · ★★★</i></div><span class="plus">+ Add</span></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #6</b><i>by setter · ★☆☆</i></div><span class="plus">+ Add</span></div><div class="hint" style="padding:8px 16px;font-size:11px;color:var(--t2)">Only climbs your board can light. Already in the plan are marked ✓.</div></div></div></div><p class="cap"><b>Add a climb.</b> Search plus the browse chips (grade, Not tried / Projects / Sent, Classics) — only climbs your board can light. Tap + Add; it lands in the section you came from.</p></div>
+<div class="step"><div class="num">4</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav"><div class="nb">‹</div><div>Session plan</div><div class="nb">⋯</div></div><div class="hd"><div class="t">Session plan · 3 of 7 done</div><div class="s">Edited · Gym · left · 40°</div></div><div class="sec">Warm-up</div><div class="pr"><div class="g">V4</div><div class="n"><b>Untried V4 #1 <span class="badge b-done">✓ Sent</span></b><i>sent 7:42 PM</i></div></div><div class="pr"><div class="g">V4</div><div class="n"><b>Untried V4 #2 <span class="badge b-proj">◐ 2 tries</span></b><i>attempted</i></div></div><div class="sec">Send</div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #1 </b><i>next up</i></div><span style="color:var(--coral);font-weight:800;font-size:11px">NEXT</span></div><div style="position:relative" class="swipe newmark"><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #2 </b><i>pending</i></div></div><div class="del">Remove</div></div><div class="pr"><div class="g">V5</div><div class="n"><b>Untried V5 #4 <span class="badge b-new">added</span></b><i>pending · added</i></div></div><div class="sec">Project</div><div class="pr"><div class="g">V6</div><div class="n"><b>Untried V6 </b><i>pending</i></div></div><div class="add newmark">+ Add a climb</div><div class="toast">Done or tried climbs stay — you can remove only what’s still pending.</div></div></div><p class="cap"><b>During the session.</b> The saved plan stays editable: swipe a pending climb to remove it, “+ Add a climb” at the end. Sent or tried climbs stay put (they’re your history).</p></div>
+</div>
+<div class="qs">
+<div class="q"><b>Q1 · Reorder by dragging?</b> <span class="rec">Suggest: yes, within and across sections (dragging into Project makes it a project).</span></div>
+<div class="q"><b>Q2 · Where does an added climb go?</b> <span class="rec">Suggest: the section whose “+ Add” you tapped; during a session, “+ Add a climb” picks the section from its grade (below your grade → warm-up, at → send, above → project).</span></div>
+<div class="q"><b>Q3 · Edits after Adjust / Shuffle?</b> <span class="rec">Suggest: once edited, changing Adjust asks “Rebuild and lose your edits?” instead of silently replacing them.</span></div>
+</div></body></html>

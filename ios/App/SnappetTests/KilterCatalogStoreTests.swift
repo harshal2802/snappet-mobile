@@ -125,6 +125,16 @@ final class KilterCatalogStoreTests: XCTestCase {
                                               minDifficulty: 1, maxDifficulty: 39)
         XCTAssertEqual(items.count, 4)
 
+        // Prompt 208 "Not tried": climbs in the log are excluded from the catalog query (list + count agree).
+        var notTried = KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39)
+        notTried.excludeUUIDs = ["11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333"]
+        XCTAssertEqual(Set(KilterCatalog.shared.list(notTried).map(\.uuid)),
+                       ["22222222-2222-4222-8222-222222222222", "44444444-4444-4444-8444-444444444444"])
+        XCTAssertEqual(KilterCatalog.shared.count(notTried), 2)
+        // Plan "Classics only" uses the same benchmark filter — the fixture has no benchmarks, so nothing qualifies.
+        XCTAssertTrue(KilterCatalog.shared.list(KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39,
+                                                             benchmarksOnly: true)).isEmpty)
+
         guard let first = items.first, let climb = KilterCatalog.shared.climb(first.uuid) else {
             return XCTFail("expected to open a climb from the fixture")
         }

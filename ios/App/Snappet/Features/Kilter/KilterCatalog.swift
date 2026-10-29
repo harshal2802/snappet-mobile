@@ -627,6 +627,9 @@ extension KilterCatalog {
         if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
         if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
         if f.sizeBox != nil { sql += " AND " + KilterSizeBox.fitSQL }   // only climbs the board can fully light
+        if !f.excludeUUIDs.isEmpty {
+            sql += " AND c.uuid NOT IN (" + Array(repeating: "?", count: f.excludeUUIDs.count).joined(separator: ",") + ")"
+        }
         if shape != .count { sql += " ORDER BY \(f.sort.orderBy) LIMIT ?" }
         return sql
     }
@@ -648,6 +651,7 @@ extension KilterCatalog {
             sqlite3_bind_text(s, i, like, -1, transient); i += 1
         }
         for edge in f.sizeBox?.params ?? [] { sqlite3_bind_int64(s, i, Int64(edge)); i += 1 }
+        for uuid in f.excludeUUIDs { sqlite3_bind_text(s, i, uuid, -1, transient); i += 1 }
         if let limit { sqlite3_bind_int64(s, i, Int64(limit)) }
     }
 
