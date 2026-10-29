@@ -29,7 +29,9 @@ fewer bands above the first climb; the user's accent instead of Kilter orange.
 
 ## Acceptance
 
-- [ ] All Kilter UI test classes green (ids kept: `kilter.session.start/end/open/boardLabel`, `kilter.board.*`,
+- [x] All Kilter UI test classes green (21/21) + unit suite (2631) (ids kept: `kilter.session.start/end/open/boardLabel`, `kilter.board.*`,
       `kilter.layout`, chip ids); `LibraryKilterUITests` updated for the "Kilter" title.
-- [ ] Dark-mode screenshots (idle, board menu, session) reviewed against the mockup.
-- [ ] Device: browse, connect, start/end a session on the real board.
+- [x] Dark-mode screenshots (idle, board menu, session) reviewed against the mockup; fixed a clipped Grade chip
+      (one scale in the chip) and added current values to the board menu.
+- [x] Installed on MrRobot; user: "looks good" (2026-10-29).
+- [ ] Device: connect, start/end a session on the real board.
