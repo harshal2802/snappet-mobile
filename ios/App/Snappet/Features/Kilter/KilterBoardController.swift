@@ -965,6 +965,18 @@ final class KilterSessionManager {
         try? context.save()
     }
 
+    /// Edit the running plan (prompt 209: add / remove picks mid-session) through a pure transform, keeping the
+    /// cached progress + "next pick" list in step.
+    func editPlanItems(in context: ModelContext, _ transform: ([KilterPlanItem]) -> [KilterPlanItem]) {
+        guard let sid = current?.id, let plan = openPlan(forSession: sid, in: context) else { return }
+        let updated = transform(plan.items)
+        guard updated != plan.items else { return }
+        plan.items = updated
+        planProgress = KilterPlanProgress.progress(updated)
+        planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(updated)
+        try? context.save()
+    }
+
     /// The open (un-finished) plan pinned to a session, if any.
     func openPlan(forSession sid: UUID, in context: ModelContext) -> KilterPlan? {
         (try? context.fetch(FetchDescriptor<KilterPlan>(

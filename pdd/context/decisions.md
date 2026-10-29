@@ -10272,3 +10272,14 @@ stripes, and the panel read as an opaque slab.
 - Plan session length goes to 30 (was 3…12 — an arbitrary stepper range; user asked). So a long session isn't
   silently short, sends spill one grade above the working grade and projects one more grade up when their bands
   run dry, and the candidate pool scales with the length (max(200, 25 × climbs)).
+
+## 2026-10-29 — Edit a planned Kilter session (prompt 209)
+
+- Editing the preview creates a DRAFT that stops following the generator; the generator still recomputes in the
+  background so a settings change can be noticed, but it only replaces the draft when the climber taps Rebuild.
+- Cross-section moves are a long-press "Move to …" menu, not drag: SwiftUI `List.onMove` is per section. Within a
+  section, drag works in edit mode.
+- Mid-session, only pending / skipped picks can be removed; sent and tried picks are the session's record. Order is
+  renormalized (warm-ups → sends → projects) after every edit, so "next up" (lowest-order pending) stays sensible.
+- An added climb mid-session is filed by grade vs the plan's working grade (+ its grade offset); duplicates are
+  refused (a climb is in a plan once).
