@@ -230,10 +230,17 @@ enum KilterRecommender {
             }
         }
 
-        // Warm-ups stay below the working grade (revisiting sent classics is fine → allowSent).
-        take(bands: [[w - 2, w - 1], [w - 3], [w - 4]], count: alloc.warmup, goal: .warmup, allowSent: true)
-        // Sends sit at the working grade; chase un-sent ones unless sent climbs are welcome.
+        // Warm-ups stay below the working grade. "New climbs only" / "Projects first" mean new warm-ups too
+        // (2026-10-28: a sent 6c showed up first in a "New climbs only" plan); a sent climb is used only when
+        // the warm-up grades run out of new ones. "Include sent" revisits sent classics freely.
         let allowSent = options.climbChoice.allowsSent
+        let warmupBands: [Set<Int>] = [[w - 2, w - 1], [w - 3], [w - 4]]
+        take(bands: warmupBands, count: alloc.warmup, goal: .warmup, allowSent: allowSent)
+        let warmupsTaken = picks.filter { $0.goal == .warmup }.count
+        if !allowSent, warmupsTaken < alloc.warmup {
+            take(bands: warmupBands, count: alloc.warmup - warmupsTaken, goal: .warmup, allowSent: true)
+        }
+        // Sends sit at the working grade; chase un-sent ones unless sent climbs are welcome.
         take(bands: [[w], [w - 1]], count: alloc.send, goal: .send, allowSent: allowSent)
         // "Projects first" (prompt 208): the climber's open projects (tried, never sent at any angle) near the
         // working grade take the project slots, most recently tried first; new climbs fill the rest.

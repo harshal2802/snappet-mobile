@@ -10254,3 +10254,7 @@ stripes, and the panel read as an opaque slab.
 - Plan "Projects first" only reaches projects inside the candidate window (−1…+3 grade buckets of the working
   grade): a V10 project at a V6 working grade isn't forced into the session. The stored `KilterPlan` keeps its
   `optionsPreferUnsent` bool (no schema change), written as `!choice.allowsSent`.
+- "New climbs only" / "Projects first" keep sent climbs out of the WARM-UPS too (device report 2026-10-28: a sent
+  6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
+  climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same
+  ✓ Sent / ◐ tries badge as browse, so it's never a surprise. "Include sent" is unchanged.

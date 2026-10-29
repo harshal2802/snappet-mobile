@@ -308,20 +308,38 @@ struct KilterPlanView: View {
                         : "Reading your history and the catalog."))
             }
         } else {
+            let index = ascentIndex
             ForEach(KilterRecommender.Goal.allCases, id: \.self) { goal in
                 let picks = preview.picks(for: goal)
                 if !picks.isEmpty {
-                    Section(goal.label) { ForEach(picks) { previewRow($0) } }
+                    Section(goal.label) { ForEach(picks) { previewRow($0, badge: index.badge($0.item.uuid, angle: angle)) } }
                 }
             }
         }
     }
 
-    private func previewRow(_ pick: KilterRecommender.Pick) -> some View {
+    /// The climber's log per climb (prompt 208) — so a sent warm-up or a project reads as such in the preview.
+    private var ascentIndex: KilterAscentIndex {
+        KilterAscentIndex(entries.map {
+            .init(climbUUID: $0.climbUUID, status: $0.status, attempts: $0.attempts, date: $0.date, angle: $0.angle)
+        })
+    }
+
+    private func previewRow(_ pick: KilterRecommender.Pick, badge: String? = nil) -> some View {
         Button { router.push(KilterClimbRoute(uuid: pick.item.uuid)) } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(pick.item.name).font(.headline).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(pick.item.name).font(.headline).lineLimit(1)
+                        if let badge {
+                            let sent = badge.hasPrefix("✓")
+                            Text(badge).font(.caption2.weight(.bold))
+                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .background((sent ? Color.green : Color.orange).opacity(0.18), in: Capsule())
+                                .foregroundStyle(sent ? Color.green : Color.orange)
+                                .accessibilityIdentifier("kilter.plan.pick.ascent")
+                        }
+                    }
                     Text("by \(pick.item.setter)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()

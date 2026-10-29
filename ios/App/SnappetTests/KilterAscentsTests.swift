@@ -89,4 +89,28 @@ final class KilterAscentsTests: XCTestCase {
                                                    climbLog("b", 20, .project, daysAgo: 2)])
         XCTAssertEqual(Array(open.keys), ["b"])
     }
+
+    /// 2026-10-28 device report: a sent 6c (bph52) was the first warm-up of a "New climbs only" plan.
+    func testNewClimbsOnlyKeepsSentClimbsOutOfWarmUpsUnlessNothingNewIsLeft() {
+        let history = [climbLog("bph52", 20, .sent), climbLog("joint", 20, .sent),
+                       climbLog("s21a", 21, .sent), climbLog("s21b", 21, .sent)]   // working grade 21
+        let warmupGrades = [item("bph52", 20), item("new20", 20), item("new19", 19)]
+        let atGrade = (21...23).flatMap { d in [item("n\(d)a", Double(d)), item("n\(d)b", Double(d))] }
+        let opts = KilterRecommender.Options(targetCount: 6, climbChoice: .newOnly, mix: .init(warmup: 2, send: 3, project: 1))
+
+        let plan = KilterRecommender.recommend(history: history, candidates: warmupGrades + atGrade, anchor: 21, options: opts)
+        XCTAssertEqual(plan.picks.filter { $0.goal == .warmup }.map(\.item.uuid).sorted(), ["new19", "new20"])
+        XCTAssertFalse(plan.picks.contains { $0.item.uuid == "bph52" })
+
+        // Only one new climb at warm-up grades → the second warm-up falls back to a sent one.
+        let sparse = KilterRecommender.recommend(history: history, candidates: [item("bph52", 20), item("new20", 20)] + atGrade,
+                                                 anchor: 21, options: opts)
+        XCTAssertEqual(sparse.picks.filter { $0.goal == .warmup }.map(\.item.uuid).sorted(), ["bph52", "new20"])
+
+        // Include sent still revisits it freely.
+        let incl = KilterRecommender.recommend(history: history, candidates: warmupGrades + atGrade, anchor: 21,
+                                               options: .init(targetCount: 6, climbChoice: .includeSent,
+                                                              mix: .init(warmup: 2, send: 3, project: 1)))
+        XCTAssertEqual(incl.picks.filter { $0.goal == .warmup }.count, 2)
+    }
 }

@@ -117,7 +117,7 @@ enum KilterPlanClimbChoice: String, CaseIterable, Sendable {
 
     var detail: String {
         switch self {
-        case .newOnly: return "Sends and projects you haven’t sent yet"
+        case .newOnly: return "Only climbs you haven’t sent — warm-ups too"
         case .includeSent: return "Revisit favourites too — good for volume"
         case .projectsFirst: return "Your open projects fill the project slots, then new climbs"
         }
