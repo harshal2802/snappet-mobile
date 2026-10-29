@@ -138,12 +138,16 @@ struct KilterSettingsView: View {
             if !boardMemory.isEmpty {
                 Section {
                     ForEach(boardMemory.rememberedSorted, id: \.id) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.board.label).font(.subheadline.weight(.medium))
-                            Text(rememberedDetail(entry.board))
-                                .font(.caption).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.board.label).font(.subheadline.weight(.medium))
+                                Text(rememberedDetail(entry.board))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("kilter.settings.rememberedBoard")
+                            sharingControls(entry.id, entry.board)
                         }
-                        .accessibilityIdentifier("kilter.settings.rememberedBoard")
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 boardMemory.forget(identifier: entry.id); boardsVersion += 1
@@ -161,7 +165,9 @@ struct KilterSettingsView: View {
                     Text("Remembered boards")
                 } footer: {
                     Text("Boards this device has connected to. Swipe to rename or forget — a forgotten "
-                         + "board is re-learned the next time you connect to it.")
+                         + "board is re-learned the next time you connect to it. A board takes one phone at a "
+                         + "time: with “Let others connect” on, Snappet lets go when you stop lighting climbs "
+                         + "(the climb stays lit) and reconnects when you light the next one.")
                 }
                 .id(boardsVersion)
             }
@@ -265,6 +271,26 @@ struct KilterSettingsView: View {
                     if case .installed = installer.phase { showingDownload = false; libraryVersion += 1 }
                 }
             }
+        }
+    }
+
+    /// Prompt 207: per board — let go when idle (on by default) and after how long (10 s default).
+    @ViewBuilder private func sharingControls(_ id: UUID, _ board: RememberedBoard) -> some View {
+        let setting = KilterBoardSharing.setting(for: board)
+        Toggle(isOn: Binding(
+            get: { setting.letGoWhenIdle },
+            set: { boardMemory.setSharing(identifier: id, letGoWhenIdle: $0, idleSeconds: setting.idleSeconds); boardsVersion += 1 })) {
+            Text("Let others connect when I’m idle").font(.caption)
+        }
+        .accessibilityIdentifier("kilter.settings.letGoWhenIdle")
+        if setting.letGoWhenIdle {
+            Picker("After", selection: Binding(
+                get: { setting.idleSeconds },
+                set: { boardMemory.setSharing(identifier: id, letGoWhenIdle: true, idleSeconds: $0); boardsVersion += 1 })) {
+                ForEach(KilterBoardSharing.idleOptions, id: \.self) { Text(KilterBoardSharing.label(seconds: $0)).tag($0) }
+            }
+            .font(.caption)
+            .accessibilityIdentifier("kilter.settings.idleSeconds")
         }
     }
 

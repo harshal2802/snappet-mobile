@@ -476,6 +476,9 @@ struct KilterRootView: View {
             // remembered from scratch on this first connect (no restore, nothing overwritten).
             // Boards connected before connect the moment they're heard, and win over a stranger's (prompt 204).
             board.knownBoardIDs = Set(boardMemory.boards.keys)
+            // Prompt 207: each board's sharing setting + name, read fresh so a Settings change applies at once.
+            board.sharingSetting = { KilterBoardSharing.setting(for: KilterBoardMemory().recall(identifier: $0)) }
+            board.boardName = { KilterBoardMemory().recall(identifier: $0)?.label }
             board.onBoardRecognized = { identifier, serial in
                 recognizeBoard(identifier: identifier, serial: serial)
             }
@@ -1073,7 +1076,7 @@ struct KilterRootView: View {
         // The compact chip gives no inline feedback (the old card's button at least changed under the
         // thumb) — confirm the ⚡ with a toast, honest about whether holds actually lit.
         withAnimation(.snappy) {
-            notice = RootNotice(message: board.isConnected ? "\(e.climbName) is on the board"
+            notice = RootNotice(message: board.canLight ? "\(e.climbName) is on the board"
                                                            : "Saved to On the Board — connect to light holds",
                                 systemImage: "bolt.fill", openUUID: e.climbUUID)
         }
@@ -1218,7 +1221,9 @@ struct KilterRootView: View {
                         .font(.subheadline)
                     // The connected board's name IS the session's place — say it here (the strip that
                     // would show connection state is hidden while the session bar owns the slot).
-                    Text(board.isConnected ? (connectedBoardLabel ?? "Board connected") : "Session")
+                    Text(board.isConnected ? (connectedBoardLabel ?? "Board connected")
+                         : board.isReleased ? "\(connectedBoardLabel ?? "Board") · free" : "Session")
+                        .accessibilityIdentifier("kilter.session.boardLabel")
                         .font(.subheadline.weight(.semibold)).lineLimit(1)
                     Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                     Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
@@ -1689,6 +1694,10 @@ private struct ReleaseDroppedBoard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: sessionActive) { _, active in if !active { board.releaseIfReconnecting() } }
-            .onChange(of: scenePhase) { _, phase in if phase == .background { board.releaseIfReconnecting() } }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .background else { return }
+                board.releaseIfReconnecting()
+                board.letGoIfSharing()   // prompt 207: don't hold a shared board while you're away
+            }
     }
 }

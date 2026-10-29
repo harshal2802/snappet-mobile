@@ -111,6 +111,26 @@ final class KilterBoardController: NSObject {
     /// Set on a reconnect so the board isn't "recognized" (and its confirm ribbon shown) a second time.
     private var hasRecognizedThisLink = false
 
+    // MARK: Sharing the board (prompt 207)
+
+    /// The board Snappet let go of while idle — remembered so the next light reconnects to it directly.
+    private(set) var releasedBoardID: UUID?
+    /// Let go and still relightable (the climb stays lit on the wall; the session carries on).
+    var isReleased: Bool { releasedBoardID != nil && !isConnected }
+    /// Lighting a released board: reconnecting to it.
+    private(set) var isRelighting = false
+    /// When Snappet will let go of the board (`nil` = holding it — sharing off, or not connected). The countdown.
+    private(set) var letGoAt: Date?
+    /// Lighting a released board got no answer: someone else holds it.
+    private(set) var busyMessage: String?
+    /// A light can reach a board: connected, or released and relightable.
+    var canLight: Bool { isConnected || isReleased }
+    /// Per-board sharing setting (the view supplies it from `KilterBoardMemory`).
+    var sharingSetting: (UUID) -> KilterBoardSharing.Setting = { _ in .default }
+    /// The board's name for messages ("Gym · left").
+    var boardName: (UUID) -> String? = { _ in nil }
+    private var letGoTask: Task<Void, Never>?
+
     // MARK: Several boards in range (prompt 205)
 
     /// A board heard in this scan, for the "N boards nearby" chooser.
@@ -146,6 +166,7 @@ final class KilterBoardController: NSObject {
     /// Reflects intent immediately so the UI shows progress even before the radio finishes powering on.
     func connect() {
         guard !state.isBusy, state != .connected else { return }
+        forgetReleased()
         wantsToConnect = true
         attempt = 0
         hasRecognizedThisLink = false
@@ -330,6 +351,7 @@ final class KilterBoardController: NSObject {
     /// An attempt stopped at `stage`: tear it down, then retry once (rescanning — the remembered board isn't
     /// raced again) or surface why.
     private func attemptFailed(_ stage: KilterConnectPolicy.Stage) {
+        if isRelighting { relightFailed(); return }
         guard state.isBusy || isReconnecting else { return }
         let retry = wantsToConnect && KilterConnectPolicy.shouldRetry(after: stage, attempt: attempt)
         let wasReconnecting = isReconnecting
@@ -387,6 +409,8 @@ final class KilterBoardController: NSObject {
 
     /// Cancel an in-flight scan/connect/reconnect and return to idle (the user backing out).
     func cancel() {
+        if isRelighting { relightFailed(showBusy: false) }
+        forgetReleased()
         wantsToConnect = false
         retryTask?.cancel(); retryTask = nil
         let wasReconnecting = isReconnecting
@@ -397,6 +421,8 @@ final class KilterBoardController: NSObject {
     }
 
     func disconnect() {
+        let wasReleased = isReleased
+        forgetReleased()
         wantsToConnect = false
         retryTask?.cancel(); retryTask = nil
         // Capture before mutating: `cancelPeripheralConnection` triggers `didDisconnectPeripheral`
@@ -406,7 +432,85 @@ final class KilterBoardController: NSObject {
         isReconnecting = false
         tearDownLink()
         state = .idle
-        if wasConnected { onConnectionChange?(false) }
+        if wasConnected || wasReleased { onConnectionChange?(false) }
+    }
+
+    // MARK: - Sharing the board (prompt 207)
+
+    /// Let go of the board so others can connect. The climb stays lit (Aurora boards keep the last climb), the
+    /// session carries on, and the next light reconnects to this board directly. Not reported as a
+    /// disconnect, so the session bar keeps the board's name ("· free").
+    func letGo() {
+        guard isConnected, let p = peripheral else { return }
+        letGoTask?.cancel(); letGoTask = nil
+        letGoAt = nil
+        releasedBoardID = p.identifier
+        wantsToConnect = false
+        tearDownLink()   // cancelling the link also stops iOS's auto-reconnect
+        state = .idle
+    }
+
+    /// Going to the background: let go now if this board is shared (no point holding it while you're away).
+    func letGoIfSharing() {
+        guard isConnected, let id = peripheral?.identifier, sharingSetting(id).letGoWhenIdle else { return }
+        letGo()
+    }
+
+    /// (Re)start the idle countdown after a light / a connect; holds indefinitely when sharing is off.
+    private func scheduleLetGo() {
+        letGoTask?.cancel(); letGoTask = nil
+        guard isConnected, let id = peripheral?.identifier,
+              let at = KilterBoardSharing.letGoAt(lastLight: .now, setting: sharingSetting(id)) else {
+            letGoAt = nil
+            return
+        }
+        letGoAt = at
+        letGoTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, at.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            self?.letGo()
+        }
+    }
+
+    /// Light a released board: connect to it directly (it's advertising again unless someone else took it).
+    private func relight() {
+        guard let id = releasedBoardID, let central, central.state == .poweredOn,
+              let p = central.retrievePeripherals(withIdentifiers: [id]).first else {
+            busyMessage = KilterBoardSharing.busyMessage(board: releasedBoardID.flatMap(boardName))
+            return
+        }
+        busyMessage = nil
+        isRelighting = true
+        hasRecognizedThisLink = true   // the same board — no second "recognized" ribbon / setup prompt
+        peripheral = p
+        p.delegate = self
+        state = .connecting
+        central.connect(p, options: Self.connectOptions)
+        startTimeout(KilterBoardSharing.relightTimeout) { [weak self] in self?.relightFailed() }
+    }
+
+    /// No answer from a released board: someone else is connected to it. Stay released so "Try again" works.
+    private func relightFailed(showBusy: Bool = true) {
+        let id = releasedBoardID
+        isRelighting = false
+        tearDownLink()
+        state = .idle
+        busyMessage = showBusy ? KilterBoardSharing.busyMessage(board: id.flatMap(boardName)) : nil
+    }
+
+    /// "Try again" after a busy board.
+    func retryLight() {
+        guard isReleased, !isRelighting, !lastHolds.isEmpty else { return }
+        pendingHolds = lastHolds
+        relight()
+    }
+
+    private func forgetReleased() {
+        letGoTask?.cancel(); letGoTask = nil
+        letGoAt = nil
+        releasedBoardID = nil
+        busyMessage = nil
+        isRelighting = false
     }
 
     /// Watchdog: run `onFire` if the step it guards stalls.
@@ -425,9 +529,12 @@ final class KilterBoardController: NSObject {
         lastHolds = holds
         guard isConnected, let peripheral, let writeChar else {
             pendingHolds = holds
+            // Released while idle (prompt 207): reconnect to the same board and light it.
+            if isReleased, !isRelighting { relight() }
             return
         }
         send(holds, to: peripheral, characteristic: writeChar)
+        scheduleLetGo()
     }
 
     /// Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
@@ -520,7 +627,11 @@ extension KilterBoardController: CBCentralManagerDelegate {
             guard peripheral.identifier == self.peripheral?.identifier else { return }
             // Keep the watchdog running across service/characteristic discovery — that's where a board
             // with an unexpected GATT layout would otherwise hang silently.
-            startTimeout(KilterConnectPolicy.connectTimeout) { [weak self] in self?.attemptFailed(.discovery) }
+            if isRelighting {
+                startTimeout(KilterBoardSharing.relightTimeout) { [weak self] in self?.relightFailed() }
+            } else {
+                startTimeout(KilterConnectPolicy.connectTimeout) { [weak self] in self?.attemptFailed(.discovery) }
+            }
             peripheral.discoverServices([Self.gattServiceUUID])
         }
     }
@@ -561,6 +672,8 @@ extension KilterBoardController: CBCentralManagerDelegate {
             guard peripheral.identifier == self.peripheral?.identifier else { return }
             let wasConnected = isConnected
             writeChar = nil
+            letGoTask?.cancel(); letGoTask = nil
+            letGoAt = nil
             if wasConnected && isReconnecting {
                 // A mid-session drop iOS is repairing: hold the session, say so, re-light on return.
                 self.isReconnecting = true
@@ -637,6 +750,11 @@ extension KilterBoardController: CBPeripheralDelegate {
             wantsToConnect = false
             let reconnected = isReconnecting
             isReconnecting = false
+            // Lighting a released board (prompt 207): the same board, back for one light.
+            let relit = isRelighting
+            isRelighting = false
+            releasedBoardID = nil
+            busyMessage = nil
             reconnectGiveUp?.cancel(); reconnectGiveUp = nil
             writeChar = characteristic
             // Remember this board now that it's confirmed (right write characteristic) — only here,
@@ -644,7 +762,7 @@ extension KilterBoardController: CBPeripheralDelegate {
             lastBoardIdentifier = peripheral.identifier
             state = .connected
             // Recognize the board (P1) once per link — a reconnect is the same board, no second ribbon.
-            if !reconnected || !hasRecognizedThisLink {
+            if (!reconnected && !relit) || !hasRecognizedThisLink {
                 hasRecognizedThisLink = true
                 onBoardRecognized?(peripheral.identifier,
                                    KilterBoardMemory.serial(fromLocalName: lastAdvertisedName))
@@ -654,6 +772,7 @@ extension KilterBoardController: CBPeripheralDelegate {
                 pendingHolds = nil
                 send(pending, to: peripheral, characteristic: characteristic)
             }
+            scheduleLetGo()
         }
     }
 }

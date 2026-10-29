@@ -410,7 +410,7 @@ struct CreateClimbView: View {
     // MARK: - Light it here (prompt 155)
 
     private func lightGenerated() {
-        guard let board, board.isConnected, let frames = genResult?.frames else { return }
+        guard let board, board.canLight, let frames = genResult?.frames else { return }
         board.illuminate(genBoardHolds)
         litFrames = frames
     }
@@ -424,7 +424,7 @@ struct CreateClimbView: View {
     @ViewBuilder private func lightSection(_ result: KilterGeneratedClimb) -> some View {
         if let board {
             VStack(alignment: .leading, spacing: 6) {
-                if board.isConnected {
+                if board.canLight {
                     HStack {
                         if litFrames == result.frames {
                             Label("Lit on your board", systemImage: "circle.fill")
@@ -533,7 +533,7 @@ struct CreateClimbView: View {
     /// When a board is connected over BLE, a row to light the in-progress climb on the physical board
     /// (the draft also auto-lights as you build / after generating). Hidden when no board is connected.
     @ViewBuilder private func bleRow(holds: [KilterHold]) -> some View {
-        if let board, board.isConnected {
+        if let board, board.canLight {
             Button { board.illuminate(holds) } label: {
                 Label(holds.isEmpty ? "Board connected — place holds to light it"
                                     : "Light \(holds.count) holds on board",
@@ -546,7 +546,7 @@ struct CreateClimbView: View {
 
     /// Light the holds on a connected board (no-op otherwise) — called as the draft changes.
     private func liveLight(_ holds: [KilterHold]) {
-        if board?.isConnected == true { board?.illuminate(holds) }
+        if board?.canLight == true { board?.illuminate(holds) }   // a let-go board reconnects (prompt 207)
     }
 
     /// Role name → main-line role id (inverse of `KilterCatalog.roleName`), for counting preview holds.
@@ -686,7 +686,7 @@ struct CreateClimbView: View {
                 genResult = result
                 genPhase = .ready
                 comparing = nil
-                if autoLight, board?.isConnected == true { lightGenerated() }
+                if autoLight, board?.canLight == true { lightGenerated() }
                 checkTraining(result.frames)
             } catch {
                 genPhase = .error(error.localizedDescription)
