@@ -10242,3 +10242,15 @@ stripes, and the panel read as an opaque slab.
   `OS:latest`, so every new runtime that ships without that device broke `make ios-test`. Resolving the id beats
   pinning `OS=26.5`, which would break again on the next runtime change. The newest runtime that has the device
   wins; with no match, the `name=` destination is kept so the error stays xcodebuild's own.
+
+## 2026-10-28 — Filter Kilter climbs by what you've climbed (prompt 208)
+
+- "Sent" means sent at ANY angle (user's Q2 pick): Kilter logs are per angle, but a climber thinks of a climb as
+  done; the badge says "Sent at 50°" when it wasn't this angle. A project is tried and never sent anywhere.
+- Projects / Sent lists ignore the grade range and angle (like Saved — it's your list) but honour search; Not
+  tried is a catalog-query exclusion so it combines with every other browse filter and keeps the live count right.
+- Ascent filters and Saved / Mine are mutually exclusive list modes (one picks the other off), so the list never
+  silently intersects two personal lists.
+- Plan "Projects first" only reaches projects inside the candidate window (−1…+3 grade buckets of the working
+  grade): a V10 project at a V6 working grade isn't forced into the session. The stored `KilterPlan` keeps its
+  `optionsPreferUnsent` bool (no schema change), written as `!choice.allowsSent`.

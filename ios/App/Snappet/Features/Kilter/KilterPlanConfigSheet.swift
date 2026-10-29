@@ -9,7 +9,7 @@ struct KilterPlanConfigSheet: View {
     @Binding var strategyRaw: String
     @Binding var targetCount: Int
     @Binding var gradeOffset: Int
-    @Binding var preferUnsent: Bool
+    @Binding var climbChoice: KilterPlanClimbChoice
     @Environment(\.dismiss) private var dismiss
 
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
@@ -45,7 +45,27 @@ struct KilterPlanConfigSheet: View {
                     Stepper("Session length: \(targetCount) climbs", value: $targetCount, in: 3...12)
                         .accessibilityIdentifier("kilter.plan.lengthStepper")
                     Stepper("Target grade: \(offsetLabel)", value: $gradeOffset, in: -3...3)
-                    Toggle("Prefer climbs I haven't sent", isOn: $preferUnsent)
+                }
+
+                // Prompt 208: which climbs may fill the send / project slots.
+                Section("Climbs to pick") {
+                    ForEach(KilterPlanClimbChoice.allCases, id: \.self) { c in
+                        Button { climbChoice = c } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.label).font(.subheadline.weight(.medium))
+                                    Text(c.detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if c == climbChoice {
+                                    Image(systemName: "checkmark").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kilter.plan.climbChoice.\(c.rawValue)")
+                    }
                 }
 
                 Section {
@@ -74,7 +94,11 @@ struct KilterPlanConfigSheet: View {
 
     private var rationale: String {
         let where_ = gradeOffset == 0 ? "around your working grade" : "at \(offsetLabel) your grade"
-        let chase = preferUnsent ? "leaning toward new sends" : "revisiting favourites too"
+        let chase = switch climbChoice {
+        case .newOnly: "leaning toward new sends"
+        case .includeSent: "revisiting favourites too"
+        case .projectsFirst: "starting from your open projects"
+        }
         return "\(targetCount) climbs \(where_), \(chase)."
     }
 
@@ -85,6 +109,6 @@ struct KilterPlanConfigSheet: View {
         strategyRaw = s.rawValue
         targetCount = c.targetCount
         gradeOffset = c.gradeOffset
-        preferUnsent = c.preferUnsent
+        climbChoice = c.climbChoice
     }
 }

@@ -183,6 +183,8 @@ struct KilterFilter: Equatable, Sendable {
     var minQuality: Double = 0
     /// The user's board size: only climbs that fit it (every hold has an LED on it). `nil` = any size.
     var sizeBox: KilterSizeBox? = nil
+    /// Prompt 208: leave these climbs out ("Not tried" = everything in the climber's log).
+    var excludeUUIDs: [String] = []
 
     /// Count of the optional (beyond layout/angle/grade) filters that are active — for a badge.
     var activeExtras: Int {

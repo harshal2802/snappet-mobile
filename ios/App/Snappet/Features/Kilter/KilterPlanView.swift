@@ -44,6 +44,11 @@ struct KilterPlanView: View {
     @AppStorage("kilter.plan.targetCount") private var planTargetCount = 6
     @AppStorage("kilter.plan.gradeOffset") private var planGradeOffset = 0
     @AppStorage("kilter.plan.preferUnsent") private var planPreferUnsent = true
+    /// Prompt 208: "Climbs to pick". Empty = not chosen yet → carried over from the old on/off switch.
+    @AppStorage("kilter.plan.climbChoice") private var planClimbChoiceRaw = ""
+    private var planClimbChoice: KilterPlanClimbChoice {
+        KilterPlanClimbChoice(rawValue: planClimbChoiceRaw) ?? (planPreferUnsent ? .newOnly : .includeSent)
+    }
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
 
     /// The recommender preview shown in generate-mode (ephemeral; never the source of truth once Started).
@@ -78,7 +83,8 @@ struct KilterPlanView: View {
         .toolbar { ToolbarItem(placement: .primaryAction) { startButton } }
         .sheet(isPresented: $showingConfig) {
             KilterPlanConfigSheet(strategyRaw: $strategyRaw, targetCount: $planTargetCount,
-                                  gradeOffset: $planGradeOffset, preferUnsent: $planPreferUnsent)
+                                  gradeOffset: $planGradeOffset,
+                                  climbChoice: Binding(get: { planClimbChoice }, set: { planClimbChoiceRaw = $0.rawValue }))
                 .presentationDetents([.medium, .large])
         }
         // Resolve the live session from the store on appear, so a deep-link entry (Home → plan, which
@@ -131,7 +137,7 @@ struct KilterPlanView: View {
             workingGradeLabel: preview.workingGradeLabel,
             title: strategy == .balanced ? nil : strategy.label,
             optionsTargetCount: planTargetCount, optionsSendThreshold: 2,
-            optionsPreferUnsent: planPreferUnsent, optionsGradeOffset: planGradeOffset,
+            optionsPreferUnsent: !planClimbChoice.allowsSent, optionsGradeOffset: planGradeOffset,
             strategyRaw: strategyRaw,
             items: KilterPlanProgress.items(from: preview))
         modelContext.insert(plan)
@@ -342,7 +348,7 @@ struct KilterPlanView: View {
     /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
     /// (generate-mode only).
     private var planKey: String {
-        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planPreferUnsent)|\(rerollSeed)"
+        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbChoice.rawValue)|\(rerollSeed)"
     }
 
     private func rebuild() {
@@ -362,7 +368,7 @@ struct KilterPlanView: View {
                                       minDifficulty: window.min, maxDifficulty: window.max, limit: 200)
 
         let options = KilterRecommender.Options(
-            targetCount: planTargetCount, sendThreshold: 2, preferUnsent: planPreferUnsent,
+            targetCount: planTargetCount, sendThreshold: 2, climbChoice: planClimbChoice,
             mix: KilterRecommender.config(for: strategy).mix, rerollSeed: rerollSeed)
         preview = KilterRecommender.recommend(history: history, candidates: candidates,
                                               anchor: anchor, options: options)
