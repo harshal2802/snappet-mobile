@@ -10318,3 +10318,18 @@ stripes, and the panel read as an opaque slab.
   module wayfinding accents. The accent is only "act here / progress / highlighted data".
 - New screens use `SnappetType` + `snappetPanel` / `SnappetMetric` / `SnappetBars` / `SnappetRow`; old screens move
   over one at a time (steps 2–3), not in a big-bang restyle.
+
+## 2026-10-29 — Design-system reset, step 2: Home restyle, everything links to its source (prompt 212)
+
+- Rule for Home (user): nothing appears on Home that you can't tap into. Every card, number, row and note opens the
+  screen it came from, and a chevron shows it. New deep links: Today card → the routine's page; This week → History
+  filtered to the week, a day's bar → that day (`HistoryDateRange` via `SuiteRouter.pendingHistoryRange`, shown as a
+  removable chip); Streak / growth / freeze → your buddy; a win → its session; a milestone → its routine, or — for a
+  quick-session series that has no routine — its latest session (a name lookup fell through to nothing for "Easy run").
+- The buddy on Home is a small still avatar (the widget's pre-rendered `BuddyStills`, now also compiled into the app)
+  — no RealityKit on Home any more, which also removes Home's biggest render cost. The 3D buddy stays on its own
+  screen and for the one-time hatch.
+- The avatar opens a small suite Settings sheet (Appearance, Heart rate & devices, Back up & restore) rather than
+  Appearance alone, so there is one obvious place for app-wide settings.
+- The activity feed collapses back-to-back repeats ("Opened Kilter Board ×5") with the pure `FeedRuns.collapse`;
+  only consecutive repeats merge, so the order of what happened stays true.

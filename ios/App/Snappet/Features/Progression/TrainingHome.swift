@@ -109,6 +109,10 @@ enum TrainingHome {
         var count: Int
         var toGo: Int { target - count }
         var fraction: Double
+        /// Where the row opens (prompt 212): the routine's page, or — for a quick-session series with no routine —
+        /// its latest session.
+        var routineID: UUID? = nil
+        var latestSessionID: UUID? = nil
     }
 
     /// The routine (or quick-session series) closest to its next count milestone.
@@ -120,7 +124,9 @@ enum TrainingHome {
             let m = SessionInsights.nextMilestone(count: list.count)
             let span = Double(max(1, m.target - m.previous))
             return Milestone(name: name, target: m.target, count: list.count,
-                             fraction: Double(list.count - m.previous) / span)
+                             fraction: Double(list.count - m.previous) / span,
+                             routineID: list.first?.routineID,
+                             latestSessionID: list.max { $0.startedAt < $1.startedAt }?.id)
         }
         .min { ($0.toGo, -$0.count) < ($1.toGo, -$1.count) }
     }

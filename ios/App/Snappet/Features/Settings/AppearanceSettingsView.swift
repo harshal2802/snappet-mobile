@@ -9,9 +9,24 @@ struct AppearanceSettingsView: View {
     @AppStorage(SnappetAppearance.defaultsKey) private var modeRaw = SnappetAppearance.system.rawValue
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
+    /// Its own sheet (from the Apps toolbar) or pushed inside Settings (from Home's avatar, prompt 212).
+    var standalone = true
 
     var body: some View {
-        NavigationStack {
+        if standalone {
+            NavigationStack {
+                content.toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }.accessibilityIdentifier("settings.appearance.done")
+                    }
+                }
+            }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
             List {
                 Section { preview.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
 
@@ -37,12 +52,6 @@ struct AppearanceSettingsView: View {
             }
             .navigationTitle("Appearance")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.accessibilityIdentifier("settings.appearance.done")
-                }
-            }
-        }
     }
 
     private func swatch(_ accent: SnappetAccent) -> some View {

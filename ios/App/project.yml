@@ -25,6 +25,9 @@ targets:
       # Shared wire types (LiveWorkoutMessage) compiled into both the phone and the
       # watch so the WCSession relay has one source of truth.
       - path: Shared
+      # The buddy stills (rendered for the widgets) — Home's small buddy uses them too, so Home never runs the
+      # 3D renderer just to show a 52-pt avatar (prompt 212).
+      - path: SnappetWidgets/BuddyStills.xcassets
     dependencies:
       - package: HighlightEngine
       # ONNX Runtime (ObjC/Swift API) for the on-device climb generator.
