@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home Directions</title><style>:root{--coral:#FF7A6B;--paper:#121214;--surface:#1E1E22;--muted:#26262B;--ink:#F4F3F1;--t2:#A6A5A1;--glass:rgba(255,255,255,.07);--glasshair:rgba(255,255,255,.14)}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2030,#0b0c10 60%);color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;line-height:1.5;padding:0 0 60px}
+header{padding:48px 28px 6px;max-width:1460px;margin:0 auto}
+h1{font-size:36px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(92deg,#fff,#ffb9af 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#aeb2bd;font-size:16px;max-width:980px;margin:0}
+.gallery{display:flex;flex-wrap:wrap;gap:34px 40px;max-width:1560px;margin:34px auto 0;padding:0 28px}
+.step{width:330px;position:relative}
+.num{position:absolute;left:-10px;top:-12px;z-index:40;width:32px;height:32px;border-radius:50%;background:var(--coral);color:#1a0c0a;font-weight:800;display:flex;align-items:center;justify-content:center}
+.cap{margin:12px 4px 0;font-size:13.5px;color:#b8bcc6}.cap b{color:#fff}
+.device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset}
+.screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;background:radial-gradient(500px 340px at 80% -8%,rgba(255,150,69,.14),transparent 65%),var(--paper);color:var(--ink);display:flex;flex-direction:column}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 2px;font-size:13px;font-weight:650}
+.nav{display:flex;align-items:center;justify-content:space-between;margin:6px 12px 0;padding:9px 12px;border-radius:22px;background:var(--glass);border:1px solid var(--glasshair);font-size:14px;font-weight:750}
+.nb{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;font-size:13px}
+.content{padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border-radius:16px;padding:12px}
+.lab{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin-bottom:6px}
+.row{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:10px;font-size:12px}
+.row.tap{background:rgba(255,122,107,.16);outline:1.5px solid var(--coral)}
+.gl{width:66px;color:var(--t2);font-weight:600;font-variant-numeric:tabular-nums}
+.av{width:62px;white-space:nowrap;text-align:right;font-weight:750;font-variant-numeric:tabular-nums}
+.chev{color:var(--t2);font-weight:700}
+.zbar{flex:1;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#2b2b31}.zbar i{display:block;height:100%}
+.sheet .zbar{flex:none;height:9px;margin:8px 2px 0}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:118px;background:#1b1b1f;border-radius:26px 26px 0 0;padding:8px 16px 14px;box-shadow:0 -10px 40px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.grab{width:38px;height:5px;border-radius:3px;background:#4a4a52;margin:0 auto 10px}
+.shead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.st{font-size:18px;font-weight:800;letter-spacing:-.01em}.ss{font-size:12px;color:var(--t2)}
+.xbtn{width:28px;height:28px;border-radius:50%;background:#2c2c32;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--t2)}
+.chart{margin-top:4px}.chart .ax{font-size:9px;fill:#8b8f9a}.chart .pk{font-size:10px;font-weight:800;fill:#fff}.chart .zl{font-size:8.5px;font-weight:800}
+.legend2{display:flex;gap:14px;font-size:10.5px;color:var(--t2);margin:2px 2px 0}.legend2 i{display:inline-block;width:16px;height:0;vertical-align:middle;margin-right:5px}
+.lw{border-top:2.4px solid #FF9F0A}.lg{border-top:1.6px dashed #8b8f9a}
+.kpis{display:flex;gap:8px;margin-top:10px}.kpis div{flex:1;background:var(--muted);border-radius:12px;padding:8px 10px}
+.kpis b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}.kpis span{font-size:10.5px;color:var(--t2)}
+.cmp{margin-top:10px;font-size:12px;color:#e6e6ea;background:rgba(255,159,10,.10);border:1px solid rgba(255,159,10,.28);border-radius:12px;padding:8px 10px}
+.note{margin-top:10px;font-size:11.5px;color:#c9cbd2;background:rgba(10,132,255,.10);border:1px solid rgba(10,132,255,.3);border-radius:12px;padding:8px 10px}
+.pager{margin-top:auto;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--t2);font-weight:700;padding-top:10px}
+.pager i{width:7px;height:7px;border-radius:50%;background:#4a4a52;display:block}.pager i.on{background:#fff;width:18px;border-radius:4px}
+.tile{display:flex;justify-content:space-between;align-items:center;background:var(--muted);border-radius:12px;padding:10px 12px;font-size:13px}
+.tile.tap{outline:1.5px solid var(--coral);background:rgba(255,122,107,.14)}
+.pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,69,58,.18);color:#FF6961}
+.qs{max-width:1460px;margin:46px auto 0;padding:0 28px}.q{background:#16171c;border:1px solid #2a2c33;border-radius:16px;padding:14px 18px;margin:0 0 12px;max-width:980px}
+.q b{color:#fff}.q .rec{color:#9be3a8;font-weight:650}
+
+.para{margin:8px 16px 0;font-size:14px;line-height:1.45;color:#ececf0}
+.para b{color:#fff}.ai{font-size:9.5px;color:var(--t2);margin:4px 16px 0;letter-spacing:.04em}
+.ask{margin:10px 14px 0;background:#232328;border-radius:14px;padding:9px 12px;font-size:12.5px;color:#8b8b92;display:flex;gap:8px}
+.big{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 14px 0}
+.tile{border-radius:18px;padding:12px;min-height:84px;display:flex;flex-direction:column;justify-content:space-between}
+.tile b{font-size:14px;line-height:1.2}.tile span{font-size:10.5px;opacity:.8}.tile .e{font-size:22px}
+.t1{background:linear-gradient(140deg,#7b4bd1,#4a2a8a)}.t2{background:linear-gradient(140deg,#2f6fd0,#1d3f80)}
+.t3{background:linear-gradient(140deg,#2f9a5a,#1c5a36)}.t4{background:linear-gradient(140deg,#d06a2f,#8a3f1a)}
+.tile.wide{grid-column:span 2;min-height:64px;flex-direction:row;align-items:center;gap:10px}
+.sec{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin:12px 16px 4px}
+.goal{margin:0 14px 7px;background:var(--surface);border-radius:14px;padding:9px 11px}
+.goal b{font-size:13px}.goal .gbar{height:6px;border-radius:4px;background:#2b2b31;margin:6px 0 4px;overflow:hidden}.goal .gbar i{display:block;height:100%}
+.goal span{font-size:10.5px;color:var(--t2)}
+.entry{margin:0 14px 8px;background:var(--surface);border-radius:16px;padding:10px 11px}
+.entry .h{display:flex;justify-content:space-between;font-size:10px;color:var(--t2);font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.entry b{display:block;font-size:13.5px;margin-top:3px}.entry .s{font-size:11px;color:var(--t2);margin-top:2px}
+.thumbs{display:flex;gap:4px;margin-top:7px}.thumbs i{flex:1;height:44px;border-radius:8px;background:linear-gradient(135deg,#3a3a46,#24242c)}
+.where{margin:8px 14px 0;border-radius:16px;padding:11px 12px;background:linear-gradient(140deg,rgba(181,124,242,.25),rgba(88,155,242,.12));border:1px solid rgba(181,124,242,.35)}
+.where .k{font-size:10px;font-weight:800;letter-spacing:.08em;color:#d9c2ff;text-transform:uppercase}
+.where b{display:block;font-size:15px;margin-top:3px}.where span{font-size:11px;color:#cfd0d8}
+.row{display:flex;justify-content:space-between;align-items:center;margin:0 14px;padding:8px 2px;border-bottom:1px solid #26262b;font-size:12.5px}
+.row i{font-style:normal;color:var(--t2);font-size:11px}
+.pill{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:#FFB27A}
+.ex{font-size:9px;color:#8b8b92;font-style:italic;font-weight:400;letter-spacing:0;text-transform:none}
+.combo{max-width:1560px;margin:40px auto 0;padding:0 28px}.combo h2{font-size:22px;margin:0 0 4px}.combo p{color:#aeb2bd;margin:0 0 16px;font-size:14.5px;max-width:1000px}
+</style></head><body>
+<header><h1>Three ways Home could work</h1>
+<p class="sub">Not more cards — three different ideas of what Home is for. Your real data (week of Oct 20–26, Kilter log, Edge Ball) unless marked example.</p></header>
+<div class="gallery">
+<div class="step"><div class="num">1</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="para">Big week — <b>11½ hours</b> and the <b>Edge Ball tournament</b> on Saturday (1 win, 4 losses). On the board you sent <b>7 V5s</b>; your open projects run up to V10. Rehab: 2× this week. Today looks like <b>rest or light rehab</b>.</div><div class="ai">✦ WRITTEN ON YOUR PHONE FROM YOUR LOG</div><div class="sec">Start</div><div class="big"><div class="tile t1"><div class="e">🧗</div><div><b>Kilter</b><br><span>7 projects · board at 40°</span></div></div><div class="tile t3"><div class="e">🩺</div><div><b>Chiro Thoracic Rehab</b><br><span>last Thu</span></div></div><div class="tile t2"><div class="e">🏓</div><div><b>Table tennis</b><br><span>last Sat · Edge Ball</span></div></div><div class="tile t4"><div class="e">🔥</div><div><b>Pre-climb warm-up</b><br><span>before Kilter</span></div></div><div class="tile wide" style="background:#26262b"><span style="font-size:18px">＋</span><b style="font-size:13px">Something else</b></div></div><div class="ask">✦ Ask: “how many V5s did I send this month?”</div></div></div><p class="cap"><b>Talks to you + launcher (D + A).</b> One paragraph written on your phone from your log, big buttons for what you actually do (ordered by what you’re likely doing now), and an Ask box. Stats move off Home. Calmest, fastest.</p></div>
+<div class="step"><div class="num">2</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="sec">Your goals <span class="ex">(examples — you set these)</span></div><div class="goal"><b>Send a V6 at 40°</b><div class="gbar"><i style="width:55%;background:#B57CF2"></i></div><span>Best at 40°: V5 (7 sends this week) · next: try a V6 from Not tried</span></div><div class="goal"><b>Rehab 3× a week</b><div class="gbar"><i style="width:66%;background:#5BC074"></i></div><span>2 of 3 this week · next: today</span></div><div class="sec">Your days</div><div class="entry"><div class="h"><span>Mon 26 Oct</span><span>1h 48m</span></div><b>Kilter — sent Priest Drawn, Luigi’s Ghost, Joint efforts, bph52</b><div class="s">Tried pho shrimp #2 ×3 · warm-up · planche</div><div class="thumbs"><i></i><i></i><i></i></div></div><div class="entry"><div class="h"><span>Sat 24 Oct</span><span>3h 21m</span></div><b>Edge Ball 2026 — 1 win, 4 losses</b><div class="s">Beat Rothman Adam 3–0 · peak 192 bpm</div><div class="thumbs"><i></i><i></i></div></div><div class="entry"><div class="h"><span>Fri 23 Oct</span><span>4h 28m</span></div><b>Kilter — sent bone saw, Miley Skybus, Pez</b><div class="s">warm-up first</div></div></div></div><p class="cap"><b>Goals + journal (C + B).</b> Two or three goals you set, each with progress and the next step; then a diary of your days with sends, matches and clip thumbnails. Most motivating, most “yours”.</p></div>
+<div class="step"><div class="num">3a</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="where"><div class="k">📍 At the gym</div><b>Your Kilter board is here</b><span>Free right now <span class="ex">(live status)</span> · you last climbed here Mon</span></div><div class="big"><div class="tile t4"><div class="e">🔥</div><div><b>Warm-up</b><br><span>~30 min</span></div></div><div class="tile t1"><div class="e">🧗</div><div><b>Climb</b><br><span>connect + plan</span></div></div></div><div class="sec">Your projects on this board</div><div class="row"><span>Between the Legs · V8</span><span class="pill">◐ 2 tries</span></div><div class="row"><span>just play with fire · V8</span><span class="pill">◐ 1 try</span></div><div class="row"><span>pho shrimp #2 · V10</span><span class="pill">◐ 3 tries</span></div><div class="row"><span>Beenice · V5</span><span class="pill">◐ 1 try</span></div></div></div><p class="cap"><b>Where you are + launcher (E + A) — at the gym.</b> Home becomes the gym screen: the board here (free / taken), warm-up and climb as the two buttons, your projects on this board.</p></div>
+<div class="step"><div class="num">3b</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="where" style="background:linear-gradient(140deg,rgba(91,192,116,.22),rgba(88,155,242,.1));border-color:rgba(91,192,116,.4)"><div class="k" style="color:#bfe9c9">🏠 At home</div><b>Rehab is due</b><span>Chiro Thoracic Rehab · last done Thu</span></div><div class="big"><div class="tile t3"><div class="e">🩺</div><div><b>Start rehab</b><br><span>~55 min</span></div></div><div class="tile" style="background:#26262b"><div class="e">✅</div><div><b>Habits</b><br><span>2 left today <span class="ex">(ex.)</span></span></div></div></div><div class="sec">This week</div><div class="para" style="font-size:13px">11½ h · Kilter, table tennis, rehab, gym. Tap for the full week.</div></div></div><p class="cap"><b>…and at home.</b> The same Home shows what’s due here — rehab, habits — and a one-line week. Uses the coarse place Kilter already remembers; no tracking beyond that.</p></div>
+</div>
+<div class="qs"><div class="q"><b>Which direction?</b> 1, 2, 3 — or a mix (e.g. 1’s paragraph on top of 3). Tell me what you like in each and what you’d drop.</div></div>
+</body></html>

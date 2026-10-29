@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home Redesign</title><style>:root{--coral:#FF7A6B;--paper:#121214;--surface:#1E1E22;--muted:#26262B;--ink:#F4F3F1;--t2:#A6A5A1;--glass:rgba(255,255,255,.07);--glasshair:rgba(255,255,255,.14)}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2030,#0b0c10 60%);color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;line-height:1.5;padding:0 0 60px}
+header{padding:48px 28px 6px;max-width:1460px;margin:0 auto}
+h1{font-size:36px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(92deg,#fff,#ffb9af 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#aeb2bd;font-size:16px;max-width:980px;margin:0}
+.gallery{display:flex;flex-wrap:wrap;gap:34px 40px;max-width:1560px;margin:34px auto 0;padding:0 28px}
+.step{width:330px;position:relative}
+.num{position:absolute;left:-10px;top:-12px;z-index:40;width:32px;height:32px;border-radius:50%;background:var(--coral);color:#1a0c0a;font-weight:800;display:flex;align-items:center;justify-content:center}
+.cap{margin:12px 4px 0;font-size:13.5px;color:#b8bcc6}.cap b{color:#fff}
+.device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset}
+.screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;background:radial-gradient(500px 340px at 80% -8%,rgba(255,150,69,.14),transparent 65%),var(--paper);color:var(--ink);display:flex;flex-direction:column}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 2px;font-size:13px;font-weight:650}
+.nav{display:flex;align-items:center;justify-content:space-between;margin:6px 12px 0;padding:9px 12px;border-radius:22px;background:var(--glass);border:1px solid var(--glasshair);font-size:14px;font-weight:750}
+.nb{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;font-size:13px}
+.content{padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border-radius:16px;padding:12px}
+.lab{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin-bottom:6px}
+.row{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:10px;font-size:12px}
+.row.tap{background:rgba(255,122,107,.16);outline:1.5px solid var(--coral)}
+.gl{width:66px;color:var(--t2);font-weight:600;font-variant-numeric:tabular-nums}
+.av{width:62px;white-space:nowrap;text-align:right;font-weight:750;font-variant-numeric:tabular-nums}
+.chev{color:var(--t2);font-weight:700}
+.zbar{flex:1;height:8px;border-radius:5px;overflow:hidden;display:flex;background:#2b2b31}.zbar i{display:block;height:100%}
+.sheet .zbar{flex:none;height:9px;margin:8px 2px 0}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:118px;background:#1b1b1f;border-radius:26px 26px 0 0;padding:8px 16px 14px;box-shadow:0 -10px 40px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.grab{width:38px;height:5px;border-radius:3px;background:#4a4a52;margin:0 auto 10px}
+.shead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.st{font-size:18px;font-weight:800;letter-spacing:-.01em}.ss{font-size:12px;color:var(--t2)}
+.xbtn{width:28px;height:28px;border-radius:50%;background:#2c2c32;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--t2)}
+.chart{margin-top:4px}.chart .ax{font-size:9px;fill:#8b8f9a}.chart .pk{font-size:10px;font-weight:800;fill:#fff}.chart .zl{font-size:8.5px;font-weight:800}
+.legend2{display:flex;gap:14px;font-size:10.5px;color:var(--t2);margin:2px 2px 0}.legend2 i{display:inline-block;width:16px;height:0;vertical-align:middle;margin-right:5px}
+.lw{border-top:2.4px solid #FF9F0A}.lg{border-top:1.6px dashed #8b8f9a}
+.kpis{display:flex;gap:8px;margin-top:10px}.kpis div{flex:1;background:var(--muted);border-radius:12px;padding:8px 10px}
+.kpis b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}.kpis span{font-size:10.5px;color:var(--t2)}
+.cmp{margin-top:10px;font-size:12px;color:#e6e6ea;background:rgba(255,159,10,.10);border:1px solid rgba(255,159,10,.28);border-radius:12px;padding:8px 10px}
+.note{margin-top:10px;font-size:11.5px;color:#c9cbd2;background:rgba(10,132,255,.10);border:1px solid rgba(10,132,255,.3);border-radius:12px;padding:8px 10px}
+.pager{margin-top:auto;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--t2);font-weight:700;padding-top:10px}
+.pager i{width:7px;height:7px;border-radius:50%;background:#4a4a52;display:block}.pager i.on{background:#fff;width:18px;border-radius:4px}
+.tile{display:flex;justify-content:space-between;align-items:center;background:var(--muted);border-radius:12px;padding:10px 12px;font-size:13px}
+.tile.tap{outline:1.5px solid var(--coral);background:rgba(255,122,107,.14)}
+.pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,69,58,.18);color:#FF6961}
+.qs{max-width:1460px;margin:46px auto 0;padding:0 28px}.q{background:#16171c;border:1px solid #2a2c33;border-radius:16px;padding:14px 18px;margin:0 0 12px;max-width:980px}
+.q b{color:#fff}.q .rec{color:#9be3a8;font-weight:650}
+
+.card{margin:8px 14px 0;background:var(--surface);border-radius:16px;padding:11px 12px}
+.card.new{outline:1.5px dashed rgba(255,122,107,.75);outline-offset:2px}
+.lab{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--t2);text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between}
+.buddy{display:flex;gap:10px;align-items:center}
+.egg{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffb27a,#ff7a6b 60%,#c0503f);flex:none}
+.bt b{display:block;font-size:14px}.bt span{font-size:11px;color:var(--t2)}
+.xp{height:6px;border-radius:4px;background:#2b2b31;margin-top:5px;overflow:hidden}.xp i{display:block;height:100%;width:62%;background:var(--coral)}
+.ready{display:flex;align-items:center;gap:10px}
+.ring{width:44px;height:44px;border-radius:50%;background:conic-gradient(#5BC074 0 72%,#2b2b31 72% 100%);display:flex;align-items:center;justify-content:center;flex:none}
+.ring i{width:34px;height:34px;border-radius:50%;background:var(--surface);display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:12px}
+.rt b{font-size:13.5px;display:block}.rt span{font-size:11px;color:var(--t2);display:block;line-height:1.35}
+.today b{font-size:15px;display:block}.today .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+.btns{display:flex;gap:7px;margin-top:9px}.btn{flex:1;text-align:center;border-radius:11px;padding:8px 4px;font-weight:750;font-size:12px;background:rgba(255,255,255,.08)}
+.btn.pri{background:var(--coral);color:#1a0c0a}
+.alt{font-size:11px;color:var(--t2);margin-top:8px;border-top:1px solid #2c2c32;padding-top:7px}
+.week{display:flex;gap:4px}.day{flex:1;text-align:center}
+.day .d{font-size:9.5px;color:var(--t2);font-weight:700}
+.day .col{height:70px;display:flex;flex-direction:column-reverse;gap:2px;margin:3px 0}
+.seg{border-radius:4px}.g{background:#FF9645}.k{background:#B57CF2}.r{background:#589BF2}.h{background:#5BC074}
+.day .m{font-size:9px;color:var(--t2)}
+.tot{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--t2)}.tot b{color:#fff;font-size:13px;display:block}
+.leg{display:flex;gap:9px;font-size:9.5px;color:var(--t2);margin-top:6px}.leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:-1px}
+.win{display:flex;gap:9px;align-items:center;padding:6px 0;border-bottom:1px solid #26262b;font-size:12.5px}.win:last-child{border-bottom:0}
+.win .ic{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+.win b{font-weight:700}.win span{display:block;font-size:10.5px;color:var(--t2)}
+.example{font-size:9.5px;color:#8b8b92;font-style:italic}
+</style></head><body>
+<header><h1>Home that knows everything you do</h1>
+<p class="sub">Home today is built around the Gym Tracker; Kilter and racket barely show and your Health data doesn’t at all. These three frames are one scrolling Home. Dashed = new. Your real data (Oct 20–26) except the readiness numbers, which come from Health and are examples here.</p></header>
+<div class="gallery">
+<div class="step"><div class="num">1</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="card"><div class="buddy"><div class="egg"></div><div class="bt" style="flex:1"><b>Your buddy</b><span>level, streak, freezes — as today</span><div class="xp"><i></i></div></div></div></div><div class="card new"><div class="lab"><span>Readiness · from Apple Health</span><span class="example">example values</span></div><div class="ready"><div class="ring"><i>✓</i></div><div class="rt"><b>Good to go — not a max day</b><span>Resting HR 54 (+2 vs your week) · HRV 41 ms (−6)</span><span>Big week: tournament Sat + ~5 h on the Kilter board</span></div></div></div><div class="card new"><div class="lab"><span>Today</span><span>for you</span></div><div class="today"><b>Kilter · work your projects</b><div class="s">7 open projects · e.g. Beenice V5, Between the Legs V8 · at 40°</div><div class="btns"><div class="btn pri">Plan with Projects first</div><div class="btn">Something else</div></div><div class="alt">Or: Chiro Thoracic Rehab (last done Thu) · Rest day</div></div></div></div></div><p class="cap"><b>Top.</b> The buddy stays (smaller). New <b>Readiness</b> from Apple Health (resting HR, HRV, your recent load) and a <b>Today</b> card that suggests across sports — here, your 7 Kilter projects, with one-tap “Plan with Projects first”.</p></div>
+<div class="step"><div class="num">2</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="card" style="opacity:.4"><div class="buddy"><div class="egg"></div><div class="bt" style="flex:1"><b>Your buddy</b><span>level, streak, freezes — as today</span><div class="xp"><i></i></div></div></div></div><div class="card new"><div class="lab"><span>Your week · Oct 20–26</span><span>all sports</span></div><div class="week"><div class="day"><div class="d">T 20</div><div class="col"><div class="seg h" style="height:26%"></div></div><div class="m">59m</div></div><div class="day"><div class="d">W 21</div><div class="col"></div><div class="m"></div></div><div class="day"><div class="d">T 22</div><div class="col"><div class="seg h" style="height:26%"></div></div><div class="m">58m</div></div><div class="day"><div class="d">F 23</div><div class="col"><div class="seg g" style="height:8%"></div><div class="seg k" style="height:62%"></div></div><div class="m">4h 28m</div></div><div class="day"><div class="d">S 24</div><div class="col"><div class="seg r" style="height:52%"></div></div><div class="m">3h 21m</div></div><div class="day"><div class="d">S 25</div><div class="col"></div><div class="m"></div></div><div class="day"><div class="d">M 26</div><div class="col"><div class="seg g" style="height:10%"></div><div class="seg g" style="height:6%"></div><div class="seg k" style="height:14%"></div></div><div class="m">1h 48m</div></div></div><div class="leg"><span><i class="g" style="background:#FF9645"></i>Gym</span><span><i style="background:#B57CF2"></i>Kilter</span><span><i style="background:#589BF2"></i>Table tennis</span><span><i style="background:#5BC074"></i>Rehab</span></div><div class="tot"><div><b>13 sessions</b>logged</div><div><b>11h 34m</b>active</div><div><b>4 sports</b>this week</div><div><b>58 min</b>Z4–Z5 <span class="example">(ex.)</span></div></div></div></div></div><p class="cap"><b>Your week, every sport.</b> Replaces “This week in XP”: a day-by-day stack by sport (Gym, Kilter, Table tennis, Rehab) with sessions, active time and hard-zone minutes. Friday’s long Kilter session and Saturday’s tournament finally count.</p></div>
+<div class="step"><div class="num">3</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="padding:4px 16px 0;font-size:24px;font-weight:800">Today</div><div class="card new"><div class="lab"><span>Recent wins</span><span>all sports</span></div><div class="win"><div class="ic" style="background:rgba(88,155,242,.18)">🏓</div><div><b>Won 3–0 vs Rothman Adam</b><span>Edge Ball 2026 · group · 24 Oct</span></div></div><div class="win"><div class="ic" style="background:rgba(181,124,242,.2)">🧗</div><div><b>Sent Priest Drawn · 6c+/V5</b><span>in 2 tries · 40° · 26 Oct</span></div></div><div class="win"><div class="ic" style="background:rgba(181,124,242,.2)">🧗</div><div><b>Sent Luigi’s Ghost · 6c+/V5 first try</b><span>40° · 26 Oct</span></div></div><div class="win"><div class="ic" style="background:rgba(255,69,58,.18)">❤︎</div><div><b>Peak 192 bpm in a game</b><span>vs Higuera, game 2 · 24 Oct</span></div></div><div class="win"><div class="ic" style="background:rgba(91,192,116,.18)">🏋︎</div><div><b>Rehab 3× in 4 days</b><span>Chiro Thoracic Rehab · 19, 20, 22 Oct</span></div></div></div><div class="card" style="opacity:.55"><div class="lab"><span>Your other apps</span></div><div style="font-size:11.5px;color:var(--t2)">Habits · Focus · Chores · Wardrobe (unchanged here)</div></div></div></div><p class="cap"><b>Recent wins across sports.</b> Matches won, Kilter sends (first-try ones called out), heart-rate peaks, consistency — not only gym PRs. Every row taps into its session.</p></div>
+</div>
+<div class="qs">
+<div class="q"><b>Q1 · Readiness:</b> show a 0–100 score, or just words (“Good to go / Take it easy”) with the numbers underneath? <span class="rec">Suggest: words + numbers, no made-up score — the inputs are honest, a single score would be our invention.</span></div>
+<div class="q"><b>Q2 · Today card:</b> one suggestion with “Something else”, or a list of 2–3 options? <span class="rec">Suggest: one, with the alternatives on one quiet line (as drawn).</span></div>
+<div class="q"><b>Q3 · XP:</b> the week strip replaces “This week in XP” — keep XP only on the buddy? <span class="rec">Suggest: yes; XP stays on the buddy and in the buddy screen.</span></div>
+</div></body></html>

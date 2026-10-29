@@ -14,6 +14,7 @@ struct AppLibraryView: View {
     @Environment(StoreHealth.self) private var storeHealth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var zoom
+    @State private var showingAppearance = false
     @State private var showingBackup = false
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
@@ -63,6 +64,13 @@ struct AppLibraryView: View {
             // Suite-level backup/export/restore (issue #68) — the one suite surface, so it
             // lives on the library's top bar (mirrors the Android BackupScreen entry).
             .toolbar {
+                // Prompt 211: the app's accent + System/Dark/Light. (Home's avatar will open it too — step 2.)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingAppearance = true } label: {
+                        Label("Appearance", systemImage: "paintpalette")
+                    }
+                    .accessibilityIdentifier("suite.appearance.open")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingBackup = true
@@ -72,6 +80,7 @@ struct AppLibraryView: View {
                     .accessibilityIdentifier("suite.backup.open")
                 }
             }
+            .sheet(isPresented: $showingAppearance) { AppearanceSettingsView() }
             .sheet(isPresented: $showingBackup) {
                 BackupView(storeIsFallback: storeHealth.mode != .ok)
             }
