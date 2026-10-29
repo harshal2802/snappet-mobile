@@ -123,4 +123,12 @@ final class KilterAscentsTests: XCTestCase {
         XCTAssertEqual(plan.picks.count, 30)
         XCTAssertEqual(Set(plan.picks.map(\.item.uuid)).count, 30, "no climb twice")
     }
+
+    /// The plan header names the whole log in distinct climbs (it read "your last 20 logged climbs" — a count of
+    /// entries that sounded like a cut-off window).
+    func testPlanHistoryLineCountsDistinctClimbs() {
+        let index = KilterAscentIndex([log("a", .sent), log("a", .sent), log("b", .attempt), log("c", .flash)])
+        XCTAssertEqual(KilterPlanView.historyLine(index), "Based on your whole log — 3 climbs, 2 sent.")
+        XCTAssertEqual(KilterPlanView.historyLine(KilterAscentIndex([])), "No climbs logged yet — starting from the catalog.")
+    }
 }
