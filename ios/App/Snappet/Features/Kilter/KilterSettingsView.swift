@@ -18,6 +18,7 @@ struct KilterSettingsView: View {
     /// The user's physical board size (`product_size_id`) — drives which LED map is sent so the right
     /// holds light. Restored per layout via `KilterSizeMemory`; the layout default only seeds it.
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
+    @AppStorage(KilterAutoLight.defaultsKey) private var autoLight = true
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
     /// P1: whether to suggest the usual board on arrival at a remembered coarse place (pre-connect).
@@ -93,6 +94,19 @@ struct KilterSettingsView: View {
             } footer: {
                 Text("Personalizes session heart-rate zones, % effort, and the calorie estimate. "
                      + "One profile for the whole app — without it, zones use a default 190 bpm ceiling.")
+            }
+
+            Section {
+                Toggle(isOn: $autoLight) {
+                    Label("Light climbs automatically", systemImage: "lightbulb")
+                }
+                .accessibilityIdentifier("kilter.settings.autoLight")
+            } header: {
+                Text("Lighting")
+            } footer: {
+                Text(autoLight
+                     ? "Opening or swiping to a climb lights it on the board."
+                     : "A climb lights only when you tap Light up this climb (or the board pill).")
             }
 
             Section {

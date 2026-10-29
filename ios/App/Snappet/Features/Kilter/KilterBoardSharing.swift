@@ -38,3 +38,23 @@ enum KilterBoardSharing {
         "Someone else is on \(name ?? "the board"). A board takes one phone at a time — try again once they’ve lit their climb."
     }
 }
+
+/// When the climb screen lights the board on its own (2026-10-29, user: "when I switch between climbs it
+/// automatically lights the climb — a setting to only light on tapping the button?"). Pure + unit-tested.
+enum KilterAutoLight {
+    /// What happened on the climb screen.
+    enum Trigger: Sendable { case openOrSwipe, boardConnected, boardSizeChanged }
+
+    static let defaultsKey = "kilter.autoLight"
+
+    /// With "Light climbs automatically" on, every trigger lights (the old behaviour). Off: only the button / the
+    /// board pill light — except that a connect or a board-size fix re-sends a climb YOU already lit, so the
+    /// reconnect and the "wrong holds?" remap still show the right holds.
+    static func shouldLight(_ trigger: Trigger, automatic: Bool, litByYou: Bool) -> Bool {
+        if automatic { return true }
+        switch trigger {
+        case .openOrSwipe: return false
+        case .boardConnected, .boardSizeChanged: return litByYou
+        }
+    }
+}
