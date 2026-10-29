@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kilter Browse Restyle</title><style>
+:root{--bg:#0A0B0D;--card:#14161A;--muted:#1C1F24;--line:#23262C;--t1:#F2F3F5;--t2:#8C9099;--t3:#5D616B;--accent:#8EA2FF;--ink:#0b1030;--ok:#5BC074}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:#050506;color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;padding:40px 28px}
+h1{font-size:30px;font-weight:700;margin:0 0 6px}.sub{color:#9aa0aa;max-width:1100px;margin:0 0 26px;font-size:15px}
+.wrap{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:10px;align-items:center}.cap{font-size:13px;color:#9aa0aa;font-weight:600}
+.device{width:340px;height:736px;border-radius:52px;background:#000;padding:11px;box-shadow:0 0 0 2px #24262b inset;flex:none}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative}
+.shot{width:100%;height:100%;object-fit:cover;object-position:top}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 0;font-size:13px;font-weight:600}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 0;font-size:14px;color:var(--accent)}
+.nav .ic{display:flex;gap:16px;font-size:17px;color:var(--t2)}
+.title{font-size:30px;font-weight:600;letter-spacing:-.02em;padding:2px 16px 8px}
+.search{margin:0 14px;background:var(--muted);border-radius:12px;padding:9px 12px;font-size:14px;color:var(--t3)}
+.card{margin:10px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:12px 14px;position:relative;overflow:hidden}
+.glow{position:absolute;right:-30px;bottom:-50px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(142,162,255,.22),transparent 70%)}
+.k{font-size:11px;color:var(--t2)}.h{font-size:16px;font-weight:600;margin-top:2px}.s{font-size:12px;color:var(--t2);margin-top:2px}
+.row{display:flex;align-items:center;gap:10px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--t3);flex:none}.dot.on{background:var(--ok)}
+.pri{background:var(--accent);color:var(--ink);font-weight:600;font-size:13px;border-radius:999px;padding:7px 16px;white-space:nowrap}
+.sec{border:1px solid var(--line);color:var(--t1);font-size:13px;border-radius:999px;padding:6px 13px;white-space:nowrap}
+.chips{display:flex;gap:6px;padding:10px 14px 0;overflow:hidden;white-space:nowrap}
+.chip{font-size:12px;padding:6px 9px;border-radius:999px;border:1px solid var(--line);color:var(--t1)}
+.chip.sel{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.10)}
+.chip small{color:var(--t2);margin-left:3px}
+.lit{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--t2);margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.lit b{color:var(--t1);font-weight:500}
+.lh{display:flex;justify-content:space-between;padding:14px 18px 4px;font-size:11.5px;color:var(--t2)}.lh u{color:var(--accent);text-decoration:none}
+.list{margin:0 14px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:2px 14px}
+.cl{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.cl.first{border-top:0}
+.cl .n{font-size:14.5px;font-weight:500}.cl .m{font-size:11.5px;color:var(--t2);margin-top:1px}
+.cl .g{margin-left:auto;text-align:right}.cl .g b{font-size:15px;font-weight:500;display:block}.cl .g span{font-size:10.5px;color:var(--t3)}
+.st{color:var(--ok)}.pr{color:#E8B04A}
+.chev{color:var(--t3);font-size:16px}
+.tab{position:absolute;left:14px;right:14px;bottom:14px;height:58px;border-radius:30px;background:rgba(30,32,38,.9);border:1px solid #2a2d34;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--t2)}
+.notes{flex:1;min-width:360px;max-width:520px;font-size:14px;color:#c9ccd3;line-height:1.5}
+.notes h3{font-size:16px;margin:18px 0 6px;color:#fff}.notes li{margin:4px 0}
+.ph{display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);font-size:13px;text-align:center;padding:30px}
+</style></head><body>
+<h1>Kilter · browse, restyled</h1>
+<p class="sub">Step 3a of the design reset. Same features and filters as today, fewer bands above the first climb: one board card instead of a strip + a rail + a count bar, one quiet chip row style, calmer climb rows. Sample climbs below are placeholders for layout, not your catalog.</p>
+<div class="wrap">
+
+<div class="col"><div class="cap">Today</div><div class="device"><div class="screen"><img class="shot" src="kilter-browse-before.png" alt="Kilter browse today" onerror="this.outerHTML='<div class=ph>today’s screenshot</div>'"></div></div></div>
+
+<div class="col"><div class="cap">Restyled — not connected</div><div class="device"><div class="screen">
+<div class="bar"><span>9:41</span><span>5G ▮</span></div>
+<div class="nav"><span>‹ Apps</span><span class="ic">🕘 ＋ ⋯</span></div>
+<div class="title">Kilter</div>
+<div class="search">🔍 Search climbs or setters</div>
+<div class="card"><div class="row"><span class="dot"></span><div style="flex:1"><div class="h">Home wall 12×12 · 40° <span style="color:var(--t3);font-weight:400">▾</span></div><div class="s">Not connected</div></div></div><div class="row" style="margin-top:10px;gap:8px"><span class="pri">Start session</span><span class="sec">Connect</span></div>
+<div class="lit">Last lit <b>Crimpy Situation</b> · 12 min ago <span style="margin-left:auto;color:var(--accent)">All ›</span></div></div>
+<div class="chips"><span class="chip">⚙︎ Filters</span><span class="chip">V3–V6 ▾</span><span class="chip">Mine</span><span class="chip">★ Saved</span></div>
+<div class="chips" style="padding-top:7px"><span class="chip sel">All</span><span class="chip">Not tried</span><span class="chip">Projects<small>7</small></span><span class="chip">Sent<small>9</small></span></div>
+<div class="lh"><span>1,204 climbs</span><u>Clear</u></div>
+<div class="list">
+<div class="cl first"><div><div class="n">✦ Crimpy Situation</div><div class="m">by setterA · <span class="st">✓ Sent</span></div></div><div class="g"><b>6C/V5</b><span>★★★ · 2.1k</span></div><span class="chev">›</span></div>
+<div class="cl"><div><div class="n">Slopey Dreams</div><div class="m">by setterB · <span class="pr">◐ 3 tries</span></div></div><div class="g"><b>6B+/V4</b><span>★★☆ · 860</span></div><span class="chev">›</span></div>
+<div class="cl"><div><div class="n">Pinch Me</div><div class="m">by setterC</div></div><div class="g"><b>7A/V6</b><span>★★★ · 1.4k</span></div><span class="chev">›</span></div>
+<div class="cl"><div><div class="n">The Long Reach</div><div class="m">by setterA</div></div><div class="g"><b>6A/V3</b><span>★★☆ · 3.3k</span></div><span class="chev">›</span></div>
+</div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div>
+</div></div></div>
+
+<div class="col"><div class="cap">Restyled — connected, session on</div><div class="device"><div class="screen">
+<div class="bar"><span>9:41</span><span>5G ▮</span></div>
+<div class="nav"><span>‹ Apps</span><span class="ic">🕘 ＋ ⋯</span></div>
+<div class="title">Kilter</div>
+<div class="search">🔍 Search climbs or setters</div>
+<div class="card"><div class="glow"></div><div class="row"><span class="dot on"></span><div style="flex:1"><div class="k">Session · 24 min · ♥ 142</div><div class="h">5 climbs · 3 sent</div><div class="s">Home wall 12×12 · 40° · connected</div></div><span class="sec">End</span></div>
+<div class="lit">Lit now <b>Crimpy Situation</b> <span style="margin-left:auto;color:var(--accent)">Open ›</span></div></div>
+<div class="chips"><span class="chip">⚙︎ Filters · 2</span><span class="chip">V3–V6 ▾</span><span class="chip">Mine</span><span class="chip">★ Saved</span></div>
+<div class="chips" style="padding-top:7px"><span class="chip">All</span><span class="chip sel">Not tried</span><span class="chip">Projects<small>7</small></span><span class="chip">Sent<small>9</small></span></div>
+<div class="lh"><span>842 climbs</span><u>Clear</u></div>
+<div class="list">
+<div class="cl first"><div><div class="n">Pinch Me</div><div class="m">by setterC</div></div><div class="g"><b>7A/V6</b><span>★★★ · 1.4k</span></div><span class="chev">›</span></div>
+<div class="cl"><div><div class="n">The Long Reach</div><div class="m">by setterA</div></div><div class="g"><b>6A/V3</b><span>★★☆ · 3.3k</span></div><span class="chev">›</span></div>
+<div class="cl"><div><div class="n">Sidepull City</div><div class="m">by setterD</div></div><div class="g"><b>6C/V5</b><span>★★☆ · 540</span></div><span class="chev">›</span></div>
+</div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div>
+</div></div></div>
+
+<div class="notes">
+<h3>What changes</h3>
+<ul>
+<li><b>One board card</b> replaces the board strip, the “ON THE BOARD” rail and the arrival/confirm banners’ separate bands. It shows the board, angle and state; Connect + Start when idle; the live session (time, HR, climbs, sends) with End when on. The last-lit climb is one line inside it (All › = On the Board).</li>
+<li><b>Tapping the board line</b> (“Home wall 12×12 · 40°”) opens the same Board / Size / Angle menu today’s chips have; during a session, tapping the card opens the session. Same “everything opens its source” rule as Home.</li>
+<li><b>Chips:</b> one style everywhere (hairline outline; accent only on the selected one). Board + Angle move into the card’s board line; Filters (with Sort inside, as today), Grade range, Mine and Saved fit in row 1; My ascents stays row 2.</li>
+<li><b>Count + Clear</b> become the list’s small header instead of their own bar.</li>
+<li><b>Climb rows:</b> name in regular-medium weight (not bold headline), setter and your status on one grey line (✓ Sent green, ◐ tries amber — meaning colours stay), grade as plain text on the right with stars and ascents under it; no capsule badges.</li>
+<li><b>Your accent, not orange:</b> today the whole Kilter screen is tinted orange (buttons, chips, toolbar, stars). Restyled, actions use your accent like the rest of the app; orange stays only on the Kilter app icon. Stars go neutral grey.</li><li><b>No cut-off chips:</b> today the Board chip is clipped (“Board Te…”) behind Mine / Saved; the board moves into the card so the row fits.</li><li><b>Climb of the day</b> stays, as the first row with a small ✦ — not its own section header.</li><li>Title “Kilter” (was “Kilter Board”), toolbar unchanged (History, Create, More).</li>
+</ul>
+<h3>Unchanged</h3>
+<ul><li>Every filter, sort and the Plan / Stats / On the Board / Scan / Settings entries; the climb detail screen (next, 3b); board connect / sharing behaviour; Kilter’s orange stays as the app’s icon colour only.</li></ul>
+<h3>Then</h3>
+<ul><li>3b: climb detail · 3c: Clips feed · 3d: Gym Tracker + History · then the rest, one PR each.</li></ul>
+</div></div></body></html>

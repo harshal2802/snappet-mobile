@@ -10333,3 +10333,16 @@ stripes, and the panel read as an opaque slab.
   Appearance alone, so there is one obvious place for app-wide settings.
 - The activity feed collapses back-to-back repeats ("Opened Kilter Board ×5") with the pure `FeedRuns.collapse`;
   only consecutive repeats merge, so the order of what happened stays true.
+
+## 2026-10-29 — Design-system reset, step 3a: Kilter browse (prompt 213)
+
+- Restyled modules take the **user's accent**, not their wayfinding colour: `AppLibraryView.suiteAccentModules`
+  lists the modules moved to the design system (Kilter first). Their colour stays on the App Library icon. Modules
+  join the list as they're restyled, so an un-restyled screen never mixes the two accents.
+- The board strip, the live-session bar and the "On the board" rail become **one board card** in the same slot.
+  Board / size / angle move from chips into the card's board line (one menu with three pickers), which frees
+  the chip row so Filters, Grade, Mine and Saved fit without being cut off (today "Board Te…" was clipped).
+- Meaning colours stay: ✓ sent green, ◐ tries amber, the session's live dot green. Stars go neutral grey
+  (they were the module orange).
+- The climb list stays a plain `List` on the page background (swipe actions, lazy rows) rather than rows inside
+  a panel as in the mockup — a panel-wrapped list would lose `List`'s swipe-to-edit/delete on Mine.

@@ -174,13 +174,18 @@ struct AppLibraryView: View {
         .accessibilityIdentifier("appLibrary.flagship")
     }
 
+    /// Modules restyled in the design-system reset — they take the user's accent, not their wayfinding tint.
+    static let suiteAccentModules: Set<String> = ["kilter"]
+
     /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).
     @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
         if let module = ModuleRegistry.all.first(where: { $0.id == route.id }) {
             module.destination()
                 // The module's accent carries one tap deep (#77): controls inside the module pick up
                 // its wayfinding colour instead of the global brand tint, so it reads as one product.
-                .tint(module.tint)
+                // Modules moved to the design system (prompt 213+) use the user's accent instead; their
+                // colour stays on the App Library icon only.
+                .tint(Self.suiteAccentModules.contains(module.id) ? SnappetColor.brand : module.tint)
                 .onAppear {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }
