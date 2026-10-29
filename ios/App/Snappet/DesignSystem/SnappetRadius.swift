@@ -9,4 +9,6 @@ enum SnappetRadius {
     static let md: CGFloat = 16
     /// 24 pt — large hero surfaces.
     static let lg: CGFloat = 24
+    /// The one card (`snappetPanel`, prompt 211).
+    static let panel: CGFloat = 20
 }

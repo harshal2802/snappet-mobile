@@ -10305,3 +10305,16 @@ stripes, and the panel read as an opaque slab.
 - "Light climbs automatically" defaults OFF (the user's call): lighting is explicit unless switched on. With it
   off, a connect or a board-size fix still re-sends the climb the user lit on this screen — otherwise a reconnect
   (board sharing, 207) or a "wrong holds?" size fix would leave the wall showing nothing / the wrong holds.
+
+## 2026-10-29 — Design-system reset, step 1: pickable accent + components (prompt 211)
+
+- One accent per screen, user-pickable (Periwinkle default). It reaches every view through a UIKit trait bridged to a
+  SwiftUI environment value, set once at the root — not threaded through call sites and not by rebuilding the tree
+  (`.id(accent)` would reset navigation and dismiss the very sheet the user changed it in). Verified live on the
+  simulator (toolbar, tab bar, preview repaint without reload).
+- Every accent has separate light / dark values and a fixed text-on-accent colour; a unit test enforces WCAG 4.5:1
+  for text on each accent in both modes and 3:1 for the accent on its page. The old coral failed (3.9:1).
+- Meaning and identity colours stay out of the accent: green "done", heart-rate zones, Kilter LED hold colours,
+  module wayfinding accents. The accent is only "act here / progress / highlighted data".
+- New screens use `SnappetType` + `snappetPanel` / `SnappetMetric` / `SnappetBars` / `SnappetRow`; old screens move
+  over one at a time (steps 2–3), not in a big-bang restyle.

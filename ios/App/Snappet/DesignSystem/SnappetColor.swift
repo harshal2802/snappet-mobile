@@ -12,26 +12,44 @@ enum SnappetColor {
 
     // MARK: - Brand & neutrals
 
-    /// Primary CTAs, selected nav, brand moments. Light `#FF5A4D` / dark `#FF7A6B`.
-    static let brand = dynamic(light: 0xFF5A4D, dark: 0xFF7A6B)
+    /// Primary CTAs, selected nav, progress, the highlighted data — the user's accent (Settings → Appearance,
+    /// `SnappetAccent`; Periwinkle by default). Resolved at render time from the bridged accent trait, so a change
+    /// repaints the whole app in place (prompt 211). Was a fixed coral.
+    static let brand = Color(uiColor: UIColor { trait in
+        let accent = trait.snappetAccent
+        return UIColor(rgb: trait.userInterfaceStyle == .dark ? accent.dark : accent.light)
+    })
 
-    /// Primary text — warm near-black / warm near-white (not pure #000/#FFF).
-    static let ink = dynamic(light: 0x1A1A1E, dark: 0xF4F3F1)
+    /// Text / icons on a filled `brand` (white on the light-mode accent, ink on the lighter dark-mode accent).
+    static let onBrand = dynamic(light: SnappetAccent.onLight, dark: SnappetAccent.onDark)
 
-    /// App background — warm off-white / true-dark.
-    static let paper = dynamic(light: 0xFBFAF8, dark: 0x121214)
+    /// A faint wash of the accent — the glow behind the one card you should act on.
+    static let brandGlow = Color(uiColor: UIColor { trait in
+        let accent = trait.snappetAccent
+        return UIColor(rgb: trait.userInterfaceStyle == .dark ? accent.dark : accent.light)
+            .withAlphaComponent(trait.userInterfaceStyle == .dark ? 0.22 : 0.14)
+    })
+
+    /// Primary text — near-black / near-white (not pure #000/#FFF).
+    static let ink = dynamic(light: 0x15171B, dark: 0xF2F3F5)
+
+    /// App background — cool off-white / near-black (prompt 211: calmer, cooler neutrals).
+    static let paper = dynamic(light: 0xF6F7F9, dark: 0x0A0B0D)
 
     /// Cards / sheets.
-    static let surface = dynamic(light: 0xFFFFFF, dark: 0x1E1E22)
+    static let surface = dynamic(light: 0xFFFFFF, dark: 0x14161A)
 
     /// Tile fills — replaces ad-hoc `tint.opacity(0.12)`.
-    static let surfaceMuted = dynamic(light: 0xF2F1EE, dark: 0x26262B)
+    static let surfaceMuted = dynamic(light: 0xEEF0F3, dark: 0x1C1F24)
 
-    /// Dividers / borders.
-    static let hairline = dynamic(light: 0xE7E5E1, dark: 0x34343A)
+    /// Dividers / card borders.
+    static let hairline = dynamic(light: 0xE3E6EB, dark: 0x23262C)
 
     /// Captions / secondary text.
-    static let textSecondary = dynamic(light: 0x6B6A66, dark: 0xA6A5A1)
+    static let textSecondary = dynamic(light: 0x5F646E, dark: 0x8C9099)
+
+    /// Tertiary text — axis labels, quiet metadata.
+    static let textTertiary = dynamic(light: 0x8A8F99, dark: 0x5D616B)
 
     // MARK: - Curated module accents
     //

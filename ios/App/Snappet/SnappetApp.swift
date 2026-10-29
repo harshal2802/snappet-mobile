@@ -194,7 +194,8 @@ struct SnappetApp: App {
                 // Library's backup sheet must also know the store fell back, or its export
                 // paths would snapshot the EMPTY in-memory container as a "backup".
                 .environment(storeHealth)
-                .tint(SnappetColor.brand)
+                // The user's accent + System/Dark/Light (Settings → Appearance, prompt 211): repaints live.
+                .snappetTheme()
         }
         .modelContainer(container)
     }
