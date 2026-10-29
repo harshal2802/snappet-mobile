@@ -10242,3 +10242,44 @@ stripes, and the panel read as an opaque slab.
   `OS:latest`, so every new runtime that ships without that device broke `make ios-test`. Resolving the id beats
   pinning `OS=26.5`, which would break again on the next runtime change. The newest runtime that has the device
   wins; with no match, the `name=` destination is kept so the error stays xcodebuild's own.
+
+## 2026-10-28 — Filter Kilter climbs by what you've climbed (prompt 208)
+
+- "Sent" means sent at ANY angle (user's Q2 pick): Kilter logs are per angle, but a climber thinks of a climb as
+  done; the badge says "Sent at 50°" when it wasn't this angle. A project is tried and never sent anywhere.
+- Projects / Sent lists ignore the grade range and angle (like Saved — it's your list) but honour search; Not
+  tried is a catalog-query exclusion so it combines with every other browse filter and keeps the live count right.
+- Ascent filters and Saved / Mine are mutually exclusive list modes (one picks the other off), so the list never
+  silently intersects two personal lists.
+- Plan "Projects first" only reaches projects inside the candidate window (−1…+3 grade buckets of the working
+  grade): a V10 project at a V6 working grade isn't forced into the session. The stored `KilterPlan` keeps its
+  `optionsPreferUnsent` bool (no schema change), written as `!choice.allowsSent`.
+- "Climbs to pick" is two plain switches — Include sent climbs / Include projects — after a 3-way choice proved
+  confusing on device (2026-10-28: "new climbs only should exclude sent AND projects … just have boolean filters").
+  Both off = only climbs never tried. OFF MEANS OFF in every slot (no warm-up fallback): a plan comes back shorter
+  rather than include what the climber switched off. Included projects near the grade fill the project slots
+  first. Defaults: Balanced / Flash / Power both off; Project projects on; Volume both on; Recovery sent on.
+  Earlier choices carry over. (Supersedes the warm-up fallback below.)
+- A third switch, "Classics only" (user asked): the plan's catalog pool uses the browse benchmark filter. Off by
+  default and NOT set by strategies (a strategy is about the session shape; classics is a standing preference).
+- Plan a session now applies the board-size fit (bug found 2026-10-29): its catalog pool ignored `sizeBox`, so a plan
+  could suggest climbs set on a bigger board that the climber's board can't fully light — the same strict fit the
+  browse list has used since prompt 154. One pool feeds every slot, projects included.
+- "New climbs only" / "Projects first" keep sent climbs out of the WARM-UPS too (device report 2026-10-28: a sent
+  6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
+  climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same
+  ✓ Sent / ◐ tries badge as browse, so it's never a surprise. "Include sent" is unchanged.
+- Plan session length goes to 30 (was 3…12 — an arbitrary stepper range; user asked). So a long session isn't
+  silently short, sends spill one grade above the working grade and projects one more grade up when their bands
+  run dry, and the candidate pool scales with the length (max(200, 25 × climbs)).
+
+## 2026-10-29 — Edit a planned Kilter session (prompt 209)
+
+- Editing the preview creates a DRAFT that stops following the generator; the generator still recomputes in the
+  background so a settings change can be noticed, but it only replaces the draft when the climber taps Rebuild.
+- Cross-section moves are a long-press "Move to …" menu, not drag: SwiftUI `List.onMove` is per section. Within a
+  section, drag works in edit mode.
+- Mid-session, only pending / skipped picks can be removed; sent and tried picks are the session's record. Order is
+  renormalized (warm-ups → sends → projects) after every edit, so "next up" (lowest-order pending) stays sensible.
+- An added climb mid-session is filed by grade vs the plan's working grade (+ its grade offset); duplicates are
+  refused (a climb is in a plan once).

@@ -63,19 +63,19 @@ enum KilterRecommender {
         var targetCount: Int = 6
         /// How many sends in a grade bucket qualify it as the working grade (vs a lucky one-off).
         var sendThreshold: Int = 2
-        /// For send/project goals, prefer climbs the user hasn't already sent (chase the new).
-        var preferUnsent: Bool = true
+        /// Which climbs may be picked (prompt 208): sent ones, open projects (projects go first), or only new.
+        var climbs: KilterPlanClimbs = .newOnly
         /// Goal emphasis; `nil` → the balanced default allocation.
         var mix: Mix? = nil
         /// Shuffle/re-roll seed: `0` (default) keeps the deterministic best-ranked picks; a non-zero
         /// seed rotates each band's ranked candidate pool so "Shuffle" surfaces different — still
         /// well-ranked — climbs, deterministically per seed.
         var rerollSeed: Int = 0
-        init(targetCount: Int = 6, sendThreshold: Int = 2, preferUnsent: Bool = true,
+        init(targetCount: Int = 6, sendThreshold: Int = 2, climbs: KilterPlanClimbs = .newOnly,
              mix: Mix? = nil, rerollSeed: Int = 0) {
             self.targetCount = targetCount
             self.sendThreshold = sendThreshold
-            self.preferUnsent = preferUnsent
+            self.climbs = climbs
             self.mix = mix
             self.rerollSeed = rerollSeed
         }
@@ -123,20 +123,30 @@ enum KilterRecommender {
     /// window and the bands stay aligned — `Options` itself carries no offset).
     struct StrategyConfig: Sendable, Equatable {
         var targetCount: Int
-        var preferUnsent: Bool
+        var climbs: KilterPlanClimbs
         var gradeOffset: Int
         var mix: Mix?
     }
 
     static func config(for strategy: Strategy) -> StrategyConfig {
         switch strategy {
-        case .balanced: return .init(targetCount: 6, preferUnsent: true,  gradeOffset: 0,  mix: nil)
-        case .volume:   return .init(targetCount: 9, preferUnsent: false, gradeOffset: 0,  mix: Mix(warmup: 2, send: 5, project: 1))
-        case .project:  return .init(targetCount: 5, preferUnsent: true,  gradeOffset: 1,  mix: Mix(warmup: 2, send: 1, project: 2))
-        case .power:    return .init(targetCount: 4, preferUnsent: true,  gradeOffset: 2,  mix: Mix(warmup: 1, send: 1, project: 2))
-        case .flash:    return .init(targetCount: 6, preferUnsent: true,  gradeOffset: 0,  mix: Mix(warmup: 2, send: 4, project: 0))
-        case .recovery: return .init(targetCount: 5, preferUnsent: false, gradeOffset: -2, mix: Mix(warmup: 3, send: 2, project: 0))
+        case .balanced: return .init(targetCount: 6, climbs: .init(includeSent: false, includeProjects: false), gradeOffset: 0,  mix: nil)
+        case .volume:   return .init(targetCount: 9, climbs: .init(includeSent: true, includeProjects: true),   gradeOffset: 0,  mix: Mix(warmup: 2, send: 5, project: 1))
+        case .project:  return .init(targetCount: 5, climbs: .init(includeSent: false, includeProjects: true),  gradeOffset: 1,  mix: Mix(warmup: 2, send: 1, project: 2))
+        case .power:    return .init(targetCount: 4, climbs: .init(includeSent: false, includeProjects: false), gradeOffset: 2,  mix: Mix(warmup: 1, send: 1, project: 2))
+        case .flash:    return .init(targetCount: 6, climbs: .init(includeSent: false, includeProjects: false), gradeOffset: 0,  mix: Mix(warmup: 2, send: 4, project: 0))
+        case .recovery: return .init(targetCount: 5, climbs: .init(includeSent: true, includeProjects: false),  gradeOffset: -2, mix: Mix(warmup: 3, send: 2, project: 0))
         }
+    }
+
+    /// Climbs tried but never sent (at any angle) → when they were last tried.
+    static func openProjects(_ history: [KilterClimbLog]) -> [String: Date] {
+        let sent = Set(history.filter(\.isSend).map(\.climbUUID))
+        var out: [String: Date] = [:]
+        for h in history where !sent.contains(h.climbUUID) {
+            out[h.climbUUID] = max(out[h.climbUUID] ?? .distantPast, h.loggedAt)
+        }
+        return out
     }
 
     // MARK: - Public API
@@ -190,9 +200,15 @@ enum KilterRecommender {
         var chosen = Set<String>()
         var picks: [Pick] = []
 
+        // What the switches leave out (prompt 208). Off means off — in every slot, warm-ups included.
+        let open = openProjects(history)
+        var excluded = Set<String>()
+        if !options.climbs.includeSent { excluded.formUnion(sentUUIDs) }
+        if !options.climbs.includeProjects { excluded.formUnion(open.keys) }
+
         /// Fill up to `count` picks for `goal`, trying each band of difficulty buckets in turn (primary
         /// first, then fallbacks for a sparse catalog), never repeating a climb already chosen.
-        func take(bands: [Set<Int>], count: Int, goal: Goal, allowSent: Bool) {
+        func take(bands: [Set<Int>], count: Int, goal: Goal) {
             // On a re-roll, merge the goal's bands into one pool so the shuffle can reach beyond a tight
             // primary band (e.g. only a few climbs at the working grade) into its fallbacks — otherwise
             // rotating a pool that's exactly `count` long just reorders the same climbs.
@@ -204,7 +220,7 @@ enum KilterRecommender {
                 var pool = rank(candidates.filter {
                     !chosen.contains($0.uuid)
                         && band.contains(bucket($0.difficulty))
-                        && (allowSent || !sentUUIDs.contains($0.uuid))
+                        && !excluded.contains($0.uuid)
                 })
                 // Shuffle: rotate the ranked pool by the seed so a re-roll picks different, still
                 // well-ranked climbs (deterministic per seed). seed 0 → no rotation (best picks).
@@ -220,12 +236,26 @@ enum KilterRecommender {
             }
         }
 
-        // Warm-ups stay below the working grade (revisiting sent classics is fine → allowSent).
-        take(bands: [[w - 2, w - 1], [w - 3], [w - 4]], count: alloc.warmup, goal: .warmup, allowSent: true)
-        // Sends sit at the working grade; chase un-sent ones when asked.
-        take(bands: [[w], [w - 1]], count: alloc.send, goal: .send, allowSent: !options.preferUnsent)
-        // A project a touch above.
-        take(bands: [[w + 1], [w + 2]], count: alloc.project, goal: .project, allowSent: !options.preferUnsent)
+        // Included projects near the working grade go into the project slots first, most recently tried first.
+        var projectSlots = alloc.project
+        if options.climbs.includeProjects {
+            let near = Set((w - 1)...(w + 3))
+            let pool = candidates
+                .filter { open[$0.uuid] != nil && near.contains(bucket($0.difficulty)) }
+                .sorted { (open[$0.uuid]!, $0.uuid) > (open[$1.uuid]!, $1.uuid) }
+            for item in pool.prefix(projectSlots) {
+                picks.append(Pick(item: item, goal: .project))
+                chosen.insert(item.uuid)
+                projectSlots -= 1
+            }
+        }
+        // Warm-ups stay below the working grade.
+        take(bands: [[w - 2, w - 1], [w - 3], [w - 4]], count: alloc.warmup, goal: .warmup)
+        // Sends sit at the working grade. A long session (up to 30, 2026-10-28) can exhaust the working grade and
+        // the one below — spill a touch above rather than come back short.
+        take(bands: [[w], [w - 1], [w + 1]], count: alloc.send, goal: .send)
+        // Projects a touch above.
+        take(bands: [[w + 1], [w + 2], [w + 3]], count: projectSlots, goal: .project)
 
         // Order: warm-up → send → project, each easiest→hardest, stable by uuid.
         let order: [Goal] = [.warmup, .send, .project]

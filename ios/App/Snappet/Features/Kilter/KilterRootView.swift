@@ -110,6 +110,8 @@ struct KilterRootView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.openURL) private var openURL
     @State private var savedOnly = false
+    /// Prompt 208: narrow by the climber's own log — Not tried / Projects / Sent.
+    @State private var ascentFilter: KilterAscentFilter = .any
     /// Browse only climbs the user created (mutually exclusive with `savedOnly`).
     @State private var mineOnly = false
     @State private var showingCreate = false
@@ -229,7 +231,14 @@ struct KilterRootView: View {
     private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
     /// Discovery (climb-of-the-day) shows only on the plain browse view, not while searching/saved.
     private var showDiscovery: Bool {
-        search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly && !mineOnly
+        search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly && !mineOnly && ascentFilter == .any
+    }
+
+    /// The climber's log indexed by climb (sent at any angle / open projects) — badges + the ascent filters.
+    private var ascents: KilterAscentIndex {
+        KilterAscentIndex(allEntries.map {
+            .init(climbUUID: $0.climbUUID, status: $0.status, attempts: $0.attempts, date: $0.date, angle: $0.angle)
+        })
     }
 
     /// The current browse criteria assembled into one value (drives the catalog query + `.task` id).
@@ -240,7 +249,8 @@ struct KilterRootView: View {
                      minAscents: minAscents, minQuality: minQuality,
                      // Only climbs your board can fully light (a climb set on a bigger board uses holes
                      // yours doesn't have — device feedback: "cam pussie"'s finish never lit).
-                     sizeBox: sizes.first { $0.id == productSizeId }?.box)
+                     sizeBox: sizes.first { $0.id == productSizeId }?.box,
+                     excludeUUIDs: ascentFilter == .notTried ? ascents.loggedUUIDs : [])
     }
 
     /// The climbs currently on screen, in display order — handed to the detail view so the user can
@@ -332,7 +342,7 @@ struct KilterRootView: View {
         .sheet(isPresented: $showingFilters) {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
                                minAscents: $minAscents, minQuality: $minQuality,
-                               savedOnly: $savedOnly, mineOnly: $mineOnly, count: count)
+                               savedOnly: $savedOnly, mineOnly: $mineOnly, ascentFilter: $ascentFilter, count: count)
         }
         .sheet(isPresented: $showingGradeRange) {
             KilterGradeRangeSheet(minGrade: $minGrade, maxGrade: $maxGrade,
@@ -746,6 +756,7 @@ struct KilterRootView: View {
         let starred = favoriteUUIDs
         return VStack(spacing: 0) {
             filterBar
+            ascentChips
             // P1 board-detect surfaces (suggestion-not-overwrite, never blocking):
             //  • the pre-connect arrival suggestion at a remembered coarse place, and
             //  • the post-connect confirm ribbon when a known board restored its layout/size.
@@ -772,10 +783,13 @@ struct KilterRootView: View {
                     }
                 }
                 Section {
+                    let index = ascents
                     ForEach(items) { item in
                         Button { router.push(KilterClimbRoute(uuid: item.uuid)) } label: {
                             KilterClimbRow(item: item, isFavorite: starred.contains(item.uuid),
-                                           gradeFormat: gradeFormat)
+                                           gradeFormat: gradeFormat,
+                                           ascentBadge: index.badge(item.uuid, angle: angle),
+                                           youLine: index.youLine(item.uuid))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("kilter.climbRow")
@@ -798,7 +812,14 @@ struct KilterRootView: View {
             .overlay {
                 if hasLoaded && items.isEmpty && !(showDiscovery && cotd != nil) {
                     let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
-                    if mineOnly && !searching {
+                    if ascentFilter == .projects || ascentFilter == .sent, !searching {
+                        ContentUnavailableView(
+                            ascentFilter == .projects ? "No open projects" : "No sends yet",
+                            systemImage: ascentFilter == .projects ? "circle.lefthalf.filled" : "checkmark.circle",
+                            description: Text(ascentFilter == .projects
+                                              ? "Climbs you’ve tried but not sent show up here."
+                                              : "Log a send and it shows up here."))
+                    } else if mineOnly && !searching {
                         ContentUnavailableView(
                             "No climbs yet", systemImage: "hammer",
                             description: Text("Tap + to design your first climb for this layout."))
@@ -1287,12 +1308,12 @@ struct KilterRootView: View {
                 .padding(.vertical, 8)
             }
 
-            Button { withAnimation(.snappy) { mineOnly.toggle(); if mineOnly { savedOnly = false } } } label: {
+            Button { withAnimation(.snappy) { mineOnly.toggle(); if mineOnly { savedOnly = false; ascentFilter = .any } } } label: {
                 chip("", "Mine", filled: mineOnly, systemImage: mineOnly ? "hammer.fill" : "hammer")
             }
             .accessibilityIdentifier("kilter.mineToggle")
 
-            Button { withAnimation(.snappy) { savedOnly.toggle(); if savedOnly { mineOnly = false } } } label: {
+            Button { withAnimation(.snappy) { savedOnly.toggle(); if savedOnly { mineOnly = false; ascentFilter = .any } } } label: {
                 chip("", "Saved", filled: savedOnly, systemImage: savedOnly ? "star.fill" : "star")
             }
             .accessibilityIdentifier("kilter.savedToggle")
@@ -1348,12 +1369,13 @@ struct KilterRootView: View {
     /// Whether the user has narrowed beyond the board/grade context (search text, the Saved filter, or a
     /// Filters-sheet extra) — gates the Clear button.
     private var hasActiveFilters: Bool {
-        !search.trimmingCharacters(in: .whitespaces).isEmpty || savedOnly || mineOnly || filter.activeExtras > 0
+        !search.trimmingCharacters(in: .whitespaces).isEmpty || savedOnly || mineOnly || ascentFilter != .any
+            || filter.activeExtras > 0
     }
 
     /// Clear the search + Saved/Mine + Filters-sheet extras (keeps the board/angle/grade the user set).
     private func clearFilters() {
-        search = ""; savedOnly = false; mineOnly = false
+        search = ""; savedOnly = false; mineOnly = false; ascentFilter = .any
         sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
     }
 
@@ -1376,7 +1398,7 @@ struct KilterRootView: View {
 
     /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
     private var filterKey: String {
-        "\(catalogGeneration)|\(layoutId)|\(productSizeId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favorites.count)"
+        "\(catalogGeneration)|\(layoutId)|\(productSizeId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(ascentFilter.rawValue)|\(allEntries.count)|\(favorites.count)"
         + "|\(createdClimbs.count)|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
     }
 
@@ -1393,10 +1415,10 @@ struct KilterRootView: View {
         }
         lastQueriedSearch = search
         guard catalog.isAvailable else { items = []; cotd = nil; count = 0; hasLoaded = true; return }
-        if mineOnly || savedOnly {
+        if mineOnly || savedOnly || ascentFilter == .projects || ascentFilter == .sent {
             // Small, on-device sets — computed here. Discovery is browse-only (`showDiscovery`).
             cotd = nil
-            items = mineOnly ? createdListItems() : savedListItems()
+            items = mineOnly ? createdListItems() : savedOnly ? savedListItems() : ascentListItems()
             count = items.count
         } else {
             guard let page = await catalog.browser.browse(filter, includeDiscovery: showDiscovery),
@@ -1406,6 +1428,54 @@ struct KilterRootView: View {
             cotd = page.discovery
         }
         hasLoaded = true
+    }
+
+    /// Prompt 208: your open projects / sends, most recently logged first. Like Saved, not grade/angle
+    /// restricted (it's your list), but honors the search box.
+    private func ascentListItems() -> [KilterListItem] {
+        let uuids = ascentFilter == .projects ? ascents.projectUUIDs : ascents.sentUUIDs
+        let term = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = catalog.climbsByUUID(uuids)
+        return term.isEmpty ? all
+            : all.filter { $0.name.lowercased().contains(term) || $0.setter.lowercased().contains(term) }
+    }
+
+    /// One-tap "My ascents" chips under the board/angle/grade row (wireframe frame 1): All · Not tried ·
+    /// Projects N · Sent N. Projects / Sent are lists of your own climbs (like Saved); Not tried narrows the
+    /// catalog. Choosing one clears Saved / Mine.
+    private var ascentChips: some View {
+        let index = ascents
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(KilterAscentFilter.allCases, id: \.self) { f in
+                    let n: Int? = switch f {
+                    case .projects: index.projectUUIDs.count
+                    case .sent: index.sentUUIDs.count
+                    default: nil
+                    }
+                    Button {
+                        withAnimation(.snappy) {
+                            ascentFilter = f
+                            if f != .any { savedOnly = false; mineOnly = false }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(f.label)
+                            if let n { Text("\(n)").foregroundStyle(.secondary) }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .background(ascentFilter == f ? AnyShapeStyle(.tint.opacity(0.22)) : AnyShapeStyle(Color(.secondarySystemBackground)),
+                                    in: Capsule())
+                        .overlay(Capsule().strokeBorder(ascentFilter == f ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("kilter.ascents.\(f.rawValue)")
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 6)
+        }
     }
 
     /// The user's starred climbs, newest-starred first. The Saved list isn't grade/angle-restricted, but
@@ -1445,6 +1515,10 @@ private struct KilterClimbRow: View {
     var gradeFormat: KilterGradeFormat = .both
     /// Featured (climb-of-the-day) rows get a small ribbon accent.
     var featured: Bool = false
+    /// Prompt 208: "✓ Sent" / "✓ Sent at 50°" / "◐ 3 tries" from the climber's log; `nil` = never tried.
+    var ascentBadge: String? = nil
+    /// "you: sent · 2 tries" under the name.
+    var youLine: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1456,7 +1530,17 @@ private struct KilterClimbRow: View {
                     Text(item.name).font(.headline).lineLimit(1)
                     if isFavorite { Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow) }
                 }
-                Text("by \(item.setter)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(["by \(item.setter)", youLine].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let ascentBadge {
+                    let sent = ascentBadge.hasPrefix("✓")
+                    Text(ascentBadge)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background((sent ? Color.green : Color.orange).opacity(0.18), in: Capsule())
+                        .foregroundStyle(sent ? Color.green : Color.orange)
+                        .accessibilityIdentifier("kilter.climbRow.ascent")
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
@@ -1503,6 +1587,8 @@ struct KilterFiltersSheet: View {
     @Binding var minQuality: Double
     @Binding var savedOnly: Bool
     @Binding var mineOnly: Bool
+    /// Prompt 208: "My ascents" — the same choice as the browse chips.
+    @Binding var ascentFilter: KilterAscentFilter
     /// Live match count from the root (the bindings ARE the browse state, so the root recounts as
     /// each control changes and this sheet re-renders with it).
     let count: Int
@@ -1515,7 +1601,7 @@ struct KilterFiltersSheet: View {
     /// pinned chips, which stay in sync automatically — it's the same state).
     private var showOnly: Binding<ShowOnly> {
         Binding(get: { savedOnly ? .saved : (mineOnly ? .mine : .all) },
-                set: { v in savedOnly = v == .saved; mineOnly = v == .mine })
+                set: { v in savedOnly = v == .saved; mineOnly = v == .mine; if v != .all { ascentFilter = .any } })
     }
 
     var body: some View {
@@ -1542,6 +1628,16 @@ struct KilterFiltersSheet: View {
                         Text("★ 2+").tag(2.0)
                         Text("★ 3").tag(3.0)
                     }
+                }
+                Section("My ascents") {
+                    Picker("My ascents", selection: Binding(get: { ascentFilter }, set: { f in
+                        ascentFilter = f
+                        if f != .any { savedOnly = false; mineOnly = false }
+                    })) {
+                        ForEach(KilterAscentFilter.allCases, id: \.self) { Text($0 == .any ? "Any" : $0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("kilter.filter.ascents")
                 }
                 Section("Show only") {
                     Picker("Show only", selection: showOnly) {

@@ -9,7 +9,7 @@ struct KilterPlanConfigSheet: View {
     @Binding var strategyRaw: String
     @Binding var targetCount: Int
     @Binding var gradeOffset: Int
-    @Binding var preferUnsent: Bool
+    @Binding var climbs: KilterPlanClimbs
     @Environment(\.dismiss) private var dismiss
 
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
@@ -42,10 +42,26 @@ struct KilterPlanConfigSheet: View {
                 }
 
                 Section("Fine-tune") {
-                    Stepper("Session length: \(targetCount) climbs", value: $targetCount, in: 3...12)
+                    Stepper("Session length: \(targetCount) climbs", value: $targetCount, in: 3...30)
                         .accessibilityIdentifier("kilter.plan.lengthStepper")
                     Stepper("Target grade: \(offsetLabel)", value: $gradeOffset, in: -3...3)
-                    Toggle("Prefer climbs I haven't sent", isOn: $preferUnsent)
+                }
+
+                // Prompt 208: two plain switches — both off = only climbs you've never tried.
+                Section {
+                    Toggle("Include sent climbs", isOn: $climbs.includeSent)
+                        .accessibilityIdentifier("kilter.plan.includeSent")
+                    Toggle("Include projects", isOn: $climbs.includeProjects)
+                        .accessibilityIdentifier("kilter.plan.includeProjects")
+                    Toggle("Classics only", isOn: $climbs.classicsOnly)
+                        .accessibilityIdentifier("kilter.plan.classicsOnly")
+                } header: {
+                    Text("Climbs to pick")
+                } footer: {
+                    Text((climbs.includeSent || climbs.includeProjects
+                          ? "Included projects near your grade go into the project slots first."
+                          : "Only climbs you’ve never tried.")
+                         + (climbs.classicsOnly ? " Classics only: benchmark climbs — fewer to pick from." : ""))
                 }
 
                 Section {
@@ -74,7 +90,12 @@ struct KilterPlanConfigSheet: View {
 
     private var rationale: String {
         let where_ = gradeOffset == 0 ? "around your working grade" : "at \(offsetLabel) your grade"
-        let chase = preferUnsent ? "leaning toward new sends" : "revisiting favourites too"
+        let chase = switch (climbs.includeSent, climbs.includeProjects) {
+        case (false, false): "all climbs you’ve never tried"
+        case (true, false): "revisiting sent climbs too"
+        case (false, true): "starting from your open projects"
+        case (true, true): "sent climbs and projects welcome"
+        }
         return "\(targetCount) climbs \(where_), \(chase)."
     }
 
@@ -85,6 +106,7 @@ struct KilterPlanConfigSheet: View {
         strategyRaw = s.rawValue
         targetCount = c.targetCount
         gradeOffset = c.gradeOffset
-        preferUnsent = c.preferUnsent
+        climbs = KilterPlanClimbs(includeSent: c.climbs.includeSent, includeProjects: c.climbs.includeProjects,
+                                  classicsOnly: climbs.classicsOnly)   // strategies don't touch Classics only
     }
 }
