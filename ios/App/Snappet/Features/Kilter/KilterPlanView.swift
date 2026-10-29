@@ -44,10 +44,20 @@ struct KilterPlanView: View {
     @AppStorage("kilter.plan.targetCount") private var planTargetCount = 6
     @AppStorage("kilter.plan.gradeOffset") private var planGradeOffset = 0
     @AppStorage("kilter.plan.preferUnsent") private var planPreferUnsent = true
-    /// Prompt 208: "Climbs to pick". Empty = not chosen yet → carried over from the old on/off switch.
+    /// Prompt 208 (superseded within the PR by the two switches below; read once to carry the choice over).
     @AppStorage("kilter.plan.climbChoice") private var planClimbChoiceRaw = ""
-    private var planClimbChoice: KilterPlanClimbChoice {
-        KilterPlanClimbChoice(rawValue: planClimbChoiceRaw) ?? (planPreferUnsent ? .newOnly : .includeSent)
+    /// "Climbs to pick" switches: 1 on, 0 off, -1 not set yet → carried over from the earlier settings.
+    @AppStorage("kilter.plan.includeSent") private var planIncludeSentRaw = -1
+    @AppStorage("kilter.plan.includeProjects") private var planIncludeProjectsRaw = -1
+    private var planClimbs: KilterPlanClimbs {
+        let carried: KilterPlanClimbs = switch planClimbChoiceRaw {
+        case "includeSent": .init(includeSent: true, includeProjects: true)
+        case "projectsFirst": .init(includeSent: false, includeProjects: true)
+        case "newOnly": .newOnly
+        default: planPreferUnsent ? .newOnly : .init(includeSent: true, includeProjects: true)
+        }
+        return .init(includeSent: planIncludeSentRaw < 0 ? carried.includeSent : planIncludeSentRaw == 1,
+                     includeProjects: planIncludeProjectsRaw < 0 ? carried.includeProjects : planIncludeProjectsRaw == 1)
     }
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
 
@@ -84,7 +94,10 @@ struct KilterPlanView: View {
         .sheet(isPresented: $showingConfig) {
             KilterPlanConfigSheet(strategyRaw: $strategyRaw, targetCount: $planTargetCount,
                                   gradeOffset: $planGradeOffset,
-                                  climbChoice: Binding(get: { planClimbChoice }, set: { planClimbChoiceRaw = $0.rawValue }))
+                                  climbs: Binding(get: { planClimbs }, set: {
+                                      planIncludeSentRaw = $0.includeSent ? 1 : 0
+                                      planIncludeProjectsRaw = $0.includeProjects ? 1 : 0
+                                  }))
                 .presentationDetents([.medium, .large])
         }
         // Resolve the live session from the store on appear, so a deep-link entry (Home → plan, which
@@ -137,7 +150,7 @@ struct KilterPlanView: View {
             workingGradeLabel: preview.workingGradeLabel,
             title: strategy == .balanced ? nil : strategy.label,
             optionsTargetCount: planTargetCount, optionsSendThreshold: 2,
-            optionsPreferUnsent: !planClimbChoice.allowsSent, optionsGradeOffset: planGradeOffset,
+            optionsPreferUnsent: !planClimbs.includeSent, optionsGradeOffset: planGradeOffset,
             strategyRaw: strategyRaw,
             items: KilterPlanProgress.items(from: preview))
         modelContext.insert(plan)
@@ -269,7 +282,7 @@ struct KilterPlanView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     // The whole log feeds the plan — not a window of recent climbs ("your last 20" read like a cut-off).
-                    Text(Self.historyLine(ascentIndex, choice: planClimbChoice))
+                    Text(Self.historyLine(ascentIndex, climbs: planClimbs))
                         .font(.subheadline)
                     Spacer()
                     if !preview.isEmpty {
@@ -319,15 +332,14 @@ struct KilterPlanView: View {
         }
     }
 
-    /// "16 climbs logged — 9 sent (excluded), 7 projects (included)": the whole log in distinct climbs, and how the
-    /// current "Climbs to pick" treats each group (user asked for it spelled out, 2026-10-28). Same counts as the
-    /// browse chips.
-    static func historyLine(_ index: KilterAscentIndex, choice: KilterPlanClimbChoice) -> String {
-        let climbs = index.loggedUUIDs.count, sent = index.sentUUIDs.count, projects = index.projectUUIDs.count
-        guard climbs > 0 else { return "No climbs logged yet — starting from the catalog." }
-        let sentPart = "\(sent) sent (\(choice.allowsSent ? "included" : "excluded"))"
-        let projectPart = "\(projects) project\(projects == 1 ? "" : "s") (\(choice == .projectsFirst ? "picked first" : "included"))"
-        return "\(climbs) climb\(climbs == 1 ? "" : "s") logged — \(sentPart), \(projectPart)"
+    /// "16 climbs logged — 9 sent (excluded), 7 projects (excluded)": the whole log in distinct climbs, and what the
+    /// two switches do with each group. Same counts as the browse chips.
+    static func historyLine(_ index: KilterAscentIndex, climbs: KilterPlanClimbs) -> String {
+        let total = index.loggedUUIDs.count, sent = index.sentUUIDs.count, projects = index.projectUUIDs.count
+        guard total > 0 else { return "No climbs logged yet — starting from the catalog." }
+        let sentPart = "\(sent) sent (\(climbs.includeSent ? "included" : "excluded"))"
+        let projectPart = "\(projects) project\(projects == 1 ? "" : "s") (\(climbs.includeProjects ? "included" : "excluded"))"
+        return "\(total) climb\(total == 1 ? "" : "s") logged — \(sentPart), \(projectPart)"
     }
 
     /// The climber's log per climb (prompt 208) — so a sent warm-up or a project reads as such in the preview.
@@ -378,7 +390,7 @@ struct KilterPlanView: View {
     /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
     /// (generate-mode only).
     private var planKey: String {
-        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbChoice.rawValue)|\(rerollSeed)"
+        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbs.includeSent)|\(planClimbs.includeProjects)|\(rerollSeed)"
     }
 
     private func rebuild() {
@@ -399,7 +411,7 @@ struct KilterPlanView: View {
                                       limit: max(200, planTargetCount * 25))   // a 30-climb plan needs a deeper pool
 
         let options = KilterRecommender.Options(
-            targetCount: planTargetCount, sendThreshold: 2, climbChoice: planClimbChoice,
+            targetCount: planTargetCount, sendThreshold: 2, climbs: planClimbs,
             mix: KilterRecommender.config(for: strategy).mix, rerollSeed: rerollSeed)
         preview = KilterRecommender.recommend(history: history, candidates: candidates,
                                               anchor: anchor, options: options)

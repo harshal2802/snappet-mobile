@@ -10254,6 +10254,12 @@ stripes, and the panel read as an opaque slab.
 - Plan "Projects first" only reaches projects inside the candidate window (−1…+3 grade buckets of the working
   grade): a V10 project at a V6 working grade isn't forced into the session. The stored `KilterPlan` keeps its
   `optionsPreferUnsent` bool (no schema change), written as `!choice.allowsSent`.
+- "Climbs to pick" is two plain switches — Include sent climbs / Include projects — after a 3-way choice proved
+  confusing on device (2026-10-28: "new climbs only should exclude sent AND projects … just have boolean filters").
+  Both off = only climbs never tried. OFF MEANS OFF in every slot (no warm-up fallback): a plan comes back shorter
+  rather than include what the climber switched off. Included projects near the grade fill the project slots
+  first. Defaults: Balanced / Flash / Power both off; Project projects on; Volume both on; Recovery sent on.
+  Earlier choices carry over. (Supersedes the warm-up fallback below.)
 - "New climbs only" / "Projects first" keep sent climbs out of the WARM-UPS too (device report 2026-10-28: a sent
   6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
   climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same

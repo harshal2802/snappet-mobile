@@ -9,7 +9,7 @@ struct KilterPlanConfigSheet: View {
     @Binding var strategyRaw: String
     @Binding var targetCount: Int
     @Binding var gradeOffset: Int
-    @Binding var climbChoice: KilterPlanClimbChoice
+    @Binding var climbs: KilterPlanClimbs
     @Environment(\.dismiss) private var dismiss
 
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
@@ -47,25 +47,18 @@ struct KilterPlanConfigSheet: View {
                     Stepper("Target grade: \(offsetLabel)", value: $gradeOffset, in: -3...3)
                 }
 
-                // Prompt 208: which climbs may fill the send / project slots.
-                Section("Climbs to pick") {
-                    ForEach(KilterPlanClimbChoice.allCases, id: \.self) { c in
-                        Button { climbChoice = c } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(c.label).font(.subheadline.weight(.medium))
-                                    Text(c.detail).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if c == climbChoice {
-                                    Image(systemName: "checkmark").foregroundStyle(SnappetColor.moduleAccent("kilter"))
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("kilter.plan.climbChoice.\(c.rawValue)")
-                    }
+                // Prompt 208: two plain switches — both off = only climbs you've never tried.
+                Section {
+                    Toggle("Include sent climbs", isOn: $climbs.includeSent)
+                        .accessibilityIdentifier("kilter.plan.includeSent")
+                    Toggle("Include projects", isOn: $climbs.includeProjects)
+                        .accessibilityIdentifier("kilter.plan.includeProjects")
+                } header: {
+                    Text("Climbs to pick")
+                } footer: {
+                    Text(climbs.includeSent || climbs.includeProjects
+                         ? "Included projects near your grade go into the project slots first."
+                         : "Only climbs you’ve never tried.")
                 }
 
                 Section {
@@ -94,10 +87,11 @@ struct KilterPlanConfigSheet: View {
 
     private var rationale: String {
         let where_ = gradeOffset == 0 ? "around your working grade" : "at \(offsetLabel) your grade"
-        let chase = switch climbChoice {
-        case .newOnly: "leaning toward new sends"
-        case .includeSent: "revisiting favourites too"
-        case .projectsFirst: "starting from your open projects"
+        let chase = switch (climbs.includeSent, climbs.includeProjects) {
+        case (false, false): "all climbs you’ve never tried"
+        case (true, false): "revisiting sent climbs too"
+        case (false, true): "starting from your open projects"
+        case (true, true): "sent climbs and projects welcome"
         }
         return "\(targetCount) climbs \(where_), \(chase)."
     }
@@ -109,6 +103,6 @@ struct KilterPlanConfigSheet: View {
         strategyRaw = s.rawValue
         targetCount = c.targetCount
         gradeOffset = c.gradeOffset
-        climbChoice = c.climbChoice
+        climbs = c.climbs
     }
 }

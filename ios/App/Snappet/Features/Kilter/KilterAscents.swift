@@ -98,31 +98,14 @@ struct KilterAscentIndex: Equatable, Sendable {
     }
 }
 
-/// Plan a session's "Climbs to pick" (replaces the on/off "Prefer climbs I haven't sent").
-enum KilterPlanClimbChoice: String, CaseIterable, Sendable {
-    /// Sends and projects the climber hasn't sent yet (the old switch on).
-    case newOnly
-    /// Revisit sent climbs too (the old switch off) — volume, recovery.
-    case includeSent
-    /// Open projects fill the project slots first, then new climbs.
-    case projectsFirst
+/// Plan a session's "Climbs to pick" — two plain switches (user, 2026-10-28: "just have boolean filters … simple to
+/// enable or disable"). Both off = only climbs you've never tried. Off means off: a plan comes back shorter rather
+/// than sneaking a sent climb or a project in.
+struct KilterPlanClimbs: Equatable, Sendable {
+    /// Climbs you've sent (at any angle) may be picked.
+    var includeSent = false
+    /// Your open projects (tried, never sent) may be picked — and go into the project slots first.
+    var includeProjects = false
 
-    var label: String {
-        switch self {
-        case .newOnly: return "New climbs only"
-        case .includeSent: return "Include sent"
-        case .projectsFirst: return "Projects first"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .newOnly: return "Only climbs you haven’t sent — warm-ups too"
-        case .includeSent: return "Revisit favourites too — good for volume"
-        case .projectsFirst: return "Your open projects fill the project slots, then new climbs"
-        }
-    }
-
-    /// Sent climbs may fill send / project slots.
-    var allowsSent: Bool { self == .includeSent }
+    static let newOnly = KilterPlanClimbs()
 }
