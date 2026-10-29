@@ -34,4 +34,4 @@ one card style, regular weights, one accent — where every element opens the sc
       seeded planned weekday (skips otherwise). `ProgressionUITests` still green.
 - [x] Light + dark screenshots reviewed.
 - [x] Device: Home scrolls smoothly on MrRobot (user, 2026-10-29).
-- [ ] Device: every link on the real history.
+- [x] Device: every link on the real history (user, 2026-10-29).
