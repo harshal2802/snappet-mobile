@@ -49,6 +49,7 @@ struct KilterPlanView: View {
     /// "Climbs to pick" switches: 1 on, 0 off, -1 not set yet → carried over from the earlier settings.
     @AppStorage("kilter.plan.includeSent") private var planIncludeSentRaw = -1
     @AppStorage("kilter.plan.includeProjects") private var planIncludeProjectsRaw = -1
+    @AppStorage("kilter.plan.classicsOnly") private var planClassicsOnly = false
     private var planClimbs: KilterPlanClimbs {
         let carried: KilterPlanClimbs = switch planClimbChoiceRaw {
         case "includeSent": .init(includeSent: true, includeProjects: true)
@@ -57,7 +58,8 @@ struct KilterPlanView: View {
         default: planPreferUnsent ? .newOnly : .init(includeSent: true, includeProjects: true)
         }
         return .init(includeSent: planIncludeSentRaw < 0 ? carried.includeSent : planIncludeSentRaw == 1,
-                     includeProjects: planIncludeProjectsRaw < 0 ? carried.includeProjects : planIncludeProjectsRaw == 1)
+                     includeProjects: planIncludeProjectsRaw < 0 ? carried.includeProjects : planIncludeProjectsRaw == 1,
+                     classicsOnly: planClassicsOnly)
     }
     private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
 
@@ -97,6 +99,7 @@ struct KilterPlanView: View {
                                   climbs: Binding(get: { planClimbs }, set: {
                                       planIncludeSentRaw = $0.includeSent ? 1 : 0
                                       planIncludeProjectsRaw = $0.includeProjects ? 1 : 0
+                                      planClassicsOnly = $0.classicsOnly
                                   }))
                 .presentationDetents([.medium, .large])
         }
@@ -340,6 +343,7 @@ struct KilterPlanView: View {
         let sentPart = "\(sent) sent (\(climbs.includeSent ? "included" : "excluded"))"
         let projectPart = "\(projects) project\(projects == 1 ? "" : "s") (\(climbs.includeProjects ? "included" : "excluded"))"
         return "\(total) climb\(total == 1 ? "" : "s") logged — \(sentPart), \(projectPart)"
+            + (climbs.classicsOnly ? " · classics only" : "")
     }
 
     /// The climber's log per climb (prompt 208) — so a sent warm-up or a project reads as such in the preview.
@@ -390,7 +394,7 @@ struct KilterPlanView: View {
     /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
     /// (generate-mode only).
     private var planKey: String {
-        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbs.includeSent)|\(planClimbs.includeProjects)|\(rerollSeed)"
+        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbs.includeSent)|\(planClimbs.includeProjects)|\(planClimbs.classicsOnly)|\(rerollSeed)"
     }
 
     private func rebuild() {
@@ -406,8 +410,10 @@ struct KilterPlanView: View {
         let median = scale.isEmpty ? 18.0 : Double(scale[scale.count / 2].difficulty)
         let anchor = (working ?? median) + Double(planGradeOffset)
         let window = KilterRecommender.candidateWindow(anchor: anchor)
-        let candidates = catalog.list(layoutId: layoutId, angle: angle,
-                                      minDifficulty: window.min, maxDifficulty: window.max,
+        // "Classics only" narrows the pool to benchmark climbs, exactly like the browse filter.
+        let candidates = catalog.list(KilterFilter(layoutId: layoutId, angle: angle,
+                                                   minDifficulty: window.min, maxDifficulty: window.max,
+                                                   benchmarksOnly: planClimbs.classicsOnly),
                                       limit: max(200, planTargetCount * 25))   // a 30-climb plan needs a deeper pool
 
         let options = KilterRecommender.Options(

@@ -53,12 +53,15 @@ struct KilterPlanConfigSheet: View {
                         .accessibilityIdentifier("kilter.plan.includeSent")
                     Toggle("Include projects", isOn: $climbs.includeProjects)
                         .accessibilityIdentifier("kilter.plan.includeProjects")
+                    Toggle("Classics only", isOn: $climbs.classicsOnly)
+                        .accessibilityIdentifier("kilter.plan.classicsOnly")
                 } header: {
                     Text("Climbs to pick")
                 } footer: {
-                    Text(climbs.includeSent || climbs.includeProjects
-                         ? "Included projects near your grade go into the project slots first."
-                         : "Only climbs you’ve never tried.")
+                    Text((climbs.includeSent || climbs.includeProjects
+                          ? "Included projects near your grade go into the project slots first."
+                          : "Only climbs you’ve never tried.")
+                         + (climbs.classicsOnly ? " Classics only: benchmark climbs — fewer to pick from." : ""))
                 }
 
                 Section {
@@ -103,6 +106,7 @@ struct KilterPlanConfigSheet: View {
         strategyRaw = s.rawValue
         targetCount = c.targetCount
         gradeOffset = c.gradeOffset
-        climbs = c.climbs
+        climbs = KilterPlanClimbs(includeSent: c.climbs.includeSent, includeProjects: c.climbs.includeProjects,
+                                  classicsOnly: climbs.classicsOnly)   // strategies don't touch Classics only
     }
 }

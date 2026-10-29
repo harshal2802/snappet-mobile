@@ -106,6 +106,8 @@ struct KilterPlanClimbs: Equatable, Sendable {
     var includeSent = false
     /// Your open projects (tried, never sent) may be picked — and go into the project slots first.
     var includeProjects = false
+    /// Only benchmark ("classic") climbs — the browse "Classics only" filter. Strategies leave it as the user set it.
+    var classicsOnly = false
 
     static let newOnly = KilterPlanClimbs()
 }

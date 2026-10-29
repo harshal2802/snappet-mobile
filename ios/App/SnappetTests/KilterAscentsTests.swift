@@ -131,6 +131,9 @@ final class KilterAscentsTests: XCTestCase {
                        "3 climbs logged — 2 sent (included), 1 project (excluded)")
         XCTAssertEqual(KilterPlanView.historyLine(index, climbs: .init(includeSent: false, includeProjects: true)),
                        "3 climbs logged — 2 sent (excluded), 1 project (included)")
+        XCTAssertEqual(KilterPlanView.historyLine(index, climbs: .init(classicsOnly: true)),
+                       "3 climbs logged — 2 sent (excluded), 1 project (excluded) · classics only")
+        XCTAssertFalse(KilterPlanClimbs.newOnly.classicsOnly, "off by default")
         XCTAssertEqual(KilterPlanView.historyLine(KilterAscentIndex([]), climbs: .newOnly),
                        "No climbs logged yet — starting from the catalog.")
     }

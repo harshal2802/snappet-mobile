@@ -10260,6 +10260,8 @@ stripes, and the panel read as an opaque slab.
   rather than include what the climber switched off. Included projects near the grade fill the project slots
   first. Defaults: Balanced / Flash / Power both off; Project projects on; Volume both on; Recovery sent on.
   Earlier choices carry over. (Supersedes the warm-up fallback below.)
+- A third switch, "Classics only" (user asked): the plan's catalog pool uses the browse benchmark filter. Off by
+  default and NOT set by strategies (a strategy is about the session shape; classics is a standing preference).
 - "New climbs only" / "Projects first" keep sent climbs out of the WARM-UPS too (device report 2026-10-28: a sent
   6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
   climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same
