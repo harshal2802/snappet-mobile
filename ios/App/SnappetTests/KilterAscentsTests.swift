@@ -137,4 +137,16 @@ final class KilterAscentsTests: XCTestCase {
         XCTAssertEqual(KilterPlanView.historyLine(KilterAscentIndex([]), climbs: .newOnly),
                        "No climbs logged yet — starting from the catalog.")
     }
+
+    /// 2026-10-29: the plan ignored the board size and could suggest climbs a smaller board can't light.
+    func testPlanPoolUsesBoardSizeAndClassics() {
+        let box = KilterSizeBox(left: 0, right: 24, bottom: 4, top: 12)
+        let f = KilterPlanView.candidateFilter(layoutId: 1, angle: 40, window: (16, 24),
+                                               climbs: .init(classicsOnly: true), sizeBox: box)
+        XCTAssertEqual(f.sizeBox, box)
+        XCTAssertTrue(f.benchmarksOnly)
+        XCTAssertEqual(f.minDifficulty, 16); XCTAssertEqual(f.maxDifficulty, 24)
+        XCTAssertFalse(KilterPlanView.candidateFilter(layoutId: 1, angle: 40, window: (16, 24),
+                                                      climbs: .newOnly, sizeBox: nil).benchmarksOnly)
+    }
 }

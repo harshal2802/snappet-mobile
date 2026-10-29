@@ -10262,6 +10262,9 @@ stripes, and the panel read as an opaque slab.
   Earlier choices carry over. (Supersedes the warm-up fallback below.)
 - A third switch, "Classics only" (user asked): the plan's catalog pool uses the browse benchmark filter. Off by
   default and NOT set by strategies (a strategy is about the session shape; classics is a standing preference).
+- Plan a session now applies the board-size fit (bug found 2026-10-29): its catalog pool ignored `sizeBox`, so a plan
+  could suggest climbs set on a bigger board that the climber's board can't fully light — the same strict fit the
+  browse list has used since prompt 154. One pool feeds every slot, projects included.
 - "New climbs only" / "Projects first" keep sent climbs out of the WARM-UPS too (device report 2026-10-28: a sent
   6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
   climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same

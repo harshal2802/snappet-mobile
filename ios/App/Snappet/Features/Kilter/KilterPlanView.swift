@@ -35,6 +35,8 @@ struct KilterPlanView: View {
     private let catalog = KilterCatalog.shared
     @AppStorage("kilter.angle") private var angle: Int = 40
     @AppStorage("kilter.layout") private var layoutId: Int = 1
+    /// The board size the browse screen uses — so the plan only suggests climbs your board can fully light.
+    @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
 
@@ -335,6 +337,14 @@ struct KilterPlanView: View {
         }
     }
 
+    /// The plan's catalog pool: layout + angle + the grade window, narrowed to climbs your board can fully light
+    /// (`sizeBox`) and, with "Classics only", to benchmarks.
+    static func candidateFilter(layoutId: Int, angle: Int, window: (min: Double, max: Double),
+                                climbs: KilterPlanClimbs, sizeBox: KilterSizeBox?) -> KilterFilter {
+        KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: window.min, maxDifficulty: window.max,
+                     benchmarksOnly: climbs.classicsOnly, sizeBox: sizeBox)
+    }
+
     /// "16 climbs logged — 9 sent (excluded), 7 projects (excluded)": the whole log in distinct climbs, and what the
     /// two switches do with each group. Same counts as the browse chips.
     static func historyLine(_ index: KilterAscentIndex, climbs: KilterPlanClimbs) -> String {
@@ -394,7 +404,7 @@ struct KilterPlanView: View {
     /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
     /// (generate-mode only).
     private var planKey: String {
-        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbs.includeSent)|\(planClimbs.includeProjects)|\(planClimbs.classicsOnly)|\(rerollSeed)"
+        "\(entries.count)|\(angle)|\(layoutId)|\(productSizeId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planClimbs.includeSent)|\(planClimbs.includeProjects)|\(planClimbs.classicsOnly)|\(rerollSeed)"
     }
 
     private func rebuild() {
@@ -411,9 +421,11 @@ struct KilterPlanView: View {
         let anchor = (working ?? median) + Double(planGradeOffset)
         let window = KilterRecommender.candidateWindow(anchor: anchor)
         // "Classics only" narrows the pool to benchmark climbs, exactly like the browse filter.
-        let candidates = catalog.list(KilterFilter(layoutId: layoutId, angle: angle,
-                                                   minDifficulty: window.min, maxDifficulty: window.max,
-                                                   benchmarksOnly: planClimbs.classicsOnly),
+        // Only climbs your board can fully light — the browse screen's strict size fit (prompt 154). The plan
+        // used to skip it and could suggest a climb set on a bigger board (2026-10-29).
+        let sizeBox = catalog.sizes(forLayout: layoutId).first { $0.id == productSizeId }?.box
+        let candidates = catalog.list(Self.candidateFilter(layoutId: layoutId, angle: angle, window: window,
+                                                           climbs: planClimbs, sizeBox: sizeBox),
                                       limit: max(200, planTargetCount * 25))   // a 30-climb plan needs a deeper pool
 
         let options = KilterRecommender.Options(
