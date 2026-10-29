@@ -90,6 +90,21 @@ struct KilterClimbDetailView: View {
     @State private var showingRename = false
     @State private var renameText = ""
     @State private var showingDeleteCreated = false
+    // Prompt 214: this session's clips for the climb on screen + the Tag clips sheet + the shared clip studio.
+    @State private var sessionClips: [SessionMedia] = []
+    @State private var sessionClimbNames: [String: String] = [:]
+    @State private var showingTagClips = false
+    @State private var findingClips = false
+    @State private var clipStudio: ClimbClipStudio?
+
+    private struct ClimbClipStudio: Identifiable {
+        let id = UUID()
+        let project: StudioProject
+        let sessionId: UUID
+        let visible: Set<UUID>?
+        let focus: UUID?
+        let single: SessionMedia?
+    }
 
     private var currentStat: KilterClimbStat? { stats.first { $0.angle == selectedAngle } }
     private var isFavorite: Bool { favorites.contains { $0.climbUUID == currentUUID } }
@@ -105,9 +120,12 @@ struct KilterClimbDetailView: View {
                 ContentUnavailableView("Climb unavailable", systemImage: "questionmark.square.dashed")
             }
         }
+        // The name lives in the climb card under the board (prompt 214); the bar keeps it for VoiceOver + back menus.
         .navigationTitle(climb?.name ?? "Climb")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) } }
+        .background(SnappetColor.paper.ignoresSafeArea())
         .celebrates(on: celebrationTrigger)
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showingShare = true } label: { Image(systemName: "qrcode") }
@@ -138,7 +156,20 @@ struct KilterClimbDetailView: View {
                 }
             }
         }
-        .task(id: currentUUID) { clipCount = countClips(currentUUID) }
+        .task(id: currentUUID) { clipCount = countClips(currentUUID); reloadSessionClips() }
+        .onChange(of: sessions.currentId) { reloadSessionClips() }
+        .sheet(isPresented: $showingTagClips, onDismiss: reloadSessionClips) {
+            KilterTagClipsSheet(climbUUID: currentUUID, climbName: climb?.name ?? "this climb",
+                                media: sessionClips, climbNames: sessionClimbNames, onFindNew: findNewClips)
+        }
+        .fullScreenCover(item: $clipStudio, onDismiss: reloadSessionClips) { p in
+            KilterClipStudio(project: p.project, context: modelContext,
+                             visibleClipMediaIDs: p.visible, focusClipMediaID: p.focus,
+                             sessionId: p.sessionId, climbUUID: currentUUID,
+                             singleClip: p.single,
+                             climbTargets: sessionClimbNames.map { KilterClimbTarget(uuid: $0.key, name: $0.value) }
+                                .sorted { $0.name < $1.name })
+        }
         .sheet(isPresented: $showingClips) {
             ActivityClipsSheet(target: ActivityClipsTarget(key: ActivityKey(exerciseId: LibraryCatalog.kilterExerciseId,
                                                                             nameKey: currentUUID),
@@ -231,35 +262,75 @@ struct KilterClimbDetailView: View {
             })
     }
 
+    /// Prompt 214 (mockup `docs/ux-research/design-system/kilter-climb.html`): the same elements as before,
+    /// regrouped — session strip → board (+ legend, position, off-board note) → the climb card (name, set by / FA,
+    /// grade with the angle picker | quality + ascents, tags) → Board (light + every connection state + fixes) →
+    /// Log this climb → Videos from this session → Grade by angle → Beta.
     @ViewBuilder private func content(_ climb: KilterClimb) -> some View {
-        VStack(spacing: 20) {
-            boardSection
-
-            roleLegend
-            anglePicker
-            statRow
-            metaRow
-            if clipCount > 0 {
-                PastClipsChip(count: clipCount) { showingClips = true }
-            }
-            offBoardNote
+        VStack(alignment: .leading, spacing: 10) {
             sessionStatusRow
-            logButtons
-            gradeChart
+            boardSection
+            offBoardNote
+            climbCard(climb)
             illuminateSection
+            logButtons
+            sessionClipsCard
+            gradeChart
             if let link = betaLinks.first, let url = URL(string: link) {
                 Link(destination: url) {
-                    Label("Beta video", systemImage: "play.rectangle")
+                    SnappetRow(icon: "▶︎", title: "Beta video", subtitle: url.host() ?? "Opens the link")
                 }
+                .buttonStyle(.plain)
+                .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, 2)
+                .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous)
+                    .strokeBorder(SnappetColor.hairline))
+                .padding(.horizontal)
                 .accessibilityIdentifier("kilter.beta")
             }
-            Text("Set by \(climb.setter)").font(.footnote).foregroundStyle(.secondary)
         }
-        .padding(.vertical)
+        .padding(.vertical, 8)
+        .padding(.bottom, 16)
     }
 
-    /// The board render plus left/right swipe (and tap chevrons) to move through the browsed list,
-    /// with a "n / total" position pill. Disabled when the climb isn't part of a list.
+    /// One climb card: name, "Set by · FA", grade at the chosen angle (with the angle picker) beside quality +
+    /// ascents, then the tags (matching rule, Classic, past clips).
+    private func climbCard(_ climb: KilterClimb) -> some View {
+        let fa = currentStat?.faUsername ?? ""
+        return VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(climb.name).font(.system(size: 22, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                Text((["Set by \(climb.setter)"] + (fa.isEmpty ? [] : ["FA \(fa)"])).joined(separator: " · "))
+                    .snappetDetail()
+            }
+            Divider().overlay(SnappetColor.hairline)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Grade").snappetLabel()
+                        Spacer(minLength: 4)
+                        anglePicker
+                    }
+                    Text(currentStat.map { kilterDisplayGrade(catalog.gradeLabel($0.difficulty), gradeFormat) } ?? "—")
+                        .font(SnappetType.metric).monospacedDigit().foregroundStyle(SnappetColor.ink)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .accessibilityIdentifier("kilter.grade")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Rectangle().fill(SnappetColor.hairline).frame(width: 1, height: 52)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Quality").snappetLabel()
+                    KilterStars(quality: currentStat?.quality ?? 0)
+                    Text("\((currentStat?.ascents ?? 0).formatted()) ascents").snappetDetail()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            metaRow
+        }
+        .snappetPanel()
+        .padding(.horizontal)
+    }
+
     private var boardSection: some View {
         let index = siblingIndex
         let hasPrev = index.map { $0 > 0 } ?? false
@@ -285,11 +356,16 @@ struct KilterClimbDetailView: View {
                 )
                 .padding(.horizontal)
 
-            if let index, siblings.count > 1 {
-                Text("\(index + 1) / \(siblings.count)")
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("kilter.position")
+            HStack {
+                roleLegend
+                Spacer(minLength: 6)
+                if let index, siblings.count > 1 {
+                    Text("\(index + 1) / \(siblings.count)")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("kilter.position")
+                }
             }
+            .padding(.horizontal, 20)
         }
     }
 
@@ -322,8 +398,8 @@ struct KilterClimbDetailView: View {
                         Text("Connect board")
                     }
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(board.canLight ? .green : SnappetColor.moduleAccent("kilter"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(board.canLight ? Color.green : SnappetColor.brand)
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.15)))
@@ -377,13 +453,13 @@ struct KilterClimbDetailView: View {
     }
 
     private var roleLegend: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 10) {
             legendDot("00DD00", "start", "Start")
             legendDot("00FFFF", "middle", "Middle")
             legendDot("FF00FF", "finish", "Finish")
             legendDot("FFA500", "foot", "Foot")
         }
-        .font(.caption2).foregroundStyle(.secondary)
+        .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
     }
 
     /// One legend entry: the role's *shape* (not a plain dot) in the role color, so the legend teaches
@@ -410,26 +486,15 @@ struct KilterClimbDetailView: View {
                 ForEach(stats) { Text("\($0.angle)°  ·  \(catalog.gradeLabel($0.difficulty))").tag($0.angle) }
             }
         } label: {
-            Label("\(selectedAngle)°", systemImage: "angle")
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(SnappetColor.surfaceMuted, in: Capsule())
+            HStack(spacing: 3) {
+                Text("\(selectedAngle)°")
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .font(.system(size: 13, weight: .medium))
+            .padding(.horizontal, -3).padding(.vertical, -2)
+            .kilterPill(selected: true)
         }
         .accessibilityIdentifier("kilter.angle")
-    }
-
-    private var statRow: some View {
-        HStack {
-            stat("Grade", currentStat.map { kilterDisplayGrade(catalog.gradeLabel($0.difficulty), gradeFormat) } ?? "—")
-                .accessibilityIdentifier("kilter.grade")
-            Divider().frame(height: 32)
-            VStack(spacing: 2) {
-                KilterStars(quality: currentStat?.quality ?? 0)
-                Text("Quality").font(.caption2).foregroundStyle(.secondary)
-            }.frame(maxWidth: .infinity)
-            Divider().frame(height: 32)
-            stat("Ascents", "\(currentStat?.ascents ?? 0)")
-        }
-        .padding(.horizontal)
     }
 
     /// Holds on this climb that the selected board size has no LED for — the climb was set on a bigger
@@ -455,10 +520,10 @@ struct KilterClimbDetailView: View {
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
             }
-            .font(.caption)
+            .font(SnappetType.detail)
             .foregroundStyle(.orange)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
             .accessibilityIdentifier("kilter.offBoardNote")
         }
     }
@@ -467,23 +532,26 @@ struct KilterClimbDetailView: View {
     /// catalog has them for this angle.
     @ViewBuilder private var metaRow: some View {
         let isClassic = currentStat?.benchmarkDifficulty != nil
-        let fa = currentStat?.faUsername ?? ""
-        HStack(spacing: 10) {
-            matchBadge(noMatch: climb?.isNoMatch ?? false)
-            if isClassic {
-                Label("Classic", systemImage: "rosette")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 9).padding(.vertical, 3)
-                    .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
-                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
-            }
-            if !fa.isEmpty {
-                Label("FA \(fa)", systemImage: "flag.checkered")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
+        let match = matchBadge(noMatch: climb?.isNoMatch ?? false)
+        let classic = Label("Classic", systemImage: "rosette").font(.system(size: 12.5)).kilterPill(selected: false)
+        let clips = Button { showingClips = true } label: {
+            Label("\(clipCount) past \(clipCount == 1 ? "clip" : "clips")", systemImage: "play.rectangle.on.rectangle")
+                .font(.system(size: 12.5)).kilterPill(selected: false)
         }
-        .padding(.horizontal)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("activity.pastClips")
+        // Wraps to a second line on narrow widths (FA moved to the name line).
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                match
+                if isClassic { classic }
+                if clipCount > 0 { clips }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) { match; if isClassic { classic } }
+                if clipCount > 0 { clips }
+            }
+        }
     }
 
     /// The Kilter "No matching" rule as a **tappable** tag: an amber `hand.raised.slash` "No matching"
@@ -492,12 +560,13 @@ struct KilterClimbDetailView: View {
     /// the official app's no-match icon while still showing the allowed case so the rule is never ambiguous.
     private func matchBadge(noMatch: Bool) -> some View {
         Button { showingMatchInfo = true } label: {
-            Label(noMatch ? "No matching" : "Matching",
-                  systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 9).padding(.vertical, 3)
-                .background((noMatch ? Color.orange : Color.secondary).opacity(noMatch ? 0.18 : 0.14), in: Capsule())
-                .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            HStack(spacing: 4) {
+                Label(noMatch ? "No matching" : "Matching",
+                      systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+                Image(systemName: "info.circle").font(.system(size: 10))
+            }
+            .font(.system(size: 12.5))
+            .kilterPill(selected: false, tint: noMatch ? .orange : nil)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("kilter.matchTag")
@@ -531,19 +600,31 @@ struct KilterClimbDetailView: View {
     /// highlighted in the Kilter accent; tap a bar to switch angle.
     @ViewBuilder private var gradeChart: some View {
         if stats.count > 1 {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Grade by angle").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Grade by angle").snappetLabel()
                 Chart(stats) { s in
-                    BarMark(x: .value("Angle", "\(s.angle)°"), y: .value("Difficulty", s.difficulty))
-                        .foregroundStyle(s.angle == selectedAngle
-                                         ? SnappetColor.moduleAccent("kilter") : Color.gray.opacity(0.35))
+                    // Bars rise from the domain's floor (not 0, which sits below it and overflowed the card).
+                    BarMark(x: .value("Angle", "\(s.angle)°"),
+                            yStart: .value("Floor", chartYDomain.lowerBound),
+                            yEnd: .value("Difficulty", s.difficulty), width: .ratio(0.7))
+                        .foregroundStyle(s.angle == selectedAngle ? SnappetColor.brand : SnappetColor.hairline)
                         .cornerRadius(3)
                 }
                 .chartYAxis(.hidden)
+                .chartXAxis {
+                    AxisMarks { _ in AxisValueLabel().font(.system(size: 9.5)).foregroundStyle(SnappetColor.textTertiary) }
+                }
                 .chartYScale(domain: chartYDomain)
-                .frame(height: 110)
+                .frame(height: 72)
+                .clipped()
                 .animation(.snappy, value: selectedAngle)
+                if let lo = stats.first, let hi = stats.last {
+                    Text("\(kilterDisplayGrade(catalog.gradeLabel(lo.difficulty), gradeFormat)) at \(lo.angle)° → "
+                         + "\(kilterDisplayGrade(catalog.gradeLabel(hi.difficulty), gradeFormat)) at \(hi.angle)°")
+                        .snappetDetail()
+                }
             }
+            .snappetPanel()
             .padding(.horizontal)
         }
     }
@@ -555,43 +636,37 @@ struct KilterClimbDetailView: View {
         return lo...max(hi, lo + 1)
     }
 
-    private func stat(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity)
-    }
-
     /// While a session is live, a compact "session active" + live-HR row above the log buttons, so
     /// the climber sees their heart rate without leaving the climb.
     @ViewBuilder private var sessionStatusRow: some View {
         if sessions.isActive {
-            VStack(spacing: 8) {
-                HStack(spacing: 10) {
-                    Image(systemName: "record.circle").foregroundStyle(.green)
-                        .symbolEffect(.pulse, options: .repeating).font(.caption)
-                    Text("Session active").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    if app.liveWorkout.state != .unavailable {
-                        KilterHRPill(bpm: app.liveWorkout.latestHR,
-                                     contactLost: app.liveWorkout.isContactLost == true,
-                                     readiness: RecoveryReadiness.evaluate(
-                                        currentBpm: app.liveWorkout.latestHR,
-                                        restBpm: app.userProfile.profile.restingBound,
-                                        maxBpm: app.userProfile.profile.resolvedMaxHR))
-                    }
+            HStack(spacing: 8) {
+                Circle().fill(Color.green).frame(width: 7, height: 7)
+                Text("Session").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                if app.liveWorkout.state != .unavailable {
+                    KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true,
+                                 contactLost: app.liveWorkout.isContactLost == true,
+                                 readiness: RecoveryReadiness.evaluate(
+                                    currentBpm: app.liveWorkout.latestHR,
+                                    restBpm: app.userProfile.profile.restingBound,
+                                    maxBpm: app.userProfile.profile.resolvedMaxHR))
                 }
-                // For a plan-backed run, the climb screen is a station in the plan: jump back to the
-                // list or advance to the next pending pick — a forward loop, not a back-button hunt.
+                Spacer(minLength: 4)
+                // For a plan-backed run, the climb screen is a station in the plan: back to the list, or on to
+                // the next pending pick — a forward loop, not a back-button hunt.
                 if sessions.currentPlanId != nil { planStrip }
             }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.hairline))
             .padding(.horizontal)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kilter.session.activeRow")
         }
     }
 
     private var planStrip: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Button {
                 // Reset to the Kilter root + push the plan, rather than appending another
                 // KilterPlanRoute onto a stack that already has Plan→Climb below (which would accrete
@@ -601,55 +676,52 @@ struct KilterClimbDetailView: View {
                 router.open(module: "kilter")
                 router.push(KilterPlanRoute())
             } label: {
-                Label("Back to plan", systemImage: "chevron.left")
-                    .font(.caption.weight(.semibold))
+                Label("Plan", systemImage: "chevron.left")
+                    .font(SnappetType.detail.weight(.medium))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("kilter.climb.backToPlan")
-            Spacer()
             if let p = sessions.planProgress {
                 Text("\(p.done)/\(p.total)")
-                    .font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                    .font(SnappetType.detail).monospacedDigit().foregroundStyle(SnappetColor.textSecondary)
             }
-            Spacer()
             if let next = sessions.nextPlanClimb(excluding: currentUUID) {
                 Button { withAnimation(.snappy) { logConfirmation = nil; currentUUID = next } } label: {
                     HStack(spacing: 3) {
                         Text("Next pick"); Image(systemName: "chevron.right")
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(SnappetType.detail.weight(.medium))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("kilter.climb.nextPick")
             } else {
-                Text("Plan done").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("Plan done").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
             }
         }
-        .tint(SnappetColor.moduleAccent("kilter"))
-        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+        .foregroundStyle(SnappetColor.brand)
     }
 
     private var logButtons: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Log this climb").snappetLabel()
+            HStack(spacing: 8) {
                 logButton(.flash, "bolt.fill")
                 logButton(.sent, "checkmark")
             }
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 logButton(.project, "target")
                 logButton(.attempt, "arrow.uturn.up")
             }
             if let logConfirmation {
                 Label(logConfirmation, systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.medium)).foregroundStyle(.green)
+                    .font(SnappetType.detail).foregroundStyle(.green)
                     .symbolEffect(.bounce, value: logConfirmation)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(.green.opacity(0.14), in: Capsule())
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(.opacity)
                     .accessibilityIdentifier("kilter.logConfirmation")
             }
             autoStartCapsule
         }
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -673,10 +745,8 @@ struct KilterClimbDetailView: View {
                 .fontWeight(.semibold)
                 .accessibilityIdentifier("kilter.autoSession.undo")
             }
-            .font(.caption)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(.green.opacity(0.14), in: Capsule())
-            .transition(.scale.combined(with: .opacity))
+            .font(SnappetType.detail)
+            .transition(.opacity)
             // The container gets a name WITHOUT clobbering the Undo button's id (the #68
             // banner gotcha: a bare container identifier propagates onto every child element).
             .accessibilityElement(children: .contain)
@@ -690,10 +760,12 @@ struct KilterClimbDetailView: View {
 
     private func logButton(_ status: KilterAscentStatus, _ image: String) -> some View {
         Button { log(status) } label: {
-            Label(status.label, systemImage: image).frame(maxWidth: .infinity)
+            Label(status.label, systemImage: image)
+                .font(.system(size: 15, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .kilterPill(selected: false, large: true, tint: status.isSend ? .green : .orange)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(status.isSend ? .green : .orange)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("kilter.log.\(status.rawValue)")
     }
 
@@ -706,19 +778,32 @@ struct KilterClimbDetailView: View {
         // Simulators / devices with no BLE radio never show the section — there's nothing to connect to.
         if board.state != .unsupported {
             VStack(spacing: 8) {
+                HStack {
+                    Text("Board").snappetLabel()
+                    Spacer()
+                    if board.isConnected {
+                        Label(sharedBoardLabel ?? "Connected", systemImage: "circle.fill")
+                            .labelStyle(KilterDotLabelStyle())
+                            .font(SnappetType.label).foregroundStyle(.green)
+                    }
+                }
                 switch board.state {
                 case .connected:
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
                         attemptLight()
                     }
                     KilterBoardShareStatus(board: board)
-                    Button("Set up this board") { showingBoardSetup = true }
-                        .font(.caption)
-                        .accessibilityIdentifier("kilter.board.setup")
-                    wrongHoldsControl
-                    Button("Disconnect board") { board.disconnect() }
-                        .font(.caption)
-                        .accessibilityIdentifier("kilter.board.disconnect")
+                    Divider().overlay(SnappetColor.hairline).padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button("Set up this board ›") { showingBoardSetup = true }
+                            .accessibilityIdentifier("kilter.board.setup")
+                        wrongHoldsControl
+                        Button("Disconnect board") { board.disconnect() }
+                            .foregroundStyle(SnappetColor.textSecondary)
+                            .accessibilityIdentifier("kilter.board.disconnect")
+                    }
+                    .font(SnappetType.detail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 case .connecting where board.isRelighting:
                     busyRow("Lighting on \(sharedBoardLabel ?? "the board")…")
@@ -772,6 +857,7 @@ struct KilterClimbDetailView: View {
                     }
                 }
             }
+            .snappetPanel()
             .padding(.horizontal)
             .animation(.snappy, value: board.state)
             // Mirror a protocol switch made here to the controller immediately (the root view also
@@ -815,8 +901,8 @@ struct KilterClimbDetailView: View {
             }
             .transition(.opacity.combined(with: .move(edge: .top)))
         } else {
-            Button("Wrong holds lighting up?") { withAnimation(.snappy) { showingProtocolFix = true } }
-                .font(.caption)
+            Button("Wrong holds lighting up? ›") { withAnimation(.snappy) { showingProtocolFix = true } }
+                .font(SnappetType.detail)
                 .accessibilityIdentifier("kilter.board.wrongHolds")
         }
     }
@@ -825,7 +911,7 @@ struct KilterClimbDetailView: View {
         Button(action: action) {
             Label(title, systemImage: systemImage).frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .accessibilityIdentifier("kilter.illuminate")
     }
 
@@ -843,10 +929,110 @@ struct KilterClimbDetailView: View {
 
     private func statusNote(_ text: String, systemImage: String, tint: Color) -> some View {
         Label(text, systemImage: systemImage)
-            .font(.caption)
+            .font(SnappetType.detail)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity, alignment: .leading)
             .multilineTextAlignment(.leading)
+    }
+
+    // MARK: - Videos from this session (prompt 214)
+
+    /// This session's clips tagged to the climb on screen: tap one = the clip studio (same as the session page),
+    /// ＋ Tag a clip = the Tag clips sheet, Find new clips = the session's Photos search, Edit all = every video of
+    /// this climb in the studio. Only while a session is live.
+    @ViewBuilder private var sessionClipsCard: some View {
+        if sessions.isActive {
+            let mine = sessionClips.filter { $0.assignedClimbUUID == currentUUID }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Videos from this session").snappetLabel()
+                    Spacer()
+                    if !mine.isEmpty { Text("\(mine.count) of this climb").snappetLabel() }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(mine) { m in
+                            Button { openClip(m) } label: {
+                                SessionMediaThumb(item: m, side: 92)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("kilter.sessionClips.clip")
+                        }
+                        Button { showingTagClips = true } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "plus").font(.system(size: 18))
+                                Text("Tag a clip").font(SnappetType.label)
+                            }
+                            .foregroundStyle(SnappetColor.brand)
+                            .frame(width: 92, height: 92)
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(SnappetColor.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kilter.sessionClips.tag")
+                    }
+                }
+                HStack {
+                    Button { Task { await findNewClips() } } label: {
+                        Label(findingClips ? "Searching…" : "Find new clips", systemImage: "magnifyingglass")
+                    }
+                    .disabled(findingClips)
+                    .accessibilityIdentifier("kilter.sessionClips.find")
+                    Spacer()
+                    if mine.contains(where: { $0.kind == .video }) {
+                        Button("Edit all ›") { openClip(nil) }
+                            .foregroundStyle(SnappetColor.textSecondary)
+                            .accessibilityIdentifier("kilter.sessionClips.editAll")
+                    }
+                }
+                .font(SnappetType.detail)
+                .foregroundStyle(SnappetColor.brand)
+            }
+            .snappetPanel()
+            .padding(.horizontal)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("kilter.sessionClips")
+        }
+    }
+
+    /// Re-read the live session's clips (reels excluded) and its climbs' names.
+    private func reloadSessionClips() {
+        guard let sid = sessions.currentId else { sessionClips = []; sessionClimbNames = [:]; return }
+        sessionClips = (try? modelContext.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.reelTitle == nil },
+            sortBy: [SortDescriptor(\.offsetSec, order: .reverse)]))) ?? []
+        let entries = (try? modelContext.fetch(FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.sessionId == sid }))) ?? []
+        var names: [String: String] = [:]
+        for e in entries { names[e.climbUUID] = e.climbName }
+        if let c = climb { names[c.uuid] = c.name }
+        sessionClimbNames = names
+    }
+
+    /// The session page's "Find my clips": Photos access, then discovery for the live session.
+    private func findNewClips() async {
+        guard let sid = sessions.currentId else { return }
+        findingClips = true
+        _ = await app.sessionMedia.requestAccess()
+        sessions.importMedia(forSessionID: sid, in: modelContext)
+        reloadSessionClips()
+        findingClips = false
+    }
+
+    /// One clip (videos only — photos aren't clip-editable) or, with nil, every video of this climb.
+    private func openClip(_ clip: SessionMedia?) {
+        guard let session = sessions.current else { return }
+        if let clip, clip.kind != .video { return }
+        sessions.syncLiveHR(in: modelContext)
+        let sid = session.id
+        let all = (try? modelContext.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        let project = KilterStudioProjects.resolve(session, media: all, in: modelContext)
+        let mineVideos = Set(sessionClips.filter { $0.assignedClimbUUID == currentUUID && $0.kind == .video }.map(\.id))
+        clipStudio = ClimbClipStudio(project: project, sessionId: session.id,
+                                     visible: clip.map { [$0.id] } ?? mineVideos,
+                                     focus: clip?.id, single: clip)
     }
 
     // MARK: - Actions
@@ -1131,4 +1317,27 @@ func upsertLitEvent(climbUUID: String, climbName: String, layoutId: Int, angle: 
             litAt: now, wasConnected: wasConnected, sessionId: sessionId))
     }
     try? modelContext.save()
+}
+
+/// "● Gym · left wall" — a small coloured dot before the text.
+private struct KilterDotLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.font(.system(size: 6))
+            configuration.title
+        }
+    }
+}
+
+/// The full-width filled accent button (Light up this climb / Try again / Connect board).
+struct SnappetWidePrimaryStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(SnappetColor.onBrand)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity)
+            .background(SnappetColor.brand, in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
 }

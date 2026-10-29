@@ -1687,25 +1687,3 @@ private struct ReleaseDroppedBoard: ViewModifier {
             }
     }
 }
-
-// MARK: - Pills (prompt 213)
-
-private struct KilterPill: ViewModifier {
-    let selected: Bool
-    var large = false
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, large ? 16 : 11).padding(.vertical, large ? 9 : 6)
-            .foregroundStyle(selected ? SnappetColor.brand : SnappetColor.ink)
-            .background(selected ? SnappetColor.brand.opacity(0.12) : Color.clear, in: Capsule())
-            .overlay(Capsule().strokeBorder(selected ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1))
-            .contentShape(Capsule())
-    }
-}
-
-extension View {
-    /// The calm chip: hairline outline, the accent only when selected (design-system step 3a).
-    fileprivate func kilterPill(selected: Bool, large: Bool = false) -> some View {
-        modifier(KilterPill(selected: selected, large: large))
-    }
-}

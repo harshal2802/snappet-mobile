@@ -622,41 +622,9 @@ struct KilterSessionDetailView: View {
                                             singleClip: single)
     }
 
-    /// Find or create this session's `StudioProject` (seeded from its video clips in capture order),
-    /// reconciling any videos discovered after it was created so every clip is editable. Returns the
-    /// one project all scopes share — the same one the workout side uses.
+    /// The session's one shared `StudioProject` (also opened from the climb page, prompt 214).
     private func resolveStudioProject(_ session: KilterSession) -> StudioProject {
-        let sid = session.id
-        if let existing = try? modelContext.fetch(
-            FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
-            let present = Set(existing.clips.compactMap(\.sessionMediaID))
-            // Posted reels are OUTPUT, not footage (highlights P5) — never reconciled into the
-            // timeline (mirrors `StudioEntry.resolveProject`).
-            let missing = media.filter { $0.kind == .video && !$0.isReel && !present.contains($0.id) }
-                .sorted { $0.offsetSec < $1.offsetSec }
-            if !missing.isEmpty {
-                var order = (existing.clips.map(\.order).max() ?? -1) + 1
-                for m in missing {
-                    existing.clips.append(TimelineClip(
-                        sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                        isPhoto: false, order: order, trimEnd: m.durationSec))
-                    order += 1
-                }
-                try? modelContext.save()
-            }
-            return existing
-        }
-        let clips = media.filter { $0.kind == .video && !$0.isReel }
-            .sorted { $0.offsetSec < $1.offsetSec }
-            .enumerated()
-            .map { i, m in
-                TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                             isPhoto: false, order: i, trimEnd: m.durationSec)
-            }
-        let project = StudioProject(sessionID: sid, title: "Kilter session", clips: clips)
-        modelContext.insert(project)
-        try? modelContext.save()
-        return project
+        KilterStudioProjects.resolve(session, media: media, in: modelContext)
     }
 
     // MARK: - Helpers
