@@ -2,119 +2,115 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PDD Team Mode</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
-/* Layout: one reading column; each section is a diagram plus a short caption. Snappet Pulse tokens. */
+/* Layout: one reading column of figures. Each figure is a diagram with a one-line caption. Snappet Pulse tokens; one hue per role. */
 :root{
   --paper:#FBFAF8; --surface:#FFFFFF; --muted:#F2F1EE; --hair:#E7E5E1;
   --ink:#1A1A1E; --ink2:#6B6A66;
-  --brand:#FF5A4D; --brand-soft:#FFE8E5;
-  --journal:#7C5CD6; --journal-soft:#EFEAFB;
-  --budget:#2A7DE1; --budget-soft:#E6F0FC;
-  --habits:#3F9D55; --habits-soft:#E6F4E9;
+  --lead:#FF5A4D; --lead-soft:#FFE8E5;
+  --plan:#7C5CD6; --plan-soft:#EFEAFB;
+  --ios:#2A7DE1; --ios-soft:#E6F0FC;
+  --droid:#1592A6; --droid-soft:#E2F3F6;
+  --review:#3F9D55; --review-soft:#E6F4E9;
+  --scribe:#F2761E; --scribe-soft:#FDEEE2;
   --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
   --body:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
-  --ink:#F4F3F1; --ink2:#A6A5A1;
-  --brand:#FF7A6B; --brand-soft:#3A2220;
-  --journal:#9D82F0; --journal-soft:#2A2440;
-  --budget:#589BF2; --budget-soft:#1D2A3C;
-  --habits:#5BC074; --habits-soft:#1E3024; color-scheme:dark}}
+  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A; --ink:#F4F3F1; --ink2:#A6A5A1;
+  --lead:#FF7A6B; --lead-soft:#3A2220; --plan:#9D82F0; --plan-soft:#2A2440; --ios:#589BF2; --ios-soft:#1D2A3C;
+  --droid:#3CB5C9; --droid-soft:#183034; --review:#5BC074; --review-soft:#1E3024; --scribe:#FF9645; --scribe-soft:#3A2818;
+  color-scheme:dark}}
 :root[data-theme="dark"]{
-  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
-  --ink:#F4F3F1; --ink2:#A6A5A1;
-  --brand:#FF7A6B; --brand-soft:#3A2220;
-  --journal:#9D82F0; --journal-soft:#2A2440;
-  --budget:#589BF2; --budget-soft:#1D2A3C;
-  --habits:#5BC074; --habits-soft:#1E3024; color-scheme:dark}
+  --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A; --ink:#F4F3F1; --ink2:#A6A5A1;
+  --lead:#FF7A6B; --lead-soft:#3A2220; --plan:#9D82F0; --plan-soft:#2A2440; --ios:#589BF2; --ios-soft:#1D2A3C;
+  --droid:#3CB5C9; --droid-soft:#183034; --review:#5BC074; --review-soft:#1E3024; --scribe:#FF9645; --scribe-soft:#3A2818;
+  color-scheme:dark}
 
 body{background:var(--paper);color:var(--ink);font:17px/1.55 var(--body)}
-.wrap{max-width:860px;margin:0 auto;padding-block:40px 64px;
+.wrap{max-width:920px;margin:0 auto;padding-block:40px 72px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
-  display:flex;flex-direction:column;gap:56px}
+  display:flex;flex-direction:column;gap:64px}
 h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
-h1{font-size:clamp(30px,5vw,44px);font-weight:800;letter-spacing:-.02em}
-h2{font-size:26px;font-weight:800;letter-spacing:-.01em}
-h3{font-size:17px;font-weight:600}
-p{margin:0;max-width:65ch}
-.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--brand)}
+h1{font-size:clamp(30px,5vw,46px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(22px,3vw,28px);font-weight:800;letter-spacing:-.01em}
+h3{font-size:16px;font-weight:600}
+p{margin:0;max-width:66ch}
+code{font-family:var(--mono);font-size:.86em;background:var(--muted);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--lead)}
 .lede{color:var(--ink2);font-size:19px}
-section{display:flex;flex-direction:column;gap:18px}
-code{font-family:var(--mono);font-size:.88em;background:var(--muted);padding:1px 5px;border-radius:4px}
+section{display:flex;flex-direction:column;gap:16px}
 .cap{color:var(--ink2);font-size:15px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--hair);background:var(--surface);border-radius:16px;padding:12px}
+.scroll svg{display:block;width:100%;min-width:680px;height:auto}
+.hint{display:none;font:12px var(--mono);color:var(--ink2)}
+@media (max-width:720px){.hint{display:block}}
 
-/* answer banner */
-.answer{border:1.5px solid var(--brand);background:var(--brand-soft);border-radius:14px;padding:20px 22px;display:flex;flex-direction:column;gap:8px}
-.answer strong{font-family:var(--display);font-size:20px}
+/* svg text + shapes take theme tokens */
+svg text{font-family:var(--body);fill:var(--ink)}
+svg .t-title{font-family:var(--display);font-weight:800;font-size:16px}
+svg .t-sub{font-size:12.5px;fill:var(--ink2)}
+svg .t-mono{font-family:var(--mono);font-size:11px;fill:var(--ink2)}
+svg .t-lane{font-family:var(--mono);font-size:12px;font-weight:600}
+svg .t-bar{font-size:12px;font-weight:600}
+svg .wire{stroke:var(--ink2);stroke-width:1.5;fill:none}
+svg .wire-d{stroke:var(--ink2);stroke-width:1.5;fill:none;stroke-dasharray:4 4}
+svg .grid{stroke:var(--hair);stroke-width:1}
+svg .ah{fill:var(--ink2)}
 
-/* diagram 1: skill vs agent */
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.tile{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.tile .tag{font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
-.tile.skill .tag{color:var(--journal)} .tile.agent .tag{color:var(--budget)}
-.mini{border-radius:10px;padding:12px;font:13px/1.45 var(--mono);display:flex;flex-direction:column;gap:6px}
-.skill .mini{background:var(--journal-soft)} .agent .mini{background:var(--budget-soft)}
-.chat{border:1px dashed var(--ink2);border-radius:8px;padding:8px 10px;background:var(--surface)}
-.workers{display:flex;gap:6px;flex-wrap:wrap}
-.workers span{background:var(--surface);border:1px solid var(--budget);border-radius:8px;padding:4px 8px}
-.tile ul{margin:0;padding-left:18px;font-size:15px;display:flex;flex-direction:column;gap:4px}
+/* summary strip */
+.tldr{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tldr div{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.tldr b{font-family:var(--display);font-size:18px}
+.tldr span{font-size:15px;color:var(--ink2)}
 
-/* diagram 2: layers */
-.stack{display:flex;flex-direction:column;gap:0}
-.layer{border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:180px 1fr;gap:16px;align-items:start}
-.layer + .arrow{display:none}
-.l-skill{background:var(--journal-soft);border:1px solid var(--journal)}
-.l-repo{background:var(--brand-soft);border:1px solid var(--brand)}
-.l-run{background:var(--habits-soft);border:1px solid var(--habits)}
-.layer .who{display:flex;flex-direction:column;gap:4px}
-.layer .who b{font-family:var(--display);font-size:18px}
-.layer .who small{font:12px/1.3 var(--mono);color:var(--ink2)}
-.files{font:13px/1.6 var(--mono);display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
-.files em{font-style:normal;color:var(--ink2)}
-.joint{align-self:center;font:600 12px/1 var(--mono);color:var(--ink2);padding:8px 0;letter-spacing:.04em}
+/* handoff chain */
+.chain{display:flex;align-items:stretch;gap:8px}
+@media (max-width:720px){.chain{flex-wrap:wrap}}
+.file{flex:1 1 0;min-width:0;background:var(--surface);border:1px solid var(--hair);border-top:4px solid var(--c);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.file .fn{font:600 12.5px/1.35 var(--mono);overflow-wrap:anywhere}
+.file .by{font:600 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--c)}
+.file p{font-size:14px;color:var(--ink2)}
+.arr{align-self:center;color:var(--ink2);font:600 18px var(--mono)}
+@media (max-width:720px){.arr{display:none}.file{flex-basis:150px}}
 
-/* diagram 3: workflow → role map */
-.map{display:flex;flex-direction:column;gap:8px}
-.row{display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;gap:8px}
-.cell{background:var(--surface);border:1px solid var(--hair);border-radius:10px;padding:10px 14px;font-size:15px;min-width:0}
-.cell b{display:block;font-weight:600}
-.cell small{color:var(--ink2);font-size:13px}
-.cell.new{border:1.5px dashed var(--brand);background:var(--brand-soft)}
-.cell.repo{border-left:4px solid var(--brand)}
-.to{text-align:center;color:var(--ink2);font-family:var(--mono)}
-.maphead{display:grid;grid-template-columns:1fr 36px 1fr;gap:8px;font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+/* layers */
+.layers{display:flex;flex-direction:column;gap:10px}
+.box{border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px;border:1.5px solid var(--hair);background:var(--surface)}
+.box-h{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:baseline}
+.box-h b{font-family:var(--display);font-size:19px}
+.box-h small{font:12px var(--mono);color:var(--ink2)}
+.cols{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.chip{border-radius:10px;padding:10px;background:var(--muted);font-size:14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.chip b{font-weight:600}
+.chip em{font-style:normal;font:11px/1.3 var(--mono);color:var(--ink2)}
+.chip.new{background:var(--lead-soft);outline:1.5px dashed var(--lead);outline-offset:-1.5px}
+.core-row{display:flex;flex-wrap:wrap;gap:6px}
+.core-row span{font:12px/1 var(--mono);padding:7px 9px;border-radius:8px;background:var(--muted)}
+.core-row span.new{background:var(--lead-soft);color:var(--lead);font-weight:600}
+.down{align-self:center;font:600 12px/1.2 var(--mono);color:var(--ink2);text-align:center}
+.status{font:600 11px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:5px 8px;border-radius:999px}
+.s-built{background:var(--review-soft);color:var(--review)}
+.s-prop{background:var(--plan-soft);color:var(--plan)}
+.s-todo{background:var(--muted);color:var(--ink2)}
 
-/* diagram 4: flow */
-.flow{display:flex;flex-direction:column;gap:0;counter-reset:s}
-.step{display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:start;position:relative;padding-bottom:18px}
-.step:not(:last-child)::after{content:"";position:absolute;left:21px;top:44px;bottom:0;width:2px;background:var(--hair)}
-.dot{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:800 17px var(--display);background:var(--surface);border:2px solid var(--brand);color:var(--brand)}
-.step.you .dot{background:var(--brand);color:var(--paper)}
-.par{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-.par span{font:12px/1 var(--mono);border:1px solid var(--hair);background:var(--surface);border-radius:6px;padding:6px 8px}
-.step p{font-size:15.5px}
-.step h3{margin-bottom:2px}
+/* where it stands */
+.ledger{display:flex;flex-direction:column;border:1px solid var(--hair);border-radius:14px;background:var(--surface);overflow:hidden}
+.ledger div{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:12px 16px;border-top:1px solid var(--hair);align-items:start}
+.ledger div:first-child{border-top:0}
+.ledger p{font-size:15px}
+.ledger .status{justify-self:start}
 
-/* diagram 5: options */
-.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.opt{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
-.opt.pick{border:2px solid var(--brand)}
-.pill{align-self:flex-start;font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:999px;background:var(--muted);color:var(--ink2)}
-.opt.pick .pill{background:var(--brand);color:var(--paper)}
-.opt ul{margin:0;padding-left:18px;font-size:14.5px;display:flex;flex-direction:column;gap:4px}
-.pro{color:var(--habits)} .con{color:var(--ink2)}
-
-@media (max-width:640px){
-  .pair,.opts{grid-template-columns:1fr}
-  .layer{grid-template-columns:1fr;gap:8px}
-  .row,.maphead{grid-template-columns:1fr 24px 1fr}
+@media (max-width:720px){
+  .tldr,.cols{grid-template-columns:1fr 1fr}
+  .ledger div{grid-template-columns:1fr;gap:6px}
 }
+@media (max-width:440px){.tldr,.cols{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -122,134 +118,213 @@ code{font-family:var(--mono);font-size:.88em;background:var(--muted);padding:1px
 <div class="wrap">
 
 <header style="display:flex;flex-direction:column;gap:14px">
-  <span class="eyebrow">Snappet Mobile · agent team</span>
-  <h1>Turning the agent company into a skill</h1>
-  <p class="lede">The team is the PDD lifecycle with a different worker assigned to each step. So the cleanest home for it is a new workflow inside the PDD skill, with the Snappet-specific team files kept in the repo.</p>
+  <span class="eyebrow">Snappet Mobile · prompt 207</span>
+  <h1>Your PDD workflow, run by a team</h1>
+  <p class="lede">Each step of a PDD job gets an owner. The planner writes the prompt, two builders implement it in parallel, the reviewer runs the gates, and the scribe keeps context true. You only see the request and the final report.</p>
 </header>
 
-<div class="answer">
-  <strong>Short answer: yes to both, split in two layers.</strong>
-  <p>The PDD skill holds the generic playbook ("how a team runs a PDD job"). The repo holds who is on the team and what each role may touch. A separate standalone skill would repeat the PDD rules and drift from them.</p>
+<div class="tldr">
+  <div><b>Skill + agents</b><span>The lead is a skill in your main session. The five roles are agents it launches.</span></div>
+  <div><b>One roster file</b><span><code>pdd/context/team.md</code> holds every Snappet-specific rule, so the agent files stay generic.</span></div>
+  <div><b>Belongs in pdd-skill</b><span>Most roles already are pdd-skill workflows. Snappet runs it first; then it moves upstream.</span></div>
 </div>
 
-<!-- 1 -->
+<!-- FIG 1: org chart -->
 <section>
-  <span class="eyebrow">First, the two building blocks</span>
-  <h2>A skill is a playbook. An agent is a worker.</h2>
-  <div class="pair">
-    <div class="tile skill">
-      <span class="tag">Skill · .claude/skills/&lt;name&gt;/SKILL.md</span>
-      <div class="mini">
-        <div class="chat">your conversation<br>+ the playbook loaded into it</div>
-        <div>one brain, follows the steps</div>
-      </div>
-      <ul>
-        <li>Instructions loaded into the current session</li>
-        <li>Triggered by <code>/name</code> or when the task matches</li>
-        <li>Portable: works in any repo</li>
-      </ul>
-    </div>
-    <div class="tile agent">
-      <span class="tag">Agent · .claude/agents/&lt;role&gt;.md</span>
-      <div class="mini">
-        <div class="chat">lead session</div>
-        <div class="workers"><span>pm</span><span>ios-eng</span><span>qa</span><span>scribe</span></div>
-        <div>separate brains, run in parallel</div>
-      </div>
-      <ul>
-        <li>Own context window, tools and model</li>
-        <li>Write access limited to its own paths</li>
-        <li>Project-specific by nature</li>
-      </ul>
-    </div>
+  <span class="eyebrow">Figure 1 · who's on the team</span>
+  <h2>One lead, five specialists, one roster</h2>
+  <div class="scroll" role="img" aria-label="Org chart: you send a request to the lead, which reads team.md and directs the planner, iOS builder, Android builder, reviewer and scribe.">
+    <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0L10,5L0,10z"/></marker></defs>
+      <!-- you -->
+      <rect x="360" y="8" width="160" height="44" rx="22" style="fill:var(--ink)"/>
+      <text x="440" y="36" text-anchor="middle" class="t-title" style="fill:var(--paper)">You</text>
+      <line x1="430" y1="52" x2="430" y2="92" class="wire" marker-end="url(#a1)"/>
+      <line x1="450" y1="92" x2="450" y2="54" class="wire" marker-end="url(#a1)"/>
+      <text x="420" y="77" text-anchor="end" class="t-mono">request</text>
+      <text x="460" y="77" class="t-mono">report</text>
+      <!-- lead -->
+      <rect x="320" y="94" width="240" height="62" rx="12" style="fill:var(--lead-soft);stroke:var(--lead);stroke-width:2"/>
+      <text x="440" y="120" text-anchor="middle" class="t-title">Lead</text>
+      <text x="440" y="142" text-anchor="middle" class="t-mono">main session · /pdd-team skill</text>
+      <!-- roster -->
+      <rect x="640" y="94" width="216" height="62" rx="12" style="fill:var(--surface);stroke:var(--ink2);stroke-width:1.5;stroke-dasharray:5 4"/>
+      <text x="748" y="120" text-anchor="middle" class="t-title" style="font-size:14px">pdd/context/team.md</text>
+      <text x="748" y="142" text-anchor="middle" class="t-mono">scopes · gates · stop points</text>
+      <line x1="640" y1="125" x2="564" y2="125" class="wire-d" marker-end="url(#a1)"/>
+      <text x="602" y="116" text-anchor="middle" class="t-mono">read by all</text>
+      <!-- bus -->
+      <path d="M440 156 V190 M100 190 H780 M100 190 V222 M270 190 V222 M440 190 V222 M610 190 V222 M780 190 V222" class="wire"/>
+      <!-- roles -->
+      <g>
+        <rect x="22" y="222" width="156" height="112" rx="12" style="fill:var(--plan-soft);stroke:var(--plan);stroke-width:1.5"/>
+        <text x="100" y="250" text-anchor="middle" class="t-title" style="fill:var(--plan)">Planner</text>
+        <text x="100" y="272" text-anchor="middle" class="t-sub">research · plan</text>
+        <text x="100" y="289" text-anchor="middle" class="t-sub">prompts · update</text>
+        <text x="100" y="318" text-anchor="middle" class="t-mono">pdd/prompts/**</text>
+      </g>
+      <g>
+        <rect x="192" y="222" width="156" height="112" rx="12" style="fill:var(--ios-soft);stroke:var(--ios);stroke-width:1.5"/>
+        <text x="270" y="250" text-anchor="middle" class="t-title" style="fill:var(--ios)">iOS builder</text>
+        <text x="270" y="272" text-anchor="middle" class="t-sub">runs the prompt</text>
+        <text x="270" y="289" text-anchor="middle" class="t-sub">app · watch · widget</text>
+        <text x="270" y="318" text-anchor="middle" class="t-mono">ios/**</text>
+      </g>
+      <g>
+        <rect x="362" y="222" width="156" height="112" rx="12" style="fill:var(--droid-soft);stroke:var(--droid);stroke-width:1.5"/>
+        <text x="440" y="250" text-anchor="middle" class="t-title" style="fill:var(--droid)">Android builder</text>
+        <text x="440" y="272" text-anchor="middle" class="t-sub">runs the prompt</text>
+        <text x="440" y="289" text-anchor="middle" class="t-sub">matches iOS</text>
+        <text x="440" y="318" text-anchor="middle" class="t-mono">android/**</text>
+      </g>
+      <g>
+        <rect x="532" y="222" width="156" height="112" rx="12" style="fill:var(--review-soft);stroke:var(--review);stroke-width:1.5"/>
+        <text x="610" y="250" text-anchor="middle" class="t-title" style="fill:var(--review)">Reviewer</text>
+        <text x="610" y="272" text-anchor="middle" class="t-sub">review · eval</text>
+        <text x="610" y="289" text-anchor="middle" class="t-sub">runs the gates</text>
+        <text x="610" y="318" text-anchor="middle" class="t-mono">tests · pdd/evals/**</text>
+      </g>
+      <g>
+        <rect x="702" y="222" width="156" height="112" rx="12" style="fill:var(--scribe-soft);stroke:var(--scribe);stroke-width:1.5"/>
+        <text x="780" y="250" text-anchor="middle" class="t-title" style="fill:var(--scribe)">Scribe</text>
+        <text x="780" y="272" text-anchor="middle" class="t-sub">context</text>
+        <text x="780" y="289" text-anchor="middle" class="t-sub">decisions · graph</text>
+        <text x="780" y="318" text-anchor="middle" class="t-mono">pdd/context/**</text>
+      </g>
+      <!-- parallel bracket -->
+      <path d="M196 348 V356 H514 V348" class="wire"/>
+      <text x="355" y="374" text-anchor="middle" class="t-mono">in parallel, each in its own git worktree</text>
+    </svg>
   </div>
-  <p class="cap">They combine: a skill can tell the lead session which agents to launch and in what order. That is what "team mode" is.</p>
+  <span class="hint">Scroll sideways to see the whole chart.</span>
+  <p class="cap">The bottom line of each role is the only place it may write. The reviewer checks that with <code>git diff --name-only</code>.</p>
 </section>
 
-<!-- 2 -->
+<!-- FIG 2: swimlane -->
 <section>
-  <span class="eyebrow">Where each piece lives</span>
-  <h2>Three layers, from generic to running</h2>
-  <div class="stack">
-    <div class="layer l-skill">
-      <div class="who"><b>PDD skill</b><small>generic · any project</small></div>
-      <div class="files">
-        <span>workflows: scaffold · context · prompt · update · review</span>
-        <span><b>+ team mode</b> <em>← new: the orchestration playbook</em></span>
-        <span><b>+ role templates</b> <em>← cto / pm / eng / qa / scribe skeletons</em></span>
-      </div>
-    </div>
-    <div class="joint">↓ scaffold fills the templates from pdd/context</div>
-    <div class="layer l-repo">
-      <div class="who"><b>Snappet repo</b><small>specific · committed</small></div>
-      <div class="files">
-        <span>pdd/context/*.md <em>← already exists</em></span>
-        <span>.claude/agents/cto.md, pm.md, ios-eng.md, qa.md, scribe.md</span>
-        <span><em>paths each role owns · make targets · "iOS needs a Mac"</em></span>
-      </div>
-    </div>
-    <div class="joint">↓ claude --agent cto  "ship the weekly diff"</div>
-    <div class="layer l-run">
-      <div class="who"><b>A job</b><small>one prompt = one PR</small></div>
-      <div class="files">
-        <span>pdd/prompts/features/NNN-*.md + code + tests + graph + decisions</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- 3 -->
-<section>
-  <span class="eyebrow">Why it fits PDD</span>
-  <h2>Most roles are PDD workflows you already have</h2>
-  <div class="map">
-    <div class="maphead"><span>PDD skill workflow</span><span></span><span>Team role</span></div>
-    <div class="row"><div class="cell"><b>Scaffold project</b><small>creates pdd/</small></div><div class="to">→</div><div class="cell"><b>One-time setup</b><small>also creates .claude/agents/</small></div></div>
-    <div class="row"><div class="cell"><b>Generate feature prompt</b></div><div class="to">→</div><div class="cell"><b>pm.md</b><small>writes the prompt before code</small></div></div>
-    <div class="row"><div class="cell"><b>Update existing prompt</b></div><div class="to">→</div><div class="cell"><b>pm.md</b><small>when scope changes mid-job</small></div></div>
-    <div class="row"><div class="cell"><b>Review AI output</b></div><div class="to">→</div><div class="cell"><b>qa.md</b><small>runs gates, reviews the diff</small></div></div>
-    <div class="row"><div class="cell"><b>Write context files</b></div><div class="to">→</div><div class="cell"><b>scribe.md</b><small>context, decisions, knowledge graph</small></div></div>
-    <div class="row"><div class="cell new"><b>Team mode</b><small>new workflow</small></div><div class="to">→</div><div class="cell"><b>cto.md</b><small>runs the sequence, merges reports</small></div></div>
-    <div class="row"><div class="cell" style="opacity:.55"><b>none</b></div><div class="to">→</div><div class="cell repo"><b>ios-eng.md · android-eng.md</b><small>the only purely Snappet roles</small></div></div>
-  </div>
-</section>
-
-<!-- 4 -->
-<section>
-  <span class="eyebrow">One job, end to end</span>
+  <span class="eyebrow">Figure 2 · one job over time</span>
   <h2>"Add a weekly 'past you' diff to Home"</h2>
-  <div class="flow">
-    <div class="step you"><div class="dot">1</div><div><h3>You ask the CTO</h3><p>One sentence. The CTO reads <code>pdd/context/</code> and splits it into one-PR jobs.</p></div></div>
-    <div class="step"><div class="dot">2</div><div><h3>PM writes the feature prompt</h3><p>From the template, with acceptance criteria and linked decisions. The CTO checks it before any code.</p></div></div>
-    <div class="step"><div class="dot">3</div><div><h3>Engineers build in parallel</h3><p>Each in its own git worktree, each limited to its own folders.</p><div class="par"><span>ios-eng → ios/**</span><span>android-eng → android/**</span></div></div></div>
-    <div class="step"><div class="dot">4</div><div><h3>QA runs the gates</h3><p>Real commands, output pasted. On Linux only engine and Android tests run, so iOS is marked "not verified here".</p><div class="par"><span>make engine-test</span><span>make ios-test-unit</span><span>make android-test</span></div></div></div>
-    <div class="step"><div class="dot">5</div><div><h3>Scribe updates the docs</h3><p>Knowledge graph node and edge, <code>decisions.md</code>, <code>project.md</code>.</p></div></div>
-    <div class="step you"><div class="dot">6</div><div><h3>You approve</h3><p>One report: what shipped, test output, open questions. Pushes and TestFlight uploads stay with you.</p></div></div>
+  <div class="scroll" role="img" aria-label="Swimlane: lead splits the job, planner writes the prompt, iOS and Android builders build in parallel, reviewer gates, a blocking finding loops back to the iOS builder, scribe updates docs, lead reports and you approve.">
+    <svg viewBox="0 0 880 340" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0L10,5L0,10z"/></marker></defs>
+      <!-- column headers: 7 cols of 107 from x=130 -->
+      <g class="t-mono">
+        <text x="183" y="22" text-anchor="middle">1 size</text>
+        <text x="290" y="22" text-anchor="middle">2 prompt</text>
+        <text x="397" y="22" text-anchor="middle">3 build</text>
+        <text x="504" y="22" text-anchor="middle">4 gate</text>
+        <text x="611" y="22" text-anchor="middle">5 fix</text>
+        <text x="718" y="22" text-anchor="middle">6 context</text>
+        <text x="825" y="22" text-anchor="middle">7 report</text>
+      </g>
+      <!-- lane lines -->
+      <g class="grid">
+        <line x1="0" y1="36" x2="880" y2="36"/><line x1="0" y1="76" x2="880" y2="76"/><line x1="0" y1="116" x2="880" y2="116"/>
+        <line x1="0" y1="156" x2="880" y2="156"/><line x1="0" y1="196" x2="880" y2="196"/><line x1="0" y1="236" x2="880" y2="236"/>
+        <line x1="0" y1="276" x2="880" y2="276"/><line x1="0" y1="316" x2="880" y2="316"/>
+      </g>
+      <!-- lane labels -->
+      <text x="8" y="61" class="t-lane" style="fill:var(--lead)">Lead</text>
+      <text x="8" y="101" class="t-lane" style="fill:var(--plan)">Planner</text>
+      <text x="8" y="141" class="t-lane" style="fill:var(--ios)">iOS builder</text>
+      <text x="8" y="181" class="t-lane" style="fill:var(--droid)">Android</text>
+      <text x="8" y="221" class="t-lane" style="fill:var(--review)">Reviewer</text>
+      <text x="8" y="261" class="t-lane" style="fill:var(--scribe)">Scribe</text>
+      <text x="8" y="301" class="t-lane">You</text>
+      <!-- lead coordinates throughout -->
+      <line x1="138" y1="56" x2="872" y2="56" class="wire-d" style="stroke:var(--lead);opacity:.45"/>
+      <!-- bars -->
+      <rect x="138" y="44" width="91" height="24" rx="6" style="fill:var(--lead)"/><text x="183" y="61" text-anchor="middle" class="t-bar" style="fill:var(--paper)">split job</text>
+      <rect x="245" y="84" width="91" height="24" rx="6" style="fill:var(--plan)"/><text x="290" y="101" text-anchor="middle" class="t-bar" style="fill:var(--paper)">prompt 208</text>
+      <rect x="352" y="124" width="91" height="24" rx="6" style="fill:var(--ios)"/><text x="397" y="141" text-anchor="middle" class="t-bar" style="fill:var(--paper)">build</text>
+      <rect x="352" y="164" width="91" height="24" rx="6" style="fill:var(--droid)"/><text x="397" y="181" text-anchor="middle" class="t-bar" style="fill:var(--paper)">build</text>
+      <rect x="459" y="204" width="91" height="24" rx="6" style="fill:var(--review)"/><text x="504" y="221" text-anchor="middle" class="t-bar" style="fill:var(--paper)">gates</text>
+      <rect x="566" y="124" width="91" height="24" rx="6" style="fill:var(--surface);stroke:var(--ios);stroke-width:1.5;stroke-dasharray:4 3"/><text x="611" y="141" text-anchor="middle" class="t-bar" style="fill:var(--ios)">fix</text>
+      <rect x="566" y="204" width="91" height="24" rx="6" style="fill:var(--surface);stroke:var(--review);stroke-width:1.5;stroke-dasharray:4 3"/><text x="611" y="221" text-anchor="middle" class="t-bar" style="fill:var(--review)">re-gate</text>
+      <rect x="673" y="244" width="91" height="24" rx="6" style="fill:var(--scribe)"/><text x="718" y="261" text-anchor="middle" class="t-bar" style="fill:var(--paper)">docs</text>
+      <rect x="780" y="44" width="91" height="24" rx="6" style="fill:var(--lead)"/><text x="825" y="61" text-anchor="middle" class="t-bar" style="fill:var(--paper)">report</text>
+      <rect x="780" y="284" width="91" height="24" rx="6" style="fill:var(--ink)"/><text x="825" y="301" text-anchor="middle" class="t-bar" style="fill:var(--paper)">approve</text>
+      <!-- handoffs -->
+      <path d="M229 62 C240 70 236 90 244 94" class="wire" marker-end="url(#a2)"/>
+      <path d="M336 100 C346 108 342 128 351 134" class="wire" marker-end="url(#a2)"/>
+      <path d="M336 104 C350 130 340 166 351 174" class="wire" marker-end="url(#a2)"/>
+      <path d="M443 138 C460 160 450 200 458 212" class="wire" marker-end="url(#a2)"/>
+      <path d="M443 178 C454 192 452 206 458 214" class="wire" marker-end="url(#a2)"/>
+      <path d="M550 210 C560 190 556 150 565 140" class="wire-d" marker-end="url(#a2)"/>
+      <text x="548" y="168" text-anchor="end" class="t-mono" style="fill:var(--ios)">blocking</text>
+      <path d="M611 148 V203" class="wire" marker-end="url(#a2)"/>
+      <path d="M657 220 C668 230 664 248 672 254" class="wire" marker-end="url(#a2)"/>
+      <path d="M764 250 C776 200 770 90 779 62" class="wire" marker-end="url(#a2)"/>
+      <path d="M825 68 V283" class="wire" marker-end="url(#a2)"/>
+    </svg>
   </div>
+  <span class="hint">Scroll sideways to see all seven steps.</span>
+  <p class="cap">The fix loop runs at most twice on the same finding. After that the lead stops and asks you, because the prompt usually needs an update.</p>
 </section>
 
-<!-- 5 -->
+<!-- FIG 3: handoff files -->
 <section>
-  <span class="eyebrow">The three ways to package it</span>
-  <h2>Options compared</h2>
-  <div class="opts">
-    <div class="opt">
-      <span class="pill">A · agents only</span>
-      <h3>Role files in the repo</h3>
-      <ul><li class="pro">Fastest to start</li><li class="con">Orchestration rules live in the CTO file, so they don't carry to other projects</li></ul>
+  <span class="eyebrow">Figure 3 · how roles talk</span>
+  <h2>They hand off files, not chat</h2>
+  <div class="chain">
+    <div class="file" style="--c:var(--plan)"><span class="by">Planner</span><span class="fn">pdd/prompts/features/<br>208-weekly-diff.md</span><p>Goal, files per platform, acceptance criteria.</p></div>
+    <span class="arr">→</span>
+    <div class="file" style="--c:var(--ios)"><span class="by">Builders</span><span class="fn">ios/** · android/**<br>+ build report</span><p>Only the files the prompt's Output lists.</p></div>
+    <span class="arr">→</span>
+    <div class="file" style="--c:var(--review)"><span class="by">Reviewer</span><span class="fn">gate table<br>+ findings</span><p>Pass, fail, or not verified here, per gate.</p></div>
+    <span class="arr">→</span>
+    <div class="file" style="--c:var(--scribe)"><span class="by">Scribe</span><span class="fn">decisions.md<br>knowledge-graph/data.js</span><p>The rules from CLAUDE.md, done every time.</p></div>
+    <span class="arr">→</span>
+    <div class="file" style="--c:var(--lead)"><span class="by">You</span><span class="fn">one PR</span><p>Prompt, code, tests and docs together.</p></div>
+  </div>
+  <p class="cap">Because the record is files in <code>pdd/</code>, any role, another tool, or you can pick up a half-finished job.</p>
+</section>
+
+<!-- FIG 4: layers -->
+<section>
+  <span class="eyebrow">Figure 4 · skill or PDD skill?</span>
+  <h2>Generic rules upstream, Snappet rules in one file</h2>
+  <div class="layers">
+    <div class="box" style="border-color:var(--plan)">
+      <div class="box-h"><b>pdd-skill</b><small>harshal2802/pdd-skill · any project</small><span class="status s-prop">proposed</span></div>
+      <div class="core-row">
+        <span>scaffold</span><span>init</span><span>context</span><span>research</span><span>plan</span><span>prompts</span><span>update</span><span>review</span><span>eval</span><span class="new">+ team</span>
+      </div>
+      <div class="cols">
+        <div class="chip new"><b>Claude Code</b><em>role agents run in parallel</em></div>
+        <div class="chip"><b>Codex</b><em>parallel if supported, else one by one</em></div>
+        <div class="chip"><b>Copilot</b><em>same roles, one by one</em></div>
+        <div class="chip"><b>Antigravity</b><em>same roles, one by one</em></div>
+      </div>
     </div>
-    <div class="opt">
-      <span class="pill">B · new skill</span>
-      <h3>Standalone "dev team" skill</h3>
-      <ul><li class="pro">Portable</li><li class="con">Restates the PDD prompt and context rules, so the two can drift</li></ul>
+    <div class="down">↓ init / context writes the roster</div>
+    <div class="box" style="border-color:var(--lead)">
+      <div class="box-h"><b>Snappet repo</b><small>this branch</small><span class="status s-built">built</span></div>
+      <div class="cols">
+        <div class="chip"><b>pdd/context/team.md</b><em>roster · scopes · gates · stop points</em></div>
+        <div class="chip"><b>.claude/skills/pdd-team</b><em>the lead's playbook</em></div>
+        <div class="chip"><b>.claude/agents/</b><em>5 thin role files</em></div>
+        <div class="chip"><b>prompt 207</b><em>+ decisions entry</em></div>
+      </div>
     </div>
-    <div class="opt pick">
-      <span class="pill">C · recommended</span>
-      <h3>Team mode in the PDD skill + role files in the repo</h3>
-      <ul><li class="pro">One source of truth for the lifecycle</li><li class="pro">Any PDD project can scaffold a team</li><li class="con">Needs edit access to the PDD skill</li></ul>
+    <div class="down">↓ /pdd-team "add a weekly diff"</div>
+    <div class="box" style="border-color:var(--review)">
+      <div class="box-h"><b>A job</b><small>one prompt = one PR</small><span class="status s-todo">first run pending</span></div>
     </div>
   </div>
-  <p class="cap">If the PDD skill is the read-only built-in version, option C still works as a small project skill in <code>.claude/skills/pdd-team/</code> that says "follow the PDD skill, plus these team steps". It can move upstream later.</p>
+  <p class="cap">On a tool without subagents, the same roles run one after another in one session. That works because the handoffs are files.</p>
+</section>
+
+<!-- where it stands -->
+<section>
+  <span class="eyebrow">Where it stands</span>
+  <h2>What's real and what isn't yet</h2>
+  <div class="ledger">
+    <div><span class="status s-built">built</span><p>Roster, lead skill, five agents, prompt 207 and the decisions entry, on branch <code>claude/pdd-team-mode-diagrams</code>. <code>.gitignore</code> now commits <code>.claude/agents/</code> and <code>.claude/skills/</code> but still ignores local settings.</p></div>
+    <div><span class="status s-built">checked</span><p>The ignore rules, and the engine import gate (runs, prints nothing).</p></div>
+    <div><span class="status s-todo">not yet</span><p>A real job through <code>/pdd-team</code> on your Mac with every gate run. Nothing proves the loop until that happens.</p></div>
+    <div><span class="status s-prop">proposed</span><p>The <code>team</code> workflow in pdd-skill, written up in <code>docs/agent-team/upstream-pdd-skill.md</code>. Not applied, because this session couldn't get write access to that repo or run its tests.</p></div>
+  </div>
 </section>
 
 </div>

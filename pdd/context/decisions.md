@@ -4,6 +4,29 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-10-29] PDD agent team — one roster file, thin role agents, handoffs through pdd/ (prompt 207)
+
+**Decision** (`pdd/prompts/features/207-tooling-pdd-agent-team.md`). PDD jobs can run with a team of
+Claude Code agents: a lead (the main session, through the `pdd-team` skill) plus `pdd-planner`,
+`ios-builder`, `android-builder`, `pdd-reviewer`, `pdd-scribe`. Non-obvious calls:
+
+- **Roles are PDD workflows, plus the one step PDD leaves to the human.** Planner = research / plan /
+  prompts / update; reviewer = review / eval; scribe = context. Builders do the "run the prompt" step,
+  which no PDD workflow owns. So the team is the existing lifecycle with an owner per step, not a new process.
+- **All Snappet specifics live in `pdd/context/team.md`**, not in the agent files. Scopes, gates, and stop
+  points change in one place, and the agent files stay generic enough to move into `pdd-skill` later.
+- **The lead is the main session, not a subagent**, because Claude Code subagents can't launch subagents.
+- **Handoffs go through files in `pdd/`** (plan, prompt, review notes), so a job can be resumed by any role,
+  another tool, or a human, and the record ships in the PR the way PDD already expects.
+- **Write scopes are by instruction, checked by the reviewer** (`git diff --name-only` against the roster).
+  Claude Code has no per-agent path sandbox; builders also run in separate worktrees so parallel work can't
+  collide. Don't describe this as hard isolation.
+- **iOS gates on Linux are "not verified here", never "passed".** The cloud box has no Xcode.
+- **`.gitignore` now ignores `.claude/*` but commits `agents/` and `skills/`**, so local Claude state stays
+  private and the team is shared.
+- **Rules out:** a separate "dev team" skill that restates the PDD rules (it would drift from them), and
+  agents that push, merge, release, or post on GitHub.
+
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 
 **Decision** (implementing `pdd/prompts/features/festival/07-festival-getting-started.md`;

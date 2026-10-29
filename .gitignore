@@ -63,7 +63,10 @@ GoogleService-Info.plist
 node_modules/
 .venv/
 __pycache__/
-.claude/
+# Local Claude Code state stays out of git; the agent team (prompt 207) is shared.
+.claude/*
+!.claude/agents/
+!.claude/skills/
 
 # SwiftPM build artifacts
 ios/HighlightEngine/.build/
