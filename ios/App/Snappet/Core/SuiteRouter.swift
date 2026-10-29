@@ -35,6 +35,8 @@ final class SuiteRouter {
     var pendingRoutineStart: UUID?
     /// One-shot "land on the Routines section" (a tapped schedule reminder — the Up next card lives there).
     var pendingShowRoutines = false
+    /// Open the Gym Tracker's History narrowed to a date window (Home's week card / a day's bar, prompt 212).
+    var pendingHistoryRange: HistoryDateRange?
     /// One-shot "Log it now" from an Activity page (Library L2, prompt 184): the entity to log. `WorkoutHomeView`
     /// adds it to the running session (resuming the player) or starts a Quick Session with it. Self-clearing.
     var pendingQuickLog: SessionExercise?

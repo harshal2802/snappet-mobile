@@ -106,6 +106,8 @@ struct WorkoutHomeView: View {
     @AppStorage("workoutlog.dismissedStarters") private var dismissedStartersRaw = ""
 
     @State private var section: WorkoutSection = .dashboard
+    /// History opened on a date window from Home (prompt 212); cleared by its chip.
+    @State private var historyRange: HistoryDateRange?
     @State private var showingNewRoutine = false
     @State private var showingNewExercise = false
     /// The Library's ＋ (prompt 186): which create sheet is open, and the new activity's page to push once it closes
@@ -379,6 +381,13 @@ struct WorkoutHomeView: View {
             router.pendingShowRoutines = false
             section = .routines
         }
+        // Home's week card / a day's bar (prompt 212): History, narrowed to that week / day.
+        .onChange(of: router.pendingHistoryRange, initial: true) { _, range in
+            guard let range else { return }
+            router.pendingHistoryRange = nil
+            historyRange = range
+            section = .history
+        }
         // Re-plan reminders whenever a session starts or ends (a started day plans no nudge) or a
         // routine's schedule changes elsewhere (import, backup restore). Cheap: a handful of routines.
         .onChange(of: scheduleReplanKey) { _, _ in
@@ -524,7 +533,8 @@ struct WorkoutHomeView: View {
                                videoSessionIDs: StudioEntry.videoSessionIDs(media: sessionMedia),
                                deleteSession: deleteSession,
                                openStudio: { openStudio(for: $0) },
-                               watchSessions: watchSessions)
+                               watchSessions: watchSessions,
+                               dateRange: $historyRange)
         }
     }
 

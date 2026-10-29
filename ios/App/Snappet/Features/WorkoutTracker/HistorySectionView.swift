@@ -30,6 +30,8 @@ struct HistorySectionView: View {
     @State private var kindFilter: Set<SetKind> = []
     /// Source facet (prompt 130): empty = show tracked AND imported, the default.
     @State private var sourceFilter: Set<HistorySource> = []
+    /// A date window this History was opened on (Home's week / day, prompt 212); a removable chip like the rest.
+    var dateRange: Binding<HistoryDateRange?> = .constant(nil)
     /// The filter sheet (prompt 131). Facets used to live in three permanently-stacked chip rows —
     /// ~280 pt of chrome that left only two sessions above the fold and grew with every new routine
     /// name. They now live in a sheet behind a labelled button; the screen's default state is your
@@ -41,7 +43,7 @@ struct HistorySectionView: View {
     /// segments rebuilds this view — `sectionContent.id(section)` — so filters clear themselves;
     /// pushing into a session detail and coming back deliberately keeps them.
     private var activeFilterCount: Int {
-        sourceFilter.count + kindFilter.count + (effectiveFilter == nil ? 0 : 1)
+        sourceFilter.count + kindFilter.count + (effectiveFilter == nil ? 0 : 1) + (dateRange.wrappedValue == nil ? 0 : 1)
     }
     private var isFiltering: Bool { activeFilterCount > 0 }
 
@@ -54,6 +56,9 @@ struct HistorySectionView: View {
 
     private var activeTokens: [FilterToken] {
         var out: [FilterToken] = []
+        if let range = dateRange.wrappedValue {
+            out.append(FilterToken(id: "date", label: range.label) { dateRange.wrappedValue = nil })
+        }
         for source in HistorySource.allCases where sourceFilter.contains(source) {
             out.append(FilterToken(id: "source.\(source.rawValue)", label: source.title) {
                 sourceFilter.remove(source)
@@ -92,6 +97,7 @@ struct HistorySectionView: View {
         sourceFilter = []
         routineFilter = nil
         kindFilter = []
+        dateRange.wrappedValue = nil
     }
 
     /// Everything, newest first — the list this screen actually shows. Imports used to live in a
@@ -113,8 +119,10 @@ struct HistorySectionView: View {
         HistorySearch.effectiveRoutine(filter: routineFilter, names: routineNames)
     }
     private var filtered: [WorkoutSession] {
-        HistorySearch.apply(allSessions, query: query, routine: effectiveFilter,
-                            kinds: kindFilter, sources: sourceFilter)
+        let matched = HistorySearch.apply(allSessions, query: query, routine: effectiveFilter,
+                                          kinds: kindFilter, sources: sourceFilter)
+        guard let range = dateRange.wrappedValue else { return matched }
+        return matched.filter { range.contains($0.startedAt) }
     }
     /// Chips cover every name in the merged list — an imported "Climbing" is as filterable as a
     /// tracked "Pre climb warmup".

@@ -365,28 +365,32 @@ struct HomeDashboardView: View {
 
     private var activityFeed: some View {
         let titles = moduleTitles
-        return VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
-            Text("Recent activity").font(.headline)
-            ForEach(records.prefix(12)) { r in
+        // Back-to-back repeats ("Opened Kilter Board" ×5) collapse into one row (prompt 212).
+        let runs = FeedRuns.collapse(Array(records.prefix(60)), limit: 8) { "\($0.module)|\($0.summary)" }
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Recent activity").snappetLabel().padding(.bottom, 4)
+            ForEach(Array(runs.enumerated()), id: \.element.first.id) { i, run in
+                let r = run.first
                 VStack(spacing: 0) {
+                    if i > 0 { Divider().overlay(SnappetColor.hairline) }
                     if let title = titles[r.module] {
                         // Feed rows deep-link into their module (#71).
                         Button {
                             router.open(module: r.module)
                         } label: {
-                            FeedRow(record: r, moduleTitle: title, tappable: true)
+                            FeedRow(record: r, count: run.count, moduleTitle: title, tappable: true)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("home.feedRow.\(r.module)")
                     } else {
-                        FeedRow(record: r, moduleTitle: nil, tappable: false)
+                        FeedRow(record: r, count: run.count, moduleTitle: nil, tappable: false)
                     }
-                    Divider()
                 }
                 // New rows slide + fade in (issue #30 §5.2).
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .snappetPanel()
         .snappetAnimation(SnappetMotion.standard, value: records.count)
     }
 
@@ -397,32 +401,52 @@ struct HomeDashboardView: View {
     }
 }
 
+/// Collapses back-to-back items with the same key into one run (newest first), keeping at most `limit` runs.
+enum FeedRuns {
+    static func collapse<T>(_ items: [T], limit: Int, key: (T) -> String) -> [(first: T, count: Int)] {
+        var out: [(first: T, count: Int)] = []
+        var lastKey: String?
+        for item in items {
+            let k = key(item)
+            if k == lastKey, !out.isEmpty {
+                out[out.count - 1].count += 1
+            } else {
+                if out.count == limit { break }
+                out.append((item, 1))
+                lastKey = k
+            }
+        }
+        return out
+    }
+}
+
 /// One activity-feed line. Tappable rows get a trailing chevron so the affordance is visible.
 private struct FeedRow: View {
     let record: UsageRecord
+    /// How many back-to-back times this happened (shown as "×3").
+    var count = 1
     /// The module's display title (from the registry); `nil` (retired/unknown id) falls back to
     /// the capitalized raw id — ids are persisted and never renamed (#74), titles are.
     let moduleTitle: String?
     let tappable: Bool
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(record.summary).font(.subheadline)
-                    .foregroundStyle(SnappetColor.ink)
-                Text(moduleTitle ?? record.module.capitalized).font(.caption)
-                    .foregroundStyle(SnappetColor.textSecondary)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(record.summary + (count > 1 ? "  ×\(count)" : "")).font(SnappetType.body)
+                    .foregroundStyle(SnappetColor.ink).lineLimit(1)
+                Text(moduleTitle ?? record.module.capitalized).snappetDetail()
             }
             Spacer()
             Text(record.timestamp, format: .relative(presentation: .numeric))
-                .font(.caption).foregroundStyle(.tertiary)
+                .font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
             if tappable {
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SnappetColor.textTertiary)
             }
         }
-        .padding(.vertical, SnappetSpacing.xs)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
     }
 }
