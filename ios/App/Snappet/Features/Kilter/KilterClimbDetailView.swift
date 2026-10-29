@@ -46,6 +46,11 @@ struct KilterClimbDetailView: View {
     /// The user's physical board size (`product_size_id`). Drives which LED map is sent — the wrong
     /// size lights shifted/incorrect holds. Seeded to the layout's default on load, then user-chosen.
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
+    /// "Light climbs automatically" (Kilter Settings), OFF by default (user, 2026-10-29): only the button / pill light.
+    @AppStorage(KilterAutoLight.defaultsKey) private var autoLight = false
+    /// The climb you last lit on this screen — a reconnect / size fix re-sends it even with auto-light off.
+    @State private var litClimbUUID: String?
+    private var litByYou: Bool { litClimbUUID != nil && litClimbUUID == climb?.uuid }
     /// Reveals the "wrong holds?" fixups (board size + protocol) under the connected controls (hidden
     /// until the user hits the escape hatch, so the common path stays uncluttered).
     @State private var showingProtocolFix = false
@@ -179,7 +184,9 @@ struct KilterClimbDetailView: View {
         // silently dropped from the history. The shared upsert is idempotent per climb+session, so this
         // and the other light sites overlapping for the same climb only bump one row, never duplicate it.
         .onChange(of: board.isConnected) { _, connected in
-            if connected { illuminateAndCapture() }
+            if connected, KilterAutoLight.shouldLight(.boardConnected, automatic: autoLight, litByYou: litByYou) {
+                illuminateAndCapture()
+            }
         }
         // A board-size change (from the browse chip, Settings, or the inline "wrong holds?" fix) remaps
         // every LED *and* reshapes the on-screen board — each size shows a different physical hole set —
@@ -191,7 +198,9 @@ struct KilterClimbDetailView: View {
             guard let c = climb else { return }
             holds = catalog.holds(for: c, sizeId: productSizeId)
             geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
-            if board.canLight { illuminateAndCapture() }
+            if board.canLight, KilterAutoLight.shouldLight(.boardSizeChanged, automatic: autoLight, litByYou: litByYou) {
+                illuminateAndCapture()
+            }
         }
         .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
         .kilterBoardChooser(board: board, catalog: catalog, layoutId: climb?.layoutId ?? activeLayoutId,
@@ -911,7 +920,10 @@ struct KilterClimbDetailView: View {
         // swiping to a climb with a board on the wall lights it for real, so it counts as worked and is
         // captured for On the Board (prompt 121). Only fires with a board connected, so browsing on the
         // simulator (no wall-light) records nothing.
-        if board.canLight { illuminateAndCapture() }   // a released board reconnects to light it (prompt 207)
+        // Opening / swiping lights it only with "Light climbs automatically" on (a released board reconnects, 207).
+        if board.canLight, KilterAutoLight.shouldLight(.openOrSwipe, automatic: autoLight, litByYou: litByYou) {
+            illuminateAndCapture()
+        }
         // Mark this climb as the one being worked, for per-climb timing + the HUD / Live Activity.
         if sessions.isActive, let c = climb {
             let g = stats.first { $0.angle == selectedAngle }.map { catalog.gradeLabel($0.difficulty) } ?? ""
@@ -1037,6 +1049,7 @@ struct KilterClimbDetailView: View {
     /// `KilterBoardController` (which only sees `[KilterHold]`). The authoring preview (`CreateClimbView`)
     /// is intentionally NOT routed through this, so design previews don't pollute the worked-climbs history.
     private func illuminateAndCapture() {
+        litClimbUUID = climb?.uuid
         board.illuminate(holds)
         if board.canLight { captureLitEvent() }
     }

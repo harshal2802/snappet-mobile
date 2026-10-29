@@ -63,3 +63,23 @@ final class KilterBoardSharingTests: XCTestCase {
         XCTAssertEqual(KilterBoardSharing.setting(for: decoded), .default)
     }
 }
+
+/// 2026-10-29: "a setting to only light the climb on tapping the button".
+final class KilterAutoLightTests: XCTestCase {
+    func testAutomaticLightsOnEveryTrigger() {
+        for t in [KilterAutoLight.Trigger.openOrSwipe, .boardConnected, .boardSizeChanged] {
+            XCTAssertTrue(KilterAutoLight.shouldLight(t, automatic: true, litByYou: false))
+        }
+    }
+
+    func testManualNeverLightsOnSwipeButKeepsYourLitClimbRight() {
+        XCTAssertFalse(KilterAutoLight.shouldLight(.openOrSwipe, automatic: false, litByYou: true),
+                       "swiping never lights with auto-light off")
+        XCTAssertFalse(KilterAutoLight.shouldLight(.boardConnected, automatic: false, litByYou: false))
+        XCTAssertTrue(KilterAutoLight.shouldLight(.boardConnected, automatic: false, litByYou: true),
+                      "a reconnect re-sends the climb you lit")
+        XCTAssertTrue(KilterAutoLight.shouldLight(.boardSizeChanged, automatic: false, litByYou: true),
+                      "the wrong-holds size fix re-lights what you lit")
+        XCTAssertFalse(KilterAutoLight.shouldLight(.boardSizeChanged, automatic: false, litByYou: false))
+    }
+}

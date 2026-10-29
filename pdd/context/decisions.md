@@ -10299,3 +10299,9 @@ stripes, and the panel read as an opaque slab.
   renormalized (warm-ups → sends → projects) after every edit, so "next up" (lowest-order pending) stays sensible.
 - An added climb mid-session is filed by grade vs the plan's working grade (+ its grade offset); duplicates are
   refused (a climb is in a plan once).
+
+## 2026-10-29 — Light Kilter climbs only when asked (prompt 210)
+
+- "Light climbs automatically" defaults OFF (the user's call): lighting is explicit unless switched on. With it
+  off, a connect or a board-size fix still re-sends the climb the user lit on this screen — otherwise a reconnect
+  (board sharing, 207) or a "wrong holds?" size fix would leave the wall showing nothing / the wrong holds.
