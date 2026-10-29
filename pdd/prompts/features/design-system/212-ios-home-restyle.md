@@ -33,4 +33,5 @@ one card style, regular weights, one accent — where every element opens the sc
       day bar → that day; Streak → buddy; win → session; milestone → routine/session. Today → routine runs only on a
       seeded planned weekday (skips otherwise). `ProgressionUITests` still green.
 - [x] Light + dark screenshots reviewed.
-- [ ] Device: scroll smoothness and every link on the real history.
+- [x] Device: Home scrolls smoothly on MrRobot (user, 2026-10-29).
+- [ ] Device: every link on the real history.
