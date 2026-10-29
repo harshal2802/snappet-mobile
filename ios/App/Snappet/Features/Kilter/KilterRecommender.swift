@@ -241,7 +241,9 @@ enum KilterRecommender {
             take(bands: warmupBands, count: alloc.warmup - warmupsTaken, goal: .warmup, allowSent: true)
         }
         // Sends sit at the working grade; chase un-sent ones unless sent climbs are welcome.
-        take(bands: [[w], [w - 1]], count: alloc.send, goal: .send, allowSent: allowSent)
+        // A long session (up to 30, 2026-10-28) can exhaust the working grade and the one below — spill a touch
+        // above rather than come back short.
+        take(bands: [[w], [w - 1], [w + 1]], count: alloc.send, goal: .send, allowSent: allowSent)
         // "Projects first" (prompt 208): the climber's open projects (tried, never sent at any angle) near the
         // working grade take the project slots, most recently tried first; new climbs fill the rest.
         var projectSlots = alloc.project
@@ -258,7 +260,7 @@ enum KilterRecommender {
             }
         }
         // A project a touch above.
-        take(bands: [[w + 1], [w + 2]], count: projectSlots, goal: .project, allowSent: allowSent)
+        take(bands: [[w + 1], [w + 2], [w + 3]], count: projectSlots, goal: .project, allowSent: allowSent)
 
         // Order: warm-up → send → project, each easiest→hardest, stable by uuid.
         let order: [Goal] = [.warmup, .send, .project]

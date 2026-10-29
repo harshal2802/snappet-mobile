@@ -383,7 +383,8 @@ struct KilterPlanView: View {
         let anchor = (working ?? median) + Double(planGradeOffset)
         let window = KilterRecommender.candidateWindow(anchor: anchor)
         let candidates = catalog.list(layoutId: layoutId, angle: angle,
-                                      minDifficulty: window.min, maxDifficulty: window.max, limit: 200)
+                                      minDifficulty: window.min, maxDifficulty: window.max,
+                                      limit: max(200, planTargetCount * 25))   // a 30-climb plan needs a deeper pool
 
         let options = KilterRecommender.Options(
             targetCount: planTargetCount, sendThreshold: 2, climbChoice: planClimbChoice,

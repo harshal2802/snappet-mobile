@@ -10258,3 +10258,6 @@ stripes, and the panel read as an opaque slab.
   6c, bph52, led a "New climbs only" plan — warm-ups had always allowed sends, which the label didn't say). A sent
   climb fills a warm-up only when the warm-up grades have no new ones left, and every plan row carries the same
   ✓ Sent / ◐ tries badge as browse, so it's never a surprise. "Include sent" is unchanged.
+- Plan session length goes to 30 (was 3…12 — an arbitrary stepper range; user asked). So a long session isn't
+  silently short, sends spill one grade above the working grade and projects one more grade up when their bands
+  run dry, and the candidate pool scales with the length (max(200, 25 × climbs)).

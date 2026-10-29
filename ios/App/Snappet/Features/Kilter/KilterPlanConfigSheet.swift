@@ -42,7 +42,7 @@ struct KilterPlanConfigSheet: View {
                 }
 
                 Section("Fine-tune") {
-                    Stepper("Session length: \(targetCount) climbs", value: $targetCount, in: 3...12)
+                    Stepper("Session length: \(targetCount) climbs", value: $targetCount, in: 3...30)
                         .accessibilityIdentifier("kilter.plan.lengthStepper")
                     Stepper("Target grade: \(offsetLabel)", value: $gradeOffset, in: -3...3)
                 }

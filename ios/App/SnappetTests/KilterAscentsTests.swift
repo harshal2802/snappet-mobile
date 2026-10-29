@@ -113,4 +113,14 @@ final class KilterAscentsTests: XCTestCase {
                                                               mix: .init(warmup: 2, send: 3, project: 1)))
         XCTAssertEqual(incl.picks.filter { $0.goal == .warmup }.count, 2)
     }
+
+    /// Session length goes up to 30 (user, 2026-10-28) — the plan builder fills it from a big enough pool.
+    func testA30ClimbSessionIsFilled() {
+        let history = [climbLog("s1", 20, .sent), climbLog("s2", 20, .sent)]
+        let pool = (14...24).flatMap { d in (0..<8).map { item("c\(d)-\($0)", Double(d)) } }
+        let plan = KilterRecommender.recommend(history: history, candidates: pool, anchor: 20,
+                                               options: .init(targetCount: 30, climbChoice: .newOnly))
+        XCTAssertEqual(plan.picks.count, 30)
+        XCTAssertEqual(Set(plan.picks.map(\.item.uuid)).count, 30, "no climb twice")
+    }
 }
