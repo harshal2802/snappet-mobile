@@ -46,8 +46,8 @@ struct KilterClimbDetailView: View {
     /// The user's physical board size (`product_size_id`). Drives which LED map is sent — the wrong
     /// size lights shifted/incorrect holds. Seeded to the layout's default on load, then user-chosen.
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
-    /// "Light climbs automatically" (Kilter Settings). Off = only the button / pill light the board.
-    @AppStorage(KilterAutoLight.defaultsKey) private var autoLight = true
+    /// "Light climbs automatically" (Kilter Settings), OFF by default (user, 2026-10-29): only the button / pill light.
+    @AppStorage(KilterAutoLight.defaultsKey) private var autoLight = false
     /// The climb you last lit on this screen — a reconnect / size fix re-sends it even with auto-light off.
     @State private var litClimbUUID: String?
     private var litByYou: Bool { litClimbUUID != nil && litClimbUUID == climb?.uuid }

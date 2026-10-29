@@ -10302,6 +10302,6 @@ stripes, and the panel read as an opaque slab.
 
 ## 2026-10-29 — Light Kilter climbs only when asked (prompt 210)
 
-- "Light climbs automatically" defaults ON (no change for anyone who likes it); off makes lighting explicit. With it
+- "Light climbs automatically" defaults OFF (the user's call): lighting is explicit unless switched on. With it
   off, a connect or a board-size fix still re-sends the climb the user lit on this screen — otherwise a reconnect
   (board sharing, 207) or a "wrong holds?" size fix would leave the wall showing nothing / the wrong holds.

@@ -12,7 +12,7 @@ automatically lights the climb — can we have a setting where we only light the
 
 ## Approach
 
-- Kilter Settings → Lighting: **Light climbs automatically** (on by default — the existing behaviour).
+- Kilter Settings → Lighting: **Light climbs automatically**, OFF by default (user: "by default keep that flag turned off"); on restores auto-lighting.
 - Off: opening or swiping to a climb never lights it; only **Light up this climb** and the board pill do. A board
   connect / reconnect or a board-size ("wrong holds?") fix re-sends a climb only if you lit it on this screen, so
   those still show the right holds.
