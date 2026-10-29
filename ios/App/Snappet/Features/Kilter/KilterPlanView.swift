@@ -269,7 +269,7 @@ struct KilterPlanView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     // The whole log feeds the plan — not a window of recent climbs ("your last 20" read like a cut-off).
-                    Text(Self.historyLine(ascentIndex))
+                    Text(Self.historyLine(ascentIndex, choice: planClimbChoice))
                         .font(.subheadline)
                     Spacer()
                     if !preview.isEmpty {
@@ -319,13 +319,15 @@ struct KilterPlanView: View {
         }
     }
 
-    /// "Based on your whole log — 16 climbs: 9 sent, 7 projects." Distinct climbs, not log entries; the same
-    /// numbers as the browse chips (Sent / Projects).
-    static func historyLine(_ index: KilterAscentIndex) -> String {
+    /// "16 climbs logged — 9 sent (excluded), 7 projects (included)": the whole log in distinct climbs, and how the
+    /// current "Climbs to pick" treats each group (user asked for it spelled out, 2026-10-28). Same counts as the
+    /// browse chips.
+    static func historyLine(_ index: KilterAscentIndex, choice: KilterPlanClimbChoice) -> String {
         let climbs = index.loggedUUIDs.count, sent = index.sentUUIDs.count, projects = index.projectUUIDs.count
         guard climbs > 0 else { return "No climbs logged yet — starting from the catalog." }
-        return "Based on your whole log — \(climbs) climb\(climbs == 1 ? "" : "s"): \(sent) sent, "
-            + "\(projects) project\(projects == 1 ? "" : "s")."
+        let sentPart = "\(sent) sent (\(choice.allowsSent ? "included" : "excluded"))"
+        let projectPart = "\(projects) project\(projects == 1 ? "" : "s") (\(choice == .projectsFirst ? "picked first" : "included"))"
+        return "\(climbs) climb\(climbs == 1 ? "" : "s") logged — \(sentPart), \(projectPart)"
     }
 
     /// The climber's log per climb (prompt 208) — so a sent warm-up or a project reads as such in the preview.

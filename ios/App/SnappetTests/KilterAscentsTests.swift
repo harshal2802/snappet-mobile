@@ -128,7 +128,13 @@ final class KilterAscentsTests: XCTestCase {
     /// entries that sounded like a cut-off window).
     func testPlanHistoryLineCountsDistinctClimbs() {
         let index = KilterAscentIndex([log("a", .sent), log("a", .sent), log("b", .attempt), log("c", .flash)])
-        XCTAssertEqual(KilterPlanView.historyLine(index), "Based on your whole log — 3 climbs: 2 sent, 1 project.")
-        XCTAssertEqual(KilterPlanView.historyLine(KilterAscentIndex([])), "No climbs logged yet — starting from the catalog.")
+        XCTAssertEqual(KilterPlanView.historyLine(index, choice: .newOnly),
+                       "3 climbs logged — 2 sent (excluded), 1 project (included)")
+        XCTAssertEqual(KilterPlanView.historyLine(index, choice: .includeSent),
+                       "3 climbs logged — 2 sent (included), 1 project (included)")
+        XCTAssertEqual(KilterPlanView.historyLine(index, choice: .projectsFirst),
+                       "3 climbs logged — 2 sent (excluded), 1 project (picked first)")
+        XCTAssertEqual(KilterPlanView.historyLine(KilterAscentIndex([]), choice: .newOnly),
+                       "No climbs logged yet — starting from the catalog.")
     }
 }
