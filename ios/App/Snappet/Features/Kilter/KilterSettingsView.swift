@@ -39,6 +39,7 @@ struct KilterSettingsView: View {
     /// The board being renamed (drives the rename alert).
     @State private var renaming: (id: UUID, label: String)?
     @State private var renameText = ""
+    @State private var showingBoardPhoto = false
 
     // Catalog library management (download / import / switch active / remove).
     @State private var installer = KilterCatalogInstaller()
@@ -67,6 +68,24 @@ struct KilterSettingsView: View {
                 Text("Defaults")
             } footer: {
                 Text("Used when you open the Kilter Board. Set your board size so the right holds light up.")
+            }
+
+            // Prompt 215: your own photo of the board behind the holds (per layout + size, on this phone).
+            Section {
+                let has = KilterBoardPhotoStore.shared.entry(layoutId: layoutId, sizeId: productSizeId, boardID: nil) != nil
+                Button { showingBoardPhoto = true } label: {
+                    LabeledContent {
+                        Text(has ? "Change" : "Add").foregroundStyle(SnappetColor.brand)
+                    } label: {
+                        Label(has ? "Board photo" : "Add a photo of your board", systemImage: "camera")
+                    }
+                }
+                .foregroundStyle(SnappetColor.ink)
+                .accessibilityIdentifier("kilter.settings.boardPhoto")
+            } header: {
+                Text("Board photo")
+            } footer: {
+                Text("Shows your real wall behind the holds on every climb, for this board size. Stays on this phone.")
             }
 
             Section("Grades") {
@@ -240,6 +259,12 @@ struct KilterSettingsView: View {
                 Text("Removes all \(entries.count) logged ascents and \(sessions.count) sessions. "
                      + "Saved climbs are kept.")
             }
+        }
+        // Presented from the Form (not inside a Section — a lazy row can drop a sheet on re-render).
+        .sheet(isPresented: $showingBoardPhoto) {
+            KilterBoardPhotoSheet(layoutId: layoutId, sizeId: productSizeId, boardID: nil,
+                                  boardName: "your board",
+                                  geometry: catalog.boardGeometry(forLayout: layoutId, sizeId: productSizeId))
         }
         .navigationTitle("Kilter Settings")
         .navigationBarTitleDisplayMode(.inline)

@@ -10368,3 +10368,18 @@ stripes, and the panel read as an opaque slab.
   (below the tightened domain), so bars overflowed and the Beta link drew over the chart.
 - **Board photo deferred.** A photo of your own board (option 1, user's pick over Aurora images, which reverse the
   June decision) is a separate PR.
+
+## 2026-10-29 — Your own board photo behind the holds (prompt 215)
+
+- **Option 1 (the user's pick): the climber's own photo, never Aurora's.** This keeps the 2026-06 rule that no
+  Aurora board images are shipped or fetched.
+- **Alignment is the four corner holds, not a full calibration.** The hole area is what `KilterBoardGeometry`
+  normalizes to 0…1. Mapping the tapped corners to it, with a 6 % margin kept on every side, lets the existing
+  renderer draw holds unchanged on top. The view grows the hole-area rect by the same margin, so photo and holes
+  can't drift. Both sides of that contract are unit-tested.
+- **The correction is approximate.** Bilinear extrapolation of the margin approximates perspective. It is exact
+  inside the corners, and the error lands only in the thin margin.
+- **Keyed by layout + size, preferring the connected board.** Browsing at home with nothing connected still shows
+  a photo. Two gyms with the same size each keep their own photo (per board id).
+- **Stored on this phone only.** Board photos are not in the backup yet: they're re-takeable, and adding JPEGs to
+  the backup format is a separate change.

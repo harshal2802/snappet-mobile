@@ -15,6 +15,10 @@ struct KilterBoardView: View {
     let holds: [KilterHold]
     /// When true (illumination preview), holds glow filled on a dark board.
     var lit: Bool = false
+    /// Your own straightened photo of this board (prompt 215), drawn behind the holds.
+    var photo: UIImage? = nil
+    /// The photo's line-up check: draw every hole as a small accent dot over the photo.
+    var showsGridOverPhoto = false
 
     var body: some View {
         Canvas { ctx, size in
@@ -26,10 +30,17 @@ struct KilterBoardView: View {
                 CGPoint(x: r + x * (size.width - holdD), y: r + y * (size.height - holdD))
             }
 
-            // 1) The faint full hold grid — board context.
-            let gridColor: Color = lit ? .white.opacity(0.10) : .gray.opacity(0.28)
-            let gd = holdD * 0.32
-            for p in geometry.grid {
+            // 0) Your photo: the straightened image maps the hole area to pt(0,0)…pt(1,1), plus its margin.
+            if let photo {
+                let area = CGRect(origin: pt(0, 0), size: CGSize(width: size.width - holdD, height: size.height - holdD))
+                ctx.draw(Image(uiImage: photo), in: KilterBoardPhotoMath.photoRect(holeArea: area))
+            }
+
+            // 1) The faint full hold grid — board context (the photo shows the real holes instead).
+            let gridColor: Color = photo != nil ? SnappetColor.brand.opacity(0.9)
+                : lit ? .white.opacity(0.10) : .gray.opacity(0.28)
+            let gd = holdD * (photo != nil ? 0.22 : 0.32)
+            for p in (photo == nil || showsGridOverPhoto) ? geometry.grid : [] {
                 let c = pt(p.x, p.y)
                 ctx.fill(Path(ellipseIn: CGRect(x: c.x - gd / 2, y: c.y - gd / 2, width: gd, height: gd)),
                          with: .color(gridColor))
@@ -50,6 +61,11 @@ struct KilterBoardView: View {
                               with: .color(color.opacity(0.8)))
                     ctx.fill(Self.holdPath(shape, in: rect), with: .color(color))
                 } else {
+                    if photo != nil {
+                        // A dark halo so the role colour reads on a busy wall.
+                        ctx.stroke(Self.holdPath(shape, in: rect), with: .color(.black.opacity(0.55)),
+                                   style: StrokeStyle(lineWidth: max(2.5, d * 0.17) + 2.5, lineJoin: .round))
+                    }
                     ctx.stroke(Self.holdPath(shape, in: rect), with: .color(color),
                                style: StrokeStyle(lineWidth: max(2.5, d * 0.17), lineJoin: .round))
                 }
@@ -103,7 +119,9 @@ struct KilterBoardView: View {
     }
 
     @ViewBuilder private var boardBackground: some View {
-        if lit {
+        if photo != nil {
+            Color.black
+        } else if lit {
             LinearGradient(colors: [Color(red: 0.06, green: 0.06, blue: 0.08), .black],
                            startPoint: .top, endPoint: .bottom)
         } else {

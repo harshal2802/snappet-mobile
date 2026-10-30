@@ -96,6 +96,13 @@ struct KilterClimbDetailView: View {
     @State private var showingTagClips = false
     @State private var findingClips = false
     @State private var clipStudio: ClimbClipStudio?
+    /// Prompt 215: your own photo of this board behind the holds, and its setup sheet.
+    @State private var showingBoardPhoto = false
+    private var photoBoardID: UUID? { board.connectedIdentifier ?? board.releasedBoardID }
+    private var boardPhoto: UIImage? {
+        guard let climb else { return nil }
+        return KilterBoardPhotoStore.shared.image(layoutId: climb.layoutId, sizeId: productSizeId, boardID: photoBoardID)
+    }
 
     private struct ClimbClipStudio: Identifiable {
         let id = UUID()
@@ -158,6 +165,13 @@ struct KilterClimbDetailView: View {
         }
         .task(id: currentUUID) { clipCount = countClips(currentUUID); reloadSessionClips() }
         .onChange(of: sessions.currentId) { reloadSessionClips() }
+        .sheet(isPresented: $showingBoardPhoto) {
+            if let climb {
+                KilterBoardPhotoSheet(layoutId: climb.layoutId, sizeId: productSizeId, boardID: photoBoardID,
+                                      boardName: sharedBoardLabel ?? "your board", geometry: geometry,
+                                      sampleHolds: holds)
+            }
+        }
         .sheet(isPresented: $showingTagClips, onDismiss: reloadSessionClips) {
             KilterTagClipsSheet(climbUUID: currentUUID, climbName: climb?.name ?? "this climb",
                                 media: sessionClips, climbNames: sessionClimbNames, onFindNew: findNewClips)
@@ -336,8 +350,21 @@ struct KilterClimbDetailView: View {
         let hasPrev = index.map { $0 > 0 } ?? false
         let hasNext = index.map { $0 < siblings.count - 1 } ?? false
         return VStack(spacing: 8) {
-            KilterBoardView(geometry: geometry, holds: holds)
+            KilterBoardView(geometry: geometry, holds: holds, photo: boardPhoto)
                 .frame(maxHeight: 380)
+                .overlay(alignment: .topLeading) {
+                    if boardPhoto != nil {
+                        Button { showingBoardPhoto = true } label: {
+                            Label("Your photo", systemImage: "camera.fill")
+                                .font(.caption.weight(.medium)).foregroundStyle(SnappetColor.textSecondary)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(8)
+                        .accessibilityIdentifier("kilter.boardPhoto.chip")
+                    }
+                }
                 // Connection state where the eye already is (UX feedback "connecting to the board was
                 // hard to see": the only Connect control sat 8 blocks down this scroll).
                 .overlay(alignment: .topTrailing) { boardStatusPill.padding(8) }
@@ -797,6 +824,8 @@ struct KilterClimbDetailView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Button("Set up this board ›") { showingBoardSetup = true }
                             .accessibilityIdentifier("kilter.board.setup")
+                        Button(boardPhoto == nil ? "Add a photo of this board ›" : "Board photo ›") { showingBoardPhoto = true }
+                            .accessibilityIdentifier("kilter.boardPhoto.open")
                         wrongHoldsControl
                         Button("Disconnect board") { board.disconnect() }
                             .foregroundStyle(SnappetColor.textSecondary)
