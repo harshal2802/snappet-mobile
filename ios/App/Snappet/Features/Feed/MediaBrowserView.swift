@@ -164,7 +164,8 @@ struct ClipThumbnail: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                LinearGradient(colors: [SnappetColor.kilter.opacity(0.5), .black], startPoint: .top, endPoint: .bottom)
+                // Neutral while the poster loads (prompt 216; was a Kilter-amber wash on every post).
+                LinearGradient(colors: [SnappetColor.surfaceMuted, SnappetColor.surface], startPoint: .top, endPoint: .bottom)
             }
             Image(systemName: kind == "video" ? "play.circle.fill" : "photo")
                 .font(.title2).foregroundStyle(.white.opacity(0.9))

@@ -7,8 +7,6 @@ struct ClipAlbumCard: View {
     let album: ClipFeedAlbum
     let unit: WeightUnit
 
-    private var accent: Color { album.discipline.accent }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
@@ -21,7 +19,7 @@ struct ClipAlbumCard: View {
                 if let gain = ClipFeedLevels.gain(album, unit: unit) {
                     (Text("Then vs Now · ").foregroundStyle(SnappetColor.ink)
                      + Text(gain).foregroundStyle(SnappetColor.perfFresh))
-                        .font(.subheadline.weight(.bold))
+                        .font(.system(size: 14.5, weight: .medium))
                         .padding(.horizontal, SnappetSpacing.lg)
                         .accessibilityIdentifier("clips.album.gain")
                 }
@@ -31,12 +29,12 @@ struct ClipAlbumCard: View {
             timeline
             HStack(spacing: 16) {
                 NavigationLink(value: ActivityRoute(key: album.key, title: album.title)) {
-                    Text("Open \(album.title) ›").font(.caption.weight(.semibold)).foregroundStyle(accent)
+                    Text("Open \(album.title) ›").font(SnappetType.detail).foregroundStyle(SnappetColor.brand)
                 }
                 .accessibilityIdentifier("clips.album.open")
                 if let reel = reelScope {
                     NavigationLink(value: reel) {
-                        Label("Progress reel", systemImage: "sparkles").font(.caption.weight(.semibold))
+                        Label("Progress reel", systemImage: "sparkles").font(SnappetType.detail)
                             .foregroundStyle(SnappetColor.reels)
                     }
                     .accessibilityIdentifier("clips.album.reel")
@@ -53,16 +51,15 @@ struct ClipAlbumCard: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: album.discipline.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 38, height: 38)
-                .background(accent.opacity(0.16), in: Circle())
-                .overlay(Circle().strokeBorder(accent, lineWidth: 1.5))
+                .font(.system(size: 15))
+                .foregroundStyle(SnappetColor.ink)
+                .frame(width: 36, height: 36)
+                .background(SnappetColor.surfaceMuted, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
-                Text(album.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                Text(album.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     .accessibilityIdentifier("clips.album.title")
                 Text("\(album.clipCount) \(album.clipCount == 1 ? "clip" : "clips") · \(album.sessionCount) \(album.sessionCount == 1 ? "session" : "sessions") · since \(album.since.formatted(.dateTime.day().month(.abbreviated)))")
-                    .font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                    .snappetLabel().lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -84,8 +81,8 @@ struct ClipAlbumCard: View {
                     Rectangle().fill(SnappetColor.surface).frame(height: 190)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    if let caption { Text(caption.uppercased()).font(.system(size: 9, weight: .heavy)).opacity(0.8) }
-                    Text(line).font(.caption2.weight(.bold)).lineLimit(1)
+                    if let caption { Text(caption).font(.system(size: 10.5)).opacity(0.8) }
+                    Text(line).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
                 }
                 .foregroundStyle(.white)
                 .padding(7)

@@ -441,7 +441,7 @@ struct ClipsGridView: View {
 
     @ViewBuilder private func badges(_ post: ClipFeedPost) -> some View {
         HStack(spacing: 3) {
-            if post.isReel { badge("✦ REEL", fg: Color(red: 0.16, green: 0.04, blue: 0.02), bg: SnappetColor.reels) }
+            if post.isReel { badge("✦ REEL", fg: SnappetColor.onBrand, bg: SnappetColor.reels) }
             if let r = post.climbResult, r.status.isSend {
                 badge(r.status.label.uppercased(), fg: .white, bg: KilterAscentStyle.color(r.status))
             }

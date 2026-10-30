@@ -10383,3 +10383,15 @@ stripes, and the panel read as an opaque slab.
   a photo. Two gyms with the same size each keep their own photo (per board id).
 - **Stored on this phone only.** Board photos are not in the backup yet: they're re-takeable, and adding JPEGs to
   the backup format is a separate change.
+
+## 2026-10-29 — Design-system reset, step 3c: Clips feed (prompt 216)
+
+- **Reels use the user's accent.** The user's call ("use accent for reels too"). `SnappetColor.reels` is an alias
+  of `brand` rather than replaced at ~30 call sites, so any future reel UI follows automatically.
+- **Per-activity colours leave the chrome.** Avatars, session tiles, filter chips, page dots and placeholders all
+  go neutral or accent. `Discipline.accent` still exists for content that needs identity (feed cards, story
+  scenes). Meaning colours stay: sent green, project amber, ♥ HR red, ★ PR green.
+- **The pill is shared.** `snappetPill` moved out of Kilter into the design system and now serves both Kilter and
+  Clips.
+- **Autoplay keeps its word label.** The mockup drew it as an icon, but prompt 166 made it a labelled control
+  because the bare glyph didn't read as autoplay. That learning wins; it's restyled as a pill.

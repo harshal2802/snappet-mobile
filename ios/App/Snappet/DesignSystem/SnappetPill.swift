@@ -1,10 +1,10 @@
 import SwiftUI
 
-// MARK: - Pills (prompt 213)
+// MARK: - Pills (prompt 213; shared app-wide since 216)
 
-/// The calm chip of the restyled Kilter screens: hairline outline, the accent (or a meaning `tint`) only when
+/// The calm chip of the restyled screens (Kilter, Clips): hairline outline, the accent (or a meaning `tint`) only when
 /// selected / tinted. Browse chips (213) and the climb page's tags + log buttons (214) share it.
-struct KilterPill: ViewModifier {
+struct SnappetPill: ViewModifier {
     let selected: Bool
     var large = false
     /// A meaning colour for the outline + text (send green, project amber) instead of ink / the accent.
@@ -23,7 +23,7 @@ struct KilterPill: ViewModifier {
 
 extension View {
     /// The calm chip: hairline outline, the accent only when selected (design-system step 3a).
-    func kilterPill(selected: Bool, large: Bool = false, tint: Color? = nil) -> some View {
-        modifier(KilterPill(selected: selected, large: large, tint: tint))
+    func snappetPill(selected: Bool, large: Bool = false, tint: Color? = nil) -> some View {
+        modifier(SnappetPill(selected: selected, large: large, tint: tint))
     }
 }

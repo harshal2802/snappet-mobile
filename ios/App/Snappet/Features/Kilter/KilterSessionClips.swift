@@ -109,7 +109,7 @@ struct KilterTagClipsSheet: View {
                     HStack(spacing: 6) {
                         ForEach(KilterClipTagging.Filter.allCases) { f in
                             Button { filter = f } label: {
-                                Text("\(f.label) \(count(f))").font(.system(size: 13.5)).kilterPill(selected: filter == f)
+                                Text("\(f.label) \(count(f))").font(.system(size: 13.5)).snappetPill(selected: filter == f)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("kilter.tagClips.filter.\(f.rawValue)")
@@ -133,7 +133,7 @@ struct KilterTagClipsSheet: View {
                     } label: {
                         Label(finding ? "Searching…" : "Find new clips in Photos", systemImage: "magnifyingglass")
                             .font(.system(size: 15, weight: .medium)).frame(maxWidth: .infinity)
-                            .kilterPill(selected: false, large: true)
+                            .snappetPill(selected: false, large: true)
                     }
                     .buttonStyle(.plain).disabled(finding)
                     .accessibilityIdentifier("kilter.tagClips.find")

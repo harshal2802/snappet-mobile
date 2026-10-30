@@ -676,7 +676,7 @@ final class ClipGridCoverCell: UICollectionViewCell {
         titleLabel.accessibilityIdentifier = "clips.grid.cell.title"
         durationLabel.style(font: .systemFont(ofSize: 9, weight: .bold), fg: .white,
                             bg: UIColor.black.withAlphaComponent(0.5), radius: 4)
-        reelBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: UIColor(red: 0.16, green: 0.04, blue: 0.02, alpha: 1),
+        reelBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: UIColor(SnappetColor.onBrand),
                         bg: UIColor(SnappetColor.reels), radius: nil)
         reelBadge.text = "✦ REEL"
         sendBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: .white, bg: .clear, radius: nil)

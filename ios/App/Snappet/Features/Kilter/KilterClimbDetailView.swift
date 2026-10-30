@@ -519,7 +519,7 @@ struct KilterClimbDetailView: View {
             }
             .font(.system(size: 13, weight: .medium))
             .padding(.horizontal, -3).padding(.vertical, -2)
-            .kilterPill(selected: true)
+            .snappetPill(selected: true)
         }
         .accessibilityIdentifier("kilter.angle")
     }
@@ -560,10 +560,10 @@ struct KilterClimbDetailView: View {
     @ViewBuilder private var metaRow: some View {
         let isClassic = currentStat?.benchmarkDifficulty != nil
         let match = matchBadge(noMatch: climb?.isNoMatch ?? false)
-        let classic = Label("Classic", systemImage: "rosette").font(.system(size: 12.5)).kilterPill(selected: false)
+        let classic = Label("Classic", systemImage: "rosette").font(.system(size: 12.5)).snappetPill(selected: false)
         let clips = Button { showingClips = true } label: {
             Label("\(clipCount) past \(clipCount == 1 ? "clip" : "clips")", systemImage: "play.rectangle.on.rectangle")
-                .font(.system(size: 12.5)).kilterPill(selected: false)
+                .font(.system(size: 12.5)).snappetPill(selected: false)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("activity.pastClips")
@@ -593,7 +593,7 @@ struct KilterClimbDetailView: View {
                 Image(systemName: "info.circle").font(.system(size: 10))
             }
             .font(.system(size: 12.5))
-            .kilterPill(selected: false, tint: noMatch ? .orange : nil)
+            .snappetPill(selected: false, tint: noMatch ? .orange : nil)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("kilter.matchTag")
@@ -790,7 +790,7 @@ struct KilterClimbDetailView: View {
             Label(status.label, systemImage: image)
                 .font(.system(size: 15, weight: .medium))
                 .frame(maxWidth: .infinity)
-                .kilterPill(selected: false, large: true, tint: status.isSend ? .green : .orange)
+                .snappetPill(selected: false, large: true, tint: status.isSend ? .green : .orange)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("kilter.log.\(status.rawValue)")

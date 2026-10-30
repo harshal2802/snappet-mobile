@@ -88,12 +88,6 @@ struct ClipPostCard: View {
 
     private var caption: ClipCaption { captions.caption(for: post.id) }
 
-    private var accent: Color {
-        // A posted reel reads as a REEL first (reels-coral), whatever session it came from. Otherwise the
-        // post's ACTIVITY (prompt 170) — the ⌚ source badge in the header carries "from your watch".
-        post.isReel ? SnappetColor.reels : post.discipline.accent
-    }
-
     /// Adaptive tile height (prompt 92): the full-bleed card width ÷ the post's clamped aspect, so the
     /// media fills the tile with no letterbox/pillarbox bars. Falls back to a sensible width until measured.
     private var carouselHeight: CGFloat {
@@ -170,20 +164,20 @@ struct ClipPostCard: View {
     // The "yellow circle": session + exercise/climb name; the "red circle": the ⋯ options menu.
     private var header: some View {
         HStack(spacing: 10) {
+            // Prompt 216: a neutral avatar (per-activity colour stays off chrome), medium-weight title.
             Image(systemName: glyph)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 38, height: 38)
-                .background(accent.opacity(0.16), in: Circle())
-                .overlay(Circle().strokeBorder(accent, lineWidth: 1.5))
+                .font(.system(size: 15))
+                .foregroundStyle(SnappetColor.ink)
+                .frame(width: 36, height: 36)
+                .background(SnappetColor.surfaceMuted, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(post.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    Text(post.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     if post.isReel { reelBadge }
                     if let result = post.climbResult, let word = result.badge { outcomeBadge(result.status, word) }
                     if post.isFromAppleWatch { watchSourceBadge }
                 }
-                Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                Text(post.subtitle).snappetLabel().lineLimit(1)
             }
             Spacer(minLength: 8)
             optionsMenu
@@ -191,17 +185,16 @@ struct ClipPostCard: View {
         .padding(.horizontal, SnappetSpacing.lg)
     }
 
-    /// The ✦ REEL chip on a posted highlight reel's header (highlights P2) — reels-coral, the
-    /// same accent as the builder that made it.
+    /// The ✦ Reel tag on a posted highlight reel's header (highlights P2) — the reels colour (the user's accent
+    /// since prompt 216), the same as the builder that made it.
     private var reelBadge: some View {
         HStack(spacing: 3) {
-            Image(systemName: "sparkles").font(.system(size: 9, weight: .bold))
-            Text("REEL").font(.system(size: 9, weight: .bold))
+            Image(systemName: "sparkles").font(.system(size: 9))
+            Text("Reel").font(.system(size: 11))
         }
         .foregroundStyle(SnappetColor.reels)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(SnappetColor.reels.opacity(0.14), in: Capsule())
-        .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.6), lineWidth: 1))
         .accessibilityLabel("Highlight reel")
     }
 
@@ -209,14 +202,12 @@ struct ClipPostCard: View {
     /// session summaries use (`KilterAscentStyle`). A plain attempt gets no badge.
     private func outcomeBadge(_ status: KilterAscentStatus, _ word: String) -> some View {
         let tint = KilterAscentStyle.color(status)
+        // Status as coloured words (prompt 216), not a filled capsule — the colour is the meaning.
         return HStack(spacing: 3) {
-            Image(systemName: KilterAscentStyle.glyph(status)).font(.system(size: 9, weight: .bold))
-            Text(word.uppercased()).font(.system(size: 9, weight: .bold))
+            Image(systemName: KilterAscentStyle.glyph(status)).font(.system(size: 10))
+            Text(word.capitalized).font(.system(size: 12))
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(tint.opacity(0.14), in: Capsule())
-        .overlay(Capsule().strokeBorder(tint.opacity(0.5), lineWidth: 1))
         .fixedSize()
         .accessibilityIdentifier("clips.post.outcome")
         .accessibilityLabel(word)
@@ -225,13 +216,12 @@ struct ClipPostCard: View {
     /// The ⌚ "Apple Watch" source chip on a watch-imported post's header (watch-workouts-clips P3).
     private var watchSourceBadge: some View {
         HStack(spacing: 3) {
-            Image(systemName: "applewatch").font(.system(size: 9, weight: .bold))
-            Text("Apple Watch").font(.system(size: 9, weight: .bold))
+            Image(systemName: "applewatch").font(.system(size: 9))
+            Text("Apple Watch").font(.system(size: 11))
         }
-        .foregroundStyle(SnappetColor.perfFresh)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(SnappetColor.perfFresh.opacity(0.14), in: Capsule())
-        .overlay(Capsule().strokeBorder(SnappetColor.perfFresh.opacity(0.5), lineWidth: 1))
+        .foregroundStyle(SnappetColor.textSecondary)
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
         .accessibilityLabel("From Apple Watch")
     }
 
@@ -239,7 +229,7 @@ struct ClipPostCard: View {
     private var favoriteButton: some View {
         Button { reactions.toggle(post) } label: {
             Image(systemName: reactions.isFavorite(post) ? "heart.fill" : "heart")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 18))
                 .foregroundStyle(reactions.isFavorite(post) ? .red : SnappetColor.ink)
                 .symbolEffect(.bounce, value: reduceMotion ? false : reactions.isFavorite(post))
                 .frame(width: 34, height: 34)
@@ -415,7 +405,7 @@ struct ClipPostCard: View {
             if post.clipCount > 1, post.clipCount <= 8 {
                 HStack(spacing: 5) {
                     ForEach(0..<post.clipCount, id: \.self) { i in
-                        Circle().fill(i == page ? accent : SnappetColor.textSecondary.opacity(0.35))
+                        Circle().fill(i == page ? SnappetColor.brand : SnappetColor.textSecondary.opacity(0.35))
                             .frame(width: 6, height: 6)
                     }
                 }
@@ -452,7 +442,7 @@ struct ClipPostCard: View {
             if let label = currentClip.attemptLabel {
                 let total = post.stats?.setDetail.count ?? 0
                 Text(total > 1 && label.hasPrefix("Set ") ? "\(label) of \(total)" : label)
-                    .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                    .snappetLabel()
                     .accessibilityIdentifier("clips.post.clipSet")
             }
         }
@@ -462,7 +452,7 @@ struct ClipPostCard: View {
     private func iconButton(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 18))
                 .foregroundStyle(SnappetColor.ink)
                 .frame(width: 36, height: 34)
                 .contentShape(Rectangle())
@@ -479,12 +469,12 @@ struct ClipPostCard: View {
             if c.showStats, let stats = post.stats {
                 (Text(stats.line).foregroundStyle(SnappetColor.ink)
                  + Text(ClipPostStats.prText(stats).map { " · \($0)" } ?? "").foregroundStyle(SnappetColor.perfFresh))
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 14.5, weight: .medium))
                     .accessibilityIdentifier("clips.post.stats")
             }
             if !c.text.isEmpty {
                 Text(Self.captionText(c.text))
-                    .font(.subheadline)
+                    .font(SnappetType.body)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("clips.post.captionText")
             } else {
@@ -502,7 +492,7 @@ struct ClipPostCard: View {
             if let stats = post.stats, let key = stats.activityKey, activityClipCount > post.clipCount {
                 NavigationLink(value: ActivityRoute(key: key, title: stats.activityTitle)) {
                     Text("View all \(activityClipCount) \(stats.activityTitle) clips ›")
-                        .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.brand)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("clips.post.viewAll")
@@ -519,10 +509,9 @@ struct ClipPostCard: View {
                 ForEach(post.activityChips, id: \.self) { chip in
                     let on = currentClip.attemptLabel?.hasPrefix(chip.title) == true
                     Button { withAnimation(.easeInOut(duration: 0.2)) { page = chip.firstPage } } label: {
-                        Text("\(chip.title) · \(chip.count)").font(.caption2.weight(.bold))
-                            .foregroundStyle(on ? accent : SnappetColor.textSecondary)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background((on ? accent : SnappetColor.textSecondary).opacity(0.14), in: Capsule())
+                        Text("\(chip.title) · \(chip.count)").font(.system(size: 12))
+                            .padding(.horizontal, -3).padding(.vertical, -2)
+                            .snappetPill(selected: on)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("clips.post.activityChip")
@@ -542,16 +531,15 @@ struct ClipPostCard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     if post.stats?.isPR == true {
-                        Text("★ PR").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.perfFresh)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(SnappetColor.perfFresh.opacity(0.15), in: Capsule())
+                        Text("★ PR").font(.system(size: 12))
+                            .padding(.horizontal, -3).padding(.vertical, -2)
+                            .snappetPill(selected: false, tint: SnappetColor.perfFresh)
                     }
                     ForEach(chips, id: \.page) { chip in
                         Button { withAnimation(.easeInOut(duration: 0.2)) { page = chip.page } } label: {
-                            Text(chip.text).font(.caption2.weight(.bold))
-                                .foregroundStyle(chip.page == page ? accent : SnappetColor.textSecondary)
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                .background((chip.page == page ? accent : SnappetColor.textSecondary).opacity(0.14), in: Capsule())
+                            Text(chip.text).font(.system(size: 12))
+                                .padding(.horizontal, -3).padding(.vertical, -2)
+                                .snappetPill(selected: chip.page == page)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("clips.post.setChip")
@@ -567,7 +555,7 @@ struct ClipPostCard: View {
         let words = text.split(separator: " ", omittingEmptySubsequences: false)
         for (i, w) in words.enumerated() {
             var part = AttributedString(String(w))
-            if w.hasPrefix("#") && w.count > 1 { part.foregroundColor = SnappetColor.budget }
+            if w.hasPrefix("#") && w.count > 1 { part.foregroundColor = SnappetColor.brand }
             out += part
             if i < words.count - 1 { out += AttributedString(" ") }
         }
@@ -577,16 +565,15 @@ struct ClipPostCard: View {
     private var meta: some View {
         HStack(spacing: 8) {
             Text("\(post.clipCount) clip\(post.clipCount == 1 ? "" : "s") · \(post.captureAt.formatted(.relative(presentation: .named)))")
-                .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                .snappetLabel()
             Spacer(minLength: 0)
             // "Tag artist" (prompt 171): a festival clip not matched to a set yet — one tap to the review.
             if let onTagArtist {
                 Button { onTagArtist(currentClip.media.id) } label: {
                     Label("Tag artist", systemImage: "music.mic")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(SnappetColor.festival)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(SnappetColor.festival.opacity(0.14), in: Capsule())
+                        .font(.system(size: 12.5))
+                        .padding(.horizontal, -2).padding(.vertical, -1)
+                        .snappetPill(selected: true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("clips.post.tagArtistButton")

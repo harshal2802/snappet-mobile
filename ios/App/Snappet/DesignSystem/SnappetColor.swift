@@ -57,8 +57,8 @@ enum SnappetColor {
     // screams. The brand coral sits intentionally between Reels and Workout so the
     // fitness flagship reads as the heart of the suite.
 
-    /// Reels — coral (matches the brand pulse).
-    static let reels = dynamic(light: 0xFF5A4D, dark: 0xFF7A6B)
+    /// Reels — the user's accent (prompt 216, user: "use accent for reels too"); was its own coral.
+    static var reels: Color { brand }
     /// Workout — ember-orange.
     static let workout = dynamic(light: 0xF2761E, dark: 0xFF9645)
     /// Pomodoro — tomato.
