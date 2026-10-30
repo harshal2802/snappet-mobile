@@ -10346,3 +10346,25 @@ stripes, and the panel read as an opaque slab.
   (they were the module orange).
 - The climb list stays a plain `List` on the page background (swipe actions, lazy rows) rather than rows inside
   a panel as in the mockup — a panel-wrapped list would lose `List`'s swipe-to-edit/delete on Mine.
+
+## 2026-10-29 — Design-system reset, step 3b: Kilter climb page (prompt 214)
+
+- **Restructure, not feature selection** (user: "this wireframe should only work on restructuring the screen not
+  selecting features"). The first 3b mockup dropped the hold-type colours, the angle picker and most board controls.
+  v2 kept every element and shipped with a checklist mapping each one to its new spot.
+  `docs/ux-research/design-system/kilter-climb.html` is the reference.
+- **Order** (the user moved Light above Log): session strip → board → climb card → Board → Log → Videos from this
+  session → Grade by angle → Beta.
+- **Climb card.** Name, grade + angle picker, quality and tags are one card (the user's ask). The bar title is
+  blanked visually but kept for VoiceOver and the back menu.
+- **Videos from this session + Tag clips.** These reuse the session page's data and actions instead of adding new
+  ones:
+  - SessionMedia of the live session, auto-tagged by time.
+  - Tagging = "Move to climb" (manual source).
+  - Find = the session's Photos discovery.
+  - The same `StudioProject`, via the shared `KilterStudioProjects.resolve`.
+  - "Done" applies a pure diff (`KilterClipTagging.changes`), so Cancel discards.
+- **Grade-by-angle fix.** Bars start at the y-domain floor and the chart is clipped. Before, `BarMark` drew from 0
+  (below the tightened domain), so bars overflowed and the Beta link drew over the chart.
+- **Board photo deferred.** A photo of your own board (option 1, user's pick over Aurora images, which reverse the
+  June decision) is a separate PR.
