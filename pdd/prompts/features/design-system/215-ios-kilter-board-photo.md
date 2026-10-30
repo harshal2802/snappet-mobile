@@ -38,6 +38,6 @@ Aurora data).
 
 ## Acceptance
 
-- [ ] `KilterBoardPhotoTests`: bilinear, margin, photo rect = extended quad, aspect, pick order, rectifier size.
-- [ ] Simulator: choose a photo → corners → preview → save → shows on the climb page; remove.
+- [x] `KilterBoardPhotoTests`: bilinear, margin, photo rect = extended quad, aspect, pick order, rectifier size (6/6).
+- [x] Simulator (`KilterBoardPhotoUITests`, DEBUG sample wall via `-uiTestBoardPhotoSample`): corners → line-up → save → shows behind the holds on a climb (aligned) → remove. UI tests use a scratch store (prompt-133 rule).
 - [ ] Device: photograph the real board; holds line up across a few climbs.

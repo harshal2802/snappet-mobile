@@ -87,11 +87,6 @@ struct KilterSettingsView: View {
             } footer: {
                 Text("Shows your real wall behind the holds on every climb, for this board size. Stays on this phone.")
             }
-            .sheet(isPresented: $showingBoardPhoto) {
-                KilterBoardPhotoSheet(layoutId: layoutId, sizeId: productSizeId, boardID: nil,
-                                      boardName: "your board",
-                                      geometry: catalog.boardGeometry(forLayout: layoutId, sizeId: productSizeId))
-            }
 
             Section("Grades") {
                 Picker("Show grades as", selection: $gradeFormatRaw) {
@@ -264,6 +259,12 @@ struct KilterSettingsView: View {
                 Text("Removes all \(entries.count) logged ascents and \(sessions.count) sessions. "
                      + "Saved climbs are kept.")
             }
+        }
+        // Presented from the Form (not inside a Section — a lazy row can drop a sheet on re-render).
+        .sheet(isPresented: $showingBoardPhoto) {
+            KilterBoardPhotoSheet(layoutId: layoutId, sizeId: productSizeId, boardID: nil,
+                                  boardName: "your board",
+                                  geometry: catalog.boardGeometry(forLayout: layoutId, sizeId: productSizeId))
         }
         .navigationTitle("Kilter Settings")
         .navigationBarTitleDisplayMode(.inline)

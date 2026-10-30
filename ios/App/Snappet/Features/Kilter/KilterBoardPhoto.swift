@@ -75,24 +75,34 @@ enum KilterBoardPhotoPick {
 
 @MainActor @Observable
 final class KilterBoardPhotoStore {
-    static let shared = KilterBoardPhotoStore()
+    /// UI-test launches use a scratch index + folder, emptied each launch, so a test run on a real phone never
+    /// touches the user's board photos (the prompt-133 rule).
+    static let shared: KilterBoardPhotoStore = {
+        guard CommandLine.arguments.contains("-uiTestFreshStore"),
+              let scratch = UserDefaults(suiteName: "snappet.uitest.boardPhotos") else { return KilterBoardPhotoStore() }
+        scratch.removePersistentDomain(forName: "snappet.uitest.boardPhotos")
+        try? FileManager.default.removeItem(at: folderURL(scratch: true))
+        return KilterBoardPhotoStore(defaults: scratch, scratch: true)
+    }()
     static let defaultsKey = "kilter.boardPhotos"
 
     private(set) var entries: [KilterBoardPhotoEntry] = []
     @ObservationIgnored private var cache: [String: UIImage] = [:]
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let folder: URL
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, scratch: Bool = false) {
         self.defaults = defaults
+        self.folder = Self.folderURL(scratch: scratch)
         if let data = defaults.data(forKey: Self.defaultsKey),
            let list = try? JSONDecoder().decode([KilterBoardPhotoEntry].self, from: data) {
             entries = list
         }
     }
 
-    private static var folder: URL {
+    private static func folderURL(scratch: Bool) -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("KilterBoardPhotos", isDirectory: true)
+        let dir = base.appendingPathComponent(scratch ? "KilterBoardPhotos-uitest" : "KilterBoardPhotos", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -107,7 +117,7 @@ final class KilterBoardPhotoStore {
 
     func image(for e: KilterBoardPhotoEntry) -> UIImage? {
         if let hit = cache[e.file] { return hit }
-        guard let img = UIImage(contentsOfFile: Self.folder.appendingPathComponent(e.file).path) else { return nil }
+        guard let img = UIImage(contentsOfFile: folder.appendingPathComponent(e.file).path) else { return nil }
         cache[e.file] = img
         return img
     }
@@ -116,7 +126,7 @@ final class KilterBoardPhotoStore {
         guard let data = image.jpegData(compressionQuality: 0.85) else { return }
         let entry = KilterBoardPhotoEntry(file: "\(UUID().uuidString).jpg", boardID: boardID,
                                           layoutId: layoutId, sizeId: sizeId, savedAt: .now)
-        do { try data.write(to: Self.folder.appendingPathComponent(entry.file), options: .atomic) } catch { return }
+        do { try data.write(to: folder.appendingPathComponent(entry.file), options: .atomic) } catch { return }
         for old in entries where old.sameSlot(entry) { deleteFile(old) }
         entries.removeAll { $0.sameSlot(entry) }
         entries.append(entry)
@@ -132,7 +142,7 @@ final class KilterBoardPhotoStore {
 
     private func deleteFile(_ e: KilterBoardPhotoEntry) {
         cache[e.file] = nil
-        try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent(e.file))
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent(e.file))
     }
 
     private func persist() {

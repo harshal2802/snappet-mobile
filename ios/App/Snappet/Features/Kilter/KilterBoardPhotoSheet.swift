@@ -84,7 +84,18 @@ struct KilterBoardPhotoSheet: View {
                 .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("kilter.boardPhoto.camera")
             }
-            PhotosPicker(selection: $pickerItem, matching: .images) {
+            #if DEBUG
+            // UI tests can't drive the camera or the out-of-process photo picker: a drawn sample wall whose holes
+            // sit exactly at the default markers, so the line-up check is verifiable on a simulator.
+            if ProcessInfo.processInfo.arguments.contains("-uiTestBoardPhotoSample") {
+                Button("Use a sample photo") {
+                    start(KilterBoardPhotoSample.make(geometry))
+                    corners = KilterBoardPhotoSample.corners(geometry)
+                }
+                    .accessibilityIdentifier("kilter.boardPhoto.sample")
+            }
+            #endif
+                        PhotosPicker(selection: $pickerItem, matching: .images) {
                 Label("Choose from Photos", systemImage: "photo.on.rectangle")
                     .font(.system(size: 15, weight: .medium)).frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
@@ -194,3 +205,33 @@ struct KilterCornerPicker: View {
         return CGRect(x: (box.width - w) / 2, y: (box.height - h) / 2, width: w, height: h)
     }
 }
+
+#if DEBUG
+enum KilterBoardPhotoSample {
+    static func area(_ g: KilterBoardGeometry) -> CGRect {
+        let a = g.aspect > 0 ? g.aspect : 1
+        var area = CGRect(x: 180, y: 180, width: 840, height: 840)
+        if a > 1 { area.size.height = 840 / a } else { area.size.width = 840 * a }
+        return area
+    }
+    /// The sample's hole-area corners, normalized (TL TR BR BL).
+    static func corners(_ g: KilterBoardGeometry) -> [CGPoint] {
+        let r = area(g)
+        return [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)].map { CGPoint(x: $0.x / 1200, y: $0.y / 1200) }
+    }
+    /// A 1200×1200 "wall" with the board's holes drawn inside the default 15–85 % marker rectangle.
+    @MainActor static func make(_ g: KilterBoardGeometry) -> UIImage {
+        let size = CGSize(width: 1200, height: 1200)
+        let area = area(g)
+        return UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { ctx in
+            UIColor(red: 0.17, green: 0.15, blue: 0.13, alpha: 1).setFill(); ctx.fill(CGRect(origin: .zero, size: size))
+            UIColor(red: 0.35, green: 0.3, blue: 0.26, alpha: 1).setFill()
+            for h in g.grid {
+                let c = CGPoint(x: area.minX + h.x * area.width, y: area.minY + h.y * area.height)
+                ctx.cgContext.fillEllipse(in: CGRect(x: c.x - 9, y: c.y - 7, width: 18, height: 14))
+            }
+        }
+    }
+}
+#endif
