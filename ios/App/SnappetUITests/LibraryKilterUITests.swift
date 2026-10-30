@@ -63,7 +63,7 @@ final class LibraryKilterUITests: XCTestCase {
         app.buttons["activity.openOnBoard"].tap()
         let missing = app.alerts["Climb not in your catalog"]
         XCTAssertTrue(missing.waitForExistence(timeout: 6), "explained in place")
-        XCTAssertFalse(app.navigationBars["Kilter Board"].exists, "no detour through the Kilter module")
+        XCTAssertFalse(app.navigationBars["Kilter"].exists, "no detour through the Kilter module")
         missing.buttons["OK"].tap()
     }
 
@@ -106,7 +106,7 @@ final class LibraryKilterUITests: XCTestCase {
         let clips = app.buttons["activity.pastClips"]
         XCTAssertTrue(clips.waitForExistence(timeout: 8), "the climb's Kilter page offers its past clips")
         XCTAssertTrue(clips.label.contains("2 past clips"), clips.label)
-        XCTAssertFalse(app.navigationBars["Kilter Board"].exists, "no detour through the Kilter module")
+        XCTAssertFalse(app.navigationBars["Kilter"].exists, "no detour through the Kilter module")
         snap("05-climb-page")
         clips.tap()
         let summary = app.staticTexts["activity.clips.summary"]
