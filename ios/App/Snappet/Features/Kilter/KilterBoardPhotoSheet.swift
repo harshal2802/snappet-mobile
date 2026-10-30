@@ -136,7 +136,7 @@ struct KilterBoardPhotoSheet: View {
             HStack(spacing: 10) {
                 Button { corners = c; step = .corners(img) } label: {
                     Text("Adjust corners").font(.system(size: 15, weight: .medium)).frame(maxWidth: .infinity)
-                        .kilterPill(selected: false, large: true)
+                        .snappetPill(selected: false, large: true)
                 }
                 .buttonStyle(.plain)
                 Button("Save photo") {

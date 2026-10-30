@@ -1,0 +1,108 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clips Feed Restyle</title><style>
+:root{--bg:#0A0B0D;--card:#14161A;--muted:#1C1F24;--line:#23262C;--t1:#F2F3F5;--t2:#8C9099;--t3:#5D616B;--accent:#8EA2FF;--ink:#0b1030;--ok:#5BC074;--amb:#E8B04A}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:#050506;color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;padding:40px 28px}
+h1{font-size:30px;font-weight:700;margin:0 0 6px}.sub{color:#9aa0aa;max-width:1200px;margin:0 0 24px;font-size:15px}
+.wrap{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:10px;align-items:center}.cap{font-size:13px;color:#9aa0aa;font-weight:600}
+.device{width:340px;height:736px;border-radius:52px;background:#000;padding:11px;box-shadow:0 0 0 2px #24262b inset;flex:none}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative}
+.shot{width:100%;height:100%;object-fit:cover;object-position:top}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 0;font-size:13px;font-weight:600}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:6px 16px 4px;font-size:14px;color:var(--accent)}
+.nav .ic{display:flex;gap:15px;font-size:15px;color:var(--t2)}
+.sess{margin:2px 14px 6px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 10px}
+.sess .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}.sess a{color:var(--accent);text-decoration:none}.sess .hr{color:#ff6b7a}
+.boardw{margin:0 14px;border-radius:18px;overflow:hidden;background:#15171b;border:1px solid var(--line);position:relative}
+.pill{position:absolute;top:8px;right:8px;font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(20,22,26,.78);border:1px solid #2b2e35}
+.pill i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.arr{position:absolute;top:45%;width:26px;height:26px;border-radius:50%;background:rgba(20,22,26,.7);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px}
+.under{display:flex;justify-content:space-between;align-items:center;margin:6px 18px 0;font-size:10.5px;color:var(--t2)}
+.legend{display:flex;gap:10px}.legend span{white-space:nowrap}
+.warn{margin:8px 18px 0;font-size:11.5px;color:var(--amb)}
+.hd{padding:10px 18px 0}.hd .t{font-size:21px;font-weight:600;letter-spacing:-.01em}.hd .s{font-size:12px;color:var(--t2);margin-top:2px}
+.tags{display:flex;gap:6px;margin:8px 18px 0;flex-wrap:wrap}.tag{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--t1)}.tag.amb{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden;margin:10px 14px 0}
+.row2{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;margin:10px 14px 0}.row2 .card{margin:0}
+.k{font-size:11px;color:var(--t2);display:flex;justify-content:space-between;align-items:center}
+.chip{font-size:11.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--accent);color:var(--accent)}
+.big{font-size:25px;font-weight:300;letter-spacing:-.02em;margin-top:4px}.big small{font-size:12.5px;color:var(--t2);font-weight:400;margin-left:3px}
+.s{font-size:11.5px;color:var(--t2);margin-top:2px}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.pills span{font-size:13px;text-align:center;padding:9px 0;border-radius:999px;border:1px solid var(--line)}
+.pills .snd{border-color:rgba(91,192,116,.55);color:var(--ok)}.pills .prj{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.conf{font-size:11.5px;color:var(--ok);margin-top:9px}.conf u{text-decoration:none;color:var(--accent);margin-left:6px}
+.pri{display:block;text-align:center;background:var(--accent);color:var(--ink);font-weight:600;font-size:14px;border-radius:999px;padding:10px 0;margin-top:10px}
+.sec{display:block;text-align:center;border:1px solid var(--line);font-size:13px;border-radius:999px;padding:8px 0;margin-top:8px}
+.links{display:flex;justify-content:space-between;font-size:11.5px;color:var(--accent);margin-top:10px}
+.note{font-size:11.5px;color:var(--t2);margin-top:8px}.note u{text-decoration:none;color:var(--accent)}
+.bars{display:flex;gap:5px;align-items:flex-end;height:50px;margin-top:8px}.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t3)}
+.bars i{width:100%;border-radius:3px;background:var(--line);display:block}.bars .on i{background:var(--accent)}.bars .on{color:var(--t1)}
+.li{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.li.first{border-top:0}
+.ico{width:28px;height:28px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.li b{font-size:13px;font-weight:500;display:block}.li span{font-size:11px;color:var(--t2)}.chev{margin-left:auto;color:var(--t3)}
+.foot{text-align:center;font-size:11px;color:var(--t3);margin-top:10px}
+.tab{position:absolute;left:14px;right:14px;bottom:14px;height:56px;border-radius:30px;background:rgba(30,32,38,.92);border:1px solid #2a2d34;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--t2)}
+.states{width:340px;display:flex;flex-direction:column;gap:10px}.states .card{margin:0}.states .lbl{font-size:11px;color:#9aa0aa;font-weight:600;margin:4px 2px -4px}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:6px;font-size:12px}.seg span{flex:1;text-align:center;padding:6px 0}.seg .on{background:var(--muted)}
+.sel{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:6px}
+table{border-collapse:collapse;font-size:12.5px;color:#c9ccd3;width:100%}td{padding:5px 6px;border-bottom:1px solid #1d1f24;vertical-align:top}td:first-child{color:#fff;white-space:nowrap}
+.notes{flex:1;min-width:420px;max-width:640px}.notes h3{font-size:16px;margin:16px 0 8px;color:#fff}
+.ok{color:#86d79b;font-weight:700}
+.cm{width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(142,162,255,.3)}
+
+.seg2{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.search{margin:8px 14px 0;background:var(--muted);border-radius:11px;padding:8px 12px;font-size:13.5px;color:var(--t3)}
+.chips{display:flex;gap:6px;padding:10px 14px 0;white-space:nowrap;overflow:hidden}.c{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line)}.c.on{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.1)}
+.offer{margin:10px 14px 0;display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-size:12.5px}
+.ic2{width:30px;height:30px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.hero{margin:10px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden}
+.strip{display:flex;gap:4px;margin-top:9px}.strip i{flex:1;height:44px;border-radius:7px;background:linear-gradient(160deg,#2c3440,#15171b)}
+.play{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:12px}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 6px;font-size:12px;color:var(--t2)}.sh b{color:var(--t1);font-weight:500;font-size:13.5px}
+.ph{display:flex;align-items:center;gap:10px;padding:2px 16px 8px}.av{width:34px;height:34px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.ph b{font-size:14.5px;font-weight:600}.ph span{font-size:11.5px;color:var(--t2)}
+.media{height:300px;background:linear-gradient(170deg,#2f3a48 0%,#1a1d22 70%);position:relative}
+.hrt{position:absolute;left:12px;bottom:12px;background:rgba(10,11,13,.6);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px 8px;font-size:11px}
+.cnt{position:absolute;right:10px;top:10px;font-size:10.5px;background:rgba(10,11,13,.6);padding:2px 7px;border-radius:999px}
+.mute{position:absolute;right:10px;bottom:10px;width:26px;height:26px;border-radius:50%;background:rgba(10,11,13,.6);display:flex;align-items:center;justify-content:center;font-size:11px}
+.acts{display:flex;gap:16px;align-items:center;padding:10px 16px 0;font-size:17px;color:var(--t1)}.acts small{margin-left:auto;font-size:11.5px;color:var(--t2)}
+.pd{padding:6px 16px 0;font-size:13px}.pd .st{font-weight:500}.pd .cap{color:var(--t2);margin-top:2px}.pd .va{color:var(--accent);margin-top:4px;font-size:12.5px}.pd .mt{color:var(--t3);font-size:11px;margin-top:4px}
+.ac{display:flex;gap:6px;margin-top:6px}.ac span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.gtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:8px}.gtiles div{aspect-ratio:3/4;background:linear-gradient(160deg,#2c3440,#15171b);position:relative;font-size:10px}
+.gtiles b{position:absolute;left:5px;bottom:4px;font-weight:500}.gtiles em{position:absolute;right:5px;bottom:4px;font-style:normal;color:var(--t2)}.gtiles u{position:absolute;left:5px;top:4px;text-decoration:none;font-size:9.5px;color:var(--ok)}
+.days{display:flex;gap:2px;margin:8px 14px 0}.days i{flex:1;height:6px;border-radius:2px;background:var(--line)}.days i.on{background:var(--accent)}
+</style></head><body>
+<h1>Clips feed · restyled (3c)</h1>
+<p class="sub">Restyle only — every element keeps its place and behaviour (checklist on the right). What changes is the look: one accent (yours), neutral cards, regular weights, outlined chips, status as coloured words; the big green Health card and the coral highlights hero become calm cards. Real clips show your video (the seed has no media, hence the plain posters).</p>
+<div class="wrap">
+<div class="col"><div class="cap">Today — top</div><div class="device"><div class="screen"><img class="shot" src="clips-before-1.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — top</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav" style="padding-top:8px"><span style="font-size:30px;font-weight:600;color:var(--t1);letter-spacing:-.02em">Clips</span><span class="ic" style="font-size:16px"><span style="font-family:-apple-system">✎ &nbsp;❚❚ &nbsp;▦</span></span></div>
+<div class="seg2" style="margin-top:6px"><span>Sessions</span><span class="on">Activities</span><span>Exercises</span></div>
+<div class="search">🔍 Search clips, climbs, artists</div>
+<div class="offer"><div class="ic2">⌚</div><div style="flex:1"><b style="font-weight:500">Show Apple Watch workouts</b><div style="color:var(--t2);font-size:11.5px">Heart rate included</div></div><span class="c" style="border-color:var(--accent);color:var(--accent)">Connect</span><span style="color:var(--t3)">✕</span></div>
+<div class="hero"><div class="k">Weekly highlights <span>2 clips · 2 sessions</span></div><div style="display:flex;align-items:center;gap:10px;margin-top:4px"><div style="font-size:16px;font-weight:600;flex:1">Your week in highlights</div><div class="play">▶</div></div><div class="strip"><i></i><i></i><i></i><i></i><i></i></div></div>
+<div class="chips"><span class="c">♡ Favorites</span><span class="c">Reels</span><span class="c">Climbing</span><span class="c">Sends</span><span class="c">Lifting</span></div>
+<div class="sh"><span><b>Bouldering</b> · Wed 28 Oct · Climbing</span><span>1 post</span></div>
+<div class="ph"><div class="av">🧗</div><div style="flex:1"><b>V5 boulder</b> <span style="color:var(--ok);font-size:11.5px">✓ Sent</span><br><span>Bouldering</span></div><span style="color:var(--t2)">⋯</span></div>
+<div class="tab"><span>Home</span><span style="color:var(--accent)">Clips</span><span>Recap</span><span>Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — a post</div><div class="device"><div class="screen"><img class="shot" src="clips-before-2.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — a post</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="nav"><span style="font-size:17px;font-weight:600;color:var(--t1)">Clips</span><span class="ic" style="font-size:16px"><span style="font-family:-apple-system">✎ &nbsp;❚❚ &nbsp;▦</span></span></div>
+<div class="sh" style="padding-top:6px"><span><b>Kilter session</b> · Tue 27 Oct · 40°</span><span>1 post</span></div>
+<div class="ph"><div class="av">🧗</div><div style="flex:1"><b>Spicy Pringle</b> <span style="color:var(--ok);font-size:11.5px">✓ Sent</span> <span style="font-size:10.5px;border:1px solid var(--line);border-radius:999px;padding:1px 6px;color:var(--t2)">★ PR</span><br><span>Kilter session · 40°</span></div><span style="color:var(--t2)">⋯</span></div>
+<div class="media"><span class="cnt">1/2</span><div class="hrt"><b style="color:#ff6b7a">♥ 163</b> <span style="color:var(--t2)">Zone 4</span></div><span class="mute">⨯♪</span><div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:rgba(10,11,13,.5);display:flex;align-items:center;justify-content:center">▶</div></div>
+<div class="acts"><span>♡</span><span>✎</span><span>✈︎</span><span>✂︎</span><small>Attempt 2 of 2</small></div>
+<div class="pd"><div class="st">V5 · 2 attempts · 2 tries</div><div class="cap">Finally stuck the heel hook #kilter</div>
+<div class="ac"><span>Attempt 1 · Sent</span><span>V5 · Sent</span></div>
+<div class="va">View all 4 V5 boulder clips ›</div><div class="mt">2 clips · yesterday · BAKED ✓</div></div>
+<div class="tab"><span>Home</span><span style="color:var(--accent)">Clips</span><span>Recap</span><span>Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — grid</div><div class="device"><div class="screen"><img class="shot" src="clips-before-grid.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — grid</div><div class="device"><div class="screen" style="background:#0f1013"><div style="width:36px;height:5px;border-radius:3px;background:#3a3d44;margin:10px auto 0"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px 6px;font-size:14px"><span style="color:var(--accent)">Select</span><b>All clips</b><span style="color:var(--accent);font-weight:600">Done</span></div>
+<div class="seg2"><span>Year</span><span>Months</span><span class="on">All</span></div>
+<div class="chips"><span class="c">♡ Favorites</span><span class="c">Reels</span><span class="c on">Climbing</span><span class="c">Sends</span></div>
+<div class="sh" style="padding-bottom:0"><span><b style="font-size:16px">October 2026</b><br>7 sessions · 2 sends · peak 172</span><span class="c" style="border-color:var(--accent);color:var(--accent)">✦ Make reel</span></div>
+<div class="days"><i class="on"></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+<div class="gtiles"><div><u>✓ Sent</u><b>V5 boulder</b><em>0:20</em></div><div><u>✓ Sent</u><b>Spicy Pringle</b><em>0:15</em></div><div><u style="color:#ff6b7a">♥ 163</u><b>Barbell Bench</b><em>0:12</em></div><div><b>Spicy Pringle</b><em>0:15</em></div><div><u style="color:#ff6b7a">♥ 171</u><b>Barbell Bench</b><em>0:12</em></div><div><u style="color:#ff6b7a">♥ 172</u><b>Barbell Bench</b><em>0:12</em></div></div></div></div></div>
+<div class="notes"><h3>Every element today → where it lives</h3><table><tr><td><span class="ok">✓</span></td><td>Toolbar: Overlay style 🖌, Autoplay toggle, Grid ▦</td><td>Same three, as icons in the bar (Autoplay = ⏸ / ▶ icon, same toggle)</td></tr><tr><td><span class="ok">✓</span></td><td>Large “Clips” title</td><td>Kept</td></tr><tr><td><span class="ok">✓</span></td><td>Sessions · Activities · Exercises levels</td><td>Same segmented control, calmer</td></tr><tr><td><span class="ok">✓</span></td><td>Search (clips, climbs, artists) + Clear search & filters + empty states</td><td>Search field under the levels; empty/clear states unchanged</td></tr><tr><td><span class="ok">✓</span></td><td>Apple Health offer (Connect / Dismiss)</td><td>One-line row with Connect + ✕ (was a big green card)</td></tr><tr><td><span class="ok">✓</span></td><td>Weekly highlights reel hero (play, strip, “N clips from N sessions”)</td><td>Calm card: title, count, accent ▶, thumbnail strip (was the coral hero)</td></tr><tr><td><span class="ok">✓</span></td><td>Filter chips: Favorites, Reels, activities, Sends, festivals, artists</td><td>Same chips, outlined pills; accent when on</td></tr><tr><td><span class="ok">✓</span></td><td>Session headers (glyph, title, date · activity, “N posts”)</td><td>One quiet line + count</td></tr><tr><td><span class="ok">✓</span></td><td>Post header: activity glyph, title, subtitle, FLASH/SENT/PROJECT, ★ PR, ✦ REEL, ⌚ Apple Watch, ⋯ menu</td><td>Same, status as coloured words (✓ Sent), tags as small outlines</td></tr><tr><td><span class="ok">✓</span></td><td>⋯ menu: Edit this clip, Share clip / original / with HR, Go to session, Tag artist…, Hide / Unhide</td><td>Unchanged</td></tr><tr><td><span class="ok">✓</span></td><td>Media carousel: autoplay muted, tap → fullscreen viewer, page counter, mute, HR overlay tile (style)</td><td>Unchanged (full-bleed)</td></tr><tr><td><span class="ok">✓</span></td><td>Action row: ♡ favourite, ✎ caption, ✈︎ share (with HR), ✂︎ edit in Studio, set label (“Attempt 2 of 2”)</td><td>Same icons, thin weight</td></tr><tr><td><span class="ok">✓</span></td><td>Stats line + PR, caption #tags / Add a caption…, activity chips, View all N clips ›</td><td>Same order; chips outlined; View all in accent</td></tr><tr><td><span class="ok">✓</span></td><td>Meta: N clips · when, BAKED ✓, Tag artist button</td><td>Grey meta line, Tag artist kept</td></tr><tr><td><span class="ok">✓</span></td><td>Hide undo toast</td><td>Unchanged</td></tr><tr><td><span class="ok">✓</span></td><td>Then vs Now album card (progress reel, gain)</td><td>Same card in the panel style</td></tr><tr><td><span class="ok">✓</span></td><td>Grid: Year / Months / All zoom, Select (all / share / hide / Make reel), month header + stats, day strip, month reel, scrubber + bubble, tiles with status / HR / duration</td><td>Same; Make reel + day strip in the accent; status as ✓ words</td></tr></table>
+<h3>One question</h3><p style="font-size:13.5px;color:#c9ccd3">Reels use their own coral today (the highlights hero, ✦ REEL, Make reel). The mockup moves them to your accent like the rest of the app. Keep coral for reels, or accent?</p></div>
+</div></body></html>

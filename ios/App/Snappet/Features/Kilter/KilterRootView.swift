@@ -1100,7 +1100,7 @@ struct KilterRootView: View {
                     .font(.system(size: 15, weight: .medium))
             }
             .buttonStyle(.plain)
-            .kilterPill(selected: false, large: true)
+            .snappetPill(selected: false, large: true)
             .accessibilityIdentifier("kilter.board.stripConnect")
         case .scanning, .connecting:
             Button("Cancel") { board.cancel() }
@@ -1385,7 +1385,7 @@ struct KilterRootView: View {
             if chevron { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).opacity(0.6) }
         }
         .font(.system(size: 13.5))
-        .kilterPill(selected: filled)
+        .snappetPill(selected: filled)
     }
 
     /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
@@ -1456,7 +1456,7 @@ struct KilterRootView: View {
                             if let n { Text("\(n)").foregroundStyle(SnappetColor.textSecondary) }
                         }
                         .font(.system(size: 13.5))
-                        .kilterPill(selected: ascentFilter == f)
+                        .snappetPill(selected: ascentFilter == f)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("kilter.ascents.\(f.rawValue)")

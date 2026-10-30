@@ -354,12 +354,10 @@ struct ClipsFeedView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: autoplayEnabled ? "play.fill" : "pause.fill")
                                     .font(.system(size: 10, weight: .bold))
-                                Text("Autoplay").font(.caption.weight(.semibold))
+                                Text("Autoplay").font(.caption.weight(.medium))
                             }
-                            .foregroundStyle(autoplayEnabled ? SnappetColor.brand : SnappetColor.textSecondary)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(autoplayEnabled ? SnappetColor.brand.opacity(0.14) : SnappetColor.surfaceMuted,
-                                        in: Capsule())
+                            .padding(.horizontal, -2).padding(.vertical, -1)
+                            .snappetPill(selected: autoplayEnabled)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("clips.autoplay.toggle")

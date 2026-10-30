@@ -14,49 +14,38 @@ struct ClipsHealthOfferCard: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "applewatch")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(SnappetColor.perfFresh)
-                    .frame(width: 44, height: 44)
-                    .background(SnappetColor.perfFresh.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("See your Apple Watch workouts here")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(SnappetColor.ink)
-                    Text("Connect Apple Health and workouts you record on your watch appear in Clips automatically — heart rate included.")
-                        .font(.caption)
-                        .foregroundStyle(SnappetColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 4)
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(SnappetColor.textSecondary)
-                        .frame(width: 26, height: 26)
-                        .background(SnappetColor.surfaceMuted, in: Circle())
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("clips.healthOffer.dismiss")
-                .accessibilityLabel("Dismiss")
+        // Prompt 216: one quiet row (was a big green card) — same Connect / dismiss.
+        HStack(spacing: 10) {
+            Image(systemName: "applewatch")
+                .font(.system(size: 15))
+                .foregroundStyle(SnappetColor.ink)
+                .frame(width: 32, height: 32)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Show Apple Watch workouts").font(.system(size: 14, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text("Heart rate included").snappetLabel()
             }
+            Spacer(minLength: 4)
             Button(action: onConnect) {
-                Text("Connect Apple Health")
-                    .font(.footnote.weight(.bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
+                Text("Connect").font(.system(size: 13, weight: .medium)).snappetPill(selected: true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.perfFresh)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("clips.healthOffer.connect")
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SnappetColor.textTertiary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("clips.healthOffer.dismiss")
+            .accessibilityLabel("Dismiss")
         }
-        .padding(12)
-        .background(SnappetColor.perfFresh.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16)
-            .strokeBorder(SnappetColor.perfFresh.opacity(0.35), lineWidth: 1))
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(SnappetColor.hairline))
         .padding(.horizontal, SnappetSpacing.lg)
         // `.contain` keeps the Connect/dismiss buttons' OWN identifiers reachable under the
         // card's (identifier-on-container otherwise flattens them out of the UITest tree —
@@ -68,98 +57,45 @@ struct ClipsHealthOfferCard: View {
 
 // MARK: - Weekly Highlight Reel hero (highlights P4 · P5 polish)
 
-/// The Sunday-drop card at the top of Clips, per the wireframe (workout-reels-v2 screen 1): a
-/// dark coral-gradient canvas, the ✦ WEEKLY HIGHLIGHTS tag, a play badge, and a mini filmstrip.
-/// A `NavigationLink` into the shared reel builder (`WeeklyReelHostView`) — everything on it is
-/// a decorative gradient/shape (no players, no thumbnails, no live blur), so the feed's scroll
-/// perf is untouched (the prompt 92/97 discipline).
+/// The Sunday-drop card at the top of Clips: a calm panel (prompt 216; was a coral hero) — the label + count,
+/// the title with an accent ▶, and a static filmstrip. A `NavigationLink` into the shared reel builder
+/// (`WeeklyReelHostView`); everything on it is a plain shape (no players, thumbnails or blur), so the feed's
+/// scroll perf is untouched (the prompt 92/97 discipline).
 struct WeeklyReelHeroCard: View {
     let offer: WeeklyHighlights.Offer
 
-    /// The wireframe's warm dark canvas — deliberately the same in light and dark mode (a media
-    /// hero commits to the dark look, like the posters below it).
-    private let canvasTop = Color(red: 0.23, green: 0.14, blue: 0.13)
-    private let canvasMid = Color(red: 0.13, green: 0.07, blue: 0.09)
-    private let canvasBottom = Color(red: 0.09, green: 0.05, blue: 0.07)
-    /// The filmstrip's six static frame fills — decoration standing in for "your week's footage".
-    private static let frameTints: [(Color, Color)] = [
-        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
-        (Color(red: 0.34, green: 0.25, blue: 0.17), Color(red: 0.20, green: 0.15, blue: 0.10)),
-        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
-        (Color(red: 0.17, green: 0.29, blue: 0.22), Color(red: 0.10, green: 0.17, blue: 0.13)),
-        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
-        (Color(red: 0.34, green: 0.25, blue: 0.17), Color(red: 0.20, green: 0.15, blue: 0.10)),
-    ]
-
     var body: some View {
         NavigationLink(value: WeeklyReelRoute()) {
-            ZStack {
-                LinearGradient(colors: [canvasTop, canvasMid, canvasBottom],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                // The two decorative glows (coral + amber radials) — gradient fills, not .blur,
-                // so nothing re-rasterizes while the card slides.
-                RadialGradient(colors: [SnappetColor.reels.opacity(0.32), .clear],
-                               center: .init(x: 0.2, y: 0.28), startRadius: 0, endRadius: 150)
-                RadialGradient(colors: [Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.20), .clear],
-                               center: .init(x: 0.85, y: 0.75), startRadius: 0, endRadius: 170)
-
-                Image(systemName: "play.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color(red: 0.16, green: 0.04, blue: 0.02))
-                    .frame(width: 46, height: 46)
-                    .background(SnappetColor.reels.opacity(0.92), in: Circle())
-                    .shadow(color: SnappetColor.reels.opacity(0.45), radius: 12, y: 6)
-                    .offset(y: -22)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles").font(.system(size: 9, weight: .bold))
-                        Text("WEEKLY HIGHLIGHTS").font(.system(size: 10, weight: .heavy)).tracking(0.5)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Weekly highlights").snappetLabel()
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your week in highlights").snappetTitle()
+                        Text(offer.subtitle).snappetDetail()
                     }
-                    .foregroundStyle(SnappetColor.reels)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(.black.opacity(0.45), in: Capsule())
-                    .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
-
-                    Spacer(minLength: 0)
-
-                    filmstrip
-                        .padding(.bottom, 10)
-                    Text("Your week in highlights")
-                        .font(.headline.weight(.heavy))
-                        .foregroundStyle(.white)
-                    Text(offer.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .padding(.top, 1)
+                    Spacer(minLength: 8)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(SnappetColor.onBrand)
+                        .frame(width: 34, height: 34)
+                        .background(SnappetColor.reels, in: Circle())
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 4) {
+                    ForEach(0..<6, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(SnappetColor.surfaceMuted)
+                            .frame(height: 40)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .allowsHitTesting(false)
             }
-            .frame(height: 190)
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(SnappetColor.reels.opacity(0.55), lineWidth: 1.5))
+            .snappetPanel()
             .padding(.horizontal, SnappetSpacing.lg)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("clips.weeklyReel")
         .accessibilityLabel("Weekly Highlight Reel — \(offer.subtitle)")
-    }
-
-    /// Six static gradient "frames" — the wireframe's filmstrip strip, as pure decoration.
-    private var filmstrip: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<Self.frameTints.count, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(LinearGradient(colors: [Self.frameTints[i].0, Self.frameTints[i].1],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(height: 28)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-        .opacity(0.85)
-        .allowsHitTesting(false)
     }
 }
 
@@ -170,27 +106,26 @@ struct WeeklyReelHeroCard: View {
 struct ClipSessionHeader: View {
     let section: ClipFeedSection
 
-    /// The session's ACTIVITY drives glyph + accent (prompt 170) — an imported climbing workout reads as a
+    /// The session's ACTIVITY drives the glyph (prompt 170) — an imported climbing workout reads as a
     /// climb, not a dumbbell.
     private var activity: ClipFeedPost.Discipline { section.discipline ?? .general }
-    private var accent: Color { activity.accent }
     private var glyph: String { activity.symbol }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: glyph)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(accent)
+                .font(.system(size: 12))
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 28, height: 28)
-                .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 0) {
-                Text(section.title).font(.footnote.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                Text(section.title).font(.system(size: 14, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                 if let detail = section.detail {
-                    Text(detail).font(.caption2).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                    Text(detail).snappetLabel().lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
-            Text(section.countLabel).font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
+            Text(section.countLabel).snappetLabel()
         }
         .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, 8)
         .background(SnappetColor.paper.opacity(0.96))
@@ -233,52 +168,44 @@ struct ClipFilterChipStrip: View {
     private var mainRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    chip("Favorites", icon: "heart.fill", accent: SnappetColor.brand,
-                         on: filter.favoritesOnly, id: "clips.filter.favorites") {
+                    chip("Favorites", icon: "heart.fill", on: filter.favoritesOnly, id: "clips.filter.favorites") {
                         filter.favoritesOnly.toggle()
                     }
-                    chip("Reels", icon: "sparkles.tv", accent: SnappetColor.reels,
-                         on: filter.reelsOnly, id: "clips.filter.reels") {
+                    chip("Reels", icon: "sparkles.tv", on: filter.reelsOnly, id: "clips.filter.reels") {
                         filter.reelsOnly.toggle()
                     }
                     // Activity chips (prompt 170) — only activities you HAVE posts for, in a fixed order;
                     // one at a time. Sends rides right after Climbing (it's a climbing outcome).
                     ForEach(activities, id: \.self) { a in
-                        chip(a.label, icon: a.symbol, accent: a.accent,
-                             on: filter.activity == a, id: "clips.filter.\(a.rawValue)") {
+                        chip(a.label, icon: a.symbol, on: filter.activity == a, id: "clips.filter.\(a.rawValue)") {
                             filter.activity = filter.activity == a ? nil : a
                             filter.festivalPack = nil; filter.festivalArtist = nil   // one "what" at a time
                         }
                         if a == .climbing {
                             // Sends (prompt 161): flashes + sends, Kilter or Quick Session. Stacks like Favorites.
-                            chip("Sends", icon: "checkmark.seal.fill", accent: SnappetColor.perfFresh,
-                                 on: filter.sendsOnly, id: "clips.filter.sends") {
+                            chip("Sends", icon: "checkmark.seal.fill", on: filter.sendsOnly, id: "clips.filter.sends") {
                                 filter.sendsOnly.toggle()
                             }
                         }
                     }
                     // Festivals (prompt 171): one chip each; picking one opens its artist row below.
                     ForEach(festivals) { f in
-                        chip(f.name, icon: "music.mic", accent: SnappetColor.festival,
-                             on: filter.festivalPack == f.packID, id: "clips.filter.festival") {
+                        chip(f.name, icon: "music.mic", on: filter.festivalPack == f.packID, id: "clips.filter.festival") {
                             let on = filter.festivalPack == f.packID
                             filter.festivalPack = on ? nil : f.packID
                             filter.festivalArtist = nil
                             filter.activity = nil
                         }
                     }
-                    chip("Videos", icon: "play.rectangle", accent: SnappetColor.brand,
-                         on: filter.kind == .videos, id: "clips.filter.videos") {
+                    chip("Videos", icon: "play.rectangle", on: filter.kind == .videos, id: "clips.filter.videos") {
                         filter.kind = filter.kind == .videos ? .all : .videos
                     }
-                    chip("Photos", icon: "photo", accent: SnappetColor.brand,
-                         on: filter.kind == .photos, id: "clips.filter.photos") {
+                    chip("Photos", icon: "photo", on: filter.kind == .photos, id: "clips.filter.photos") {
                         filter.kind = filter.kind == .photos ? .all : .photos
                     }
                     // Where hidden clips live (prompt 164): last, and only when there's something hidden.
                     if hiddenCount > 0 || filter.showHidden {
-                        chip("Hidden · \(hiddenCount)", icon: "eye.slash", accent: SnappetColor.textSecondary,
-                             on: filter.showHidden, id: "clips.filter.hidden") {
+                        chip("Hidden · \(hiddenCount)", icon: "eye.slash", on: filter.showHidden, id: "clips.filter.hidden") {
                             filter.showHidden.toggle()
                         }
                     }
@@ -292,19 +219,16 @@ struct ClipFilterChipStrip: View {
     private func artistChips(_ row: (artists: [String], untagged: Int)) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                chip("All", icon: "music.note.list", accent: SnappetColor.festival,
-                     on: filter.festivalArtist == nil, id: "clips.filter.artist.all") {
+                chip("All", icon: "music.note.list", on: filter.festivalArtist == nil, id: "clips.filter.artist.all") {
                     filter.festivalArtist = nil
                 }
                 ForEach(row.artists, id: \.self) { a in
-                    chip(a, icon: "music.mic", accent: SnappetColor.festival,
-                         on: filter.festivalArtist == .artist(a), id: "clips.filter.artist") {
+                    chip(a, icon: "music.mic", on: filter.festivalArtist == .artist(a), id: "clips.filter.artist") {
                         filter.festivalArtist = filter.festivalArtist == .artist(a) ? nil : .artist(a)
                     }
                 }
                 if row.untagged > 0 {
-                    chip("Untagged · \(row.untagged)", icon: "questionmark.circle", accent: SnappetColor.textSecondary,
-                         on: filter.festivalArtist == .untagged, id: "clips.filter.artist.untagged") {
+                    chip("Untagged · \(row.untagged)", icon: "questionmark.circle", on: filter.festivalArtist == .untagged, id: "clips.filter.artist.untagged") {
                         filter.festivalArtist = filter.festivalArtist == .untagged ? nil : .untagged
                     }
                 }
@@ -314,18 +238,16 @@ struct ClipFilterChipStrip: View {
         .accessibilityIdentifier("clips.filter.artists")
     }
 
-    private func chip(_ label: String, icon: String, accent: Color, on: Bool,
+    private func chip(_ label: String, icon: String, on: Bool,
                       id: String, action: @escaping () -> Void) -> some View {
+        // Prompt 216: one outlined pill style, the user's accent when on (per-activity colours stay off chrome).
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                Image(systemName: icon).font(.system(size: 11))
                     .accessibilityHidden(true)   // the label says it; some symbols carry their own traits
-                Text(label).font(.caption.weight(.semibold))
+                Text(label).font(.system(size: 13))
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .foregroundStyle(on ? accent : SnappetColor.textSecondary)
-            .background(on ? accent.opacity(0.16) : SnappetColor.surfaceMuted, in: Capsule())
-            .overlay(Capsule().strokeBorder(on ? accent : SnappetColor.hairline, lineWidth: 1))
+            .snappetPill(selected: on)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
