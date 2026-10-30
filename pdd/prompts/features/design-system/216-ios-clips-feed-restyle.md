@@ -36,5 +36,6 @@ behaviour (checklist in the mockup). Reels take the user's accent instead of cor
 ## Acceptance
 
 - [x] Dark screenshots: feed top, a post, grid, Exercises albums — match the mockup.
-- [ ] Full UI suite + unit suite.
+- [x] Full UI suite 159/166 (5 skipped): only the known `525 kg` main failure + `testAdjustLoadMidRun…` (passes alone — flake); unit 2640 green.
+- [x] Installed on MrRobot; user: "merge it after testing".
 - [ ] Device: scroll + autoplay on real clips.
