@@ -44,6 +44,15 @@ final class RecentSessionsTests: XCTestCase {
         XCTAssertEqual(rows[0].facts[1], "1 set")
     }
 
+    func testEmptySessionsAreSkippedButTheFeedStillFills() {
+        let empty = WorkoutSession(routineID: nil, routineName: "Opened and closed", startedAt: t(9),
+                                   completedAt: t(9).addingTimeInterval(60), exercises: [])
+        let h = [empty] + (0..<5).map { session("Push \($0)", at: $0, [entity("bench", .strength, [lift(5, 100)])]) }
+        let rows = RecentSessions.rows(history: h, unit: .kg, limit: 5)
+        XCTAssertEqual(rows.count, 5, "the empty session doesn't eat a slot")
+        XCTAssertFalse(rows.contains { $0.title == "Opened and closed" })
+    }
+
     func testLimitCapsTheFeed() {
         let h = (0..<8).map { session("S\($0)", at: $0, [entity("bench", .strength, [lift(5, 50)])]) }
         XCTAssertEqual(RecentSessions.rows(history: h, unit: .kg, limit: 3).count, 3)

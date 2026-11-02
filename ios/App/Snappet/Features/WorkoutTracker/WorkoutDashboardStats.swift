@@ -11,6 +11,17 @@ struct WorkoutDashboardStats: Equatable, Sendable {
     var thisWeekCount: Int
     /// Distinct calendar days with ≥1 session this week (the hero "active days" numerator).
     var weeklyActiveDays: Int
+    /// Which week the volume card features: this week once it has volume, else last week (so a fresh
+    /// Sunday doesn't read "0 lb" over an all-grey chart, prompt 217). `weeks` are (week start, kg).
+    static func volumeFocus(_ weeks: [(Date, Double)], now: Date = .now,
+                            calendar: Calendar = .current) -> (weekStart: Date, volumeKg: Double, label: String)? {
+        guard let thisStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else { return nil }
+        let byStart = Dictionary(weeks.map { ($0.0, $0.1) }, uniquingKeysWith: +)
+        if let v = byStart[thisStart], v > 0 { return (thisStart, v, "this week") }
+        guard let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisStart) else { return nil }
+        return (lastStart, byStart[lastStart] ?? 0, "last week")
+    }
+
     /// Consecutive calendar days ending today (or yesterday) with ≥1 session.
     var currentStreak: Int
     /// This week's sessions grouped by dominant discipline (nonzero only; sorted count-desc, then the
@@ -32,6 +43,11 @@ struct WorkoutDashboardStats: Equatable, Sendable {
     /// The dominant discipline of a session = the `WorkoutDiscipline` with the most **completed** efforts;
     /// `nil` when nothing is logged. Counting by `discipline` keeps legacy/guided (reps×weight) sessions as
     /// `.strength`. Ties resolve in a fixed order (strength → climb → run → timed → dance → other).
+    /// Every discipline, in tie-break / display order. Racket was missing (prompt 217 fix): racket
+    /// matches and drills had no dominant discipline, so the Dashboard dropped them from Recent sessions
+    /// and the week's counts.
+    static let displayOrder: [WorkoutDiscipline] = [.strength, .climb, .run, .timed, .racket, .dance, .other]
+
     static func dominantDiscipline(of session: WorkoutSession) -> WorkoutDiscipline? {
         var counts: [WorkoutDiscipline: Int] = [:]
         for ex in session.exercises {
@@ -39,9 +55,8 @@ struct WorkoutDashboardStats: Equatable, Sendable {
                 counts[ex.discipline, default: 0] += 1
             }
         }
-        let order: [WorkoutDiscipline] = [.strength, .climb, .run, .timed, .dance, .other]
         var best: (WorkoutDiscipline, Int)? = nil
-        for d in order {
+        for d in displayOrder {
             let c = counts[d] ?? 0
             if c > 0, c > (best?.1 ?? 0) { best = (d, c) }
         }
@@ -60,7 +75,7 @@ struct WorkoutDashboardStats: Equatable, Sendable {
         // This week's sessions grouped by dominant discipline.
         var byDiscipline: [WorkoutDiscipline: Int] = [:]
         for s in thisWeek { if let d = dominantDiscipline(of: s) { byDiscipline[d, default: 0] += 1 } }
-        let order: [WorkoutDiscipline] = [.strength, .climb, .run, .timed, .dance, .other]
+        let order = displayOrder
         let disciplineCounts = order.compactMap { d -> DisciplineCount? in
             guard let c = byDiscipline[d], c > 0 else { return nil }
             return DisciplineCount(discipline: d, count: c)

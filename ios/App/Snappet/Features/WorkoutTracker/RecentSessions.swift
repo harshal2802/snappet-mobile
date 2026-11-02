@@ -26,7 +26,8 @@ enum RecentSessions {
     /// The most recent completed sessions as rows (newest first). `limit` caps the feed (default 5).
     static func rows(history: [WorkoutSession], unit: WeightUnit, limit: Int = 5) -> [Row] {
         let completed = history.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt }
-        return completed.prefix(limit).compactMap { s -> Row? in
+        // Skip only sessions with nothing logged, and cap AFTER skipping so the feed still fills to `limit`.
+        let rows = completed.lazy.compactMap { s -> Row? in
             guard let discipline = WorkoutDashboardStats.dominantDiscipline(of: s) else { return nil }
             let prior = completed.filter { $0.startedAt < s.startedAt }
             let isPR = !FreeformSummary.milestones(for: s, history: prior).isEmpty
@@ -34,6 +35,7 @@ enum RecentSessions {
                        durationMinutes: max(1, Int(s.duration / 60)),
                        facts: facts(for: s, discipline: discipline, unit: unit), isPR: isPR)
         }
+        return Array(rows.prefix(limit))
     }
 
     /// The ≤3 type-adaptive facts for one session.
@@ -64,7 +66,7 @@ enum RecentSessions {
             guard let sum = RacketStats.summary(s.exercises) else { return [] }
             var facts: [String] = []
             if sum.matches > 0 { facts.append(sum.record.label) }
-            if sum.units > 0 { facts.append("\(sum.units) games") }
+            if sum.units > 0 { facts.append("\(sum.units) \(sum.units == 1 ? "game" : "games")") }
             if sum.drills > 0 { facts.append("\(sum.drills) \(sum.drills == 1 ? "drill" : "drills")") }
             return facts
         case .dance, .other:

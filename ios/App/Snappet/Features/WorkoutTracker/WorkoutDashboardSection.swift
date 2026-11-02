@@ -230,10 +230,10 @@ struct WorkoutDashboardSection: View {
     // MARK: - Weekly volume chart (carried over; strength volume)
 
     private var volumeChart: some View {
-        let thisWeek = Calendar.current.dateInterval(of: .weekOfYear, for: .now)?.start
-        let current = weeklyVolume.first { $0.weekStart == thisWeek }?.volumeKg ?? 0
+        let shown = WorkoutDashboardStats.volumeFocus(weeklyVolume.map { ($0.weekStart, $0.volumeKg) })
+        let current = shown?.volumeKg ?? 0
         return VStack(alignment: .leading, spacing: 4) {
-            HStack { Text("Weekly volume").snappetLabel(); Spacer(); Text("this week").snappetLabel() }
+            HStack { Text("Weekly volume").snappetLabel(); Spacer(); Text(shown?.label ?? "this week").snappetLabel() }
             SnappetMetric(value: WorkoutMath.kgToUnit(current, unit).formatted(.number.precision(.fractionLength(0))),
                           unit: unit == .kg ? "kg" : "lb")
             Chart(weeklyVolume, id: \.weekStart) { point in
@@ -242,7 +242,7 @@ struct WorkoutDashboardSection: View {
                     y: .value("Volume", chartDrawn || reduceMotion ? WorkoutMath.kgToUnit(point.volumeKg, unit) : 0),
                     width: .ratio(0.6)
                 )
-                .foregroundStyle(point.weekStart == thisWeek ? SnappetColor.brand : SnappetColor.hairline)
+                .foregroundStyle(point.weekStart == shown?.weekStart ? SnappetColor.brand : SnappetColor.brand.opacity(0.28))
                 .cornerRadius(3)
             }
             .chartYAxis(.hidden)
