@@ -31,5 +31,5 @@ behaviour (checklist in the mockup).
 ## Acceptance
 
 - [x] `RoutineRowSummaryTests`; `RoutineScheduleUITests` (4) green; dark screenshots match the mockup.
-- [ ] Full UI + unit suites.
-- [ ] Device.
+- [x] Full UI 160/167 — only the known `525 kg` main failure + a Household power-hour flake (passes alone); unit 2648 green incl. initials.
+- [x] Device: user on MrRobot — week strip crowded "Sudarshan" → initials; missed stays amber (user: "keep it as it is").
