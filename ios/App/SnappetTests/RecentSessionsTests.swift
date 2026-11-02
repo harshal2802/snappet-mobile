@@ -31,11 +31,17 @@ final class RecentSessionsTests: XCTestCase {
         let rows = RecentSessions.rows(history: h, unit: .kg)
         XCTAssertEqual(rows.map(\.discipline), [.climb, .strength, .run])   // newest first
         XCTAssertEqual(rows[0].facts[0], "V5")                              // hardest send
-        XCTAssertEqual(rows[0].facts[1], "1 sends")
+        XCTAssertEqual(rows[0].facts[1], "1 send")                          // singular (prompt 217)
         XCTAssertTrue(rows[1].facts[0].contains("kg"))                     // strength volume
         XCTAssertEqual(rows[1].facts[1], "2 sets")
         XCTAssertTrue(rows[1].facts.contains { $0.hasPrefix("top ") })      // top set fact
         XCTAssertEqual(rows[2].facts[0], SetMeasure.formatDistance(5000, unit: .km))
+    }
+
+    func testOneSetReadsSingular() {
+        let rows = RecentSessions.rows(history: [session("Push day", at: 0, [entity("bench", .strength, [lift(5, 100)])])],
+                                       unit: .kg)
+        XCTAssertEqual(rows[0].facts[1], "1 set")
     }
 
     func testLimitCapsTheFeed() {

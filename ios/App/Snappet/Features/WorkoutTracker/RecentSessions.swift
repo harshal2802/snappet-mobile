@@ -42,11 +42,11 @@ enum RecentSessions {
         case .climb:
             let cs = FreeformClimbStats.stats(for: s, now: s.completedAt ?? s.startedAt, hrSeries: [])
             let wall = cs.timeline.compactMap(\.timeOnClimb).reduce(0, +)
-            return [cs.hardestSendGrade ?? "—", "\(cs.sends) sends",
-                    wall > 0 ? SetMeasure.formatDuration(wall) : "\(cs.totalClimbs) climbs"]
+            return [cs.hardestSendGrade ?? "—", "\(cs.sends) send\(cs.sends == 1 ? "" : "s")",
+                    wall > 0 ? SetMeasure.formatDuration(wall) : "\(cs.totalClimbs) climb\(cs.totalClimbs == 1 ? "" : "s")"]
         case .strength:
             var facts = [WorkoutMath.formatVolume(kg: WorkoutMath.sessionVolumeKg(s), unit: unit),
-                         "\(s.completedSetCount) sets"]
+                         "\(s.completedSetCount) set\(s.completedSetCount == 1 ? "" : "s")"]
             if let top = topSet(s) {
                 facts.append("top \(WorkoutMath.setWeight(kg: top.kg, unit: unit)) × \(top.reps)")
             }
@@ -59,7 +59,7 @@ enum RecentSessions {
             return [SetMeasure.formatDistance(t.meters, unit: du), pace, SetMeasure.formatDuration(t.seconds)]
         case .timed:
             return [SetMeasure.formatDuration(FreeformSummary.holdTimeSeconds(s)),
-                    "\(s.completedSetCount) sets", SessionRecap.bestHoldLabel(s)]
+                    "\(s.completedSetCount) set\(s.completedSetCount == 1 ? "" : "s")", SessionRecap.bestHoldLabel(s)]
         case .racket:
             guard let sum = RacketStats.summary(s.exercises) else { return [] }
             var facts: [String] = []
@@ -69,7 +69,7 @@ enum RecentSessions {
             return facts
         case .dance, .other:
             return [SetMeasure.formatDuration(FreeformSummary.activeSeconds(s, discipline: discipline)),
-                    "\(s.completedSetCount) sets"]
+                    "\(s.completedSetCount) set\(s.completedSetCount == 1 ? "" : "s")"]
         }
     }
 

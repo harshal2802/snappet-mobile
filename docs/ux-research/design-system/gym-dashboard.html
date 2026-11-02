@@ -1,0 +1,120 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gym Tracker Dashboard</title><style>
+:root{--bg:#0A0B0D;--card:#14161A;--muted:#1C1F24;--line:#23262C;--t1:#F2F3F5;--t2:#8C9099;--t3:#5D616B;--accent:#8EA2FF;--ink:#0b1030;--ok:#5BC074;--amb:#E8B04A}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:#050506;color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;padding:40px 28px}
+h1{font-size:30px;font-weight:700;margin:0 0 6px}.sub{color:#9aa0aa;max-width:1200px;margin:0 0 24px;font-size:15px}
+.wrap{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:10px;align-items:center}.cap{font-size:13px;color:#9aa0aa;font-weight:600}
+.device{width:340px;height:736px;border-radius:52px;background:#000;padding:11px;box-shadow:0 0 0 2px #24262b inset;flex:none}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative}
+.shot{width:100%;height:100%;object-fit:cover;object-position:top}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 0;font-size:13px;font-weight:600}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:6px 16px 4px;font-size:14px;color:var(--accent)}
+.nav .ic{display:flex;gap:15px;font-size:15px;color:var(--t2)}
+.sess{margin:2px 14px 6px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 10px}
+.sess .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}.sess a{color:var(--accent);text-decoration:none}.sess .hr{color:#ff6b7a}
+.boardw{margin:0 14px;border-radius:18px;overflow:hidden;background:#15171b;border:1px solid var(--line);position:relative}
+.pill{position:absolute;top:8px;right:8px;font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(20,22,26,.78);border:1px solid #2b2e35}
+.pill i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.arr{position:absolute;top:45%;width:26px;height:26px;border-radius:50%;background:rgba(20,22,26,.7);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px}
+.under{display:flex;justify-content:space-between;align-items:center;margin:6px 18px 0;font-size:10.5px;color:var(--t2)}
+.legend{display:flex;gap:10px}.legend span{white-space:nowrap}
+.warn{margin:8px 18px 0;font-size:11.5px;color:var(--amb)}
+.hd{padding:10px 18px 0}.hd .t{font-size:21px;font-weight:600;letter-spacing:-.01em}.hd .s{font-size:12px;color:var(--t2);margin-top:2px}
+.tags{display:flex;gap:6px;margin:8px 18px 0;flex-wrap:wrap}.tag{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--t1)}.tag.amb{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden;margin:10px 14px 0}
+.row2{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;margin:10px 14px 0}.row2 .card{margin:0}
+.k{font-size:11px;color:var(--t2);display:flex;justify-content:space-between;align-items:center}
+.chip{font-size:11.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--accent);color:var(--accent)}
+.big{font-size:25px;font-weight:300;letter-spacing:-.02em;margin-top:4px}.big small{font-size:12.5px;color:var(--t2);font-weight:400;margin-left:3px}
+.s{font-size:11.5px;color:var(--t2);margin-top:2px}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.pills span{font-size:13px;text-align:center;padding:9px 0;border-radius:999px;border:1px solid var(--line)}
+.pills .snd{border-color:rgba(91,192,116,.55);color:var(--ok)}.pills .prj{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.conf{font-size:11.5px;color:var(--ok);margin-top:9px}.conf u{text-decoration:none;color:var(--accent);margin-left:6px}
+.pri{display:block;text-align:center;background:var(--accent);color:var(--ink);font-weight:600;font-size:14px;border-radius:999px;padding:10px 0;margin-top:10px}
+.sec{display:block;text-align:center;border:1px solid var(--line);font-size:13px;border-radius:999px;padding:8px 0;margin-top:8px}
+.links{display:flex;justify-content:space-between;font-size:11.5px;color:var(--accent);margin-top:10px}
+.note{font-size:11.5px;color:var(--t2);margin-top:8px}.note u{text-decoration:none;color:var(--accent)}
+.bars{display:flex;gap:5px;align-items:flex-end;height:50px;margin-top:8px}.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t3)}
+.bars i{width:100%;border-radius:3px;background:var(--line);display:block}.bars .on i{background:var(--accent)}.bars .on{color:var(--t1)}
+.li{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.li.first{border-top:0}
+.ico{width:28px;height:28px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.li b{font-size:13px;font-weight:500;display:block}.li span{font-size:11px;color:var(--t2)}.chev{margin-left:auto;color:var(--t3)}
+.foot{text-align:center;font-size:11px;color:var(--t3);margin-top:10px}
+.tab{position:absolute;left:14px;right:14px;bottom:14px;height:56px;border-radius:30px;background:rgba(30,32,38,.92);border:1px solid #2a2d34;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--t2)}
+.states{width:340px;display:flex;flex-direction:column;gap:10px}.states .card{margin:0}.states .lbl{font-size:11px;color:#9aa0aa;font-weight:600;margin:4px 2px -4px}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:6px;font-size:12px}.seg span{flex:1;text-align:center;padding:6px 0}.seg .on{background:var(--muted)}
+.sel{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:6px}
+table{border-collapse:collapse;font-size:12.5px;color:#c9ccd3;width:100%}td{padding:5px 6px;border-bottom:1px solid #1d1f24;vertical-align:top}td:first-child{color:#fff;white-space:nowrap}
+.notes{flex:1;min-width:420px;max-width:640px}.notes h3{font-size:16px;margin:16px 0 8px;color:#fff}
+.ok{color:#86d79b;font-weight:700}
+.cm{width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(142,162,255,.3)}
+
+.seg2{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.search{margin:8px 14px 0;background:var(--muted);border-radius:11px;padding:8px 12px;font-size:13.5px;color:var(--t3)}
+.chips{display:flex;gap:6px;padding:10px 14px 0;white-space:nowrap;overflow:hidden}.c{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line)}.c.on{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.1)}
+.offer{margin:10px 14px 0;display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-size:12.5px}
+.ic2{width:30px;height:30px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.hero{margin:10px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden}
+.strip{display:flex;gap:4px;margin-top:9px}.strip i{flex:1;height:44px;border-radius:7px;background:linear-gradient(160deg,#2c3440,#15171b)}
+.play{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:12px}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 6px;font-size:12px;color:var(--t2)}.sh b{color:var(--t1);font-weight:500;font-size:13.5px}
+.ph{display:flex;align-items:center;gap:10px;padding:2px 16px 8px}.av{width:34px;height:34px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.ph b{font-size:14.5px;font-weight:600}.ph span{font-size:11.5px;color:var(--t2)}
+.media{height:300px;background:linear-gradient(170deg,#2f3a48 0%,#1a1d22 70%);position:relative}
+.hrt{position:absolute;left:12px;bottom:12px;background:rgba(10,11,13,.6);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px 8px;font-size:11px}
+.cnt{position:absolute;right:10px;top:10px;font-size:10.5px;background:rgba(10,11,13,.6);padding:2px 7px;border-radius:999px}
+.mute{position:absolute;right:10px;bottom:10px;width:26px;height:26px;border-radius:50%;background:rgba(10,11,13,.6);display:flex;align-items:center;justify-content:center;font-size:11px}
+.acts{display:flex;gap:16px;align-items:center;padding:10px 16px 0;font-size:17px;color:var(--t1)}.acts small{margin-left:auto;font-size:11.5px;color:var(--t2)}
+.pd{padding:6px 16px 0;font-size:13px}.pd .st{font-weight:500}.pd .cap{color:var(--t2);margin-top:2px}.pd .va{color:var(--accent);margin-top:4px;font-size:12.5px}.pd .mt{color:var(--t3);font-size:11px;margin-top:4px}
+.ac{display:flex;gap:6px;margin-top:6px}.ac span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.gtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:8px}.gtiles div{aspect-ratio:3/4;background:linear-gradient(160deg,#2c3440,#15171b);position:relative;font-size:10px}
+.gtiles b{position:absolute;left:5px;bottom:4px;font-weight:500}.gtiles em{position:absolute;right:5px;bottom:4px;font-style:normal;color:var(--t2)}.gtiles u{position:absolute;left:5px;top:4px;text-decoration:none;font-size:9.5px;color:var(--ok)}
+.days{display:flex;gap:2px;margin:8px 14px 0}.days i{flex:1;height:6px;border-radius:2px;background:var(--line)}.days i.on{background:var(--accent)}
+
+.navc{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 6px;font-size:15px}.navc b{font-weight:600}.navc .ic{color:var(--t2);font-size:15px;display:flex;gap:14px}
+.seg4{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12px}.seg4 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg4 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.dots{display:flex;justify-content:space-between;margin-top:10px;font-size:9.5px;color:var(--t3);text-align:center}.dots div{display:flex;flex-direction:column;align-items:center;gap:3px}.dots i{width:7px;height:7px;border-radius:50%;background:var(--line);display:block}.dots .on i{background:var(--accent)}.dots .td{color:var(--t1)}
+.pills2{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}.pills2 span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.vb{display:flex;gap:8px;align-items:flex-end;height:64px;margin-top:10px}.vb div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;color:var(--t3)}.vb i{display:block;width:100%;border-radius:3px;background:var(--line)}.vb .on i{background:var(--accent)}
+.r{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.r.first{border-top:0}.r b{font-size:13.5px;font-weight:500;display:block}.r span{font-size:11px;color:var(--t2)}.r .v{margin-left:auto;font-size:13px;font-weight:500;white-space:nowrap}.r .chev{margin-left:6px;color:var(--t3)}
+.tg{font-size:10px;padding:1px 6px;border:1px solid var(--line);border-radius:999px;color:var(--t2);margin-left:5px;vertical-align:1px}
+</style></head><body>
+<h1>Gym Tracker · Dashboard, restyled (3d)</h1>
+<p class="sub">Restyle only — every element keeps its place and behaviour (checklist). Orange chart / PRs / icons and the coloured stripes + fact capsules go; one accent (yours), neutral cards and rows, facts as plain grey text. One fix: “See all” next to Recent sessions now opens History (its action was empty).</p>
+<div class="wrap">
+<div class="col"><div class="cap">Today — top</div><div class="device"><div class="screen"><img class="shot" src="gym-before-1.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — top</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navc"><span style="color:var(--accent)">‹</span><b>Gym Tracker</b><span class="ic">⚙︎ ⚡︎</span></div><div class="seg4"><span class="on">Dashboard</span><span>Library</span><span>Routines</span><span>History</span></div>
+<div class="card"><div class="k">Active days this week</div><div class="big">4<small>days</small></div><div class="s">3-day streak · you're on track</div>
+<div class="pills2"><span>🏋︎ 1 lift</span><span>🧗 1 climb</span><span>🏃 1 run</span><span>⏱ 1 timed set</span></div>
+<div class="dots"><div><i></i>S</div><div><i></i>S</div><div class="on"><i></i>M</div><div><i></i>T</div><div class="on"><i></i>W</div><div class="on"><i></i>T</div><div class="on td"><i></i>F</div></div></div>
+<span class="pri" style="margin:10px 14px 0">＋ Start strength</span>
+<div class="card" style="padding:4px 14px"><div class="r first"><div class="ico">✦</div><div><b>Plan a session</b><span>A suggested workout for what you've rested</span></div><span class="chev" style="margin-left:auto">›</span></div></div>
+<div class="sh" style="padding-top:12px"><span><b>Recent sessions</b></span><span style="color:var(--accent)">See all ›</span></div>
+<div class="card" style="margin-top:0;padding:2px 14px">
+<div class="r first"><div class="ico">🏋︎</div><div><b>Push Day<span class="tg">PR</span></b><span>2,520 kg · 10 sets · top 67.5 kg × 6</span><br><span style="color:var(--t3)">Fri 30 Oct · 50 min</span></div><span class="chev" style="margin-left:auto">›</span></div>
+<div class="r"><div class="ico">🧗</div><div><b>Bouldering<span class="tg">PR</span></b><span>V5 · 3 sends · 3 climbs</span><br><span style="color:var(--t3)">Thu 29 Oct · 80 min</span></div><span class="chev" style="margin-left:auto">›</span></div>
+</div><div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — middle</div><div class="device"><div class="screen"><img class="shot" src="gym-before-2.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — middle</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navc"><span style="color:var(--accent)">‹</span><b>Gym Tracker</b><span class="ic">⚙︎ ⚡︎</span></div><div class="seg4"><span class="on">Dashboard</span><span>Library</span><span>Routines</span><span>History</span></div>
+<div class="card" style="padding:2px 14px">
+<div class="r first"><div class="ico">⏱</div><div><b>Finger day</b><span>1:03 · 1 set</span><br><span style="color:var(--t3)">Wed 28 Oct · 22 min</span></div><span class="chev" style="margin-left:auto">›</span></div>
+<div class="r"><div class="ico">🏃</div><div><b>Easy run</b><span>5 km · 5:33/km · 27:45</span><br><span style="color:var(--t3)">Mon 26 Oct · 29 min</span></div><span class="chev" style="margin-left:auto">›</span></div></div>
+<div class="card"><div class="k">Weekly volume <span>this week</span></div><div class="big">2,520<small>kg</small></div>
+<div class="vb"><div><i style="height:22px"></i>4 wk ago</div><div><i style="height:46px"></i>3</div><div><i style="height:48px"></i>2</div><div><i style="height:50px"></i>last</div><div class="on"><i style="height:26px"></i>this week</div></div></div>
+<div class="card" style="padding:4px 14px"><div class="k" style="padding-top:8px">Personal records</div>
+<div class="r first"><div><b>Barbell Bench Press</b><span>8 sessions</span></div><span class="v">67.5 kg × 6</span><span class="chev">›</span></div>
+<div class="r"><div><b>Standing Military Press</b><span>8 sessions</span></div><span class="v">37.5 kg × 8</span><span class="chev">›</span></div>
+<div class="r"><div><b>Pullups</b><span>8 sessions</span></div><span class="v">8 reps</span><span class="chev">›</span></div></div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — bottom</div><div class="device"><div class="screen"><img class="shot" src="gym-before-3.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — bottom</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navc"><span style="color:var(--accent)">‹</span><b>Gym Tracker</b><span class="ic">⚙︎ ⚡︎</span></div><div class="seg4"><span class="on">Dashboard</span><span>Library</span><span>Routines</span><span>History</span></div>
+<div class="card" style="padding:4px 14px"><div class="k" style="padding-top:8px">Quick start</div>
+<div class="r first"><div class="ico">☰</div><div><b>Finger day</b><span>1 exercise</span></div><span class="chev" style="margin-left:auto">›</span></div>
+<div class="r"><div class="ico">☰</div><div><b>Push Day</b><span>3 exercises</span></div><span class="chev" style="margin-left:auto">›</span></div>
+<div class="r"><div class="ico">🤸</div><div><b>Lower Body</b><span>4 exercises</span></div><span class="chev" style="margin-left:auto">›</span></div></div>
+<div class="card" style="padding:4px 14px"><div class="k" style="padding-top:8px">Video Studio</div><div class="s" style="margin:4px 0 4px">Film your sets, add the clips to a finished workout, and cut them into a shareable edit here.</div>
+<div class="r"><div class="ico">▶︎</div><div><b>Push Day</b><span>30 Oct · 3 clips</span></div><span class="v" style="color:var(--accent)">Open in Studio</span></div></div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="notes"><h3>Every element today → where it lives</h3><table><tr><td><span class="ok">✓</span></td><td>Toolbar: Settings ⚙︎, Quick Start ⚡</td><td>Same, neutral icons (⚡ was orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Dashboard · Library · Routines · History</td><td>Same segmented control</td></tr><tr><td><span class="ok">✓</span></td><td>Resume banner (workout in progress → Resume)</td><td>Same, as an accent-glow card (was a discipline-tinted fill)</td></tr><tr><td><span class="ok">✓</span></td><td>Empty state: Browse routines, Exercises, Plan</td><td>Same, accent buttons (were orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Active days this week: count, streak line, per-discipline counts, 7-day dots</td><td>Same card: big light number, outlined pills, accent dots (was tracked CAPS + coloured capsules)</td></tr><tr><td><span class="ok">✓</span></td><td>Start <discipline></td><td>Same filled accent button</td></tr><tr><td><span class="ok">✓</span></td><td>Plan a session</td><td>Same row</td></tr><tr><td><span class="ok">✓</span></td><td>Recent sessions + See all</td><td>Rows in one card: neutral icon, title, PR tag, facts as one grey line, date; See all now opens History (it did nothing)</td></tr><tr><td><span class="ok">✓</span></td><td>Weekly volume chart</td><td>Thin bars, this week in the accent + its total (was orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Personal records → progress</td><td>Rows, value in ink (was orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Quick start routines → routine</td><td>Rows, neutral icons</td></tr><tr><td><span class="ok">✓</span></td><td>Video Studio candidates → Open in Studio</td><td>Same, accent link</td></tr></table></div>
+</div></body></html>

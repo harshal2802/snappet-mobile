@@ -18,6 +18,8 @@ struct WorkoutDashboardSection: View {
     let resume: () -> Void
     let goToRoutines: () -> Void
     let goToBrowse: () -> Void
+    /// "See all" beside Recent sessions → the History section (prompt 217; the action was empty).
+    let goToHistory: () -> Void
     let openRoutine: (Routine) -> Void
     let openProgress: (String) -> Void
     let openStudio: (UUID) -> Void
@@ -39,7 +41,7 @@ struct WorkoutDashboardSection: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let activeSession { resumeBanner(activeSession) }
 
                 if isEmptyState {
@@ -62,6 +64,7 @@ struct WorkoutDashboardSection: View {
             .padding()
             .padding(.bottom, 24)
         }
+        .background(SnappetColor.paper)
     }
 
     // MARK: - Resume banner (discipline-aware)
@@ -69,18 +72,21 @@ struct WorkoutDashboardSection: View {
     private func resumeBanner(_ session: WorkoutSession) -> some View {
         let discipline = WorkoutDashboardStats.dominantDiscipline(of: session) ?? .strength
         return Button(action: resume) {
-            HStack(spacing: 14) {
-                Image(systemName: discipline.symbol).font(.largeTitle).foregroundStyle(discipline.accent)
+            HStack(spacing: 12) {
+                Image(systemName: discipline.symbol).font(.system(size: 18)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 36, height: 36)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Workout in progress").font(.headline)
+                    Text("Workout in progress").snappetTitle()
                     Text("\(session.routineName) · \(discipline.label) · \(session.completedSetCount) logged")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .snappetDetail().lineLimit(1)
                 }
                 Spacer()
-                Text("Resume").fontWeight(.semibold).foregroundStyle(discipline.accent)
+                Text("Resume").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.onBrand)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(SnappetColor.brand, in: Capsule())
             }
-            .padding()
-            .background(discipline.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel(glow: true)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("workout.resumeBanner")
@@ -88,13 +94,16 @@ struct WorkoutDashboardSection: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "dumbbell.fill").font(.system(size: 48)).foregroundStyle(SnappetColor.workout)
-            Text("Let's get moving").font(.title3.bold())
+            Image(systemName: "dumbbell").font(.system(size: 40, weight: .light)).foregroundStyle(SnappetColor.textSecondary)
+            Text("Let's get moving").snappetTitle()
             Text("Pick a starter routine or browse 870+ exercises to build your own.")
-                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            HStack {
-                Button("Browse routines", action: goToRoutines).buttonStyle(.borderedProminent).tint(SnappetColor.workout)
-                Button("Exercises", action: goToBrowse).buttonStyle(.bordered).tint(SnappetColor.workout)
+                .snappetDetail().multilineTextAlignment(.center)
+            HStack(spacing: 8) {
+                Button("Browse routines", action: goToRoutines).buttonStyle(.snappetPrimary)
+                Button(action: goToBrowse) {
+                    Text("Exercises").font(.system(size: 15, weight: .medium)).snappetPill(selected: false, large: true)
+                }
+                .buttonStyle(.plain)
             }
             // The planner works from a cold start (candidates come from the catalog, focusing untrained
             // muscles for variety) — so invite a beginner to plan a first session here too (#187, E7).
@@ -106,21 +115,29 @@ struct WorkoutDashboardSection: View {
     // MARK: - Hero (score-first: active days this week) + per-discipline ribbon + 7-day strip
 
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            DisciplineHero(value: "\(stats.weeklyActiveDays)",
-                           caption: "Active days this week",
-                           sublabel: stats.currentStreak > 0 ? "\(stats.currentStreak)-day streak · you're on track" : "Start a streak today",
-                           systemImage: "flame.fill",
-                           accent: heroDiscipline.accent)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Active days this week").snappetLabel()
+            SnappetMetric(value: "\(stats.weeklyActiveDays)", unit: stats.weeklyActiveDays == 1 ? "day" : "days")
+            Text(stats.currentStreak > 0 ? "\(stats.currentStreak)-day streak · you're on track" : "Start a streak today")
+                .snappetDetail()
             if !stats.disciplineCounts.isEmpty {
-                StatRibbon(items: stats.disciplineCounts.map {
-                    StatRibbon.Item(text: "\($0.count) \(Self.shortLabel($0.discipline, count: $0.count))",
-                                    tint: $0.discipline.accent, emphasized: true, systemImage: $0.discipline.symbol)
-                })
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { disciplinePills }
+                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { disciplinePills } }
+                }
+                .padding(.top, 8)
             }
-            weekStrip
+            weekStrip.padding(.top, 10)
         }
-        .snappetCard()
+        .snappetPanel()
+    }
+
+    @ViewBuilder private var disciplinePills: some View {
+        ForEach(stats.disciplineCounts, id: \.discipline) { c in
+            Label("\(c.count) \(Self.shortLabel(c.discipline, count: c.count))", systemImage: c.discipline.symbol)
+                .font(.system(size: 12)).padding(.horizontal, -3).padding(.vertical, -2)
+                .snappetPill(selected: false)
+        }
     }
 
     /// A calm 7-day consistency strip — a dot per day (filled when trained), today in coral.
@@ -135,12 +152,11 @@ struct WorkoutDashboardSection: View {
                 let did = trained.contains(day)
                 VStack(spacing: 4) {
                     Circle()
-                        .fill(did ? (isToday ? SnappetColor.brand : SnappetColor.ink)
-                                  : SnappetColor.surfaceMuted)
-                        .frame(width: 10, height: 10)
+                        .fill(did ? SnappetColor.brand : SnappetColor.hairline)
+                        .frame(width: 8, height: 8)
                     Text(Self.weekdayInitial(day, cal: cal))
-                        .font(.caption2.weight(isToday ? .bold : .regular))
-                        .foregroundStyle(isToday ? SnappetColor.brand : SnappetColor.textSecondary)
+                        .font(.system(size: 10, weight: isToday ? .semibold : .regular))
+                        .foregroundStyle(isToday ? SnappetColor.ink : SnappetColor.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -155,11 +171,8 @@ struct WorkoutDashboardSection: View {
                 Image(systemName: "plus")
                 Text("Start \(heroDiscipline.label.lowercased())").fontWeight(.semibold)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 14)
-            .background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-            .foregroundStyle(.white)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .accessibilityIdentifier("workout.dashboardStart")
     }
 
@@ -170,15 +183,18 @@ struct WorkoutDashboardSection: View {
     private var planEntry: some View {
         Button(action: openPlan) {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles").font(.title3).foregroundStyle(SnappetColor.workout)
+                Image(systemName: "sparkles").font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 32, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Plan a session").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text("A suggested workout for what you've rested").font(.caption).foregroundStyle(.secondary)
+                    Text("Plan a session").font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                    Text("A suggested workout for what you've rested").snappetDetail()
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SnappetColor.textTertiary)
             }
-            .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -188,122 +204,146 @@ struct WorkoutDashboardSection: View {
     // MARK: - Recent sessions feed (#181 — the previously-missing surface)
 
     private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Recent sessions").font(.headline)
+                Text("Recent sessions").snappetTitle()
                 Spacer()
-                Button("See all", action: { /* History tab */ }).font(.caption).foregroundStyle(SnappetColor.textSecondary)
-                    .accessibilityHidden(true)
+                Button("See all ›", action: goToHistory)
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.brand)
+                    .accessibilityIdentifier("workout.recentSeeAll")
             }
-            ForEach(recents) { row in
-                Button { openSession(row.id) } label: { RecentSessionCard(row: row) }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("workout.recentSession")
+            .padding(.top, 8)
+            VStack(spacing: 0) {
+                ForEach(recents) { row in
+                    if row.id != recents.first?.id { Divider().overlay(SnappetColor.hairline) }
+                    Button { openSession(row.id) } label: { RecentSessionCard(row: row) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("workout.recentSession")
+                }
             }
+            .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, 2)
+            .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous).strokeBorder(SnappetColor.hairline))
         }
     }
 
     // MARK: - Weekly volume chart (carried over; strength volume)
 
     private var volumeChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Weekly volume").font(.headline)
+        let thisWeek = Calendar.current.dateInterval(of: .weekOfYear, for: .now)?.start
+        let current = weeklyVolume.first { $0.weekStart == thisWeek }?.volumeKg ?? 0
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack { Text("Weekly volume").snappetLabel(); Spacer(); Text("this week").snappetLabel() }
+            SnappetMetric(value: WorkoutMath.kgToUnit(current, unit).formatted(.number.precision(.fractionLength(0))),
+                          unit: unit == .kg ? "kg" : "lb")
             Chart(weeklyVolume, id: \.weekStart) { point in
                 BarMark(
                     x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Volume", chartDrawn || reduceMotion ? WorkoutMath.kgToUnit(point.volumeKg, unit) : 0)
+                    y: .value("Volume", chartDrawn || reduceMotion ? WorkoutMath.kgToUnit(point.volumeKg, unit) : 0),
+                    width: .ratio(0.6)
                 )
-                .foregroundStyle(SnappetColor.workout)
+                .foregroundStyle(point.weekStart == thisWeek ? SnappetColor.brand : SnappetColor.hairline)
+                .cornerRadius(3)
             }
-            .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear)) { _ in AxisGridLine(); AxisTick() } }
-            .frame(height: 160)
+            .chartYAxis(.hidden)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .weekOfYear)) { _ in
+                    AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                        .font(.system(size: 9.5)).foregroundStyle(SnappetColor.textTertiary)
+                }
+            }
+            .frame(height: 90)
+            .padding(.top, 6)
             .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartDrawn)
             .onAppear { chartDrawn = true }
             .onDisappear { chartDrawn = false }
         }
-        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     private var recordsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Personal records").font(.headline)
+            Text("Personal records").snappetLabel()
             ForEach(personalRecords, id: \.exerciseId) { pr in
                 Button { openProgress(pr.exerciseId) } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(resolver.name(for: pr.exerciseId)).font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary).lineLimit(1)
+                            Text(resolver.name(for: pr.exerciseId)).font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(SnappetColor.ink).lineLimit(1)
                             Text("\(WorkoutMath.sessionCount(history: history, exerciseId: pr.exerciseId)) sessions")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .snappetDetail()
                         }
                         Spacer()
-                        Text(prText(pr.top)).font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(SnappetColor.workout)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        Text(prText(pr.top)).font(.system(size: 14, weight: .medium).monospacedDigit())
+                            .foregroundStyle(SnappetColor.ink)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(SnappetColor.textTertiary)
                     }
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
-                if pr.exerciseId != personalRecords.last?.exerciseId { Divider() }
+                if pr.exerciseId != personalRecords.last?.exerciseId { Divider().overlay(SnappetColor.hairline) }
             }
         }
-        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     private var quickStartSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Quick start").font(.headline)
+            Text("Quick start").snappetLabel()
             ForEach(quickStart) { routine in
                 Button { openRoutine(routine) } label: {
                     HStack {
-                        Image(systemName: routine.sport?.symbol ?? "list.bullet").foregroundStyle(SnappetColor.workout)
+                        Image(systemName: routine.sport?.symbol ?? "list.bullet").font(.system(size: 14))
+                            .foregroundStyle(SnappetColor.ink)
+                            .frame(width: 32, height: 32)
+                            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(routine.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                            Text("\(routine.exercises.count) exercises").font(.caption).foregroundStyle(.secondary)
+                            Text(routine.name).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                            Text("\(routine.exercises.count) exercise\(routine.exercises.count == 1 ? "" : "s")").snappetDetail()
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(SnappetColor.textTertiary)
                     }
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
-                if routine.id != quickStart.last?.id { Divider() }
+                if routine.id != quickStart.last?.id { Divider().overlay(SnappetColor.hairline) }
             }
         }
-        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     private var studioSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "film.stack").foregroundStyle(SnappetColor.workout)
-                Text("Video Studio").font(.headline)
-            }
+            Text("Video Studio").snappetLabel()
             if studioCandidates.isEmpty {
                 Text("Film your sets, add the clips to a finished workout, and cut them into a shareable edit here.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .snappetDetail()
             } else {
                 ForEach(studioCandidates) { candidate in
                     Button { openStudio(candidate.sessionID) } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(candidate.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                                Text(candidate.title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                                 Text("\(candidate.startedAt.formatted(.dateTime.month().day())) · \(candidate.videoCount) clip\(candidate.videoCount == 1 ? "" : "s")")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .snappetDetail()
                             }
                             Spacer()
-                            Text("Open in Studio").font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout)
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            Text("Open in Studio").font(SnappetType.detail).foregroundStyle(SnappetColor.brand)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(SnappetColor.textTertiary)
                         }
                         .padding(.vertical, 6).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("workout.studioCandidate")
-                    if candidate.id != studioCandidates.last?.id { Divider() }
+                    if candidate.id != studioCandidates.last?.id { Divider().overlay(SnappetColor.hairline) }
                 }
             }
         }
-        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     // MARK: - Derived data (volume chart + PRs carry over)
@@ -362,40 +402,36 @@ struct WorkoutDashboardSection: View {
     }
 }
 
-/// One recent-session feed card: a discipline accent edge-bar + glyph, the title + a type-adaptive 3-fact
-/// rollup (`RecentSessions.Row.facts`), an optional coral PR pill, and the date · duration.
+/// One recent-session row (prompt 217): a neutral glyph tile, the title + an outlined PR tag, the type-adaptive
+/// facts (`RecentSessions.Row.facts`) as one grey line, and the date · duration.
 struct RecentSessionCard: View {
     let row: RecentSessions.Row
 
     var body: some View {
-        HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 2).fill(row.discipline.accent).frame(width: 3)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 7) {
-                    Image(systemName: row.discipline.symbol).font(.subheadline).foregroundStyle(row.discipline.accent)
-                    Text(row.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Spacer(minLength: 4)
+        HStack(spacing: 12) {
+            Image(systemName: row.discipline.symbol).font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                .frame(width: 32, height: 32)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(row.title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     if row.isPR {
-                        Text("PR").font(.caption2.weight(.heavy))
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .foregroundStyle(SnappetColor.brand)
-                            .background(SnappetColor.brand.opacity(0.15), in: Capsule())
+                        Text("PR").font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .overlay(Capsule().strokeBorder(SnappetColor.hairline))
                     }
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                 }
                 if !row.facts.isEmpty {
-                    StatRibbon(items: row.facts.enumerated().map { i, f in
-                        StatRibbon.Item(text: f, tint: row.discipline.accent, emphasized: i == 0)
-                    })
+                    Text(row.facts.joined(separator: " · ")).snappetDetail().lineLimit(1)
                 }
                 Text("\(row.date.formatted(.dateTime.weekday().month().day())) · \(row.durationMinutes) min")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(SnappetType.label).foregroundStyle(SnappetColor.textTertiary)
             }
-            .padding(.leading, 11).padding(.vertical, 11).padding(.trailing, 12)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(SnappetColor.textTertiary)
         }
-        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md).strokeBorder(SnappetColor.hairline, lineWidth: 0.5))
+        .padding(.vertical, 10)
         .contentShape(Rectangle())
     }
 }
-

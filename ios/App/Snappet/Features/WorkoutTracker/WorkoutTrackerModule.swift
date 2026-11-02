@@ -497,6 +497,7 @@ struct WorkoutHomeView: View {
                                     resume: { if let s = activeSession { resume(s) } },
                                     goToRoutines: { section = .routines },
                                     goToBrowse: { section = .browse },
+                                    goToHistory: { section = .history },
                                     openRoutine: { router.push($0) },
                                     openProgress: { router.push(ProgressRoute(exerciseId: $0)) },
                                     openStudio: { id in
