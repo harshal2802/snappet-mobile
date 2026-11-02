@@ -1,7 +1,7 @@
 import XCTest
 
-/// Kilter board climbs in Yours (Library redesign L4c, prompt 188): a board climb shows under Climbing with a KILTER
-/// badge, its angle and attempts, opens its Activity page (Progress · Clips · About) with "Open on the board" for its Kilter page (prompt 189), and hides / unhides. Seeded by `-uiTestSeedActivityClips`.
+/// Kilter board climbs in Yours (Library redesign L4c, prompt 188): a board climb shows under Climbing with a Kilter
+/// tag, its angle and attempts, opens its Activity page (Progress · Clips · About) with "Open on the board" for its Kilter page (prompt 189), and hides / unhides. Seeded by `-uiTestSeedActivityClips`.
 @MainActor
 final class LibraryKilterUITests: XCTestCase {
     var app: XCUIApplication!
@@ -43,7 +43,8 @@ final class LibraryKilterUITests: XCTestCase {
         await launchToClimbing()
         let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the board climb is in Yours")
-        XCTAssertTrue(row.label.contains("KILTER"), row.label)
+        // The outlined "Kilter" tag after the name (prompt 218; was a "KILTER" badge) — not just the "Kilter Board" subtitle.
+        XCTAssertTrue(row.label.contains(", Kilter, "), row.label)
         XCTAssertTrue(row.label.contains("40°"), row.label)
         XCTAssertTrue(row.label.contains("12 attempts"), row.label)
         snap("01-kilter-in-yours")

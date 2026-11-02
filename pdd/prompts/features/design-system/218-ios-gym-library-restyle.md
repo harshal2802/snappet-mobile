@@ -27,5 +27,5 @@ behaviour (checklist in the mockup).
 ## Acceptance
 
 - [x] `LibraryExploreCountTests`; dark screenshots of Yours + Explore · Strength match the mockup.
-- [ ] Full UI + unit suites.
-- [ ] Device.
+- [x] Full UI: 159/167 + reruns — `LibraryKilterUITests` updated for the "Kilter" tag (was "KILTER"), the contact-rep interval timeout passes alone (flake), only the known `525 kg` main failure remains; unit 2646 green.
+- [x] Device: user on MrRobot — found the Yours count still read "3 strength"; fixed (`exploreCount` for Yours too); "looks fixed now".
