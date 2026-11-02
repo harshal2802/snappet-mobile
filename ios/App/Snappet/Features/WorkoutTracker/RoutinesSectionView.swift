@@ -32,7 +32,7 @@ struct RoutinesSectionView: View {
                 } description: {
                     Text("Build a routine from the exercise catalog, or scan one a friend shares.")
                 } actions: {
-                    Button("New Routine") { newRoutine() }.buttonStyle(.borderedProminent)
+                    Button("New Routine") { newRoutine() }.buttonStyle(.snappetPrimary)
                     Button { scanRoutine() } label: { Label("Scan QR Code", systemImage: "qrcode.viewfinder") }
                         .accessibilityIdentifier("routines.empty.scan")
                     Button { importPhoto() } label: { Label("Import from Photos", systemImage: "photo.on.rectangle") }
@@ -55,15 +55,16 @@ struct RoutinesSectionView: View {
                                       routine: upNext.flatMap { u in routines.first { $0.id == u.routineID } },
                                       start: start, skip: skip, skipSlot: skipSlot)
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowBackground(Color.clear)
             }
             if !mine.isEmpty {
-                Section("My Routines") {
+                Section("My routines") {
                     ForEach(mine) { routine in
                         Button { open(routine) } label: { RoutineRow(routine: routine, resolver: resolver) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("routineRow")
+                            .listRowBackground(SnappetColor.surface)
                             // Start + Delete both live on the trailing edge: a leading (left→right)
                             // swipe is the system back gesture here (this list is the module's root in
                             // the App Library's NavigationStack), so a leading action fought it and
@@ -74,11 +75,12 @@ struct RoutinesSectionView: View {
                 }
             }
             if !starters.isEmpty {
-                Section("Starter Routines") {
+                Section("Starter routines") {
                     ForEach(starters) { routine in
                         Button { open(routine) } label: { RoutineRow(routine: routine, resolver: resolver) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("routineRow")
+                            .listRowBackground(SnappetColor.surface)
                             // Start + Delete both live on the trailing edge: a leading (left→right)
                             // swipe is the system back gesture here (this list is the module's root in
                             // the App Library's NavigationStack), so a leading action fought it and
@@ -89,11 +91,13 @@ struct RoutinesSectionView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(SnappetColor.paper)
     }
 
     private func startButton(_ routine: Routine) -> some View {
         Button { start(routine) } label: { Label("Start", systemImage: "play.fill") }
-            .tint(SnappetColor.workout)
+            .tint(SnappetColor.brand)
             .disabled(routine.exercises.isEmpty)
     }
 
@@ -102,37 +106,42 @@ struct RoutinesSectionView: View {
     }
 }
 
-/// One routine list row: name, sport/level chips, and an exercise-count summary.
+/// One routine list row (prompt 219): a neutral glyph tile, the name + an outlined schedule chip, counts · level, and
+/// the first three exercises.
 struct RoutineRow: View {
     let routine: Routine
     let resolver: ExerciseResolver
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                if let sport = routine.sport, sport != .general {
-                    Image(systemName: sport.symbol).foregroundStyle(SnappetColor.workout)
+        HStack(spacing: 12) {
+            Image(systemName: routine.sport.flatMap { $0 == .general ? nil : $0.symbol } ?? "list.bullet")
+                .font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                .frame(width: 34, height: 34)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(routine.name).font(.system(size: 15.5, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    if let schedule = routine.schedule, schedule.isEnabled {
+                        ScheduleChip(schedule: schedule)
+                    }
                 }
-                Text(routine.name).font(.headline).lineLimit(1)
-                if let schedule = routine.schedule, schedule.isEnabled {
-                    ScheduleChip(schedule: schedule)
+                Text(Self.summary(exercises: routine.exercises.count, sets: routine.totalSets, level: routine.level?.display))
+                    .snappetDetail()
+                if !routine.exercises.isEmpty {
+                    Text(routine.exercises.prefix(3)
+                        .map { resolver.name(for: $0.exerciseId, override: $0.displayName) }
+                        .joined(separator: ", ") + (routine.exercises.count > 3 ? "…" : ""))
+                        .font(.system(size: 11)).foregroundStyle(SnappetColor.textTertiary).lineLimit(1)
                 }
-            }
-            HStack(spacing: 6) {
-                Text("\(routine.exercises.count) exercises · \(routine.totalSets) sets")
-                if let level = routine.level {
-                    Text("·"); Text(level.display)
-                }
-            }
-            .font(.caption).foregroundStyle(.secondary)
-            if !routine.exercises.isEmpty {
-                Text(routine.exercises.prefix(3)
-                    .map { resolver.name(for: $0.exerciseId, override: $0.displayName) }
-                    .joined(separator: ", ") + (routine.exercises.count > 3 ? "…" : ""))
-                    .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// "1 exercise · 1 set · Beginner" — was "1 exercises · 1 sets" (prompt 219).
+    static func summary(exercises: Int, sets: Int, level: String?) -> String {
+        (["\(exercises) exercise\(exercises == 1 ? "" : "s")", "\(sets) set\(sets == 1 ? "" : "s")"] + [level].compactMap { $0 })
+            .joined(separator: " · ")
     }
 }
 
@@ -162,11 +171,11 @@ struct ScheduleChip: View {
 
     var body: some View {
         Label(fullText, systemImage: "calendar")
-            .font(.caption2.weight(.bold))
+            .font(.system(size: 10.5))
             .labelStyle(.titleAndIcon)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(SnappetColor.workout.opacity(0.18), in: Capsule())
-            .foregroundStyle(SnappetColor.workout)
+            .padding(.horizontal, 7).padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+            .foregroundStyle(SnappetColor.textSecondary)
             .lineLimit(1)
             .accessibilityLabel("Scheduled \(schedule.summary(calendar: calendar))")
     }

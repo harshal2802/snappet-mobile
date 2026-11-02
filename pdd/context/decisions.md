@@ -10414,3 +10414,10 @@ stripes, and the panel read as an opaque slab.
 - **Climb status keeps its meaning colours as words:** ✓ Sent green, ◐ Project amber.
 - **Explore's count reads in words.** It was the discipline label plus "s" ("859 strengths"); a per-sport noun
   map replaces it.
+
+## 2026-11-02 — Design-system reset, step 3d: Gym Tracker Routines (prompt 219)
+
+- **"Missed" on the Up next week strip is amber.** It was coral, which is now the user's accent. Missed is a
+  meaning colour and must not look like the accent.
+- **The Up next kicker is sentence case.** `RoutineScheduleUITests` matched the caps strings, so the tests moved
+  with it.
