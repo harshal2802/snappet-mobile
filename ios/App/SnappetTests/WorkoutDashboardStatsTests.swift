@@ -82,4 +82,28 @@ final class WorkoutDashboardStatsTests: XCTestCase {
         let s = WorkoutSession(routineID: nil, routineName: "S", startedAt: now, exercises: [ex])
         XCTAssertNil(WorkoutDashboardStats.dominantDiscipline(of: s))
     }
+
+    // MARK: - Prompt 217 fixes
+
+    func testRacketSessionsHaveADisciplineAndCount() {
+        let racket = session(.racket, startedAt: day(0))
+        XCTAssertEqual(WorkoutDashboardStats.dominantDiscipline(of: racket), .racket,
+                       "racket matches were dropped from Recent sessions and the week's counts")
+        let stats = WorkoutDashboardStats.make(history: [racket], now: now, calendar: cal)
+        XCTAssertEqual(stats.disciplineCounts.map(\.discipline), [.racket])
+    }
+
+    func testVolumeFocusIsThisWeekOnceItHasVolume() {
+        let thisWeek = cal.dateInterval(of: .weekOfYear, for: now)!.start
+        let lastWeek = cal.date(byAdding: .weekOfYear, value: -1, to: thisWeek)!
+        let f = WorkoutDashboardStats.volumeFocus([(lastWeek, 900), (thisWeek, 400)], now: now, calendar: cal)
+        XCTAssertEqual(f?.label, "this week"); XCTAssertEqual(f?.volumeKg, 400)
+    }
+
+    func testVolumeFocusFallsBackToLastWeekOnAnEmptyNewWeek() {
+        let thisWeek = cal.dateInterval(of: .weekOfYear, for: now)!.start
+        let lastWeek = cal.date(byAdding: .weekOfYear, value: -1, to: thisWeek)!
+        let f = WorkoutDashboardStats.volumeFocus([(lastWeek, 900)], now: now, calendar: cal)
+        XCTAssertEqual(f?.label, "last week"); XCTAssertEqual(f?.volumeKg, 900); XCTAssertEqual(f?.weekStart, lastWeek)
+    }
 }

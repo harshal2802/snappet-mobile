@@ -10395,3 +10395,14 @@ stripes, and the panel read as an opaque slab.
   Clips.
 - **Autoplay keeps its word label.** The mockup drew it as an icon, but prompt 166 made it a labelled control
   because the bare glyph didn't read as autoplay. That learning wins; it's restyled as a pill.
+
+## 2026-11-01 — Design-system reset, step 3d: Gym Tracker Dashboard (prompt 217)
+
+- **The Gym Tracker takes the user's accent.** It joins `suiteAccentModules`. The workout orange stays on its
+  App Library icon only.
+- **The module goes whole, not section by section.** Library, Routines and History pick up the accent tint now,
+  then get their layout restyle in the next PRs. That beats leaving the toolbar orange on a restyled Dashboard.
+- **Recent sessions are rows in one card.** The per-discipline edge-bars and fact capsules are gone; the glyph
+  still says the discipline. Facts read as one grey line.
+- **"See all" was a dead button and now opens History.** Fixed with the restyle, since "everything links to its
+  source" is the standing rule.

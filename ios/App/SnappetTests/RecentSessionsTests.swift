@@ -31,11 +31,26 @@ final class RecentSessionsTests: XCTestCase {
         let rows = RecentSessions.rows(history: h, unit: .kg)
         XCTAssertEqual(rows.map(\.discipline), [.climb, .strength, .run])   // newest first
         XCTAssertEqual(rows[0].facts[0], "V5")                              // hardest send
-        XCTAssertEqual(rows[0].facts[1], "1 sends")
+        XCTAssertEqual(rows[0].facts[1], "1 send")                          // singular (prompt 217)
         XCTAssertTrue(rows[1].facts[0].contains("kg"))                     // strength volume
         XCTAssertEqual(rows[1].facts[1], "2 sets")
         XCTAssertTrue(rows[1].facts.contains { $0.hasPrefix("top ") })      // top set fact
         XCTAssertEqual(rows[2].facts[0], SetMeasure.formatDistance(5000, unit: .km))
+    }
+
+    func testOneSetReadsSingular() {
+        let rows = RecentSessions.rows(history: [session("Push day", at: 0, [entity("bench", .strength, [lift(5, 100)])])],
+                                       unit: .kg)
+        XCTAssertEqual(rows[0].facts[1], "1 set")
+    }
+
+    func testEmptySessionsAreSkippedButTheFeedStillFills() {
+        let empty = WorkoutSession(routineID: nil, routineName: "Opened and closed", startedAt: t(9),
+                                   completedAt: t(9).addingTimeInterval(60), exercises: [])
+        let h = [empty] + (0..<5).map { session("Push \($0)", at: $0, [entity("bench", .strength, [lift(5, 100)])]) }
+        let rows = RecentSessions.rows(history: h, unit: .kg, limit: 5)
+        XCTAssertEqual(rows.count, 5, "the empty session doesn't eat a slot")
+        XCTAssertFalse(rows.contains { $0.title == "Opened and closed" })
     }
 
     func testLimitCapsTheFeed() {
