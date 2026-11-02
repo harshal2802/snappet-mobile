@@ -262,7 +262,7 @@ struct WorkoutLibraryView: View {
         case .climb?:
             let sent = yoursShown.filter { $0.climb?.sent == true }.count
             return "\(n) \(n == 1 ? "climb" : "climbs") · \(sent) sent"
-        case let d?: return "\(n) \(d.label.lowercased())"
+        case let d?: return Self.exploreCount(n, d)      // "3 strength exercises", "4 runs" (was "3 strength")
         case nil: return "\(n) \(n == 1 ? "activity" : "activities")"
         }
     }

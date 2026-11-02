@@ -10,5 +10,7 @@ final class LibraryExploreCountTests: XCTestCase {
         XCTAssertEqual(WorkoutLibraryView.exploreCount(3, .other), "3 activities")
         XCTAssertEqual(WorkoutLibraryView.exploreCount(12, nil), "12 items")
         XCTAssertEqual(WorkoutLibraryView.exploreCount(2, .dance), "2 dances")
+        XCTAssertEqual(WorkoutLibraryView.exploreCount(4, .run), "4 runs")
+        XCTAssertEqual(WorkoutLibraryView.exploreCount(3, .timed), "3 timed exercises")
     }
 }
