@@ -101,6 +101,8 @@ struct WorkoutLibraryView: View {
             if mode == .yours { yoursSection } else { exploreSection }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(SnappetColor.paper)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: searchPrompt)
         .overlay {
@@ -141,11 +143,11 @@ struct WorkoutLibraryView: View {
         Section {
             if yours.isEmpty {
                 VStack(spacing: 10) {
-                    Text("Nothing logged yet").font(.headline)
+                    Text("Nothing logged yet").snappetTitle()
                     Text("Everything you log in a session — lifts, climbs, runs, holds — shows up here with how often you do it.")
-                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        .snappetDetail().multilineTextAlignment(.center)
                     Button("Explore the catalog") { choose(.explore) }
-                        .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                        .buttonStyle(.snappetPrimary)
                         .accessibilityIdentifier("library.yours.explore")
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 30)
@@ -170,9 +172,9 @@ struct WorkoutLibraryView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label(showHidden ? "Hide hidden" : "Show \(hiddenCount) hidden",
                               systemImage: showHidden ? "eye.slash" : "eye")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+                            .font(SnappetType.detail.weight(.medium)).foregroundStyle(SnappetColor.brand)
                         if showHidden && hiddenCount > 0 {
-                            Text("Swipe a dimmed one left to unhide it.").font(.caption).foregroundStyle(.secondary)
+                            Text("Swipe a dimmed one left to unhide it.").snappetLabel()
                         }
                     }
                 }
@@ -196,7 +198,7 @@ struct WorkoutLibraryView: View {
             Button { setFlag(row.key, pin: !pinned) } label: {
                 Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
             }
-            .tint(SnappetColor.workout)
+            .tint(SnappetColor.brand)
         }
         .swipeActions(edge: .trailing) {
             Button { setFlag(row.key, hide: !hidden) } label: {
@@ -223,7 +225,7 @@ struct WorkoutLibraryView: View {
 
     private func yoursHeader(count: Int) -> some View {
         HStack {
-            Text(countLabel(count)).font(.caption).foregroundStyle(.secondary).textCase(nil)
+            Text(countLabel(count)).snappetLabel().textCase(nil)
             Spacer()
             Menu {
                 Picker("Sort by", selection: Binding(get: { sort }, set: { setSort($0) })) {
@@ -249,7 +251,7 @@ struct WorkoutLibraryView: View {
                     Text(sort.label(for: discipline))
                     Image(systemName: "chevron.down").font(.caption2.weight(.bold))
                 }
-                .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout).textCase(nil)
+                .font(SnappetType.label.weight(.medium)).foregroundStyle(SnappetColor.brand).textCase(nil)
             }
             .accessibilityIdentifier("library.sort")
         }
@@ -316,7 +318,7 @@ struct WorkoutLibraryView: View {
                     .accessibilityIdentifier("exerciseRow")
             }
         } header: {
-            Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
+            Text(Self.exploreCount(results.count, discipline)).snappetLabel().textCase(nil)
         }
         if !facets.isEmpty {
             Section {
@@ -326,6 +328,23 @@ struct WorkoutLibraryView: View {
                 }
             }
         }
+    }
+
+    /// "859 strength exercises", "24 climbs", "1 run" — was "859 strengths" (prompt 218).
+    static func exploreCount(_ n: Int, _ d: WorkoutDiscipline?) -> String {
+        let one: String
+        switch d {
+        case nil: one = "item"
+        case .strength?: one = "strength exercise"
+        case .climb?: one = "climb"
+        case .run?: one = "run"
+        case .timed?: one = "timed exercise"
+        case .dance?: one = "dance"
+        case .racket?: one = "racket drill"
+        case .other?: one = "activity"
+        }
+        let many = one == "activity" ? "activities" : one + (one.hasSuffix("s") ? "es" : "s")
+        return "\(n) \(n == 1 ? one : many)"
     }
 
     /// Days you've done a catalog item (prompt 184 — the "done" badge). A lift by its id; a timed protocol by its
@@ -362,10 +381,9 @@ struct WorkoutLibraryView: View {
     private var disciplineChipBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                disciplineChip(nil, label: "All", symbol: "square.grid.2x2",
-                               accent: SnappetColor.workout)
+                disciplineChip(nil, label: "All", symbol: "square.grid.2x2")
                 ForEach(disciplines) { d in
-                    disciplineChip(d, label: d.label, symbol: d.symbol, accent: d.accent)
+                    disciplineChip(d, label: d.label, symbol: d.symbol)
                 }
             }
             .padding(.vertical, 4)
@@ -374,8 +392,8 @@ struct WorkoutLibraryView: View {
         .listRowSeparator(.hidden)
     }
 
-    private func disciplineChip(_ d: WorkoutDiscipline?, label: String, symbol: String,
-                                accent: Color) -> some View {
+    /// One sport chip — an outlined pill, the user's accent when on (prompt 218; sport colour stays off chrome).
+    private func disciplineChip(_ d: WorkoutDiscipline?, label: String, symbol: String) -> some View {
         let on = discipline == d
         return Button {
             withAnimation(SnappetMotion.quick) {
@@ -385,13 +403,10 @@ struct WorkoutLibraryView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: symbol).font(.caption.weight(.semibold))
-                Text(label).font(.subheadline.weight(.medium))
+                Image(systemName: symbol).font(.system(size: 11))
+                Text(label).font(.system(size: 13.5))
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .foregroundStyle(on ? accent : SnappetColor.textSecondary)
-            .background(on ? accent.opacity(0.15) : SnappetColor.surfaceMuted, in: Capsule())
-            .overlay(Capsule().strokeBorder(on ? accent.opacity(0.4) : .clear, lineWidth: 1))
+            .snappetPill(selected: on)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("library.chip.\(d?.rawValue ?? "all")")
@@ -412,43 +427,41 @@ struct LibraryYoursRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let c = row.climb {
-                Text(c.grade ?? "–").font(.caption.weight(.heavy)).monospacedDigit()
-                    .foregroundStyle(SnappetColor.kilter)
-                    .frame(width: 36, height: 30)
-                    .background(SnappetColor.kilter.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
-            } else {
-                Image(systemName: row.discipline.symbol)
-                    .font(.title3).foregroundStyle(row.discipline.accent)
-                    .frame(width: 36, height: 30)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(row.title).font(.headline).lineLimit(1)
-                    if LibraryCatalog.isKilter(row.key) {
-                        Text("KILTER").font(.caption2.weight(.heavy)).foregroundStyle(SnappetColor.kilter)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(SnappetColor.kilter.opacity(0.15), in: Capsule())
-                    }
-                    if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(SnappetColor.workout) }
-                    if hidden { Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.secondary) }
+            // Prompt 218: a neutral tile — the climb's grade, or the sport glyph (sport colour stays off chrome).
+            Group {
+                if let c = row.climb {
+                    Text(c.grade ?? "–").font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                        .foregroundStyle(SnappetColor.ink).minimumScaleFactor(0.7)
+                } else {
+                    Image(systemName: row.discipline.symbol).font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
                 }
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(width: 34, height: 34)
+            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(row.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    if LibraryCatalog.isKilter(row.key) { LibraryTag(text: "Kilter") }
+                    if pinned { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(SnappetColor.brand) }
+                    if hidden { Image(systemName: "eye.slash").font(.system(size: 9)).foregroundStyle(SnappetColor.textSecondary) }
+                }
+                Text(subtitle).snappetDetail().lineLimit(1)
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 2) {
                 if row.notDoneYet {
-                    Text("New").font(.caption.weight(.bold)).foregroundStyle(SnappetColor.workout)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(SnappetColor.workout.opacity(0.15), in: Capsule())
+                    LibraryTag(text: "New", accent: true)
                 } else if let c = row.climb {
-                    Text(statusLabel(c)).font(.caption.weight(.bold))
-                        .foregroundStyle(c.sent ? SnappetColor.perfFresh : SnappetColor.kilter)
+                    // Status as coloured words (✓ sent green, ◐ project amber) — the colour is the meaning.
+                    Text((c.sent ? "✓ " : c.status == nil ? "" : "◐ ") + statusLabel(c))
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(c.sent ? SnappetColor.perfFresh : c.status == nil ? SnappetColor.textSecondary : .orange)
                     Text(LibraryCatalog.countLabel(row, count))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(SnappetColor.textTertiary)
                 } else {
-                    Text(LibraryCatalog.countLabel(row, count)).font(.subheadline.weight(.bold)).monospacedDigit()
-                    Text(Self.ago(row.lastDate)).font(.caption2).foregroundStyle(.secondary)
+                    Text(LibraryCatalog.countLabel(row, count)).font(.system(size: 14, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(SnappetColor.ink)
+                    Text(Self.ago(row.lastDate)).font(.system(size: 11)).foregroundStyle(SnappetColor.textTertiary)
                 }
             }
         }
@@ -503,8 +516,8 @@ struct LibraryYoursRow: View {
     }
 }
 
-/// A single library row: discipline glyph (in its accent) + title + subtitle, with a "Custom" badge for
-/// user-created exercises. The accent makes the discipline legible at a glance (the wayfinding axis).
+/// A single library row: a neutral glyph tile + title + subtitle, with "Custom" / "Done · N days" tags
+/// (prompt 218 — sport colour stays off chrome; the glyph still says the sport).
 struct LibraryItemRow: View {
     let item: LibraryItem
     /// Days you've done it, for the "done" badge in Explore (prompt 184); `nil` = never.
@@ -513,34 +526,36 @@ struct LibraryItemRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: item.symbol)
-                .font(.title3)
-                .foregroundStyle(item.discipline.accent)
-                .frame(width: 30)
+                .font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                .frame(width: 34, height: 34)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.headline).lineLimit(1)
-                Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(item.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                Text(item.subtitle).snappetDetail().lineLimit(1)
             }
             Spacer()
-            if let doneDays {
-                Text("Done · \(doneDays) \(doneDays == 1 ? "day" : "days")")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(SnappetColor.workout.opacity(0.15), in: Capsule())
-                    .foregroundStyle(SnappetColor.workout)
-            }
-            if item.isCustom {
-                Text("Custom")
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(item.discipline.accent.opacity(0.15), in: Capsule())
-                    .foregroundStyle(item.discipline.accent)
-            }
+            if let doneDays { LibraryTag(text: "Done · \(doneDays) \(doneDays == 1 ? "day" : "days")") }
+            if item.isCustom { LibraryTag(text: "Custom") }
         }
         .padding(.vertical, 2)
         // The whole row is the tap target. Under `.buttonStyle(.plain)` only drawn content hit-tests, so a short
         // title/subtitle (every climb/run starter) left the empty middle and right of the row dead — tapping a
         // climb "did nothing" unless you hit the text.
         .contentShape(Rectangle())
+    }
+}
+
+/// A small outlined tag ("Kilter", "New", "Custom", "Done · 3 days") — prompt 218.
+struct LibraryTag: View {
+    let text: String
+    var accent = false
+
+    var body: some View {
+        Text(text).font(.system(size: 10.5))
+            .foregroundStyle(accent ? SnappetColor.brand : SnappetColor.textSecondary)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(accent ? SnappetColor.brand.opacity(0.6) : SnappetColor.hairline))
+            .fixedSize()
     }
 }
 
@@ -626,9 +641,9 @@ private struct LibraryFlowChips<T: Identifiable & Hashable>: View {
                         .font(.subheadline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
-                        .background(on ? SnappetColor.workout.opacity(0.2) : Color(.secondarySystemFill),
+                        .background(on ? SnappetColor.brand.opacity(0.18) : Color(.secondarySystemFill),
                                     in: Capsule())
-                        .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+                        .foregroundStyle(on ? SnappetColor.brand : Color.primary)
                 }
                 .buttonStyle(.plain)
                 .snappetAnimation(SnappetMotion.quick, value: on)
