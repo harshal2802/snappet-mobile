@@ -10406,3 +10406,11 @@ stripes, and the panel read as an opaque slab.
   still says the discipline. Facts read as one grey line.
 - **"See all" was a dead button and now opens History.** Fixed with the restyle, since "everything links to its
   source" is the standing rule.
+
+## 2026-11-02 — Design-system reset, step 3d: Gym Tracker Library (prompt 218)
+
+- **Sport colour stays off chrome.** Sport chips, glyph tiles and grade badges are neutral or accent. The glyph
+  still says the sport.
+- **Climb status keeps its meaning colours as words:** ✓ Sent green, ◐ Project amber.
+- **Explore's count reads in words.** It was the discipline label plus "s" ("859 strengths"); a per-sport noun
+  map replaces it.
