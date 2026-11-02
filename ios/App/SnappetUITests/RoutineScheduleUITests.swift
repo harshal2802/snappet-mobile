@@ -51,15 +51,15 @@ final class RoutineScheduleUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let upNext = app.otherElements["upNext.card"]
         XCTAssertTrue(upNext.waitForExistence(timeout: 4), "a scheduled routine shows the Up next card")
-        XCTAssertTrue(app.staticTexts["upNext.when"].label.contains("TODAY"), app.staticTexts["upNext.when"].label)
+        XCTAssertTrue(app.staticTexts["upNext.when"].label.contains("Today"), app.staticTexts["upNext.when"].label)
         snap("routines-up-next")
 
         // Skip today → Up next moves to tomorrow.
         app.buttons["upNext.skip"].tap()
         let when = app.staticTexts["upNext.when"]
         let deadline = Date().addingTimeInterval(4)
-        while !when.label.contains("TOMORROW"), Date() < deadline { usleep(200_000) }
-        XCTAssertTrue(when.label.contains("TOMORROW"), when.label)
+        while !when.label.contains("Tomorrow"), Date() < deadline { usleep(200_000) }
+        XCTAssertTrue(when.label.contains("Tomorrow"), when.label)
         snap("routines-up-next-skipped")
     }
 
@@ -165,7 +165,7 @@ final class RoutineScheduleUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let when = app.staticTexts["upNext.when"]
         XCTAssertTrue(when.waitForExistence(timeout: 4))
-        XCTAssertTrue(when.label.contains(" OF 7"), when.label)
+        XCTAssertTrue(when.label.contains(" of 7"), when.label)
         XCTAssertTrue(app.buttons["upNext.skipSlot"].exists, "skip a single session")
         snap("up-next-multi")
     }

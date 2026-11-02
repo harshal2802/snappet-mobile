@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// "Up next" on the Routines list (prompt 136, wireframe frame 5): the soonest planned routine with
-/// Start / Skip, over this week's strip across every scheduled routine (✓ done · coral missed · planned).
+/// Start / Skip, over this week's strip across every scheduled routine (✓ done · amber missed · planned).
+/// Prompt 219: a calm accent card (was an orange gradient), sentence-case kicker.
 /// Only shown when something is scheduled, so an unscheduled list looks exactly as before.
 struct RoutineUpNextCard: View {
     let upNext: RoutineReminderPlanner.UpNext?
@@ -18,63 +19,59 @@ struct RoutineUpNextCard: View {
         VStack(alignment: .leading, spacing: 8) {
             if let upNext, let routine {
                 Text(kicker(upNext))
-                    .font(.caption.weight(.heavy)).tracking(1)
-                    .foregroundStyle(SnappetColor.workout)
+                    .snappetLabel()
                     .accessibilityIdentifier("upNext.when")
-                Text(routine.name).font(.title3.weight(.bold))
+                Text(routine.name).font(.system(size: 18, weight: .semibold)).foregroundStyle(SnappetColor.ink)
                     .accessibilityIdentifier("upNext.name")
-                Text("\(routine.exercises.count) blocks · \(routine.totalSets) sets")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                Text("\(routine.exercises.count) block\(routine.exercises.count == 1 ? "" : "s") · \(routine.totalSets) set\(routine.totalSets == 1 ? "" : "s")")
+                    .snappetDetail()
             } else {
-                Text("THIS WEEK").font(.caption.weight(.heavy)).tracking(1).foregroundStyle(SnappetColor.workout)
-                Text("Nothing else planned").font(.headline)
+                Text("This week").snappetLabel()
+                Text("Nothing else planned").snappetTitle()
             }
 
             weekStrip
 
             if let upNext, let routine {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Button { start(routine) } label: {
-                        Label("Start", systemImage: "play.fill").font(.subheadline.weight(.semibold))
+                        Label("Start", systemImage: "play.fill")
                     }
-                    .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .disabled(routine.exercises.isEmpty)
                     .accessibilityIdentifier("upNext.start")
                     if upNext.slotsOnDay > 1 {
-                        Button("Skip this one") { skipSlot(routine.id, upNext.slotKey) }
-                            .buttonStyle(.bordered).tint(SnappetColor.workout)
-                            .accessibilityIdentifier("upNext.skipSlot")
+                        Button { skipSlot(routine.id, upNext.slotKey) } label: {
+                            Text("Skip this one").font(.system(size: 15, weight: .medium)).snappetPill(selected: false, large: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("upNext.skipSlot")
                     } else if upNext.isToday {
-                        Button("Skip today") { skip(routine.id, upNext.day) }
-                            .buttonStyle(.bordered).tint(SnappetColor.workout)
-                            .accessibilityIdentifier("upNext.skip")
+                        Button { skip(routine.id, upNext.day) } label: {
+                            Text("Skip today").font(.system(size: 15, weight: .medium)).snappetPill(selected: false, large: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("upNext.skip")
                     }
                 }
-                .padding(.top, 2)
+                .padding(.top, 4)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [SnappetColor.workout.opacity(0.28), SnappetColor.workout.opacity(0.08)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .strokeBorder(SnappetColor.workout.opacity(0.35)))
+        .snappetPanel(glow: upNext != nil)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("upNext.card")
     }
 
     private func kicker(_ u: RoutineReminderPlanner.UpNext) -> String {
         let base = kickerBase(u)
-        return u.slotsOnDay > 1 ? "\(base) · \(u.slot + 1) OF \(u.slotsOnDay)" : base
+        return u.slotsOnDay > 1 ? "\(base) · \(u.slot + 1) of \(u.slotsOnDay)" : base
     }
 
     private func kickerBase(_ u: RoutineReminderPlanner.UpNext) -> String {
         let time = u.start.formatted(date: .omitted, time: .shortened)
-        if u.isToday { return "UP NEXT · TODAY \(time)" }
-        if calendar.isDateInTomorrow(u.start) { return "UP NEXT · TOMORROW \(time)" }
-        return "UP NEXT · \(u.start.formatted(.dateTime.weekday(.wide)).uppercased()) \(time)"
+        if u.isToday { return "Up next · Today \(time)" }
+        if calendar.isDateInTomorrow(u.start) { return "Up next · Tomorrow \(time)" }
+        return "Up next · \(u.start.formatted(.dateTime.weekday(.wide))) \(time)"
     }
 
     private var weekStrip: some View {
@@ -82,8 +79,8 @@ struct RoutineUpNextCard: View {
             ForEach(week, id: \.day) { d in
                 VStack(spacing: 3) {
                     Text(calendar.veryShortWeekdaySymbols[calendar.component(.weekday, from: d.day.date(calendar: calendar)) - 1])
-                        .font(.caption2.weight(d.isToday ? .heavy : .regular))
-                        .foregroundStyle(d.isToday ? .primary : .secondary)
+                        .font(.system(size: 10, weight: d.isToday ? .semibold : .regular))
+                        .foregroundStyle(d.isToday ? SnappetColor.ink : SnappetColor.textTertiary)
                     cell(d)
                 }
                 .frame(maxWidth: .infinity)
@@ -104,21 +101,21 @@ struct RoutineUpNextCard: View {
                 if d.planned > 1 { Text(label).font(.system(size: 9, weight: .bold)) }
                 else { Image(systemName: "checkmark").font(.caption2.weight(.bold)) }
             }
-            .foregroundStyle(.black)
-            .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.workout, in: shape)
+            .foregroundStyle(SnappetColor.onBrand)
+            .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.brand, in: shape)
         case .planned:
             Text(label).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
-                .foregroundStyle(SnappetColor.workout)
-                .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.workout.opacity(0.25), in: shape)
+                .foregroundStyle(SnappetColor.brand)
+                .frame(maxWidth: .infinity, minHeight: 24).overlay(shape.strokeBorder(SnappetColor.brand))
         case .missed:
             Text(label).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
-                .foregroundStyle(SnappetColor.brand)
-                .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.brand.opacity(0.18), in: shape)
+                .foregroundStyle(.orange)   // missed = amber meaning colour (was coral, which is now the accent)
+                .frame(maxWidth: .infinity, minHeight: 24).background(Color.orange.opacity(0.16), in: shape)
         case .skipped:
             Image(systemName: "arrow.uturn.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 24).background(Color(.tertiarySystemFill), in: shape)
+                .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.surfaceMuted, in: shape)
         case .none:
-            Color(.tertiarySystemFill).frame(maxWidth: .infinity, minHeight: 24).clipShape(shape)
+            SnappetColor.surfaceMuted.frame(maxWidth: .infinity, minHeight: 24).clipShape(shape)
         }
     }
 
