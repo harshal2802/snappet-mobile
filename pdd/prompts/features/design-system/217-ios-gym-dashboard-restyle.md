@@ -42,5 +42,5 @@ Restyle the Gym Tracker Dashboard (`WorkoutDashboardSection`). Every element kee
 
 - [x] `WorkoutDashboardUITests`: sections present, See all → History; dark screenshots reviewed.
 - [x] `RecentSessionsTests` (+ singular set, empty sessions don't eat a slot) and `WorkoutDashboardStatsTests` (+ racket counted, volume focus this/last week).
-- [ ] Full UI + unit suites.
-- [ ] Device.
+- [x] Full UI 161/167 (5 skipped) — only the known main failure (interval 525 kg); unit 2645 green.
+- [x] Device: user verified on MrRobot ("looks fixed now") — racket Quick Sessions in Recent, volume card.
