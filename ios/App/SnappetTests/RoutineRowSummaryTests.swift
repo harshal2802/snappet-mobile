@@ -8,4 +8,11 @@ final class RoutineRowSummaryTests: XCTestCase {
         XCTAssertEqual(RoutineRow.summary(exercises: 3, sets: 10, level: nil), "3 exercises · 10 sets")
         XCTAssertEqual(RoutineRow.summary(exercises: 5, sets: 18, level: "Intermediate"), "5 exercises · 18 sets · Intermediate")
     }
+
+    func testUpNextCellInitials() {
+        XCTAssertEqual(RoutineUpNextCard.initials("Sudarshan Kriya"), "SK")
+        XCTAssertEqual(RoutineUpNextCard.initials("Push Day"), "PD")
+        XCTAssertEqual(RoutineUpNextCard.initials("Yoga"), "YO")
+        XCTAssertEqual(RoutineUpNextCard.initials("Calisthenics — Pull Strength"), "CP")
+    }
 }

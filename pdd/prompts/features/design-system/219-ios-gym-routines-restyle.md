@@ -17,6 +17,7 @@ behaviour (checklist in the mockup).
   - Sentence-case kicker: "Up next · Today 7:00 AM", "· 2 of 7".
   - Name 18 semibold.
   - Wide accent Start; Skip today / Skip this one as outline pills (they still show only on the day).
+  - Week strip cells show the routine's initials ("SK") — the first word crowded the cell on device (user).
   - Week strip: done = filled accent ✓, planned = accent outline, missed = amber (was coral, which is now the
     accent), skipped / none = muted.
 - **Rows** (`RoutineRow`): neutral glyph tile (list.bullet when no sport), medium name, outlined `ScheduleChip`,

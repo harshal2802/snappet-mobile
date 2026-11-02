@@ -92,9 +92,9 @@ struct RoutineUpNextCard: View {
 
     @ViewBuilder private func cell(_ d: RoutineReminderPlanner.WeekDay) -> some View {
         let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        // Several sessions a day: "2/7"; otherwise the routine's first word.
-        let label = d.planned > 1 ? "\(d.done)/\(d.planned)"
-            : d.names.first.map { String($0.split(separator: " ").first ?? "") } ?? ""
+        // Several sessions a day: "2/7"; otherwise the routine's initials ("SK") — the first word ("Sudarshan")
+        // crowded the cell (user, on device, prompt 219). The full name is in the title + the VoiceOver label.
+        let label = d.planned > 1 ? "\(d.done)/\(d.planned)" : d.names.first.map(Self.initials) ?? ""
         switch d.state {
         case .done:
             Group {
@@ -104,11 +104,13 @@ struct RoutineUpNextCard: View {
             .foregroundStyle(SnappetColor.onBrand)
             .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.brand, in: shape)
         case .planned:
-            Text(label).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
+            Text(label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+                .padding(.horizontal, 3)
                 .foregroundStyle(SnappetColor.brand)
                 .frame(maxWidth: .infinity, minHeight: 24).overlay(shape.strokeBorder(SnappetColor.brand))
         case .missed:
-            Text(label).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
+            Text(label).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.6)
+                .padding(.horizontal, 3)
                 .foregroundStyle(.orange)   // missed = amber meaning colour (was coral, which is now the accent)
                 .frame(maxWidth: .infinity, minHeight: 24).background(Color.orange.opacity(0.16), in: shape)
         case .skipped:
@@ -117,6 +119,13 @@ struct RoutineUpNextCard: View {
         case .none:
             SnappetColor.surfaceMuted.frame(maxWidth: .infinity, minHeight: 24).clipShape(shape)
         }
+    }
+
+    /// "Sudarshan Kriya" → "SK", "Push Day" → "PD", "Yoga" → "YO" — two letters that fit a narrow day cell.
+    static func initials(_ name: String) -> String {
+        let words = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        if words.count >= 2 { return words.prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased() }
+        return String(words.first?.prefix(2) ?? "").uppercased()
     }
 
     private func a11y(_ d: RoutineReminderPlanner.WeekDay) -> String {
