@@ -10469,3 +10469,10 @@ stripes, and the panel read as an opaque slab.
   moment (the cheer). Session detail is a page you browse, where the 3D one cost a scene and rendered blank.
 - **Done is the one filled action.** Save as routine moves from a tinted fill to an accent outline. The old "single
   coral CTA" comment no longer applies now that Done is accent-filled instead of orange.
+
+## 2026-11-03 — Design-system reset, step 3e: the activity dashboard (prompt 225)
+
+- **The chart's camera marker stays.** The first mockup simplified filmed points to bigger dots. The user said they
+  like the camera icon, so the restyle keeps the `video.fill` annotation and the "📷 = has clips" legend, in the
+  accent. Lesson for later mockups: carry every glyph over, not just every control.
+- **Open on the board uses the user's accent, not Kilter amber.** Kilter has used the user's accent since prompt 213.
