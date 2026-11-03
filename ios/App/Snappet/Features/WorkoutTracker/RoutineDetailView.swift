@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A routine's detail (workout-redesign E4, Flow 5): its prescription as a **discipline-rhythm** of
-/// type-tagged blocks — each block its `WorkoutDiscipline.accent`-tinted glyph + an adaptive prescription
+/// type-tagged blocks — each block its discipline glyph tile + an adaptive prescription
 /// line whose columns derive from the measure (strength `sets × reps`, timed `sets × hold`, climb
 /// `type · grade · attempts`, run `distance`) — with a prominent Start button and an Edit action. A routine
 /// that mixes a strength block + a timed circuit + a climb now reads as a colored modality rhythm, not a
@@ -30,9 +30,11 @@ struct RoutineDetailView: View {
     var body: some View {
         List {
             Section { scheduleCard }
+                .listRowBackground(SnappetColor.surface)
 
             if let detail = routine.detail, !detail.isEmpty {
-                Section { Text(detail).font(.callout) }
+                Section { Text(detail).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary) }
+                    .listRowBackground(SnappetColor.surface)
             }
 
             Section {
@@ -43,18 +45,24 @@ struct RoutineDetailView: View {
                 HStack(spacing: 6) {
                     Text("\(routine.exercises.count) blocks · \(routine.totalSets) sets")
                     Spacer()
-                    // The discipline rhythm: one accent dot per type the routine mixes (the Pulse Pro cue).
+                    // The discipline rhythm: one glyph per type the routine mixes (grey since prompt 222).
                     ForEach(disciplines) { d in
-                        Image(systemName: d.symbol).font(.caption2).foregroundStyle(d.accent)
+                        Image(systemName: d.symbol).font(.caption2)
                     }
                 }
+                .snappetLabel().textCase(nil)
             }
+            .listRowBackground(SnappetColor.surface)
 
             if routine.sport != nil || routine.level != nil || !routine.tags.isEmpty || routine.sourceLabel != nil {
-                Section("About") {
+                Section {
+                    // An HStack, not LabeledContent { Label }: that pairing grew the row into a tall empty card.
                     if let sport = routine.sport {
-                        LabeledContent("Sport") {
-                            Label(sport.display, systemImage: sport.symbol)
+                        HStack {
+                            Text("Sport")
+                            Spacer()
+                            Image(systemName: sport.symbol).foregroundStyle(SnappetColor.textSecondary)
+                            Text(sport.display).foregroundStyle(SnappetColor.textSecondary)
                         }
                     }
                     if let level = routine.level { LabeledContent("Level", value: level.display) }
@@ -68,22 +76,27 @@ struct RoutineDetailView: View {
                             LabeledContent("Source", value: label)
                         }
                     }
+                } header: {
+                    Text("About").snappetLabel().textCase(nil)
                 }
+                .listRowBackground(SnappetColor.surface)
+                .font(.system(size: 15))
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(SnappetColor.paper)
         .navigationTitle(routine.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
             Button { dismiss(); start() } label: {
                 Label("Start Workout", systemImage: "play.fill")
-                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
-            .padding()
-            .background(.bar)
+            .buttonStyle(SnappetWidePrimaryStyle())
+            .padding(.horizontal).padding(.vertical, 10)
+            .background(SnappetColor.paper)
             .disabled(routine.exercises.isEmpty)
+            .opacity(routine.exercises.isEmpty ? 0.5 : 1)
         }
         .toolbar {
             // Share-via-QR (workout-redesign E6) — mirrors KilterClimbDetailView's qrcode toolbar button.
@@ -126,24 +139,27 @@ extension RoutineDetailView {
         Button { scheduling = true } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: schedule == nil ? "calendar.badge.plus" : "calendar")
-                    .font(.title3).foregroundStyle(SnappetColor.workout).frame(width: 28)
-                VStack(alignment: .leading, spacing: 3) {
+                    .font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 32, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
                     if let schedule {
-                        Text(schedule.isEnabled ? "Schedule" : "Schedule · paused").font(.headline)
-                        Text(schedule.summary()).font(.subheadline).foregroundStyle(.secondary)
+                        Text(schedule.isEnabled ? "Schedule" : "Schedule · paused")
+                            .font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                        Text(schedule.summary()).snappetDetail()
                         Text(reminderLine(schedule) + (routine.linkedHabitID != nil ? " · Tracked in Habits" : ""))
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .font(SnappetType.label).foregroundStyle(SnappetColor.textTertiary)
                         if case .weekly(let days, _) = schedule.repeatRule {
-                            ScheduleDayDots(weekdays: days).padding(.top, 4)
+                            ScheduleDayDots(weekdays: days).padding(.top, 6)
                         }
                     } else {
-                        Text("Not scheduled").font(.headline)
-                        Text("Set a schedule to get reminders and see it in Up next.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text("Not scheduled").font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                        Text("Set a schedule to get reminders and see it in Up next.").snappetDetail()
                     }
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SnappetColor.textTertiary)
             }
             .contentShape(Rectangle())
         }
@@ -170,19 +186,19 @@ struct ScheduleDayDots: View {
             ForEach(RoutineSchedule.orderedWeekdays(calendar), id: \.self) { wd in
                 let on = weekdays.contains(wd)
                 Text(calendar.veryShortWeekdaySymbols[wd - 1])
-                    .font(.caption2.weight(.bold))
+                    .font(.system(size: 10.5))
                     .frame(width: 22, height: 22)
-                    .background(on ? SnappetColor.workout : Color(.tertiarySystemFill), in: Circle())
-                    .foregroundStyle(on ? Color.black : Color.secondary)
+                    .background(on ? SnappetColor.brand : SnappetColor.surfaceMuted, in: Circle())
+                    .foregroundStyle(on ? SnappetColor.onBrand : SnappetColor.textSecondary)
             }
         }
         .accessibilityHidden(true)
     }
 }
 
-/// One **type-tagged block** row inside a routine detail / editor preview (workout-redesign E4). A leading
-/// `WorkoutDiscipline.accent` edge-bar + glyph make the block's discipline legible at a glance; the
-/// prescription line's columns derive from the measure. Replaces the strength-only `RoutineExerciseRow`.
+/// One **type-tagged block** row inside a routine detail / editor preview (workout-redesign E4). A glyph tile makes
+/// the block's discipline legible at a glance; the prescription line's columns derive from the measure. Replaces
+/// the strength-only `RoutineExerciseRow`.
 struct RoutineBlockRow: View {
     let item: RoutineExercise
     let resolver: ExerciseResolver
@@ -191,28 +207,23 @@ struct RoutineBlockRow: View {
     private var discipline: WorkoutDiscipline { item.discipline }
 
     var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2).fill(discipline.accent).frame(width: 4, height: 34)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Image(systemName: discipline.symbol).font(.caption).foregroundStyle(discipline.accent)
-                    Text(resolver.name(for: item.exerciseId, override: item.displayName))
-                        .font(.headline).lineLimit(1)
-                }
-                HStack(spacing: 8) {
-                    Text(prescription)
-                    if item.restSeconds > 0 {
-                        Label(restText(item.restSeconds), systemImage: "timer").labelStyle(.titleAndIcon)
-                    }
-                }
-                .font(.caption).foregroundStyle(.secondary)
+        // A neutral glyph tile like the Library / Routines rows (prompt 222; was a discipline-accent edge bar).
+        HStack(spacing: 12) {
+            Image(systemName: discipline.symbol).font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                .frame(width: 32, height: 32)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(resolver.name(for: item.exerciseId, override: item.displayName))
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                Text(prescription + (item.restSeconds > 0 ? " · rest \(restText(item.restSeconds))" : ""))
+                    .snappetDetail()
                 if let notes = item.notes, !notes.isEmpty {
-                    Text(notes).font(.caption2).foregroundStyle(.tertiary).italic()
+                    Text(notes).font(SnappetType.label).foregroundStyle(SnappetColor.textTertiary).italic()
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
     /// The adaptive prescription string — the columns derive from the discipline's measure.

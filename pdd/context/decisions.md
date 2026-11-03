@@ -10444,3 +10444,10 @@ stripes, and the panel read as an opaque slab.
 - **The Studio / Clips tag on a History row is a plain `HStack { Image; Text }`, never a `Label`.** A `Label` inside
   the row's `NavigationLink` emptied the whole List's accessibility tree on iOS 26: rows still drew, but
   `historyRow` matched 0 elements. Only seeds with video rows showed it (`ActivityProgressUITests`).
+
+## 2026-11-02 — Design-system reset, step 3e: Gym Tracker routine detail (prompt 222)
+
+- **Block rows lose the discipline-accent edge bar for a neutral glyph tile.** Discipline accents were "where am I"
+  colour, and the restyle keeps one accent. The glyph still names the type. The row is shared with the editor and
+  the import preview, so they move together.
+- **About's Sport row is an HStack.** `LabeledContent` with a `Label` value rendered a tall empty card on iOS 26.
