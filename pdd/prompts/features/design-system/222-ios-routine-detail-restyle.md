@@ -28,6 +28,9 @@ checklist is in the mockup).
   - The row is shared with `RoutineEditorView` and `RoutineImportSheet`, so they match.
 - **About:** a grey label over one card.
   - Sport is an HStack: `LabeledContent { Label }` grew the row into a tall empty card.
+- **Schedule editor's `WeekdayPicker`** (user on device: "calendar shows orange"): selected days use the screen's
+  `.tint` with `onBrand` text, regular weight. It was a fixed workout orange. The Habits editor shares it and keeps
+  its own tint.
 - **Start Workout:** `SnappetWidePrimaryStyle` on paper (was orange `.borderedProminent` on `.bar`). It dims while
   disabled.
 
