@@ -38,5 +38,6 @@ Restyle the completion summary the player shows on Finish (`FreeformDoneSummaryV
 
 - [x] Dark screenshot matches the mockup (top + actions). The XP card was drawn from code: a sim session is under 5
   min, and the 3D buddy renders blank on the sim.
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot (the XP card + cheering buddy need a ≥ 5 min session).
+- [x] Full UI suite: only the known `525 kg` test plus a Library Explore flake (`ActivityPageUITests`, passes alone).
+  Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-03 ("looks good", "merge after testing").
