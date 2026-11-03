@@ -37,5 +37,8 @@ checklist is in the mockup).
 ## Acceptance
 
 - [x] Dark screenshots match the mockup (scheduled routine, starter routine with About).
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite: the only failure left is the known `525 kg` test. Timed-set record and Tip preset failed in the full
+  run and pass alone. RoutineSchedule / Habit / WorkoutPause re-ran green after the picker fix. Unit suite alone:
+  2653 green.
+- [x] Device: user on MrRobot 2026-11-02. The user caught the orange weekday picker in the schedule editor (fixed:
+  "fixed.").
