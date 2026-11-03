@@ -10462,3 +10462,10 @@ stripes, and the panel read as an opaque slab.
 - **Restyle-only guarantee.** Accessibility ids and element types are unchanged: the grade pill stays a `Text` and
   the climb status an `HStack`, because UITests query `staticTexts["freeform.gradePill"]` /
   `["freeform.climbStatus"]`.
+
+## 2026-11-03 — Design-system reset, step 3e: the finish screen (prompt 224)
+
+- **The finish screen keeps the 3D buddy; session detail uses the still.** The finish screen is the celebration
+  moment (the cheer). Session detail is a page you browse, where the 3D one cost a scene and rendered blank.
+- **Done is the one filled action.** Save as routine moves from a tinted fill to an accent outline. The old "single
+  coral CTA" comment no longer applies now that Done is accent-filled instead of orange.
