@@ -52,5 +52,6 @@ The finish screen is its own step.
 ## Acceptance
 
 - [x] Dark screenshots match the mockup (strength, climb with a send, overview, add).
-- [ ] Full UI suite (every player test), then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite: only the known `525 kg` test plus one `CompletionMomentTests` Keep-going timeout. That test passes
+  alone 3/3. Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-03 ("merge after testing").
