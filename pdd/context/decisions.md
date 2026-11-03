@@ -10441,3 +10441,6 @@ stripes, and the panel read as an opaque slab.
   restyle rule is restructure, not re-select content.
 - **The filter sheet sits on the card surface.** Outline chips (hairline borders) disappear on the system sheet
   material.
+- **The Studio / Clips tag on a History row is a plain `HStack { Image; Text }`, never a `Label`.** A `Label` inside
+  the row's `NavigationLink` emptied the whole List's accessibility tree on iOS 26: rows still drew, but
+  `historyRow` matched 0 elements. Only seeds with video rows showed it (`ActivityProgressUITests`).

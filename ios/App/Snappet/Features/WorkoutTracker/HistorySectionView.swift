@@ -541,8 +541,11 @@ private struct HistoryRowShape: View {
                 HStack(spacing: 6) {
                     Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     if let badge {
-                        Label(badge, systemImage: "film.stack").labelStyle(.titleAndIcon)
-                            .font(.system(size: 10.5)).foregroundStyle(SnappetColor.brand)
+                        HStack(spacing: 3) {
+                            Image(systemName: "film.stack")
+                            Text(badge)
+                        }
+                        .font(.system(size: 10.5)).foregroundStyle(SnappetColor.brand)
                             .padding(.horizontal, 6).padding(.vertical, 1)
                             .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.55)))
                     }

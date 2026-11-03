@@ -37,5 +37,8 @@ section. Every element keeps its place and behaviour (the checklist is in the mo
 ## Acceptance
 
 - [x] Dark screenshots match the mockup (list, filtering + sheet).
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite, then the unit suite alone (2653 green). The full run caught a real break: the `Label` Studio tag hid
+  every History row from accessibility, so it is now a plain HStack. ActivityProgress / TrackingTypeFilter / HomeLinks /
+  SessionInsights / FreeformFlow re-run green. Remaining failures: the known `525 kg` test and an interval flake (passes
+  alone).
+- [x] Device: user on MrRobot 2026-11-02 ("looks good", "merge after testing").
