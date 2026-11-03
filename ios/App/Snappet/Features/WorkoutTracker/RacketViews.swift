@@ -963,26 +963,24 @@ struct RacketRecapCards: View {
                 ForEach(drills) { drillRow($0) }
                 if showsHR { hrSection }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
             .sheet(item: $gameTarget) { RacketGameHRSheet(session: session, target: $0, maxHR: maxHR) }
         }
     }
 
     private func header(_ s: RacketStats.SessionSummary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text([s.event, s.sport?.label].compactMap { $0 }.joined(separator: " · ").uppercased())
-                .font(.system(size: 10.5, weight: .heavy)).tracking(1.1)
-                .foregroundStyle(WorkoutDiscipline.racket.accent)
+            // Sentence label + a light record (prompt 224 — was racket-colour tracked caps + bold).
+            Text([s.event, s.sport?.label].compactMap { $0 }.joined(separator: " · ")).snappetLabel()
             if s.matches > 0 {
-                Text(s.record.label).font(.title.bold().monospacedDigit())
+                Text(s.record.label).font(.system(size: 28, weight: .light).monospacedDigit())
                     .accessibilityIdentifier("racket.recap.record")
             }
             Text([s.matches > 0 ? "\(s.matches) \(s.matches == 1 ? "match" : "matches")" : nil,
                   s.units > 0 ? "\(s.units) \(s.sport?.usesSets == true ? "sets" : "games")" : nil,
                   s.drills > 0 ? "\(s.drills) \(s.drills == 1 ? "drill" : "drills")" : nil]
                 .compactMap { $0 }.joined(separator: " · "))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
         }
     }
 
@@ -990,19 +988,19 @@ struct RacketRecapCards: View {
         let state = ex.racketState
         return HStack(spacing: 10) {
             Image(systemName: ex.racketSport?.symbol ?? "tennis.racket")
-                .foregroundStyle(WorkoutDiscipline.racket.accent).frame(width: 22)
+                .foregroundStyle(SnappetColor.textSecondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text(RacketStats.matchRowTitle(ex)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(RacketStats.matchRowTitle(ex)).font(.system(size: 15, weight: .medium)).lineLimit(1)
                 Text(state.units.isEmpty ? (state.end?.label ?? "Not started") : RacketStats.unitsLine(ex))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
             Text(state.shortResult)
-                .font(.caption.weight(.heavy).monospacedDigit())
+                .font(.caption.weight(.medium).monospacedDigit())
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .foregroundStyle(state.result == true ? SnappetColor.perfFresh
                                  : state.result == false ? SnappetColor.perfHard : SnappetColor.textSecondary)
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                .overlay(Capsule().strokeBorder(SnappetColor.hairline))
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("racket.recap.match")
@@ -1010,15 +1008,15 @@ struct RacketRecapCards: View {
 
     private func drillRow(_ ex: SessionExercise) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "target").foregroundStyle(WorkoutDiscipline.racket.accent).frame(width: 22)
+            Image(systemName: "target").foregroundStyle(SnappetColor.textSecondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text(ex.displayName ?? "Drill").font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(ex.displayName ?? "Drill").font(.system(size: 15, weight: .medium)).lineLimit(1)
                 Text("\(ex.completedSetCount) \(ex.completedSetCount == 1 ? "block" : "blocks")")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             if let line = RacketStats.drillLine(ex) {
-                Text(line).font(.caption.weight(.bold).monospacedDigit())
+                Text(line).font(.caption.weight(.medium).monospacedDigit())
             }
         }
         .accessibilityElement(children: .combine)
@@ -1040,8 +1038,7 @@ struct RacketRecapCards: View {
                                       hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) })
             ForEach(rows.filter { !$0.hr.isEmpty }, id: \.ex.id) { row in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Heart rate · \(RacketStats.matchRowTitle(row.ex))".uppercased())
-                        .font(.system(size: 10, weight: .heavy)).tracking(0.9).foregroundStyle(.secondary)
+                    Text("Heart rate · \(RacketStats.matchRowTitle(row.ex))").snappetLabel()
                     ForEach(row.hr, id: \.index) { u in
                         unitHRRow(row.ex, u, hrv: hrv[.init(exerciseID: row.ex.id, setIndex: u.index)] ?? .empty)
                     }
@@ -1073,13 +1070,13 @@ struct RacketRecapCards: View {
                 }
                 .frame(height: 8)
                 if let rmssd = hrv.rmssd {
-                    Text("\(Int(rmssd.rounded())) ms").font(.caption2.weight(.bold).monospacedDigit())
+                    Text("\(Int(rmssd.rounded())) ms").font(.caption2.weight(.medium).monospacedDigit())
                         .foregroundStyle(HRVBadge.recoveryColor(rmssd))
                         .accessibilityIdentifier("racket.recap.unitHRV")
                 }
-                Text("avg \(Int(u.avg.rounded()))").font(.caption.weight(.bold).monospacedDigit())
+                Text("avg \(Int(u.avg.rounded()))").font(.caption.weight(.medium).monospacedDigit())
                     .frame(width: 60, alignment: .trailing)
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.textTertiary)
             }
             .contentShape(Rectangle())
         }

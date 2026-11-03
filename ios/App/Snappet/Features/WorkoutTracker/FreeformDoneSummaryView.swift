@@ -10,7 +10,7 @@ import HighlightEngine
 /// **"Save as routine"** affordance (E5), and the Done / View detail / Discard action bar — all with the
 /// same a11y ids as before.
 ///
-/// **Save as routine (workout-redesign E5).** A coral affordance (`freeform.saveAsRoutine`) — shown only
+/// **Save as routine (workout-redesign E5).** An accent-outline affordance (`freeform.saveAsRoutine`) — shown only
 /// when the session has ≥ 1 completed set — presents a `RoutineEditorView` PRE-FILLED from the pure
 /// `SessionToRoutine` converter (actuals → a per-discipline prescription draft). The user reviews/trims/
 /// renames before the editor's own Save INSERTS a new routine; this view never writes the routine itself.
@@ -112,14 +112,14 @@ struct FreeformDoneSummaryView: View {
         VStack(spacing: 12) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: sealSize))
-                .foregroundStyle(SnappetColor.workout)
+                .foregroundStyle(SnappetColor.brand)
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : doneBounce)
-            Text("Workout Complete").font(.title.bold())
-            Text(session.routineName).foregroundStyle(.secondary)
+            Text("Workout Complete").font(.system(size: 26, weight: .semibold))
+            Text(session.routineName).snappetDetail()
             if let milestone = milestones.first {
                 Text(FreeformSummary.milestoneHeadline(milestone))
-                    .font(.headline)
-                    .foregroundStyle(SnappetColor.workout)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(SnappetColor.brand)
                     .accessibilityIdentifier("freeform.milestone")
             }
         }
@@ -130,19 +130,20 @@ struct FreeformDoneSummaryView: View {
 
     private var studioCTA: some View {
         Button { onOpenStudio() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "film.stack")
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 12) {
+                Image(systemName: "film.stack").font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 32, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
                     Text("Turn \(videoClipCount) \(videoClipCount == 1 ? "clip" : "clips") into a reel")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Open in Studio").font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                    Text("Open in Studio").snappetDetail()
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SnappetColor.textTertiary)
             }
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("freeform.summaryReel")
@@ -152,30 +153,33 @@ struct FreeformDoneSummaryView: View {
 
     private var actionBar: some View {
         VStack(spacing: 12) {
-            Button { onDone() } label: {
-                Text("Done").font(.headline).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
-            .accessibilityIdentifier("freeform.done")
+            Button { onDone() } label: { Text("Done") }
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .accessibilityIdentifier("freeform.done")
 
-            // Save as routine (E5): close the runtime→template loop. The single coral (brand) affordance on
-            // this screen — the type-aware "make this repeatable" moment — shown only when there's something
-            // to prescribe (≥ 1 completed set). Opens the pre-filled editor for review (it never silently
-            // inserts). The neutral Done/View-detail stay bordered so the coral reads as the one CTA.
+            // Save as routine (E5): close the runtime→template loop — an accent outline under the filled Done
+            // (prompt 224), shown only when there's something to prescribe (≥ 1 completed set). Opens the
+            // pre-filled editor for review (it never silently inserts).
             if SessionToRoutine.canConvert(session) {
                 Button { saveAsRoutineTapped() } label: {
                     Label("Save as routine", systemImage: "square.and.arrow.down.on.square")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                        .font(.system(size: 15))
+                        .foregroundStyle(SnappetColor.brand)
+                        .frame(maxWidth: .infinity, minHeight: 42)
+                        .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.55)))
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(.bordered).tint(SnappetColor.brand)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("freeform.saveAsRoutine")
             }
 
             Button { onViewDetail() } label: {
-                Text("View detail").frame(maxWidth: .infinity)
+                Text("View detail").font(.system(size: 15)).foregroundStyle(SnappetColor.ink)
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("freeform.viewDetail")
 
             Button("Discard workout", role: .destructive) { showingDiscard = true }

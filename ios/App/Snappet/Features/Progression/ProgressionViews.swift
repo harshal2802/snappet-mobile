@@ -104,24 +104,27 @@ struct SessionXPCard: View {
                       form: Progression.Form, pause: Progression.Pause?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottom) {
-                LinearGradient(colors: [Color(hue: BuddyLook(stage: after.stage, form: form.value).hue, saturation: 0.25, brightness: 0.3),
-                                        Color(white: 0.09)], startPoint: .top, endPoint: .bottom)
+                // A neutral tile (prompt 224 — was a buddy-hue gradient); the 3D buddy keeps its cheer.
+                SnappetColor.surfaceMuted
                 BuddyCreatureView(look: BuddyLook(stage: after.stage, form: form.value), cheerTrigger: cheer,
                                   interactive: false)
                     .padding(.bottom, 4)
             }
             .frame(height: 170)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .task {
                 try? await Task.sleep(for: .milliseconds(450))
                 cheer += 1
             }
 
-            Text("+\(award.total) XP")
-                .font(.system(size: 34, weight: .black, design: .rounded))
-                .foregroundStyle(SnappetColor.workout)
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("xp.total")
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("+\(award.total)").font(.system(size: 34, weight: .light)).monospacedDigit()
+                    .foregroundStyle(SnappetColor.ink)
+                Text("XP").font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("xp.total")
 
             VStack(spacing: 0) {
                 ForEach(Array(award.items.enumerated()), id: \.offset) { _, item in
@@ -132,8 +135,6 @@ struct SessionXPCard: View {
                     row("Daily cap · \(Progression.Rules.dailyCap) XP a day", "−\(raw - award.total)", muted: true)
                 }
             }
-            .padding(.horizontal, 12)
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("xp.items")
 
@@ -142,24 +143,27 @@ struct SessionXPCard: View {
             // Training while paused still counts — offer to end the pause (wireframe frame 6).
             if pause != nil {
                 HStack {
-                    Text("You're paused — this still counts.").font(.footnote).foregroundStyle(.secondary)
+                    Text("You're paused — this still counts.").font(SnappetType.detail)
+                        .foregroundStyle(SnappetColor.textSecondary)
                     Spacer()
                     Button("End pause") { PauseStore.endActive(); pausesRaw = PauseStore.encode(PauseStore.load()) }
-                        .font(.footnote.weight(.semibold))
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.brand)
                         .accessibilityIdentifier("xp.endPause")
                 }
             }
         }
+        .snappetPanel()
     }
 
     private func row(_ label: String, _ value: String, muted: Bool = false) -> some View {
         HStack {
-            Text(label).font(.subheadline).lineLimit(1)
+            Text(label).font(.system(size: 14)).foregroundStyle(muted ? SnappetColor.textSecondary : SnappetColor.ink)
+                .lineLimit(1)
             Spacer()
-            Text(value).font(.subheadline.weight(.heavy).monospacedDigit())
-                .foregroundStyle(muted ? Color.secondary : SnappetColor.workout)
+            Text(value).font(.system(size: 14).monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
         }
         .padding(.vertical, 6)
+        .overlay(alignment: .top) { SnappetColor.hairline.frame(height: 1) }
     }
 
     @ViewBuilder private func levelLine(before: Progression.LevelInfo, after: Progression.LevelInfo) -> some View {
@@ -169,26 +173,28 @@ struct SessionXPCard: View {
                 Text(after.stage != before.stage
                      ? "Your buddy grew up: \(before.stage.title) → \(after.stage.title)!"
                      : "Level up! Level \(after.level)")
-                    .font(.subheadline.weight(.heavy)).foregroundStyle(.green)
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.perfFresh)
                     .accessibilityIdentifier("xp.levelUp")
             }
             HStack {
-                Text("Level \(after.level) · \(after.stage.title)").font(.subheadline.weight(.bold))
+                Text("Level \(after.level) · \(after.stage.title)").font(.system(size: 15, weight: .medium))
                 Spacer()
-                Text("\(after.xpIntoLevel) / \(after.levelCost)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("\(after.xpIntoLevel) / \(after.levelCost)").font(SnappetType.label.monospacedDigit())
+                    .foregroundStyle(SnappetColor.textSecondary)
             }
             GeometryReader { geo in
                 let start = leveled ? 0 : before.fraction
                 ZStack(alignment: .leading) {
-                    Capsule().fill(SnappetColor.surfaceMuted)
-                    Capsule().fill(SnappetColor.workout).frame(width: geo.size.width * start)
-                    Capsule().fill(SnappetColor.workout.opacity(0.45))
+                    Capsule().fill(SnappetColor.hairline)
+                    Capsule().fill(SnappetColor.brand).frame(width: geo.size.width * start)
+                    Capsule().fill(SnappetColor.brand.opacity(0.45))
                         .frame(width: geo.size.width * max(0, after.fraction - start))
                         .offset(x: geo.size.width * start)
                 }
             }
-            .frame(height: 10)
-            Text("\(after.xpToNext) XP to Level \(after.level + 1)").font(.caption2).foregroundStyle(.secondary)
+            .frame(height: 5)
+            Text("\(after.xpToNext) XP to Level \(after.level + 1)").font(SnappetType.label)
+                .foregroundStyle(SnappetColor.textSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("xp.level")
