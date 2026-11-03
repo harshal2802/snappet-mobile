@@ -86,28 +86,33 @@ enum SessionRecap {
     }
 }
 
-/// The hero strip — three type-adaptive stat cells. Renders whatever `SessionRecap.heroCells` produced.
+/// The hero strip — three type-adaptive stat cells in one card, light numbers split by hairlines (prompt 220).
+/// Renders whatever `SessionRecap.heroCells` produced.
 struct SessionRecapHero: View {
     let cells: [FreeformSummary.Stat]
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             ForEach(cells.indices, id: \.self) { i in
-                cell(cells[i])
+                HStack(spacing: 0) {
+                    if i > 0 { SnappetColor.hairline.frame(width: 1).padding(.trailing, 12) }
+                    cell(cells[i])
+                }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .snappetPanel()
     }
 
     private func cell(_ stat: FreeformSummary.Stat) -> some View {
-        VStack(spacing: 4) {
-            Text(stat.value).font(.title2.bold().monospacedDigit())
+        VStack(alignment: .leading, spacing: 2) {
+            Text(stat.value).font(.system(size: 22, weight: .light).monospacedDigit())
+                .foregroundStyle(SnappetColor.ink)
                 .contentTransition(.numericText())
                 .lineLimit(1).minimumScaleFactor(0.6)
-            Text(stat.label).font(.caption).foregroundStyle(.secondary)
+            Text(stat.label).font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -166,8 +171,7 @@ struct SessionRecapCards: View {
                 recapRow("Median time on climb", SetMeasure.formatDuration(median))
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
 
         if showsPyramid { ClimbGradePyramid(pyramid: s.pyramid) }
         ClimbTimelineList(timeline: s.timeline)
@@ -181,7 +185,7 @@ struct SessionRecapCards: View {
                 ClimbSummarySectionTitle("Exercises", systemImage: "timer")
                 ForEach(rows) { row in
                     HStack(spacing: 10) {
-                        Image(systemName: "timer").font(.caption).foregroundStyle(SnappetColor.workout)
+                        Image(systemName: "timer").font(.caption).foregroundStyle(SnappetColor.brand)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(row.name).font(.subheadline.weight(.medium)).lineLimit(1)
@@ -200,8 +204,7 @@ struct SessionRecapCards: View {
                     .accessibilityIdentifier("freeform.summaryTimedRow")
                 }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
     }
 
@@ -212,7 +215,7 @@ struct SessionRecapCards: View {
                 ClimbSummarySectionTitle("Runs", systemImage: "figure.run")
                 ForEach(rows) { row in
                     HStack(spacing: 10) {
-                        Image(systemName: "figure.run").font(.caption).foregroundStyle(SnappetColor.budget)
+                        Image(systemName: "figure.run").font(.caption).foregroundStyle(SnappetColor.brand)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(row.name).font(.subheadline.weight(.medium)).lineLimit(1)
@@ -231,8 +234,7 @@ struct SessionRecapCards: View {
                     .accessibilityIdentifier("freeform.summaryRunRow")
                 }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
         if showsHR, let hrStats { ClimbEffortSection(hr: hrStats) }
     }
@@ -250,8 +252,7 @@ struct SessionRecapCards: View {
                     recapRow(resolver.name(for: pr.id), pr.value)
                 }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
 
         let volumes = liftingVolumeRows
@@ -264,16 +265,15 @@ struct SessionRecapCards: View {
                              + (row.volumeKg > 0 ? WorkoutMath.formatVolume(kg: row.volumeKg, unit: unit) : "\(row.reps) reps"))
                 }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
     }
 
     private func recapRow(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            Text(label).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             Spacer(minLength: 8)
-            Text(value).font(.subheadline.weight(.semibold).monospacedDigit())
+            Text(value).font(.system(size: 13, weight: .medium).monospacedDigit()).foregroundStyle(SnappetColor.ink)
         }
     }
 

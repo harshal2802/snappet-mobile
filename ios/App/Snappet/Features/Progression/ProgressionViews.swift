@@ -211,19 +211,26 @@ struct SessionXPRow: View {
             let upTo = completed.filter { $0.startedAt <= session.startedAt }
                 .compactMap { ledger.awards[$0.id]?.total }.reduce(0, +)
             let level = Progression.levelInfo(totalXP: upTo)
-            HStack(spacing: 10) {
-                BuddyCreatureView(look: BuddyLook(stage: level.stage, form: 0.8), animated: false, interactive: false)
-                    .frame(width: 58, height: 54)
-                    .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12))
+            HStack(spacing: 12) {
+                // The still buddy, as on Home (prompt 220) — the 3D one rendered blank on the simulator and
+                // cost a RealityKit scene per page.
+                Image(BuddyWidgetSnapshot.imageName(stage: level.stage.rawValue, form: 0.8, paused: false))
+                    .resizable().scaledToFill()
+                    .frame(width: 46, height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("+\(award.total) XP").font(.headline.weight(.heavy)).foregroundStyle(SnappetColor.workout)
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text("+\(award.total)").font(.system(size: 22, weight: .light)).monospacedDigit()
+                            .foregroundStyle(SnappetColor.ink)
+                        Text("XP").font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
+                    }
                     Text((["Level \(level.level)"] + Self.reasons(award)).joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        .font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary).lineLimit(2)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(6)
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("session.xp")
         }

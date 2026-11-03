@@ -1,0 +1,146 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Session Detail Restyle</title><style>
+:root{--bg:#0A0B0D;--card:#14161A;--muted:#1C1F24;--line:#23262C;--t1:#F2F3F5;--t2:#8C9099;--t3:#5D616B;--accent:#8EA2FF;--ink:#0b1030;--ok:#5BC074;--amb:#E8B04A}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:#050506;color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;padding:40px 28px}
+h1{font-size:30px;font-weight:700;margin:0 0 6px}.sub{color:#9aa0aa;max-width:1200px;margin:0 0 24px;font-size:15px}
+.wrap{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:10px;align-items:center}.cap{font-size:13px;color:#9aa0aa;font-weight:600}
+.device{width:340px;height:736px;border-radius:52px;background:#000;padding:11px;box-shadow:0 0 0 2px #24262b inset;flex:none}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative}
+.shot{width:100%;height:100%;object-fit:cover;object-position:top}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 0;font-size:13px;font-weight:600}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:6px 16px 4px;font-size:14px;color:var(--accent)}
+.nav .ic{display:flex;gap:15px;font-size:15px;color:var(--t2)}
+.sess{margin:2px 14px 6px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 10px}
+.sess .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}.sess a{color:var(--accent);text-decoration:none}.sess .hr{color:#ff6b7a}
+.boardw{margin:0 14px;border-radius:18px;overflow:hidden;background:#15171b;border:1px solid var(--line);position:relative}
+.pill{position:absolute;top:8px;right:8px;font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(20,22,26,.78);border:1px solid #2b2e35}
+.pill i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.arr{position:absolute;top:45%;width:26px;height:26px;border-radius:50%;background:rgba(20,22,26,.7);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px}
+.under{display:flex;justify-content:space-between;align-items:center;margin:6px 18px 0;font-size:10.5px;color:var(--t2)}
+.legend{display:flex;gap:10px}.legend span{white-space:nowrap}
+.warn{margin:8px 18px 0;font-size:11.5px;color:var(--amb)}
+.hd{padding:10px 18px 0}.hd .t{font-size:21px;font-weight:600;letter-spacing:-.01em}.hd .s{font-size:12px;color:var(--t2);margin-top:2px}
+.tags{display:flex;gap:6px;margin:8px 18px 0;flex-wrap:wrap}.tag{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--t1)}.tag.amb{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden;margin:10px 14px 0}
+.row2{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;margin:10px 14px 0}.row2 .card{margin:0}
+.k{font-size:11px;color:var(--t2);display:flex;justify-content:space-between;align-items:center}
+.chip{font-size:11.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--accent);color:var(--accent)}
+.big{font-size:25px;font-weight:300;letter-spacing:-.02em;margin-top:4px}.big small{font-size:12.5px;color:var(--t2);font-weight:400;margin-left:3px}
+.s{font-size:11.5px;color:var(--t2);margin-top:2px}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.pills span{font-size:13px;text-align:center;padding:9px 0;border-radius:999px;border:1px solid var(--line)}
+.pills .snd{border-color:rgba(91,192,116,.55);color:var(--ok)}.pills .prj{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.conf{font-size:11.5px;color:var(--ok);margin-top:9px}.conf u{text-decoration:none;color:var(--accent);margin-left:6px}
+.pri{display:block;text-align:center;background:var(--accent);color:var(--ink);font-weight:600;font-size:14px;border-radius:999px;padding:10px 0;margin-top:10px}
+.sec{display:block;text-align:center;border:1px solid var(--line);font-size:13px;border-radius:999px;padding:8px 0;margin-top:8px}
+.links{display:flex;justify-content:space-between;font-size:11.5px;color:var(--accent);margin-top:10px}
+.note{font-size:11.5px;color:var(--t2);margin-top:8px}.note u{text-decoration:none;color:var(--accent)}
+.bars{display:flex;gap:5px;align-items:flex-end;height:50px;margin-top:8px}.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t3)}
+.bars i{width:100%;border-radius:3px;background:var(--line);display:block}.bars .on i{background:var(--accent)}.bars .on{color:var(--t1)}
+.li{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.li.first{border-top:0}
+.ico{width:28px;height:28px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.li b{font-size:13px;font-weight:500;display:block}.li span{font-size:11px;color:var(--t2)}.chev{margin-left:auto;color:var(--t3)}
+.foot{text-align:center;font-size:11px;color:var(--t3);margin-top:10px}
+.tab{position:absolute;left:14px;right:14px;bottom:14px;height:56px;border-radius:30px;background:rgba(30,32,38,.92);border:1px solid #2a2d34;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--t2)}
+.states{width:340px;display:flex;flex-direction:column;gap:10px}.states .card{margin:0}.states .lbl{font-size:11px;color:#9aa0aa;font-weight:600;margin:4px 2px -4px}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:6px;font-size:12px}.seg span{flex:1;text-align:center;padding:6px 0}.seg .on{background:var(--muted)}
+.sel{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:6px}
+table{border-collapse:collapse;font-size:12.5px;color:#c9ccd3;width:100%}td{padding:5px 6px;border-bottom:1px solid #1d1f24;vertical-align:top}td:first-child{color:#fff;white-space:nowrap}
+.notes{flex:1;min-width:420px;max-width:640px}.notes h3{font-size:16px;margin:16px 0 8px;color:#fff}
+.ok{color:#86d79b;font-weight:700}
+.cm{width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(142,162,255,.3)}
+
+.seg2{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.search{margin:8px 14px 0;background:var(--muted);border-radius:11px;padding:8px 12px;font-size:13.5px;color:var(--t3)}
+.chips{display:flex;gap:6px;padding:10px 14px 0;white-space:nowrap;overflow:hidden}.c{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line)}.c.on{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.1)}
+.offer{margin:10px 14px 0;display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-size:12.5px}
+.ic2{width:30px;height:30px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.hero{margin:10px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden}
+.strip{display:flex;gap:4px;margin-top:9px}.strip i{flex:1;height:44px;border-radius:7px;background:linear-gradient(160deg,#2c3440,#15171b)}
+.play{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:12px}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 6px;font-size:12px;color:var(--t2)}.sh b{color:var(--t1);font-weight:500;font-size:13.5px}
+.ph{display:flex;align-items:center;gap:10px;padding:2px 16px 8px}.av{width:34px;height:34px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.ph b{font-size:14.5px;font-weight:600}.ph span{font-size:11.5px;color:var(--t2)}
+.media{height:300px;background:linear-gradient(170deg,#2f3a48 0%,#1a1d22 70%);position:relative}
+.hrt{position:absolute;left:12px;bottom:12px;background:rgba(10,11,13,.6);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px 8px;font-size:11px}
+.cnt{position:absolute;right:10px;top:10px;font-size:10.5px;background:rgba(10,11,13,.6);padding:2px 7px;border-radius:999px}
+.mute{position:absolute;right:10px;bottom:10px;width:26px;height:26px;border-radius:50%;background:rgba(10,11,13,.6);display:flex;align-items:center;justify-content:center;font-size:11px}
+.acts{display:flex;gap:16px;align-items:center;padding:10px 16px 0;font-size:17px;color:var(--t1)}.acts small{margin-left:auto;font-size:11.5px;color:var(--t2)}
+.pd{padding:6px 16px 0;font-size:13px}.pd .st{font-weight:500}.pd .cap{color:var(--t2);margin-top:2px}.pd .va{color:var(--accent);margin-top:4px;font-size:12.5px}.pd .mt{color:var(--t3);font-size:11px;margin-top:4px}
+.ac{display:flex;gap:6px;margin-top:6px}.ac span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.gtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:8px}.gtiles div{aspect-ratio:3/4;background:linear-gradient(160deg,#2c3440,#15171b);position:relative;font-size:10px}
+.gtiles b{position:absolute;left:5px;bottom:4px;font-weight:500}.gtiles em{position:absolute;right:5px;bottom:4px;font-style:normal;color:var(--t2)}.gtiles u{position:absolute;left:5px;top:4px;text-decoration:none;font-size:9.5px;color:var(--ok)}
+.days{display:flex;gap:2px;margin:8px 14px 0}.days i{flex:1;height:6px;border-radius:2px;background:var(--line)}.days i.on{background:var(--accent)}
+
+.navc{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 6px;font-size:15px}.navc b{font-weight:600}.navc .ic{color:var(--t2);font-size:15px;display:flex;gap:14px}
+.seg4{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12px}.seg4 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg4 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.dots{display:flex;justify-content:space-between;margin-top:10px;font-size:9.5px;color:var(--t3);text-align:center}.dots div{display:flex;flex-direction:column;align-items:center;gap:3px}.dots i{width:7px;height:7px;border-radius:50%;background:var(--line);display:block}.dots .on i{background:var(--accent)}.dots .td{color:var(--t1)}
+.pills2{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}.pills2 span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.vb{display:flex;gap:8px;align-items:flex-end;height:64px;margin-top:10px}.vb div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;color:var(--t3)}.vb i{display:block;width:100%;border-radius:3px;background:var(--line)}.vb .on i{background:var(--accent)}
+.r{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.r.first{border-top:0}.r b{font-size:13.5px;font-weight:500;display:block}.r span{font-size:11px;color:var(--t2)}.r .v{margin-left:auto;font-size:13px;font-weight:500;white-space:nowrap}.r .chev{margin-left:6px;color:var(--t3)}
+.tg{font-size:10px;padding:1px 6px;border:1px solid var(--line);border-radius:999px;color:var(--t2);margin-left:5px;vertical-align:1px}
+
+.seg2b{display:flex;margin:8px 14px 0;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2b span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2b .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.lh2{display:flex;justify-content:space-between;padding:12px 18px 2px;font-size:11.5px;color:var(--t2)}.lh2 u{text-decoration:none;color:var(--accent)}
+.lr{display:flex;gap:11px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.lr .ico{width:32px;height:32px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.lr b{font-size:14.5px;font-weight:500;display:block}.lr span{font-size:11.5px;color:var(--t2)}.lr .rt{margin-left:auto;text-align:right;white-space:nowrap}.lr .rt b{font-size:13.5px}.lr .rt span{color:var(--t3);font-size:10.5px}
+.gr{font-size:11px;font-weight:600}
+
+.wk{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;text-align:center;font-size:9.5px;color:var(--t3)}
+.wk i{display:flex;align-items:center;justify-content:center;height:24px;border-radius:7px;background:var(--muted);font-style:normal;font-size:10px;margin-top:3px;color:var(--t2)}
+.wk .done i{background:var(--accent);color:var(--ink)}.wk .plan i{border:1px solid var(--accent);background:transparent;color:var(--accent)}.wk .td{color:var(--t1)}
+.btn2{display:flex;gap:8px;margin-top:12px}.btn2 .pri{margin:0;flex:1}.btn2 .sec{margin:0;padding:9px 14px}
+.secl{padding:14px 18px 4px;font-size:11.5px;color:var(--t2)}
+.sch{font-size:10px;padding:1px 7px;border:1px solid var(--line);border-radius:999px;color:var(--t2);margin-left:6px;vertical-align:1px}
+.ex3{font-size:10.5px;color:var(--t3);margin-top:1px}
+
+.navs{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 6px;font-size:15px}.navs b{font-weight:600}
+.xp{display:flex;gap:12px;align-items:center}.av2{width:46px;height:46px;border-radius:12px;background:radial-gradient(circle at 40% 35%,#9fd3ff,#4a7bd1 70%);flex:none}
+.xp .n{font-size:22px;font-weight:300}.xp .n small{font-size:12px;color:var(--t2);margin-left:3px}
+.meta{padding:10px 18px 0;font-size:12px;color:var(--t2)}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:2px}.trio div{padding:2px 4px}.trio div+div{border-left:1px solid var(--line);padding-left:12px}
+.trio b{display:block;font-size:22px;font-weight:300}.trio span{font-size:10.5px;color:var(--t2)}.trio em{display:block;font-style:normal;font-size:10.5px;color:var(--ok);margin-top:2px}
+.badges{display:flex;gap:8px;margin-top:8px}.badges div{flex:1;border:1px solid var(--line);border-radius:14px;padding:9px 10px;background:var(--card)}.badges b{display:block;font-size:12.5px;font-weight:500;margin-top:3px}.badges span{font-size:10.5px;color:var(--t2)}
+.line2{margin-top:8px;height:58px;position:relative}
+.bar3{height:4px;border-radius:2px;background:var(--line);margin-top:8px;position:relative}.bar3 i{position:absolute;left:0;top:0;bottom:0;width:80%;background:var(--accent);border-radius:2px}
+.cmp b{font-size:14px;font-weight:500}.cmp .d{float:right;font-size:11.5px;color:var(--ok)}.cmp .sc{display:flex;gap:4px;margin-top:7px;flex-wrap:nowrap}.cmp .sc span{white-space:nowrap;font-size:9.5px;padding:2px 6px;border:1px solid var(--line);border-radius:999px;color:var(--t2)}.cmp .sc span.up{color:var(--ok);border-color:rgba(91,192,116,.45)}
+.setrow{display:flex;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:13px}.setrow.first{border-top:0}.setrow .z{margin-left:10px;font-size:10.5px;padding:1px 7px;border-radius:999px}
+.hdr2{display:flex;justify-content:space-between;align-items:center;padding:12px 18px 4px;font-size:13.5px;font-weight:500}.hdr2 span{color:var(--accent);font-size:13px}
+</style></head><body>
+<h1>Gym Tracker · Session detail, restyled</h1>
+<p class="sub">Restyle only — every element keeps its place and behaviour (checklist). Orange XP / charts / milestone bar and the brown / blue badge fills go: your accent for progress, neutral cards, light numbers. Meaning colours stay — green gains and “on plan”, heart-rate zone colours. The XP row’s buddy becomes the small still avatar (it showed a blank square on the simulator).</p>
+<div class="wrap">
+<div class="col"><div class="cap">Today — top</div><div class="device"><div class="screen"><img class="shot" src="session-before-str-1.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — top</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navs"><span style="color:var(--accent)">‹</span><b>Push Day</b><span style="color:var(--accent);font-size:14px">Edit</span></div><div class="card" style="margin-top:6px"><div class="xp"><div class="av2"></div><div><div class="n">+195<small>XP</small></div><div class="s">Level 10 · on plan · Bench Press PR · Pullups rep PR</div></div></div></div>
+<div class="meta">Mon 2 Nov · 50 min · 8th Push Day</div>
+<div class="tags" style="margin:6px 18px 0"><span class="tag">🔥 5-week streak</span><span class="tag" style="color:var(--ok);border-color:rgba(91,192,116,.45)">✓ On plan</span><span class="tag">♥ 146 avg</span></div>
+<div class="card"><div class="trio"><div><b>2,520</b><span>kg volume</span><em>▲ 7% vs last</em></div><div><b>67.5×6</b><span>top set</span><em>▲ +2.5 kg</em></div><div><b>10</b><span>sets</span><em style="color:var(--t2)">= last</em></div></div></div>
+<div class="secl" style="padding-top:12px">This session earned</div>
+<div class="badges" style="margin:0 14px"><div>🏆<b>Bench Press PR</b><span>67.5 kg × 6 (was 65)</span></div><div>🏆<b>Pullups rep PR</b><span>24 reps</span></div></div>
+<div class="card"><div class="k">Progress · volume <span>last 8</span></div><svg viewBox="0 0 270 50" width="100%" height="50" preserveAspectRatio="none"><polyline points="0,46 39,39 77,40 116,26 154,29 193,18 231,16 270,4" fill="none" stroke="var(--accent)" stroke-width="2"/></svg><div class="s">2,070 kg → 2,520 kg · today is your best</div></div>
+<div class="card"><div class="k">Next milestone <span>8 / 10</span></div><div class="s" style="color:var(--t1);font-size:13px;margin-top:3px">10 × Push Day</div><div class="bar3"><i></i></div></div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — compare + media</div><div class="device"><div class="screen"><img class="shot" src="session-before-str-2.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — compare + media</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navs"><span style="color:var(--accent)">‹</span><b>Push Day</b><span style="color:var(--accent);font-size:14px">Edit</span></div><div class="card cmp" style="margin-top:6px"><b>Barbell Bench Press</b><span class="d">▲ +2.5 kg</span><div class="s">4 × 6 @ 67.5 kg · est. 1RM 81 kg</div><svg viewBox="0 0 270 50" width="100%" height="50" preserveAspectRatio="none"><polyline points="0,46 39,40 77,35 116,29 154,24 193,18 231,12 270,4" fill="none" stroke="var(--accent)" stroke-width="2"/></svg><div class="sc"><span class="up">S1 +2.5 kg</span><span class="up">S2 +2.5 kg</span><span class="up">S3 +2.5 kg</span><span class="up">S4 +2.5 kg</span></div></div>
+<div class="card cmp"><b>Standing Military Press</b><span class="d" style="color:var(--t2)">= last</span><div class="s">3 × 8 @ 37.5 kg · est. 1RM 48 kg</div><div class="sc"><span>S1 =</span><span>S2 =</span><span class="up">S3 +1 rep</span></div></div>
+<div class="secl" style="padding-top:12px">Heart rate ⓘ</div><div class="card" style="margin-top:0;padding:4px 14px"><div class="r first"><div class="ico">♥</div><div><b>Heart rate &amp; effort</b><span>146 avg · 172 max</span></div><span class="chev" style="margin-left:auto">›</span></div></div>
+<div class="card"><div class="k">Photos &amp; videos</div><div style="display:flex;gap:8px;margin-top:8px"><span class="sec" style="margin:0;flex:1">🔍 Find</span><span class="sec" style="margin:0;flex:1">＋ Add</span></div><div class="note">Enable Photos access in Settings <u>›</u></div></div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — sets</div><div class="device"><div class="screen"><img class="shot" src="session-before-str-3.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Restyled — sets</div><div class="device"><div class="screen"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div class="navs"><span style="color:var(--accent)">‹</span><b>Push Day</b><span style="color:var(--accent);font-size:14px">Edit</span></div><div class="hdr2">Barbell Bench Press <span>📈 ⋯</span></div>
+<div class="card" style="margin-top:0;padding:2px 14px">
+<div class="setrow first">Set 1<span style="margin-left:auto">67.5 kg × 6</span><span class="z" style="color:#5BC074;border:1px solid rgba(91,192,116,.45)">♥ 135</span></div>
+<div class="setrow">Set 2<span style="margin-left:auto">67.5 kg × 6</span><span class="z" style="color:#5BC074;border:1px solid rgba(91,192,116,.45)">♥ 144</span></div>
+<div class="setrow">Set 3<span style="margin-left:auto">67.5 kg × 6</span><span class="z" style="color:#E8B04A;border:1px solid rgba(232,176,74,.45)">♥ 161</span></div>
+<div class="setrow">Set 4<span style="margin-left:auto">67.5 kg × 6</span><span class="z" style="color:#ff6b7a;border:1px solid rgba(255,107,122,.45)">♥ 169</span></div></div>
+<div class="hdr2">Standing Military Press <span>📈 ⋯</span></div>
+<div class="card" style="margin-top:0;padding:2px 14px">
+<div class="setrow first">Set 1<span style="margin-left:auto">37.5 kg × 8</span><span class="z" style="color:#ff6b7a;border:1px solid rgba(255,107,122,.45)">♥ 172</span></div>
+<div class="setrow">Set 2<span style="margin-left:auto">37.5 kg × 8</span><span class="z" style="color:#5BC074;border:1px solid rgba(91,192,116,.45)">♥ 150</span></div>
+<div class="setrow">Set 3<span style="margin-left:auto">37.5 kg × 8</span><span class="z" style="color:#4FD1C5;border:1px solid rgba(79,209,197,.45)">♥ 128</span></div></div>
+<div class="s" style="padding:6px 18px">Each set keeps its peak bpm · recovery line under the row (as today)</div>
+<div class="tab"><span>Home</span><span>Clips</span><span>Recap</span><span style="color:var(--accent)">Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — a climbing session</div><div class="device"><div class="screen"><img class="shot" src="session-before-clb-1.png" alt=""></div></div><div style="width:340px;font-size:12.5px;color:#9aa0aa">Same treatment: sends / hardest / tries in the three-column card, badges neutral, progress line + grade pyramid in the accent.</div></div>
+<div class="notes"><h3>Every element today → where it lives</h3><table><tr><td><span class="ok">✓</span></td><td>Toolbar: Edit sets → Save / Cancel</td><td>Unchanged</td></tr><tr><td><span class="ok">✓</span></td><td>Apple Watch import note</td><td>Same, panel style</td></tr><tr><td><span class="ok">✓</span></td><td>XP earned: buddy, +XP, level, reasons; level-up; paused note + End pause</td><td>Small still buddy avatar (the 3D buddy rendered blank on the simulator and is heavy per page), light +XP metric</td></tr><tr><td><span class="ok">✓</span></td><td>Date · duration · Nth routine; streak / on plan / HR avg chips</td><td>Grey line + outlined chips (on plan stays green)</td></tr><tr><td><span class="ok">✓</span></td><td>Stat tiles (volume / top set / sets or sends / hardest / tries) with deltas</td><td>One card, three columns, light numbers; deltas keep green / grey</td></tr><tr><td><span class="ok">✓</span></td><td>“THIS SESSION EARNED” badges (PRs, firsts, milestones)</td><td>Sentence-case label; neutral badge cards (were brown / blue fills)</td></tr><tr><td><span class="ok">✓</span></td><td>Progress chart (volume / sends …, best line)</td><td>Accent line (was orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Next milestone + bar</td><td>Accent bar (was orange)</td></tr><tr><td><span class="ok">✓</span></td><td>Per-type detail: strength compare cards (sparkline, delta, per-set chips); hangboard force grid; climb grade pyramid; recap cards</td><td>Accent sparklines / pyramid bars; per-set chips outlined, gains in green</td></tr><tr><td><span class="ok">✓</span></td><td>Heart rate & effort (chart, strain, redline, kcal, HRV, toggle)</td><td>Row → same expanded section; HR zone colours stay (meaning)</td></tr><tr><td><span class="ok">✓</span></td><td>Photos & videos: Find, Add, Photos access, Highlight reel, Edit in Video Studio</td><td>Outline buttons, accent links</td></tr><tr><td><span class="ok">✓</span></td><td>Per-exercise sections: header (Progress 📈, options ⋯: move / remove / match details), set rows with weight × reps, HR zone pill, peak + recovery, media tiles, Move / Remove; General bucket</td><td>Sentence headers with accent icons, set rows in one card, zone pills outlined in their zone colour</td></tr></table></div>
+</div></body></html>

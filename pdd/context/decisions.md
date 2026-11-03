@@ -10421,3 +10421,14 @@ stripes, and the panel read as an opaque slab.
   meaning colour and must not look like the accent.
 - **The Up next kicker is sentence case.** `RoutineScheduleUITests` matched the caps strings, so the tests moved
   with it.
+
+## 2026-11-02 — Design-system reset, step 3d: Gym Tracker session detail (prompt 220)
+
+- **The session's XP row shows the still buddy, not the 3D one.** The RealityKit buddy rendered a blank square on
+  the simulator and cost a scene per pushed detail page. Home already uses the stills.
+- **A worse delta is amber, not orange.** Orange was the old workout accent, and a delta is a meaning colour. Green
+  is better, amber is worse, grey is the same (`SessionInsightsStyle`).
+- **Shared recap cards restyle with the detail.** `SessionRecapHero`, `SessionRecapCards`, `ClimbEffortSection`,
+  `ClimbTimelineList` and `ClimbSummarySectionTitle` also show on the finish screen and the live climb sheet. Those
+  surfaces now get the panel look early. `ClimbGradePyramid` stays as it is because the Kilter stats screen owns
+  its look.
