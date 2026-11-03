@@ -145,7 +145,7 @@ struct HistorySectionView: View {
         // `Group { if empty … else List }` branch swap left the row Buttons' tap gestures dead.
         List {
             ForEach(grouped) { group in
-                Section(group.id) {
+                Section {
                     ForEach(group.sessions) { session in
                         // NOTE: kept as a value-based NavigationLink (unlike the rest of the suite,
                         // which uses router Buttons). A Button here provably never fired its action
@@ -176,13 +176,18 @@ struct HistorySectionView: View {
                                 Button { openStudio(session) } label: {
                                     Label("Studio", systemImage: "film.stack")
                                 }
-                                .tint(SnappetColor.workout)
+                                .tint(SnappetColor.brand)
                             }
                         }
+                        .listRowBackground(SnappetColor.surface)
                     }
+                } header: {
+                    Text(group.id).snappetLabel().textCase(nil)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(SnappetColor.paper)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic),
                     prompt: "Search by routine")
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -198,6 +203,8 @@ struct HistorySectionView: View {
                 // no apply → dismiss → check → reopen loop.
                 .presentationDetents([.medium, .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                // The card surface, so the outline chips' hairlines read (they vanished on the system sheet material).
+                .presentationBackground(SnappetColor.surface)
         }
         .overlay {
             if allSessions.isEmpty {
@@ -216,8 +223,7 @@ struct HistorySectionView: View {
                     Text(emptyFilterExplanation)
                 } actions: {
                     Button("Clear filters", action: clearAllFilters)
-                        .buttonStyle(.borderedProminent)
-                        .tint(SnappetColor.workout)
+                        .buttonStyle(.snappetPrimary)
                         .accessibilityIdentifier("history.emptyClearFilters")
                 }
             } else if filtered.isEmpty {
@@ -233,24 +239,20 @@ struct HistorySectionView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Button { showingFilters = true } label: {
+                    // An outline pill, the accent while filtering (prompt 221).
                     HStack(spacing: 6) {
-                        Image(systemName: isFiltering
-                              ? "line.3.horizontal.decrease.circle.fill"
-                              : "line.3.horizontal.decrease.circle")
-                        Text("Filters").fontWeight(.semibold)
+                        Image(systemName: "line.3.horizontal.decrease")
+                        Text("Filters")
                         if activeFilterCount > 0 {
                             Text("\(activeFilterCount)")
-                                .font(.caption2.weight(.heavy))
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
                                 .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(SnappetColor.workout, in: Capsule())
-                                .foregroundStyle(.black)
+                                .background(SnappetColor.brand, in: Capsule())
+                                .foregroundStyle(SnappetColor.onBrand)
                         }
                     }
-                    .font(.subheadline)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(isFiltering ? SnappetColor.workout.opacity(0.2)
-                                            : Color(.secondarySystemFill), in: Capsule())
-                    .foregroundStyle(isFiltering ? SnappetColor.workout : Color.primary)
+                    .font(.system(size: 14))
+                    .snappetPill(selected: isFiltering)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("history.filtersButton")
@@ -258,7 +260,7 @@ struct HistorySectionView: View {
                 Spacer(minLength: 6)
 
                 Text(countLine)
-                    .font(.caption)
+                    .font(SnappetType.label.monospacedDigit())
                     .foregroundStyle(SnappetColor.textSecondary)
                     .accessibilityIdentifier("history.countLine")
             }
@@ -267,7 +269,7 @@ struct HistorySectionView: View {
 
             if !activeTokens.isEmpty { tokenRow }
         }
-        .background(.bar)
+        .background(SnappetColor.paper)
     }
 
     /// Removable tokens for what's currently narrowing the list, plus Clear all.
@@ -278,18 +280,16 @@ struct HistorySectionView: View {
                     Button(action: token.clear) {
                         HStack(spacing: 5) {
                             Text(token.label).lineLimit(1)
-                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
                         }
-                        .font(.subheadline)
-                        .padding(.horizontal, 11).padding(.vertical, 5)
-                        .background(SnappetColor.workout.opacity(0.18), in: Capsule())
-                        .foregroundStyle(SnappetColor.workout)
+                        .font(.system(size: 13))
+                        .snappetPill(selected: true)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("history.token")
                 }
                 Button("Clear all", action: clearAllFilters)
-                    .font(.caption.weight(.semibold))
+                    .font(SnappetType.label)
                     .foregroundStyle(SnappetColor.textSecondary)
                     .accessibilityIdentifier("history.clearAll")
             }
@@ -365,12 +365,10 @@ struct HistoryFilterSheet: View {
                     Text(isFiltering
                          ? "Show \(matchCount) session\(matchCount == 1 ? "" : "s")"
                          : "Done")
-                        .font(.headline)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 3)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.workout)
+                .buttonStyle(.snappetPrimary)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
                 .accessibilityIdentifier("history.filter.apply")
@@ -390,10 +388,7 @@ struct HistoryFilterSheet: View {
     private func section<Content: View>(_ title: String,
                                         @ViewBuilder chips: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .kerning(0.8)
-                .foregroundStyle(SnappetColor.textSecondary)
+            Text(title).snappetLabel()
             FlexibleHStack(spacing: 8) { chips() }
         }
     }
@@ -405,11 +400,8 @@ struct HistoryFilterSheet: View {
                 if let symbol { Image(systemName: symbol).font(.caption) }
                 Text(label).lineLimit(1)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(on ? SnappetColor.workout.opacity(0.2) : Color(.secondarySystemFill),
-                        in: Capsule())
-            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+            .font(.system(size: 14))
+            .snappetPill(selected: on)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -474,6 +466,8 @@ enum HistorySearch {
     }
 }
 
+/// One session row — the Dashboard's Recent sessions shape (prompt 221): a glyph tile for its workout type, the
+/// name, a grey facts line and the date underneath, so a session reads the same wherever it's listed.
 private struct HistoryRow: View {
     let session: WorkoutSession
     let unit: WeightUnit
@@ -484,75 +478,84 @@ private struct HistoryRow: View {
     var xp: Int? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(session.routineName).font(.headline).lineLimit(1)
-                Spacer()
-                if let xp {
-                    Text("+\(xp) XP").font(.caption.weight(.heavy).monospacedDigit())
-                        .foregroundStyle(SnappetColor.workout)
-                }
-            }
-            Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
-                .font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                Label("\(max(1, Int(session.duration / 60)))m", systemImage: "clock")
-                Label("\(session.completedSetCount) sets", systemImage: "checkmark.circle")
-                let vol = WorkoutMath.sessionVolumeKg(session)
-                if vol > 0 {
-                    Label(WorkoutMath.formatVolume(kg: vol, unit: unit), systemImage: "scalemass")
-                }
-                if hasVideo {
-                    Label("Studio", systemImage: "film.stack")
-                        .foregroundStyle(SnappetColor.workout)
-                }
-            }
-            .font(.caption2).foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 2)
+        HistoryRowShape(symbol: (WorkoutDashboardStats.dominantDiscipline(of: session) ?? .strength).symbol,
+                        title: session.routineName, badge: hasVideo ? "Studio" : nil,
+                        facts: Self.facts(session, unit: unit),
+                        date: session.startedAt, trailing: xp.map { "+\($0) XP" })
+    }
+
+    /// "50 min · 10 sets · 2,520 kg" — volume only when there is some.
+    static func facts(_ session: WorkoutSession, unit: WeightUnit) -> String {
+        let sets = session.completedSetCount
+        var out = ["\(max(1, Int(session.duration / 60))) min", "\(sets) \(sets == 1 ? "set" : "sets")"]
+        let vol = WorkoutMath.sessionVolumeKg(session)
+        if vol > 0 { out.append(WorkoutMath.formatVolume(kg: vol, unit: unit)) }
+        return out.joined(separator: " · ")
     }
 }
 
-/// A row for an Apple Watch import (watch-workouts-clips P3): the activity name + its HealthKit stats
-/// (duration · distance · energy) and a clip count, marked with the ⌚ source glyph. No sets/volume —
-/// these workouts carry none.
+/// A row for a workout imported from Apple Health (watch-workouts-clips P3): the same shape, its source leading the
+/// facts (duration · distance · energy) and a Clips tag. No sets/volume — these workouts carry none.
 private struct WatchHistoryRow: View {
     let session: WorkoutSession
     var hasVideo: Bool = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            // The glyph follows the real writer: ⌚ only for a genuine Watch recording, a neutral
-            // health mark for anything another app wrote into Apple Health (prompt 129).
-            Image(systemName: session.isFromAppleWatch ? "applewatch" : "heart.text.square")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(SnappetColor.perfFresh)
-                .frame(width: 34)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(session.routineName).font(.headline).lineLimit(1)
-                // Name the origin ("Google Health · Fri, Aug 21 at 6:30 PM") rather than letting a
-                // ⌚-badged section imply a device that never recorded this.
-                Text("\(session.importSourceLabel) · "
-                     + session.startedAt.formatted(.dateTime.weekday().month().day().hour().minute()))
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    Label("\(max(1, Int(session.duration / 60)))m", systemImage: "clock")
-                    if let m = session.hkDistanceMeters, m > 0 {
-                        Label(Self.distance(m), systemImage: "figure.walk")
-                    }
-                    if let kcal = session.hkEnergyKcal, kcal > 0 {
-                        Label("\(Int(kcal.rounded())) kcal", systemImage: "flame")
-                    }
-                    if hasVideo { Label("Clips", systemImage: "film.stack").foregroundStyle(SnappetColor.perfFresh) }
-                }
-                .font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 2)
+        // The glyph follows the real writer: ⌚ only for a genuine Watch recording, a neutral
+        // health mark for anything another app wrote into Apple Health (prompt 129). Naming the
+        // origin ("Google Health · 31 min") keeps a row from implying a device that never recorded it.
+        HistoryRowShape(symbol: session.isFromAppleWatch ? "applewatch" : "heart.text.square",
+                        title: session.routineName, badge: hasVideo ? "Clips" : nil,
+                        facts: Self.facts(session), date: session.startedAt, trailing: nil)
+    }
+
+    static func facts(_ session: WorkoutSession) -> String {
+        var out = [session.importSourceLabel, "\(max(1, Int(session.duration / 60))) min"]
+        if let m = session.hkDistanceMeters, m > 0 { out.append(distance(m)) }
+        if let kcal = session.hkEnergyKcal, kcal > 0 { out.append("\(Int(kcal.rounded())) kcal") }
+        return out.joined(separator: " · ")
     }
 
     /// Metres → a compact "5.1 km" / "820 m" label.
     private static func distance(_ meters: Double) -> String {
         meters >= 1000 ? String(format: "%.1f km", meters / 1000) : "\(Int(meters.rounded())) m"
+    }
+}
+
+/// The shared layout of both History rows. The chevron is the NavigationLink's own.
+private struct HistoryRowShape: View {
+    let symbol: String
+    let title: String
+    /// A small accent tag after the name ("Studio" / "Clips").
+    let badge: String?
+    let facts: String
+    let date: Date
+    let trailing: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                .frame(width: 32, height: 32)
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    if let badge {
+                        Label(badge, systemImage: "film.stack").labelStyle(.titleAndIcon)
+                            .font(.system(size: 10.5)).foregroundStyle(SnappetColor.brand)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.55)))
+                    }
+                }
+                Text(facts).snappetDetail().lineLimit(1)
+                Text(date, format: .dateTime.weekday().month().day().hour().minute())
+                    .font(SnappetType.label).foregroundStyle(SnappetColor.textTertiary)
+            }
+            Spacer(minLength: 4)
+            if let trailing {
+                Text(trailing).font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }

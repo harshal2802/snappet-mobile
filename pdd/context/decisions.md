@@ -10432,3 +10432,12 @@ stripes, and the panel read as an opaque slab.
   `ClimbTimelineList` and `ClimbSummarySectionTitle` also show on the finish screen and the live climb sheet. Those
   surfaces now get the panel look early. `ClimbGradePyramid` stays as it is because the Kilter stats screen owns
   its look.
+
+## 2026-11-02 — Design-system reset, step 3d: Gym Tracker History (prompt 221)
+
+- **History rows copy the Dashboard's Recent sessions row** (glyph tile, facts line, date underneath). A session
+  should look the same in every list. The tile is the one visual addition the user OK'd with the mockup.
+- **The row keeps its own facts** (duration · sets · volume), not the Dashboard's per-type facts ("3 sends"). The
+  restyle rule is restructure, not re-select content.
+- **The filter sheet sits on the card surface.** Outline chips (hairline borders) disappear on the system sheet
+  material.
