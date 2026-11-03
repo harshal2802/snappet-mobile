@@ -18,9 +18,10 @@ struct ClimbSummarySectionTitle: View {
         self.systemImage = systemImage
     }
     var body: some View {
+        // The calm label of the restyle (prompt 220): small, sentence case, grey.
         Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .font(SnappetType.label)
+            .foregroundStyle(SnappetColor.textSecondary)
     }
 }
 
@@ -249,13 +250,12 @@ struct ClimbEffortSection: View {
                 ZoneBar(stats: hr)
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     private func hrStat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(value).font(.system(size: 20, weight: .light)).monospacedDigit()
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -295,14 +295,13 @@ struct ClimbTimelineList: View {
                     } label: {
                         Text(expanded ? "Show less" : "Show all \(rows.count)")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(SnappetColor.workout)
+                            .foregroundStyle(SnappetColor.brand)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("freeform.summaryTimelineExpand")
                 }
             }
-            .padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
         }
     }
 

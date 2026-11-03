@@ -99,7 +99,7 @@ struct SessionDetailView: View {
                     SessionXPRow(session: session)
                     if session.isImportedFromHealth {
                         Text("\(session.startedAt.formatted(.dateTime.weekday().month().day())) · \(max(1, Int(session.duration / 60))) min")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
                         SessionRecapHero(cells: SessionRecap.heroCells(stats: recapStats, climbStats: recapClimbStats,
                                                                        session: session, unit: unit, milestones: recapMilestones))
                     } else {
@@ -110,7 +110,7 @@ struct SessionDetailView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 6, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 6, trailing: 0))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
 
@@ -138,6 +138,8 @@ struct SessionDetailView: View {
                                 },
                                 onOpenGame: { gameTarget = $0 })
         }
+        .scrollContentBackground(.hidden)
+        .background(SnappetColor.paper)
         .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
         .keypadDoneToolbar($keypadFocused)
@@ -285,31 +287,28 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: session.isFromAppleWatch ? "applewatch" : "heart.text.square")
-                        .foregroundStyle(SnappetColor.perfFresh)
+                        .foregroundStyle(SnappetColor.brand)
                     // Names the actual writer — "Recorded in Google Health" — instead of
                     // asserting an Apple Watch that may never have been involved.
                     Text(session.isFromAppleWatch
                          ? "Recorded on Apple Watch"
                          : "Recorded in \(session.importSourceLabel)")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
                 }
                 Text(session.isFromAppleWatch
                      ? "This workout was recorded on your Apple Watch, so it has no exercises or sets — just its heart rate and the clips you filmed."
                      : "Snappet found this workout in Apple Health, where \(session.importSourceLabel) saved it. It has no exercises or sets — just its heart rate and the clips you filmed.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
                 if !watchStatChips.isEmpty {
                     HStack(spacing: 10) {
                         ForEach(watchStatChips, id: \.self) { chip in
-                            Text(chip)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(SnappetColor.perfFresh.opacity(0.12), in: Capsule())
-                                .foregroundStyle(SnappetColor.perfFresh)
+                            Text(chip).font(.system(size: 11.5).monospacedDigit()).snappetPill(selected: false)
                         }
                     }
                 }
             }
             .padding(.vertical, 2)
+            .listRowBackground(SnappetColor.surface)
         }
     }
 
@@ -389,31 +388,40 @@ private struct HeartRateSummarySection: View {
             Button {
                 withAnimation { expanded.toggle() }
             } label: {
-                HStack {
-                    Label("Heart rate & effort", systemImage: "heart.fill").foregroundStyle(.primary)
+                HStack(spacing: 12) {
+                    Image(systemName: "heart.fill").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Heart rate & effort").font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                        Text("\(Int(stats.avgBpm.rounded())) avg · \(Int(stats.maxBpm.rounded())) max")
+                            .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                    }
                     Spacer()
-                    Text("\(Int(stats.avgBpm.rounded())) avg · \(Int(stats.maxBpm.rounded())) max")
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SnappetColor.textTertiary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
+                .contentShape(Rectangle())
             }
-            .tint(.primary)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("hrSummary.toggle")
             if expanded { details }
         } header: {
             HStack(spacing: 6) {
-                Text("Heart rate")
+                Text("Heart rate").snappetLabel()
                 HRMetricsInfoButton()   // explains the HRV / recovery-dot colour codes (#78)
                 if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
                     Spacer()
-                    Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
+                    Text("via \(kind.title)").snappetLabel()
                 } else if sourceRaw == WorkoutHRBackfill.healthSourceRaw {
                     Spacer()
-                    Text("via Apple Health").font(.caption2).foregroundStyle(.secondary)
+                    Text("via Apple Health").snappetLabel()
                 }
             }
+            .textCase(nil)
         }
+        .listRowBackground(SnappetColor.surface)
     }
 
     @ViewBuilder private var details: some View {
@@ -430,7 +438,7 @@ private struct HeartRateSummarySection: View {
                 if let rmssd = HRVReads.session(series).rmssd {
                     VStack(spacing: 2) {
                         Text("\(Int(rmssd.rounded())) ms")
-                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .font(.system(size: 20, weight: .light).monospacedDigit())
                             .foregroundStyle(HRVBadge.recoveryColor(rmssd))
                         Text("HRV").font(.caption).foregroundStyle(.secondary)
                     }
@@ -455,7 +463,7 @@ private struct HeartRateSummarySection: View {
     private func calorieStat(_ kcal: Double) -> some View {
         VStack(spacing: 2) {
             Text("\(Int(kcal.rounded()))")
-                .font(.title3.monospacedDigit().weight(.semibold))
+                .font(.system(size: 20, weight: .light).monospacedDigit())
             Text("kcal est.").font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -465,7 +473,7 @@ private struct HeartRateSummarySection: View {
     private func hrStat(_ label: String, bpm: Double) -> some View {
         VStack(spacing: 2) {
             Text("\(Int(bpm.rounded()))")
-                .font(.title3.monospacedDigit().weight(.semibold))
+                .font(.system(size: 20, weight: .light).monospacedDigit())
                 .contentTransition(.numericText())
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
@@ -475,7 +483,7 @@ private struct HeartRateSummarySection: View {
     private func redlineStat(_ stats: WorkoutHRStats) -> some View {
         VStack(spacing: 2) {
             Text(ZoneBar.minutesLabel(stats.redlineSeconds))
-                .font(.title3.monospacedDigit().weight(.semibold))
+                .font(.system(size: 20, weight: .light).monospacedDigit())
             Text("Redline · \(Int((stats.redlineFraction * 100).rounded()))%")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -487,7 +495,7 @@ private struct HeartRateSummarySection: View {
     private func strainStat(_ stats: WorkoutHRStats) -> some View {
         VStack(spacing: 2) {
             Text("\(Int(stats.edwardsTRIMP.rounded()))")
-                .font(.title3.monospacedDigit().weight(.semibold))
+                .font(.system(size: 20, weight: .light).monospacedDigit())
             Text("Strain").font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -648,14 +656,15 @@ private struct SessionMediaSection: View {
                 } header: {
                     HStack {
                         Text(ex.isRacketMatch ? RacketStats.postTitle(ex) : resolver.name(for: ex.exerciseId, override: ex.displayName))
+                            .font(.system(size: 13.5, weight: .medium)).foregroundStyle(SnappetColor.ink)
                         Spacer()
                         if let key = activityIdentity?.key(for: ex, loggedAt: session.startedAt) {
                             Button {
                                 onOpenDashboard(ActivityRoute(
                                     key: key, title: resolver.name(for: ex.exerciseId, override: ex.displayName)))
                             } label: {
-                                Image(systemName: "chart.xyaxis.line").font(.caption.weight(.bold))
-                                    .foregroundStyle(SnappetColor.workout)
+                                Image(systemName: "chart.xyaxis.line").font(.system(size: 13))
+                                    .foregroundStyle(SnappetColor.brand)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("activity.openDashboard")
@@ -680,20 +689,23 @@ private struct SessionMediaSection: View {
                             }
                             .accessibilityIdentifier("session.removeExercise")
                         } label: {
-                            Image(systemName: "ellipsis.circle").font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "ellipsis.circle").font(.system(size: 14))
+                                .foregroundStyle(SnappetColor.brand)
                         }
                         .accessibilityIdentifier("session.exerciseMenu")
                         .accessibilityLabel("Exercise options")
                     }
+                    .textCase(nil)
                 }
+                .listRowBackground(SnappetColor.surface)
             }
             if !generalMedia.isEmpty {
                 Section {
                     ForEach(generalMedia) { mediaRow($0) }
                 } header: {
-                    Text("General")
+                    Text("General").font(.system(size: 13.5, weight: .medium)).foregroundStyle(SnappetColor.ink).textCase(nil)
                 }
+                .listRowBackground(SnappetColor.surface)
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -733,40 +745,51 @@ private struct SessionMediaSection: View {
     /// No media yet: one row instead of a half-screen empty state above the workout (prompt 146).
     private var compactEmptyMedia: some View {
         Section {
-            HStack(spacing: 10) {
-                Label("Photos & videos", systemImage: "photo.on.rectangle.angled")
-                    .font(.subheadline)
-                Spacer(minLength: 6)
-                Button {
-                    Task { await autoDiscover(prompt: true) }
-                } label: {
-                    if isDiscovering { ProgressView() } else { Text("Find") }
-                }
-                .buttonStyle(.bordered).controlSize(.small)
-                .disabled(isDiscovering)
-                .accessibilityIdentifier("media.find")
-                Button { Task { await ensureAccessThenPick() } } label: { Text("Add") }
-                    .buttonStyle(.bordered).controlSize(.small)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Photos & videos").snappetLabel()
+                // Outline pills (prompt 220); the row is a plain container so each pill gets its own tap.
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await autoDiscover(prompt: true) }
+                    } label: {
+                        Group {
+                            if isDiscovering { ProgressView() } else { Label("Find", systemImage: "sparkle.magnifyingglass") }
+                        }
+                        .font(.system(size: 13)).frame(maxWidth: .infinity)
+                        .snappetPill(selected: false)
+                    }
+                    .disabled(isDiscovering)
+                    .accessibilityIdentifier("media.find")
+                    Button { Task { await ensureAccessThenPick() } } label: {
+                        Label("Add", systemImage: "plus").font(.system(size: 13)).frame(maxWidth: .infinity)
+                            .snappetPill(selected: false)
+                    }
                     .accessibilityIdentifier("media.add")
-            }
-            if let message {
-                Text(message).font(.footnote).foregroundStyle(.secondary)
-            }
-            if app.photoAccess == .denied || app.photoAccess == .restricted {
-                Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                } label: {
-                    Label("Enable Photos access in Settings", systemImage: "gear")
                 }
-                .font(.footnote)
+                .buttonStyle(.plain)
+                if let message {
+                    Text(message).font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
+                }
+                if app.photoAccess == .denied || app.photoAccess == .restricted {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    } label: {
+                        Label("Enable Photos access in Settings", systemImage: "gear")
+                            .font(.system(size: 12)).foregroundStyle(SnappetColor.brand)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.vertical, 4)
+            .listRowBackground(SnappetColor.surface)
         }
     }
 
     @ViewBuilder private var fullActionsSection: some View {
         Section {
             if let message {
-                Text(message).font(.footnote).foregroundStyle(.secondary)
+                Text(message).font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
+                    .listRowBackground(SnappetColor.surface)
             }
 
             Button {
@@ -779,10 +802,12 @@ private struct SessionMediaSection: View {
                 }
             }
             .disabled(isDiscovering)
+            .listRowBackground(SnappetColor.surface)
 
             Button { Task { await ensureAccessThenPick() } } label: {
                 Label("Add photos/videos", systemImage: "plus")
             }
+            .listRowBackground(SnappetColor.surface)
 
             // #4: an escape hatch when Photos access is blocked — auto-discovery can't time-scan the
             // library without full access, so route the user to Settings.
@@ -795,6 +820,7 @@ private struct SessionMediaSection: View {
                           systemImage: "gear")
                 }
                 .font(.footnote)
+                .listRowBackground(SnappetColor.surface)
             }
 
             Button { activeSheet = .highlight } label: {
@@ -802,6 +828,7 @@ private struct SessionMediaSection: View {
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("generateHighlight")
+            .listRowBackground(SnappetColor.surface)
 
             // Named for what it is (#74): "Open studio (multi-clip)" undersold the CapCut-style
             // editor. Still disabled until the session has video — there is nothing to cut.
@@ -810,8 +837,9 @@ private struct SessionMediaSection: View {
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("openStudio")
+            .listRowBackground(SnappetColor.surface)
         } header: {
-            Text("Media from this workout")
+            Text("Media from this workout").snappetLabel().textCase(nil)
         }
     }
 
@@ -854,7 +882,7 @@ private struct SessionMediaSection: View {
                 Divider()
                 Button("General") { reassign(item, to: nil, set: nil) }
             } label: { Label("Move", systemImage: "arrow.left.arrow.right") }
-            .tint(SnappetColor.workout)
+            .tint(SnappetColor.brand)
         }
     }
 
@@ -1118,25 +1146,26 @@ private struct SetTileRow: View {
     private var tile: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Text("\(effortNoun) \(index)").font(.subheadline.weight(.medium))
+                Text("\(effortNoun) \(index)").font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
                 Spacer()
                 if let editDraft, let keypadFocus {
                     SetEditFields(draft: editDraft, discipline: discipline, kind: kind,
                                   unit: unit, distanceUnit: distanceUnit, focus: keypadFocus)
                 } else if set.completedAt != nil {
-                    Text(detailText).font(.subheadline.monospacedDigit())
+                    Text(detailText).font(.system(size: 14).monospacedDigit()).foregroundStyle(SnappetColor.ink)
                 } else {
                     Text("—").foregroundStyle(.tertiary)
                 }
                 if let bpm {
                     let zone = HeartRateZone.forBpm(bpm, maxHR: maxHR)
+                    // Outlined in its zone colour (prompt 220) — the zone is meaning, so it keeps its colour.
                     HStack(spacing: 3) {
-                        Image(systemName: "heart.fill").font(.caption2)
-                        Text("\(Int(bpm.rounded()))").font(.caption.monospacedDigit().weight(.semibold))
+                        Image(systemName: "heart.fill").font(.system(size: 9))
+                        Text("\(Int(bpm.rounded()))").font(.system(size: 11.5).monospacedDigit())
                     }
                     .foregroundStyle(zone.color)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(zone.color.opacity(0.15), in: Capsule())
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .overlay(Capsule().strokeBorder(zone.color.opacity(0.45), lineWidth: 1))
                     .accessibilityIdentifier("setHRBadge")
                 }
                 if onShowHR != nil, editDraft == nil {
