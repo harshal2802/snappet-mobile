@@ -485,7 +485,6 @@ struct FreeformPlayerView: View {
                         resolver.name(for: ex.exerciseId, override: ex.displayName)
                     },
                     current: page,
-                    tint: railTint,
                     onTap: { target in withAnimation { page = target } })
                     .padding(.top, 10)
                 pagerPages
@@ -522,33 +521,9 @@ struct FreeformPlayerView: View {
         .tabViewStyle(.page(indexDisplayMode: .never))
     }
 
-    /// The soft ambient tint behind everything — follows the current page's discipline accent so
-    /// swiping into climbing "feels amber" (wayfinding, per the two-axis color contract).
+    /// The plain dark background (prompt 223 — the per-discipline ambient glow went with the one-accent rule).
     private var ambientBackground: some View {
-        ZStack {
-            SnappetColor.paper.ignoresSafeArea()
-            RadialGradient(colors: [currentAccent.opacity(0.16), .clear],
-                           center: UnitPoint(x: 0.85, y: -0.05), startRadius: 0, endRadius: 440)
-                .ignoresSafeArea()
-                .animation(.easeInOut(duration: 0.4), value: currentAccent)
-        }
-    }
-
-    /// The current page's discipline accent (climbs use the Kilter amber like their grade pill).
-    private var currentAccent: Color {
-        if case .exercise(let id) = page,
-           let ex = session.exercises.first(where: { $0.id == id }) {
-            return ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent
-        }
-        return SnappetColor.workout
-    }
-
-    private func railTint(_ chip: QuickSessionPager.RailChip) -> Color {
-        if case .exercise(let id) = chip.page,
-           let ex = session.exercises.first(where: { $0.id == id }) {
-            return ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent
-        }
-        return chip.page == .add ? SnappetColor.brand : SnappetColor.workout
+        SnappetColor.paper.ignoresSafeArea()
     }
 
     /// The floating glass nav: minimize ⌄ · session title + live elapsed/HR line · the Finish pill.
@@ -556,9 +531,9 @@ struct FreeformPlayerView: View {
         HStack(spacing: 10) {
             Button { onMinimize() } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
                     .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08), in: Circle())
+                    .background(SnappetColor.surfaceMuted, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("minimizeWorkout")
@@ -566,18 +541,18 @@ struct FreeformPlayerView: View {
             Spacer(minLength: 4)
             VStack(spacing: 1) {
                 Text(session.routineName)
-                    .font(.subheadline.weight(.bold)).lineLimit(1)
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 5) {
                     if isPaused {
-                        Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(SnappetColor.perfModerate)
                     }
                     Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(SnappetColor.textSecondary)
                         .accessibilityIdentifier("overallWorkoutTimer")
                     if let bpm = app.liveWorkout.latestHR {
                         Text("· ♥ \(Int(bpm.rounded()))")
-                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(SnappetColor.textSecondary)
                     }
                 }
@@ -585,11 +560,10 @@ struct FreeformPlayerView: View {
             Spacer(minLength: 4)
             Button { finishTapped() } label: {
                 Text("Finish")
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 14, weight: .medium))
                     .padding(.horizontal, 14)
                     .frame(height: 34)
-                    .background(.white.opacity(0.1), in: Capsule())
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.14)))
+                    .pagerOutline()
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("freeform.finish")
@@ -607,16 +581,16 @@ struct FreeformPlayerView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "hourglass").font(.caption2)
                     Text(SetMeasure.formatDuration(remaining))
-                        .font(.caption.weight(.bold).monospacedDigit())
+                        .font(.caption.monospacedDigit())
                         .contentTransition(.numericText())
                 }
-                .foregroundStyle(SnappetColor.perfFresh)
+                .foregroundStyle(SnappetColor.brand)
             }
             Spacer(minLength: 4)
             Button { restAutoStart.toggle(); Haptics.tap() } label: {
                 Image(systemName: restAutoStart ? "hourglass.circle.fill" : "hourglass.circle")
                     .font(.title3)
-                    .foregroundStyle(restAutoStart ? SnappetColor.workout : .secondary)
+                    .foregroundStyle(restAutoStart ? SnappetColor.brand : SnappetColor.textSecondary)
                     .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
@@ -624,19 +598,19 @@ struct FreeformPlayerView: View {
             .accessibilityLabel(restAutoStart ? "Auto rest timer on" : "Auto rest timer off")
             Button { togglePause() } label: {
                 Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
                     .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08), in: Circle())
+                    .background(SnappetColor.surfaceMuted, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("pauseWorkout")
             .accessibilityLabel(isPaused ? "Resume" : "Pause")
             Button { showingAddMenu = true } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 15, weight: .medium))
                     .frame(width: 34, height: 34)
-                    .background(SnappetColor.brand.opacity(0.2), in: Circle())
-                    .overlay(Circle().strokeBorder(SnappetColor.brand.opacity(0.5)))
+                    .background(SnappetColor.brand.opacity(0.12), in: Circle())
+                    .overlay(Circle().strokeBorder(SnappetColor.brand))
                     .foregroundStyle(SnappetColor.brand)
             }
             .buttonStyle(.plain)
@@ -669,7 +643,7 @@ struct FreeformPlayerView: View {
                             .foregroundStyle(zone.color)
                     }
                     if recovery.state != .unknown {
-                        Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
+                        Circle().fill(recovery.state == .ready ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                             .frame(width: 8, height: 8)
                     }
                     // Live HRV over the last minute — chest strap only (2026-10-26).
@@ -693,19 +667,16 @@ struct FreeformPlayerView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 TextField("Session name", text: $session.routineName)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 18))
                     .submitLabel(.done)
                     .onSubmit { persist(); pushLiveActivity() }
                     .accessibilityIdentifier("freeform.sessionTitle")
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .pagerGlass(cornerRadius: 16)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ELAPSED")
-                        .font(.system(size: 10, weight: .heavy)).tracking(1.4)
-                        .foregroundStyle(SnappetColor.textSecondary)
+                    Text("Elapsed").snappetLabel()
                     Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.system(size: 46, weight: .bold, design: .rounded)).monospacedDigit()
-                        .shadow(color: SnappetColor.workout.opacity(0.3), radius: 14, y: 4)
+                        .font(.system(size: 46, weight: .light)).monospacedDigit()
                 }
                 // Climbing keeps its rich tappable ribbon (→ LiveClimbStatsSheet); other disciplines
                 // the lean aggregate line — both re-homed from the old List's docked sections.
@@ -718,8 +689,8 @@ struct FreeformPlayerView: View {
                         .accessibilityLabel(statsRibbonAccessibilityLabel)
                 } else if let r = disciplineRibbon {
                     HStack(spacing: 12) {
-                        Image(systemName: r.icon).foregroundStyle(r.accent)
-                        Text(r.text).font(.subheadline.weight(.medium)).monospacedDigit()
+                        Image(systemName: r.icon).foregroundStyle(SnappetColor.textSecondary)
+                        Text(r.text).font(.system(size: 14)).monospacedDigit()
                         Spacer(minLength: 4)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
@@ -728,7 +699,7 @@ struct FreeformPlayerView: View {
                 }
                 if session.exercises.isEmpty {
                     Text("Swipe left to add your first exercise →")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 24)
                 } else {
@@ -755,26 +726,26 @@ struct FreeformPlayerView: View {
         Button { withAnimation { page = .exercise(ex.id) } } label: {
             HStack(spacing: 11) {
                 Image(systemName: ex.discipline == .climb ? ex.climbType.symbol : ex.racketSport?.symbol ?? ex.discipline.symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(railTint(.init(page: .exercise(ex.id), symbol: "", title: "",
-                                                    detail: nil, done: false)))
-                    .frame(width: 36, height: 36)
-                    .background(.white.opacity(0.06),
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .font(.system(size: 14))
+                    .foregroundStyle(SnappetColor.ink)
+                    .frame(width: 34, height: 34)
+                    .background(SnappetColor.surfaceMuted,
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ex.isRacketMatch ? RacketStats.matchRowTitle(ex) : resolver.name(for: ex.exerciseId, override: ex.displayName))
-                        .font(.subheadline.weight(.bold)).lineLimit(1)
+                        .font(.system(size: 15, weight: .medium)).lineLimit(1)
                         .foregroundStyle(SnappetColor.ink)
                     Text(overviewMetrics(ex))
-                        .font(.caption).monospacedDigit()
+                        .font(SnappetType.label).monospacedDigit()
                         .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let plan = QuickSessionPager.planState(for: ex),
                    let planned = plan.planned, planned > 0 {
-                    PlanSegmentsView(done: plan.done, planned: planned, accent: ex.discipline.accent)
+                    PlanSegmentsView(done: plan.done, planned: planned)
                 } else {
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SnappetColor.textTertiary)
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 11)
@@ -878,15 +849,13 @@ struct FreeformPlayerView: View {
                 Text(ex.discipline == .climb
                      ? "\(ex.climbType.label) · \(ex.gym?.isEmpty == false ? ex.gym! : "Climb")"
                      : ex.discipline == .racket ? racketTag(ex) : ex.discipline.label)
-                    .font(.system(size: 10, weight: .heavy)).tracking(1.2)
-                    .textCase(.uppercase)
-                    .foregroundStyle(ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent)
+                    .snappetLabel()
                 Spacer()
                 pageMenu(ex)
             }
             HStack(spacing: 8) {
                 Text(ex.isRacketMatch ? ex.racketMatchTitle : resolver.name(for: ex.exerciseId, override: ex.displayName))
-                    .font(.title2.bold()).lineLimit(2)
+                    .font(.system(size: 22, weight: .semibold)).lineLimit(2)
                     .accessibilityIdentifier(nameIdentifier(ex))
                 if ex.discipline == .climb { colorSwatch(ex) }
                 if ex.discipline == .strength, let catalog = resolver.exercise(id: ex.exerciseId) {
@@ -984,14 +953,14 @@ struct FreeformPlayerView: View {
             ?? QuickSessionPager.PlanState(done: ex.completedSetCount, planned: nil)
         return HStack(spacing: 8) {
             if let planned = plan.planned, planned > 0 {
-                PlanSegmentsView(done: plan.done, planned: planned, accent: ex.discipline.accent)
+                PlanSegmentsView(done: plan.done, planned: planned)
             }
             Button { planEditing = PlanEditTarget(exerciseID: ex.id) } label: {
                 HStack(spacing: 3) {
                     Text(plan.label(noun: QuickSessionPager.effortNoun(for: ex)))
                     Image(systemName: "pencil").font(.system(size: 9))
                 }
-                .font(.caption.weight(.bold))
+                .font(SnappetType.label)
                 .foregroundStyle(plan.isComplete ? SnappetColor.perfFresh : SnappetColor.textSecondary)
             }
             .buttonStyle(.plain)
@@ -1047,9 +1016,7 @@ struct FreeformPlayerView: View {
     private func climbHero(_ ex: SessionExercise) -> some View {
         VStack(spacing: 12) {
             pageGradePill(ex)
-            Text("ATTEMPT · #\(ex.sets.count + 1)")
-                .font(.system(size: 11, weight: .heavy)).tracking(1.4)
-                .foregroundStyle(SnappetColor.textSecondary)
+            Text("Attempt #\(ex.sets.count + 1)").snappetLabel()
             OutcomeGridView(type: ex.climbType) { status in
                 logAttempt(toExerciseID: ex.id, status: status, durationSec: nil)
             }
@@ -1081,7 +1048,7 @@ struct FreeformPlayerView: View {
                 if let spec = ex.timedSpec {
                     HStack(spacing: 6) {
                         Image(systemName: "timer").font(.caption)
-                        Text(spec.summary).font(.caption.weight(.bold))
+                        Text(spec.summary).font(SnappetType.label)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .pagerGlass(cornerRadius: 999)
@@ -1089,9 +1056,7 @@ struct FreeformPlayerView: View {
                 Text(heroSetLabel(done: ex.completedSetCount,
                                   planned: QuickSessionPager.planState(for: ex)?.planned,
                                   noun: QuickSessionPager.effortNoun(for: ex)))
-                    .font(.system(size: 11, weight: .heavy)).tracking(1.4)
-                    .textCase(.uppercase)
-                    .foregroundStyle(SnappetColor.textSecondary)
+                    .snappetLabel()
                 Button {
                     // Structured specs run the full-cover interval runner; the simple modes keep the
                     // stopwatch/manual LogSetSheet — same routing as the old timed card's Add set.
@@ -1131,9 +1096,7 @@ struct FreeformPlayerView: View {
                 Text(heroSetLabel(done: ex.completedSetCount,
                                   planned: QuickSessionPager.planState(for: ex)?.planned,
                                   noun: "leg"))
-                    .font(.system(size: 11, weight: .heavy)).tracking(1.4)
-                    .textCase(.uppercase)
-                    .foregroundStyle(SnappetColor.textSecondary)
+                    .snappetLabel()
                 HStack(spacing: 10) {
                     runStat("Distance",
                             RunStats.totalDistanceMeters(ex) > 0
@@ -1158,21 +1121,20 @@ struct FreeformPlayerView: View {
 
     private func runStat(_ caption: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(caption.uppercased())
-                .font(.system(size: 10, weight: .heavy)).tracking(1.2)
-                .foregroundStyle(SnappetColor.textSecondary)
+            Text(caption).snappetLabel()
             Text(value)
-                .font(.system(size: 26, weight: .bold, design: .rounded)).monospacedDigit()
+                .font(.system(size: 26, weight: .light)).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14).padding(.vertical, 11)
         .pagerGlass(cornerRadius: 18)
     }
 
-    /// "SET 3" / "SET 3 OF 5" — the hero's current-effort label.
+    /// "Set 3" / "Set 3 of 5" — the hero's current-effort label (sentence case since prompt 223).
     private func heroSetLabel(done: Int, planned: Int?, noun: String = "set") -> String {
-        if let planned, planned > 0 { return "\(noun) \(min(done + 1, planned)) of \(planned)" }
-        return "\(noun) \(done + 1)"
+        let n = noun.prefix(1).uppercased() + noun.dropFirst()
+        if let planned, planned > 0 { return "\(n) \(min(done + 1, planned)) of \(planned)" }
+        return "\(n) \(done + 1)"
     }
 
     /// The plan-met state: summary card + advance CTA (+1 extra set bumps the plan back open).
@@ -1224,12 +1186,13 @@ struct FreeformPlayerView: View {
 
     /// The big grade pill on the climb page (the caption-sized `freeform.gradePill` grown to hero).
     private func pageGradePill(_ ex: SessionExercise) -> some View {
+        // A light number on a neutral tile (prompt 223 — was a Kilter-amber / blue fill).
         Text(ex.climbGradeLabel ?? "—")
-            .font(.system(size: 28, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 18).padding(.vertical, 8)
-            .background(!ex.climbType.isRoute ? SnappetColor.kilter : SnappetColor.budget,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .font(.system(size: 28, weight: .light))
+            .foregroundStyle(SnappetColor.ink)
+            .padding(.horizontal, 18).padding(.vertical, 6)
+            .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(SnappetColor.hairline))
             .accessibilityIdentifier("freeform.gradePill")
     }
 
@@ -1245,11 +1208,11 @@ struct FreeformPlayerView: View {
                                   action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 42)
+                .pagerOutline()
         }
         .buttonStyle(.plain)
-        .pagerGlass(cornerRadius: 14)
     }
 
     // MARK: - Ghost ledger + drawer rows
@@ -1289,13 +1252,13 @@ struct FreeformPlayerView: View {
     // MARK: - Live stats ribbon (Phase 3 — content re-homed onto the overview page)
 
     /// The dominant non-climbing discipline's aggregate line, or `nil` when nothing's logged yet.
-    private var disciplineRibbon: (icon: String, accent: Color, text: String)? {
+    private var disciplineRibbon: (icon: String, text: String)? {
         switch FreeformSummary.dominant(for: session) {
         case .lifting:
             let sets = session.completedSetCount
             guard sets > 0 else { return nil }
             let vol = WorkoutMath.formatVolume(kg: WorkoutMath.sessionVolumeKg(session), unit: unit)
-            return ("scalemass.fill", WorkoutDiscipline.strength.accent,
+            return ("scalemass.fill",
                     "\(vol) · \(sets) \(sets == 1 ? "set" : "sets")")
         case .running:
             var meters = 0.0, seconds = 0.0
@@ -1307,13 +1270,13 @@ struct FreeformPlayerView: View {
             guard meters > 0 else { return nil }
             let pace = seconds > 0
                 ? " · " + SetMeasure.formatPace(secPerKm: seconds / (meters / 1000), unit: distanceUnit) : ""
-            return ("figure.run", WorkoutDiscipline.run.accent,
+            return ("figure.run",
                     SetMeasure.formatDistance(meters, unit: distanceUnit) + pace)
         case .timed:
             let tut = FreeformSummary.holdTimeSeconds(session)
             guard tut > 0 else { return nil }
             let sets = session.completedSetCount
-            return ("timer", WorkoutDiscipline.timed.accent,
+            return ("timer",
                     "TUT \(SetMeasure.formatDuration(tut)) · \(sets) \(sets == 1 ? "set" : "sets")")
         case .racket:
             guard let sum = RacketStats.summary(session.exercises) else { return nil }
@@ -1321,7 +1284,7 @@ struct FreeformPlayerView: View {
             if sum.matches > 0 { parts.append(sum.record.label) }
             if sum.units > 0 { parts.append("\(sum.units) \(sum.sport?.usesSets == true ? "sets" : "games")") }
             if sum.drills > 0 { parts.append("\(sum.drills) \(sum.drills == 1 ? "drill" : "drills")") }
-            return parts.isEmpty ? nil : ("tennis.racket", WorkoutDiscipline.racket.accent, parts.joined(separator: " · "))
+            return parts.isEmpty ? nil : ("tennis.racket", parts.joined(separator: " · "))
         default:
             return nil   // climbing has its own ribbon; dance/other rely on the command-bar duration
         }
@@ -1331,7 +1294,7 @@ struct FreeformPlayerView: View {
         let s = climbStats
         let sends = s?.sends ?? 0
         return HStack(spacing: 12) {
-            Image(systemName: "chart.bar.xaxis").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+            Image(systemName: "chart.bar.xaxis").foregroundStyle(SnappetColor.textSecondary)
             VStack(alignment: .leading, spacing: 4) {
                 if sends == 0 {
                     // Pre-send teaching variant: there's logged climbing but no send yet.
@@ -1340,7 +1303,7 @@ struct FreeformPlayerView: View {
                 } else {
                     HStack(spacing: 8) {
                         Text("\(sends) \(sends == 1 ? "send" : "sends")")
-                            .font(.headline.monospacedDigit())
+                            .font(.system(size: 15, weight: .medium).monospacedDigit())
                         if let hardest = s?.hardestSendGrade {
                             Text("· hardest \(hardest)")
                                 .font(.subheadline).foregroundStyle(.secondary)
@@ -1364,7 +1327,7 @@ struct FreeformPlayerView: View {
             ForEach(pyramid) { g in
                 VStack(spacing: 2) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(SnappetColor.moduleAccent("kilter"))
+                        .fill(SnappetColor.brand)
                         .frame(width: 10, height: 6 + 18 * CGFloat(g.sends) / CGFloat(maxSends))
                     Text(g.gradeLabel)
                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
@@ -1390,12 +1353,12 @@ struct FreeformPlayerView: View {
     private var milestoneBanner: some View {
         if let headline = liveMilestoneHeadline {
             HStack(spacing: 8) {
-                Image(systemName: "trophy.fill").foregroundStyle(SnappetColor.kilter)
+                Image(systemName: "trophy.fill").foregroundStyle(SnappetColor.brand)
                 Text(headline).font(.headline)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(SnappetColor.kilter.opacity(0.4)))
+            .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.45)))
             .padding(.top, 8)
             .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
             .transition(.move(edge: .top).combined(with: .opacity))
@@ -1491,19 +1454,21 @@ struct FreeformPlayerView: View {
     @ViewBuilder
     private func statusBadge(_ ex: SessionExercise) -> some View {
         if let status = ex.resolvedClimbStatus {
-            let (symbol, tint): (String, Color) = {
+            // The climb meaning colours shared with Kilter (prompt 223): flash blue-green, sent green, project amber.
+            let tint = KilterAscentStyle.color(status)
+            let symbol: String = {
                 switch status {
-                case .flash:   return ("bolt.fill", SnappetColor.kilter)
-                case .sent:    return ("checkmark.seal.fill", SnappetColor.habits)
-                case .project: return ("hourglass", SnappetColor.workout)
-                case .attempt: return ("circle", SnappetColor.textSecondary)
+                case .flash:   return "bolt.fill"
+                case .sent:    return "checkmark.seal.fill"
+                case .project: return "hourglass"
+                case .attempt: return "circle"
                 }
             }()
             HStack(spacing: 4) {
                 Image(systemName: symbol)
                 Text(ex.climbType.statusLabel(status))
             }
-            .font(.caption.weight(.semibold))
+            .font(.caption.weight(.medium))
             .foregroundStyle(tint)
             .accessibilityIdentifier("freeform.climbStatus")
         }

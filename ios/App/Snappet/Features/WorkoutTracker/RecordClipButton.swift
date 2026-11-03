@@ -63,24 +63,26 @@ struct RecordClipButton: View {
             if !recordedClips.isEmpty {
                 Label("^[\(recordedClips.count) clip](inflect: true) will attach to this \(attachNoun)",
                       systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.green)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.perfFresh)
                     .accessibilityIdentifier("\(idPrefix).clipCount")
             }
             if let noticeText {
                 Text(noticeText)
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(SnappetColor.perfModerate)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("\(idPrefix).recordNotice")
             }
             Button { present() } label: {
                 Label(savingClip ? "Saving clip…" : title,
                       systemImage: savingClip ? "arrow.down.circle" : "video.fill")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(SnappetColor.ink)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    // An outline capsule like the pager's other secondary actions (prompt 223 — was material).
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(savingClip)
