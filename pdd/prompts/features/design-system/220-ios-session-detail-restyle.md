@@ -47,4 +47,4 @@ Every element keeps its place and behaviour (the checklist is in the mockup).
 - [x] Dark screenshots match the mockup (strength top / compare / sets; climbing; hangboard).
 - [x] Full UI suite: green except the known `525 kg` main failure, an interval flake (passes alone) and
   `BuddyPrototypeUITests.testPreviewTheMoments`, which fails on main too (af8010e). Unit suite alone: 2653 green.
-- [ ] Device: installed on MrRobot 2026-11-02; awaiting the user's check.
+- [x] Device: user on MrRobot 2026-11-02 ("merge after testing").
