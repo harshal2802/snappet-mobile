@@ -520,10 +520,12 @@ struct WeekdayPicker: View {
                     Haptics.tap()
                 } label: {
                     Text(calendar.veryShortWeekdaySymbols[wd - 1])
-                        .font(.subheadline.weight(.bold))
+                        .font(.subheadline)
                         .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(on ? SnappetColor.workout : Color(.tertiarySystemFill), in: Circle())
-                        .foregroundStyle(on ? Color.black : Color.secondary)
+                        // The screen's tint (the user's accent in the Gym Tracker, the Habits colour there) —
+                        // was a fixed workout orange (prompt 222).
+                        .background(on ? AnyShapeStyle(.tint) : AnyShapeStyle(SnappetColor.surfaceMuted), in: Circle())
+                        .foregroundStyle(on ? SnappetColor.onBrand : SnappetColor.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(calendar.weekdaySymbols[wd - 1])
