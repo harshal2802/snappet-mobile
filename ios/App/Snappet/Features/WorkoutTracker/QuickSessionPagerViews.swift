@@ -9,16 +9,16 @@ import SwiftData
 
 // MARK: - Glass chrome
 
-/// The pager's glass-panel treatment: ultra-thin material, continuous corners, hairline stroke.
-/// One modifier so every panel reads as the same kit (the wireframes' `--glass` token).
+/// The pager's panel treatment: the card surface, continuous corners, hairline stroke (prompt 223 — was
+/// ultra-thin material). One modifier so every panel reads as the same kit as the rest of the app.
 struct PagerGlassPanel: ViewModifier {
     var cornerRadius: CGFloat = 22
     func body(content: Content) -> some View {
         content
-            .background(.ultraThinMaterial,
+            .background(SnappetColor.surface,
                         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .strokeBorder(SnappetColor.hairline, lineWidth: 1))
     }
 }
 
@@ -26,18 +26,22 @@ extension View {
     func pagerGlass(cornerRadius: CGFloat = 22) -> some View {
         modifier(PagerGlassPanel(cornerRadius: cornerRadius))
     }
+
+    /// A secondary action's outline capsule (Time this set, Repeat, Skip rest, …) — prompt 223.
+    func pagerOutline() -> some View {
+        overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
+            .contentShape(Capsule())
+    }
 }
 
 // MARK: - Exercise rail (the page indicator)
 
-/// The tappable exercise rail under the glass nav — the pager's page indicator. Chips come from
-/// the pure `QuickSessionPager.railChips`; the host supplies each chip's discipline tint. Scrolls
-/// horizontally when the session outgrows the width, keeping the current chip visible.
+/// The tappable exercise rail under the nav — the pager's page indicator. Chips come from the pure
+/// `QuickSessionPager.railChips`; the current one is the user's accent (prompt 223 — was the discipline's colour).
+/// Scrolls horizontally when the session outgrows the width, keeping the current chip visible.
 struct PagerRailView: View {
     let chips: [QuickSessionPager.RailChip]
     let current: QuickSessionPager.Page
-    /// Discipline accent per chip (wayfinding); the overview/add chips use the neutral default.
-    let tint: (QuickSessionPager.RailChip) -> Color
     let onTap: (QuickSessionPager.Page) -> Void
 
     var body: some View {
@@ -62,25 +66,22 @@ struct PagerRailView: View {
     @ViewBuilder
     private func railChip(_ chip: QuickSessionPager.RailChip, index: Int) -> some View {
         let isCurrent = chip.page == current
-        let accent = tint(chip)
         Button { onTap(chip.page) } label: {
             HStack(spacing: 5) {
                 Image(systemName: chip.done ? "checkmark" : chip.symbol)
-                    .font(.system(size: 10, weight: .bold))
-                Text(chip.title).font(.caption.weight(.bold)).lineLimit(1)
+                    .font(.system(size: 10, weight: .medium))
+                Text(chip.title).font(.system(size: 12.5)).lineLimit(1)
                 if let detail = chip.detail {
                     Text(detail)
-                        .font(.system(size: 9, weight: .heavy)).monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 10)).monospacedDigit()
+                        .foregroundStyle(SnappetColor.textTertiary)
                 }
             }
             .padding(.horizontal, 11).padding(.vertical, 7)
             .foregroundStyle(chip.done ? SnappetColor.perfFresh
-                             : isCurrent ? SnappetColor.ink : SnappetColor.textSecondary)
-            .background(
-                Capsule().fill(isCurrent ? accent.opacity(0.18) : Color.white.opacity(0.05)))
-            .overlay(Capsule().strokeBorder(
-                isCurrent ? accent.opacity(0.5) : .clear, lineWidth: 1))
+                             : isCurrent ? SnappetColor.brand : SnappetColor.textSecondary)
+            .background(Capsule().fill(isCurrent ? SnappetColor.brand.opacity(0.12) : Color.clear))
+            .overlay(Capsule().strokeBorder(isCurrent ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .id(chip.page)
@@ -97,7 +98,7 @@ struct PagerRailView: View {
 struct PlanSegmentsView: View {
     let done: Int
     let planned: Int
-    var accent: Color = SnappetColor.workout
+    var accent: Color = SnappetColor.brand
 
     var body: some View {
         HStack(spacing: 4) {
@@ -143,7 +144,7 @@ struct PlanEditorSheet: View {
                 stepButton("minus") { count = max(1, count - 1) }
                     .accessibilityIdentifier("freeform.planMinus")
                 Text("\(count)")
-                    .font(.system(size: 54, weight: .bold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 54, weight: .light)).monospacedDigit()
                     .frame(minWidth: 80)
                     .accessibilityIdentifier("freeform.planValue")
                 stepButton("plus") { count = min(30, count + 1) }
@@ -183,11 +184,7 @@ struct PlanEditorSheet: View {
     private func chip(_ text: String, emphasized: Bool = false,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text).font(.caption.weight(.bold))
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(emphasized ? SnappetColor.workout.opacity(0.16) : SnappetColor.surfaceMuted,
-                            in: Capsule())
-                .foregroundStyle(emphasized ? SnappetColor.workout : SnappetColor.ink)
+            Text(text).font(.system(size: 13)).snappetPill(selected: emphasized)
         }
         .buttonStyle(.plain)
     }
@@ -210,16 +207,14 @@ struct HeroStepperCard: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(caption.uppercased())
-                    .font(.system(size: 10, weight: .heavy)).tracking(1.2)
-                    .foregroundStyle(SnappetColor.textSecondary)
+                Text(caption).snappetLabel()
                 if let editableWeight {
                     TypeableWeightValue(weight: editableWeight, unit: weightUnit,
-                                        font: .system(size: 32, weight: .bold, design: .rounded).monospacedDigit(),
+                                        font: .system(size: 32, weight: .light).monospacedDigit(),
                                         id: idBase)
                 } else {
                     Text(value)
-                        .font(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 32, weight: .light)).monospacedDigit()
                         .contentTransition(.numericText())
                         .accessibilityIdentifier(idBase)
                 }
@@ -241,10 +236,10 @@ struct HeroStepperCard: View {
     private func heroStepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(SnappetColor.ink)
                 .frame(width: 42, height: 42)
-                .background(.white.opacity(0.08), in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.12)))
+                .background(SnappetColor.surfaceMuted, in: Circle())
         }
         .buttonStyle(.plain)
     }
@@ -285,9 +280,7 @@ struct StrengthHeroCard: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Text(setLabel.uppercased())
-                .font(.system(size: 11, weight: .heavy)).tracking(1.4)
-                .foregroundStyle(SnappetColor.textSecondary)
+            Text(setLabel.prefix(1).uppercased() + setLabel.dropFirst()).snappetLabel()
             HeroStepperCard(caption: "Reps", value: "\(reps)", idBase: "freeform.quickReps",
                             onMinus: { reps = max(0, reps - 1) },
                             onPlus: { reps = min(999, reps + 1) })
@@ -299,7 +292,7 @@ struct StrengthHeroCard: View {
                             onPlus: { weight = WeightEntry.nudge(weight, by: step) },
                             editableWeight: $weight, weightUnit: unitSel)
             if let hint {
-                Text(hint).font(.footnote).foregroundStyle(.secondary)
+                Text(hint).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     .accessibilityIdentifier("lastTimeHint")
             }
             Button {
@@ -327,11 +320,11 @@ struct StrengthHeroCard: View {
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 42)
+                .pagerOutline()
         }
         .buttonStyle(.plain)
-        .pagerGlass(cornerRadius: 14)
     }
 }
 
@@ -349,17 +342,17 @@ struct OutcomeGridView: View {
             ForEach(KilterAscentStatus.allCases, id: \.self) { status in
                 Button { onOutcome(status) } label: {
                     Text(type.statusLabel(status))
-                        .font(.subheadline.weight(.bold))
+                        .font(.system(size: 15, weight: .medium))
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(status == .sent ? SnappetColor.perfFresh : SnappetColor.ink)
                 .background(
-                    (status == .sent ? SnappetColor.perfFresh.opacity(0.14) : Color.white.opacity(0.06)),
+                    (status == .sent ? SnappetColor.perfFresh.opacity(0.1) : SnappetColor.surface),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(status == .sent ? SnappetColor.perfFresh.opacity(0.4)
-                                                  : .white.opacity(0.1)))
+                    .strokeBorder(status == .sent ? SnappetColor.perfFresh.opacity(0.45)
+                                                  : SnappetColor.hairline))
                 .accessibilityIdentifier("freeform.outcome.\(status.rawValue)")
             }
         }
@@ -382,20 +375,18 @@ struct RestHeroView: View {
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
-                Circle().stroke(.white.opacity(0.1), lineWidth: 10)
+                Circle().stroke(SnappetColor.hairline, lineWidth: 8)
                 Circle()
                     .trim(from: 0, to: total > 0 ? max(0, min(1, remaining / total)) : 0)
-                    .stroke(SnappetColor.perfFresh, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    .stroke(SnappetColor.brand, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.linear(duration: 0.3), value: remaining)
                 VStack(spacing: 2) {
                     Text(done ? "Done" : SetMeasure.formatDuration(remaining))
-                        .font(.system(size: 38, weight: .bold, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 38, weight: .light)).monospacedDigit()
                         .contentTransition(.numericText())
                         .accessibilityIdentifier("freeform.restTimer")
-                    Text(done ? "GO" : "REST · of \(SetMeasure.formatDuration(total))")
-                        .font(.system(size: 10, weight: .heavy)).tracking(1.2)
-                        .foregroundStyle(SnappetColor.textSecondary)
+                    Text(done ? "Go" : "Rest · of \(SetMeasure.formatDuration(total))").snappetLabel()
                 }
             }
             .frame(width: 150, height: 150)
@@ -408,7 +399,7 @@ struct RestHeroView: View {
                     .accessibilityIdentifier("freeform.restPlus")
             }
             if let nextUpText {
-                Text(nextUpText).font(.footnote).foregroundStyle(.secondary)
+                Text(nextUpText).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -416,11 +407,11 @@ struct RestHeroView: View {
 
     private func restAction(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.subheadline.weight(.semibold))
+            Text(title).font(.system(size: 14))
                 .frame(maxWidth: .infinity, minHeight: 40)
+                .pagerOutline()
         }
         .buttonStyle(.plain)
-        .pagerGlass(cornerRadius: 13)
     }
 }
 
@@ -443,12 +434,10 @@ struct GhostLedgerView: View {
         VStack(alignment: .leading, spacing: 6) {
             Button(action: onHistory) {
                 HStack {
-                    Text(title.uppercased())
-                        .font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                    Text(title).snappetLabel()
                     Spacer()
-                    Text("History ›").font(.caption.weight(.semibold))
+                    Text("History ›").font(SnappetType.label).foregroundStyle(SnappetColor.brand)
                 }
-                .foregroundStyle(SnappetColor.textSecondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -459,16 +448,15 @@ struct GhostLedgerView: View {
                         HStack(spacing: 4) {
                             if item.done {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 9, weight: .heavy))
+                                    .font(.system(size: 9, weight: .medium))
                                     .foregroundStyle(SnappetColor.perfFresh)
                             }
                             Text(item.text)
-                                .font(.caption.weight(.semibold)).monospacedDigit()
+                                .font(.system(size: 12)).monospacedDigit()
                                 .foregroundStyle(SnappetColor.textSecondary)
                         }
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(.white.opacity(0.045),
-                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .overlay(Capsule().strokeBorder(SnappetColor.hairline))
                         .accessibilityIdentifier("freeform.setRow")
                     }
                 }
@@ -590,9 +578,7 @@ struct ExerciseMediaShelf: View {
     var body: some View {
         if !media.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Media · \(media.count)")
-                    .font(.system(size: 10, weight: .heavy)).tracking(1.2)
-                    .foregroundStyle(SnappetColor.textSecondary)
+                Text("Media · \(media.count)").snappetLabel()
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(media) { clip in
@@ -611,7 +597,7 @@ struct ExerciseMediaShelf: View {
                                     moveTargets: moveTargets, moveTargetsLabel: moveTargetsLabel,
                                     onReassign: onReassign, onRequestDelete: onRequestDelete))
                                 Text(clip.assignedSetIndex.map { "\(noun) \($0 + 1)" } ?? "general")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.system(size: 9.5))
                                     .foregroundStyle(SnappetColor.textSecondary)
                             }
                         }
@@ -640,7 +626,7 @@ struct AddExercisePage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Add to this session")
-                    .font(.title2.bold())
+                    .font(.system(size: 22, weight: .semibold))
                     .padding(.top, 12)
                 typeCard("Lifting", subtitle: "Pick from library · reps × weight",
                          discipline: .strength, id: "freeform.cardLifting",
@@ -673,19 +659,20 @@ struct AddExercisePage: View {
                           id: String, accLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
+                // A neutral glyph tile (prompt 223 — was each type's colour).
                 Image(systemName: discipline.symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(discipline.accent)
-                    .frame(width: 42, height: 42)
-                    .background(discipline.accent.opacity(0.14),
-                                in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .font(.system(size: 15))
+                    .foregroundStyle(SnappetColor.ink)
+                    .frame(width: 36, height: 36)
+                    .background(SnappetColor.surfaceMuted,
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink)
-                    Text(subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                    Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
+                    Text(subtitle).snappetDetail()
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(SnappetColor.textTertiary)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .contentShape(Rectangle())
@@ -718,7 +705,7 @@ struct GuideDrawer: View {
                         ForEach(Array(exercise.instructions.enumerated()), id: \.offset) { idx, step in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text("\(idx + 1)").font(.caption.bold())
-                                    .foregroundStyle(SnappetColor.workout)
+                                    .foregroundStyle(SnappetColor.brand)
                                 Text(step).font(.callout).foregroundStyle(.secondary)
                             }
                         }
@@ -756,7 +743,7 @@ struct PlanCompleteNudge: View {
         VStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Label(headline, systemImage: "checkmark.seal.fill")
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(SnappetColor.perfFresh)
                 if let sublabel {
                     Text(sublabel).font(.caption).foregroundStyle(SnappetColor.textSecondary)
@@ -776,11 +763,11 @@ struct PlanCompleteNudge: View {
             .accessibilityIdentifier("freeform.nudgeNext")
             Button(action: onExtraSet) {
                 Label("1 extra set", systemImage: "plus")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 14))
                     .frame(maxWidth: .infinity, minHeight: 40)
+                    .pagerOutline()
             }
             .buttonStyle(.plain)
-            .pagerGlass(cornerRadius: 13)
             .accessibilityIdentifier("freeform.nudgeExtra")
         }
     }

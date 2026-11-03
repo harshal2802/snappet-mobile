@@ -97,7 +97,7 @@ struct RacketSetupSheet: View {
     @State private var newDrillMeasure: RacketDrillMeasure = .madeTried
     @State private var started = false
 
-    private var accent: Color { WorkoutDiscipline.racket.accent }
+    private var accent: Color { SnappetColor.brand }
     private var isEditing: Bool { if case .editMatch = start { return true } else { return false } }
 
     var body: some View {
@@ -374,7 +374,7 @@ struct RacketMatchHero: View {
     private var format: RacketFormat { ex.racketFormat }
     private var state: RacketScoring.MatchState { ex.racketState }
     private var unit: RacketUnit { format.sport.unit }
-    private var accent: Color { WorkoutDiscipline.racket.accent }
+    private var accent: Color { SnappetColor.brand }
 
     private var themLabel: String {
         if ex.isDoubles { return "Them" }
@@ -396,8 +396,8 @@ struct RacketMatchHero: View {
             side(ex.isDoubles ? "Us" : "You", state.won, highlight: state.won > state.lost)
             Spacer()
             VStack(spacing: 2) {
-                Text(format.label.uppercased())
-                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                Text(format.label.sentenceCased)
+                    .font(SnappetType.label)
                     .foregroundStyle(accent)
                 Text(format.sublabel).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
             }
@@ -413,10 +413,10 @@ struct RacketMatchHero: View {
 
     private func side(_ who: String, _ n: Int, highlight: Bool) -> some View {
         VStack(spacing: 0) {
-            Text(who.uppercased()).font(.system(size: 11, weight: .heavy)).tracking(0.6)
+            Text(who.sentenceCased).font(SnappetType.label)
                 .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             Text("\(n)")
-                .font(.system(size: 46, weight: .heavy, design: .rounded)).monospacedDigit()
+                .font(.system(size: 46, weight: .light)).monospacedDigit()
                 .foregroundStyle(highlight ? SnappetColor.perfFresh : SnappetColor.ink)
                 .contentTransition(.numericText())
         }
@@ -451,12 +451,12 @@ struct RacketMatchHero: View {
         let noun = isSTB ? "super tiebreak" : unit.noun
         return VStack(spacing: 10) {
             VStack(spacing: 2) {
-                Text("\(noun) \(isSTB ? "" : "\(next + 1) ")· \(unitStartedAt == nil ? "up next" : "in play")".uppercased())
-                    .font(.system(size: 11, weight: .heavy)).tracking(1.4)
+                Text("\(noun) \(isSTB ? "" : "\(next + 1) ")· \(unitStartedAt == nil ? "up next" : "in play")".sentenceCased)
+                    .font(SnappetType.label)
                     .foregroundStyle(SnappetColor.textSecondary)
                 if let started = unitStartedAt {
                     Text(timerInterval: started...Date.distantFuture, countsDown: false)
-                        .font(.system(size: 52, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 52, weight: .light)).monospacedDigit()
                         .accessibilityIdentifier("racket.unitTimer")
                 }
                 if let hint = pressureLine {
@@ -478,7 +478,7 @@ struct RacketMatchHero: View {
                         .frame(maxWidth: .infinity, minHeight: 42)
                 }
                 .buttonStyle(.plain)
-                .pagerGlass(cornerRadius: 14)
+                .pagerOutline()
                 .accessibilityIdentifier("racket.startUnit")
             }
         }
@@ -496,12 +496,11 @@ struct RacketMatchHero: View {
     private var resultHeader: some View {
         let won = state.result == true
         return VStack(spacing: 2) {
-            Text("\(won ? "Match won" : "Match lost")\(ex.racketRound.map { " · \($0)" } ?? "")".uppercased())
-                .font(.system(size: 11, weight: .heavy)).tracking(1.6)
+            Text("\(won ? "Match won" : "Match lost")\(ex.racketRound.map { " · \($0)" } ?? "")".sentenceCased)
+                .font(SnappetType.label)
                 .foregroundStyle(won ? SnappetColor.perfFresh : SnappetColor.perfHard)
             Text(state.end.map { _ in state.shortResult } ?? "\(state.won) – \(state.lost)")
-                .font(.system(size: 56, weight: .black, design: .rounded)).monospacedDigit()
-                .shadow(color: (won ? SnappetColor.perfFresh : SnappetColor.perfHard).opacity(0.35), radius: 18, y: 6)
+                .font(.system(size: 56, weight: .light)).monospacedDigit()
             if let end = state.end {
                 Text(end.label).font(.caption).foregroundStyle(SnappetColor.textSecondary)
             }
@@ -539,7 +538,7 @@ struct RacketMatchHero: View {
 
     private func stat(_ k: String, _ v: String, _ small: String?) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(k.uppercased()).font(.system(size: 9.5, weight: .heavy)).tracking(0.8)
+            Text(k.sentenceCased).font(SnappetType.label)
                 .foregroundStyle(SnappetColor.textSecondary)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(v).font(.headline.monospacedDigit())
@@ -578,7 +577,7 @@ struct RacketUnitChips: View {
 
     private func chip(_ item: Item) -> some View {
                 HStack(spacing: 4) {
-                    Text(item.text).font(.caption.weight(.heavy)).monospacedDigit()
+                    Text(item.text).font(.caption.weight(.medium)).monospacedDigit()
                     if item.camera { Image(systemName: "video.fill").font(.system(size: 9)) }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
@@ -587,7 +586,7 @@ struct RacketUnitChips: View {
                 .overlay {
                     if item.tone == .current {
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(WorkoutDiscipline.racket.accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+                            .strokeBorder(SnappetColor.brand.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
                     }
                 }
     }
@@ -744,10 +743,10 @@ struct RacketScoreSheet: View {
 
     private func column(_ who: String, value: Binding<Int>, winning: Bool, id: String) -> some View {
         VStack(spacing: 6) {
-            Text(who.uppercased()).font(.system(size: 11, weight: .heavy)).tracking(0.8)
+            Text(who.sentenceCased).font(SnappetType.label)
                 .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             Text("\(value.wrappedValue)")
-                .font(.system(size: 52, weight: .heavy, design: .rounded)).monospacedDigit()
+                .font(.system(size: 52, weight: .light)).monospacedDigit()
                 .foregroundStyle(winning ? SnappetColor.perfFresh : SnappetColor.ink)
                 .contentTransition(.numericText())
                 .accessibilityIdentifier("racket.score.\(id)")
@@ -833,8 +832,8 @@ struct RacketDrillHero: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("\(ex.drillMeasure == .time ? "Block" : ex.drillMeasure.label) · block \(ex.sets.count + 1)".uppercased())
-                .font(.system(size: 11, weight: .heavy)).tracking(1.4)
+            Text("\(ex.drillMeasure == .time ? "Block" : ex.drillMeasure.label) · block \(ex.sets.count + 1)".sentenceCased)
+                .font(SnappetType.label)
                 .foregroundStyle(SnappetColor.textSecondary)
             switch ex.drillMeasure {
             case .madeTried:
@@ -851,7 +850,7 @@ struct RacketDrillHero: View {
             }
             if let started = blockStartedAt {
                 Text(timerInterval: started...Date.distantFuture, countsDown: false)
-                    .font(.system(size: 40, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 40, weight: .light)).monospacedDigit()
                     .accessibilityIdentifier("racket.blockTimer")
             }
             Button {
@@ -898,7 +897,7 @@ struct RacketDrillHero: View {
                     let diff = Int(((acc - last) * 100).rounded())
                     if diff != 0 {
                         Text(diff > 0 ? "▲ \(diff) pts" : "▼ \(-diff) pts")
-                            .font(.caption.weight(.heavy))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(diff > 0 ? SnappetColor.perfFresh : SnappetColor.perfHard)
                     }
                 }
@@ -910,10 +909,10 @@ struct RacketDrillHero: View {
     private func stepCard(_ label: String, _ value: Binding<Int>, id: String) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 0) {
-                Text(label.uppercased()).font(.system(size: 10.5, weight: .heavy)).tracking(1)
+                Text(label.sentenceCased).font(SnappetType.label)
                     .foregroundStyle(SnappetColor.textSecondary)
                 Text("\(value.wrappedValue)")
-                    .font(.system(size: 34, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 34, weight: .light)).monospacedDigit()
                     .contentTransition(.numericText())
                     .accessibilityIdentifier("racket.\(id)")
             }
@@ -1104,4 +1103,9 @@ struct RacketScoreTarget: Identifiable {
     let exerciseID: UUID
     let unitIndex: Int
     let durationSec: Double?
+}
+
+private extension String {
+    /// "Set 2 · in play" — the first letter up, the rest as written (prompt 223 — the heroes were tracked ALL CAPS).
+    var sentenceCased: String { prefix(1).uppercased() + dropFirst() }
 }

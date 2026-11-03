@@ -10451,3 +10451,14 @@ stripes, and the panel read as an opaque slab.
   colour, and the restyle keeps one accent. The glyph still names the type. The row is shared with the editor and
   the import preview, so they move together.
 - **About's Sport row is an HStack.** `LabeledContent` with a `Label` value rendered a tall empty card on iOS 26.
+
+## 2026-11-02 — Design-system reset, step 3e: the workout player (prompt 223)
+
+- **The pager drops discipline wayfinding colour** (ambient glow, rail, kicker, plan bars, add-page tiles). This
+  retires the "two-axis colour contract" inside the player: one accent marks where you are and what to tap.
+  Discipline is still named by its glyph and its kicker text.
+- **`pagerGlass` is the card surface, not material.** The pager sits on plain paper now, so material read as grey
+  slabs.
+- **Restyle-only guarantee.** Accessibility ids and element types are unchanged: the grade pill stays a `Text` and
+  the climb status an `HStack`, because UITests query `staticTexts["freeform.gradePill"]` /
+  `["freeform.climbStatus"]`.
