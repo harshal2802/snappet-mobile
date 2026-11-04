@@ -63,10 +63,8 @@ struct PastClipsChip: View {
     var body: some View {
         Button(action: action) {
             Label("\(count) past \(count == 1 ? "clip" : "clips")", systemImage: "play.rectangle.on.rectangle.fill")
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .foregroundStyle(SnappetColor.workout)
-                .background(SnappetColor.workout.opacity(0.16), in: Capsule())
+                .font(.system(size: 12.5))
+                .snappetPill(selected: true)   // prompt 225 — was a workout-orange fill
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("activity.pastClips")
@@ -227,7 +225,7 @@ struct ActivityClipsContent: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(group.date, format: .dateTime.day().month(.abbreviated).year())
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(size: 15, weight: .medium))
                 if !group.title.isEmpty {
                     Text("· \(group.title)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -290,9 +288,9 @@ struct ActivityClipTile: View {
                           size: CGSize(width: 76, height: 100), exactFrame: false)
                 .overlay(alignment: .topLeading) {
                     if let badge {
-                        Text(badge.label).font(.system(size: 9, weight: .heavy))
+                        Text(badge.label).font(.system(size: 9, weight: .semibold))
                             .padding(.horizontal, 5).padding(.vertical, 2)
-                            .foregroundStyle(.white).background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: 5))
+                            .foregroundStyle(SnappetColor.onBrand).background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: 5))
                             .padding(5)
                     }
                 }

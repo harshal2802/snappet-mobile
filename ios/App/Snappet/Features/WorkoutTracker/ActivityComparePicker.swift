@@ -42,7 +42,7 @@ struct ActivityComparePicker: View {
                     ForEach(sessions, id: \.id) { s in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(s.date, format: .dateTime.day().month(.abbreviated).year())
-                                .font(.subheadline.weight(.bold))
+                                .font(.system(size: 15, weight: .medium))
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], alignment: .leading,
                                       spacing: 10) {
                                 ForEach(s.clips) { clip in
@@ -100,7 +100,7 @@ struct ActivityComparePicker: View {
             }
             .overlay(alignment: .topTrailing) {
                 if let role {
-                    Text(role).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                    Text(role).font(.system(size: 10, weight: .semibold)).foregroundStyle(SnappetColor.onBrand)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(SnappetColor.brand, in: Capsule())
                         .padding(4)

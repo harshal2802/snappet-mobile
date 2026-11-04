@@ -88,7 +88,8 @@ struct ActivityDashboardView: View {
         let start: Int
     }
 
-    private var accent: Color { dashboard?.discipline.accent ?? SnappetColor.workout }
+    /// The user's accent (prompt 225 — was the discipline's colour).
+    private var accent: Color { SnappetColor.brand }
     private var allClips: [ActivityClip] { groups.flatMap(\.clips) }
     private var badges: [UUID: ActivityProgressReel.Badge] { dashboard.map(ActivityProgressReel.badges) ?? [:] }
     private var videos: [ActivityClip] { ActivityProgressReel.pick(allClips, rule: .all, badges: badges) }
@@ -187,7 +188,7 @@ struct ActivityDashboardView: View {
                     Text(toast).font(.subheadline.weight(.semibold)).accessibilityIdentifier("activity.toast")
                     if undo != nil {
                         Button("Undo") { undoLast() }
-                            .font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.workout)
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.brand)
                             .accessibilityIdentifier("activity.undo")
                     }
                 }
@@ -203,11 +204,11 @@ struct ActivityDashboardView: View {
     /// A board climb is lit and logged on the board (prompt 189): its Kilter page, straight from here.
     private var boardBar: some View {
         Button { openOnBoard() } label: {
-            Label("Open on the board", systemImage: "square.grid.3x3.fill").frame(maxWidth: .infinity)
+            Label("Open on the board", systemImage: "square.grid.3x3.fill")
         }
-        .buttonStyle(.borderedProminent).tint(SnappetColor.kilter).controlSize(.large)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(.bar)
+        .background(SnappetColor.paper)
         .accessibilityIdentifier("activity.openOnBoard")
         .alert("Climb not in your catalog", isPresented: $boardClimbMissing) {
             Button("OK", role: .cancel) {}
@@ -252,9 +253,9 @@ struct ActivityDashboardView: View {
         VStack(spacing: 8) {
         HStack(spacing: 10) {
             Button { logNow() } label: {
-                Label("Log it now", systemImage: "play.fill").frame(maxWidth: .infinity)
+                Label("Log it now", systemImage: "play.fill")
             }
-            .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("activity.logNow")
             Menu {
                 if routines.isEmpty {
@@ -265,15 +266,17 @@ struct ActivityDashboardView: View {
                     }
                 }
             } label: {
-                Label("Add to routine", systemImage: "plus").frame(maxWidth: .infinity)
+                Label("Add to routine", systemImage: "plus")
+                    .font(.system(size: 15)).foregroundStyle(SnappetColor.ink)
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.bordered)
             .accessibilityIdentifier("activity.addToRoutine")
         }
         }
-        .controlSize(.large)
         .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(.bar)
+        .background(SnappetColor.paper)
     }
 
     private func logNow() {
@@ -447,7 +450,8 @@ struct ActivityDashboardView: View {
                     recordsCard(d)
                     if d.discipline == .climb, key.disciplineScope == nil, !isBoardClimb {
                         NavigationLink(value: ActivityRoute(key: .discipline(.climb), title: "Climbing")) {
-                            Label("All climbing", systemImage: "figure.climbing").font(.subheadline.weight(.semibold))
+                            Label("All climbing", systemImage: "figure.climbing").font(.system(size: 14))
+                                .foregroundStyle(SnappetColor.brand)
                         }
                         .accessibilityIdentifier("activity.dashboard.allClimbing")
                     }
@@ -462,19 +466,24 @@ struct ActivityDashboardView: View {
     // MARK: - Cards
 
     private func kpiRow(_ d: ActivityDashboard) -> some View {
-        HStack(spacing: 8) {
-            ForEach(Array(d.kpis.enumerated()), id: \.offset) { _, k in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(k.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    Text(k.value).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-                    Text(k.detail ?? " ").font(.caption2.weight(.semibold))
-                        .foregroundStyle(k.improving ? SnappetColor.perfFresh : .secondary)
+        // One card, columns split by hairlines, light numbers (prompt 225 — were separate bold tiles).
+        HStack(spacing: 0) {
+            ForEach(Array(d.kpis.enumerated()), id: \.offset) { i, k in
+                HStack(spacing: 0) {
+                    if i > 0 { SnappetColor.hairline.frame(width: 1).padding(.trailing, 11) }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(k.title).font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                        Text(k.value).font(.system(size: 20, weight: .light)).monospacedDigit()
+                            .foregroundStyle(SnappetColor.ink).lineLimit(1).minimumScaleFactor(0.7)
+                        Text(k.detail ?? " ").font(.system(size: 10.5))
+                            .foregroundStyle(k.improving ? SnappetColor.perfFresh : SnappetColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .snappetPanel()
         .accessibilityIdentifier("activity.dashboard.kpis")
     }
 
@@ -482,14 +491,13 @@ struct ActivityDashboardView: View {
                                      @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.subheadline.weight(.bold))
+                Text(title).snappetLabel()
                 Spacer()
-                if let trailing { Text(trailing).font(.caption).foregroundStyle(.secondary) }
+                if let trailing { Text(trailing).snappetLabel() }
             }
             content()
         }
-        .padding(12)
-        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .snappetPanel()
     }
 
     private func chartCard(_ d: ActivityDashboard) -> some View {
@@ -501,16 +509,16 @@ struct ActivityDashboardView: View {
                 Chart {
                     ForEach(Array(d.points.enumerated()), id: \.element.id) { i, p in
                         LineMark(x: .value("Session", i), y: .value(d.metric.title, p.value))
-                            .foregroundStyle(accent)
+                            .foregroundStyle(accent).lineStyle(StrokeStyle(lineWidth: 2))
                         PointMark(x: .value("Session", i), y: .value(d.metric.title, p.value))
                             .foregroundStyle(p.hasMedia ? SnappetColor.brand : accent)
-                            .symbolSize(p.hasMedia ? 110 : 30)
+                            .symbolSize(p.hasMedia ? 90 : 24)
                             .annotation(position: .top, spacing: 2) {
                                 if p.hasMedia { Image(systemName: "video.fill").font(.system(size: 8)).foregroundStyle(SnappetColor.brand) }
                             }
                     }
                     if let i = selectedIndex {
-                        RuleMark(x: .value("Session", i)).foregroundStyle(.secondary.opacity(0.4))
+                        RuleMark(x: .value("Session", i)).foregroundStyle(SnappetColor.textTertiary)
                     }
                 }
                 .sessionXAxis(count: d.points.count, labels: labels)
@@ -538,8 +546,9 @@ struct ActivityDashboardView: View {
                 .frame(height: 180)
                 .accessibilityIdentifier("activity.dashboard.chart")
             } else if let only = d.points.first {
-                Text(only.label).font(.title2.bold()).monospacedDigit()
-                Text("One session so far — the trend appears after the next.").font(.caption).foregroundStyle(.secondary)
+                Text(only.label).font(.system(size: 28, weight: .light)).monospacedDigit()
+                Text("One session so far — the trend appears after the next.").font(SnappetType.label)
+                    .foregroundStyle(SnappetColor.textSecondary)
             }
             if let s = selectedPoint { selectionRow(s) }
         }
@@ -548,15 +557,17 @@ struct ActivityDashboardView: View {
     private func selectionRow(_ p: ActivityDashboard.Point) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
-                Text(p.label).font(.subheadline.weight(.bold)).monospacedDigit()
-                Text(p.date, format: .dateTime.day().month(.abbreviated).year().hour().minute()).font(.caption).foregroundStyle(.secondary)
+                Text(p.label).font(.system(size: 15, weight: .medium)).monospacedDigit()
+                Text(p.date, format: .dateTime.day().month(.abbreviated).year().hour().minute()).font(SnappetType.label)
+                    .foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer()
             if p.hasMedia {
                 Button { play(session: p.sessionID) } label: {
-                    Label("Play clip", systemImage: "play.fill").font(.caption.weight(.bold))
+                    Label("Play clip", systemImage: "play.fill").font(.system(size: 13, weight: .medium))
+                        .snappetPill(selected: true)
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("activity.dashboard.playSelected")
             }
         }
@@ -577,7 +588,7 @@ struct ActivityDashboardView: View {
                                     if dashboard?.discipline == .climb, let s = clip.setSummary { Text(s) }
                                     else { Text(clip.sessionDate, format: .dateTime.day().month(.abbreviated)) }
                                 }
-                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(width: 64, alignment: .leading)
+                                .font(.caption2).foregroundStyle(SnappetColor.textSecondary).lineLimit(1).frame(width: 64, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -602,7 +613,7 @@ struct ActivityDashboardView: View {
                     .accessibilityIdentifier("activity.dashboard.reel")
                 }
             }
-            .font(.caption.weight(.semibold))
+            .font(.system(size: 13)).foregroundStyle(SnappetColor.brand)
         }
         .accessibilityElement(children: .contain)   // keeps the buttons' own identifiers
         .accessibilityIdentifier("activity.dashboard.clips")
@@ -621,7 +632,7 @@ struct ActivityDashboardView: View {
             .chartYScale(domain: .automatic(includesZero: false))
             .frame(height: 90)
             Text("Average beat-to-beat variability (RMSSD) across your sets each session — higher usually means better recovered. From a chest strap.")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity.dashboard.hrv")
@@ -643,7 +654,7 @@ struct ActivityDashboardView: View {
             Text(e.referenceKg != nil
                  ? "The same weight costing fewer beats means you're fitter."
                  : "Average peak heart rate across your \(e.unitNoun)s each session.")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity.dashboard.effort")
@@ -685,16 +696,17 @@ struct ActivityDashboardView: View {
                 ClipThumbnail(localIdentifier: clip.media.localIdentifier, kind: clip.media.kindRaw,
                               size: CGSize(width: 34, height: 34), exactFrame: false)
             } else {
-                Image(systemName: "trophy.fill").foregroundStyle(accent)
+                Image(systemName: "trophy.fill").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
                     .frame(width: 34, height: 34)
-                    .background(accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(r.title).font(.caption).foregroundStyle(.secondary)
-                Text(r.value).font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text(r.title).font(SnappetType.label).foregroundStyle(SnappetColor.textSecondary)
+                Text(r.value).font(.system(size: 15, weight: .medium)).monospacedDigit()
             }
             Spacer()
-            Text(r.date, format: .dateTime.day().month(.abbreviated)).font(.caption).foregroundStyle(.secondary)
+            Text(r.date, format: .dateTime.day().month(.abbreviated)).font(SnappetType.label)
+                .foregroundStyle(SnappetColor.textSecondary)
         }
         .contentShape(Rectangle())
     }

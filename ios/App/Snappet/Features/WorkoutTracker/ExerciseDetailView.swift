@@ -33,7 +33,7 @@ struct ExerciseDetailView: View {
             if !exercise.primaryMuscles.isEmpty || !exercise.secondaryMuscles.isEmpty {
                 Section("Muscles") {
                     if !exercise.primaryMuscles.isEmpty {
-                        muscleRow("Primary", exercise.primaryMuscles, SnappetColor.workout)
+                        muscleRow("Primary", exercise.primaryMuscles, SnappetColor.brand)
                     }
                     if !exercise.secondaryMuscles.isEmpty {
                         muscleRow("Secondary", exercise.secondaryMuscles, .secondary)
@@ -46,8 +46,8 @@ struct ExerciseDetailView: View {
                     ForEach(Array(exercise.instructions.enumerated()), id: \.offset) { idx, step in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text("\(idx + 1)")
-                                .font(.caption.bold().monospacedDigit())
-                                .foregroundStyle(SnappetColor.workout)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(SnappetColor.brand)
                                 .frame(width: 20, alignment: .trailing)
                             Text(step).font(.callout)
                         }
@@ -114,12 +114,15 @@ struct ExerciseDetailView: View {
                 Task { await installer.install() }
             } label: {
                 HStack(spacing: 12) {
+                    // A neutral tile row (prompt 225 — was workout orange).
                     Image(systemName: "photo.badge.arrow.down")
-                        .font(.title3).foregroundStyle(SnappetColor.workout)
+                        .font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                        .frame(width: 32, height: 32)
+                        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Download guide photos").foregroundStyle(SnappetColor.workout)
+                        Text("Download guide photos").font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
                         Text("Start/end photos for the whole catalog · one-time")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .snappetDetail()
                         GuidePhotoInstallError(phase: installer.phase)
                     }
                 }
