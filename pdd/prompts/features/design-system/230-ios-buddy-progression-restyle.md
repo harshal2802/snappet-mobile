@@ -38,5 +38,5 @@ It is visual only. Ids and the "Resting" mood prefix the tests read are unchange
 
 - [x] Affected suites green: ProgressionUITests, BuddyPrototypeUITests, HomeLinksUITests, CompletionMomentTests. As
   built matches the mockup.
-- [ ] Unit suite alone.
-- [ ] Device: user on MrRobot.
+- [x] Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-04 ("merge").
