@@ -52,11 +52,11 @@ struct BuddyScreen: View {
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
             HStack(alignment: .firstTextBaseline) {
-                Text("\(snap.level.stage.title) · Level \(snap.level.level)").font(.title3.weight(.heavy))
+                Text("\(snap.level.stage.title) · Level \(snap.level.level)").font(.title3.weight(.semibold))
                     .accessibilityIdentifier("buddyScreen.level")
                 Spacer()
                 Text(snap.look.mood).font(.subheadline.weight(.semibold))
-                    .foregroundStyle(snap.pause != nil ? .blue : snap.form.value >= 0.45 ? .green : .orange)
+                    .foregroundStyle(snap.pause != nil ? SnappetColor.brand : snap.form.value >= 0.45 ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                     .accessibilityIdentifier("buddyScreen.mood")
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -69,7 +69,7 @@ struct BuddyScreen: View {
                         Text("\(snap.ledger.totalXP.formatted()) XP all-time").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                ProgressView(value: snap.level.fraction).tint(SnappetColor.workout)
+                ProgressView(value: snap.level.fraction).tint(SnappetColor.brand)
             }
         }
     }
@@ -78,10 +78,10 @@ struct BuddyScreen: View {
         HStack(spacing: 10) {
             Button { sheet = .form } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("FORM").font(.caption2.weight(.heavy)).foregroundStyle(.secondary)
-                    Text("\(Int((snap.form.value * 100).rounded()))%").font(.title2.weight(.heavy))
-                        .foregroundStyle(snap.form.value >= 0.45 ? .green : .orange)
-                    ProgressView(value: snap.form.value).tint(snap.form.value >= 0.45 ? .green : .orange)
+                    Text("Form").snappetLabel()
+                    Text("\(Int((snap.form.value * 100).rounded()))%").font(.system(size: 26, weight: .light))
+                        .foregroundStyle(snap.form.value >= 0.45 ? SnappetColor.perfFresh : SnappetColor.perfModerate)
+                    ProgressView(value: snap.form.value).tint(snap.form.value >= 0.45 ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                     Text(snap.form.held ? "Held while paused" : snap.form.summary)
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -93,8 +93,8 @@ struct BuddyScreen: View {
             .accessibilityIdentifier("buddyScreen.form")
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("WEEK STREAK").font(.caption2.weight(.heavy)).foregroundStyle(.secondary)
-                Text("🔥 \(snap.streak.weeks)").font(.title2.weight(.heavy))
+                Text("Week streak").snappetLabel()
+                Text("🔥 \(snap.streak.weeks)").font(.system(size: 26, weight: .light))
                 Text(snap.streak.freezes > 0 ? "❄︎ \(snap.streak.freezes) freeze\(snap.streak.freezes == 1 ? "" : "s") saved"
                      : "No freezes saved").font(.caption2).foregroundStyle(.secondary)
                 Text(snap.streak.freezes >= Progression.Streaks.maxFreezes ? "Freezes full"
@@ -140,7 +140,10 @@ struct BuddyScreen: View {
                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Image(systemName: icon).foregroundStyle(tint).frame(width: 24)
+                // A neutral tile (prompt 230 — the icons were blue / orange / green).
+                Image(systemName: icon).font(.system(size: 13)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 30, height: 30)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(title).foregroundStyle(.primary)
                 Spacer()
                 Text(value).foregroundStyle(.secondary)
@@ -157,7 +160,7 @@ struct BuddyScreen: View {
         let earned = sessions.filter { snap.ledger.awards[$0.id] != nil }.sorted { $0.startedAt > $1.startedAt }.prefix(8)
         if !earned.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("RECENT XP").font(.caption.weight(.heavy)).tracking(0.8).foregroundStyle(.secondary)
+                Text("Recent XP").snappetLabel()
                 VStack(spacing: 0) {
                     ForEach(Array(earned)) { s in
                         HStack {
@@ -166,7 +169,7 @@ struct BuddyScreen: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer()
                             Text("+\(snap.ledger.awards[s.id]?.total ?? 0)")
-                                .font(.subheadline.weight(.heavy).monospacedDigit()).foregroundStyle(SnappetColor.workout)
+                                .font(.subheadline.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                         }
                         .padding(.vertical, 9).padding(.horizontal, 14)
                         if s.id != earned.last?.id { Divider() }
@@ -212,8 +215,8 @@ struct FormSheet: View {
             List {
                 Section {
                     VStack(spacing: 2) {
-                        Text("\(Int((form.value * 100).rounded()))%").font(.system(size: 44, weight: .black, design: .rounded))
-                            .foregroundStyle(form.value >= 0.45 ? .green : .orange)
+                        Text("\(Int((form.value * 100).rounded()))%").font(.system(size: 44, weight: .light))
+                            .foregroundStyle(form.value >= 0.45 ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                         Text(pause != nil ? "Resting — Form is held" : BuddyLook(stage: .adult, form: form.value).mood)
                             .foregroundStyle(.secondary)
                     }
@@ -362,7 +365,7 @@ struct BuddyStyleSheet: View {
                             .frame(maxWidth: .infinity, minHeight: 86)
                             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 14))
                             .overlay(RoundedRectangle(cornerRadius: 14)
-                                .strokeBorder(style == s.rawValue ? SnappetColor.workout : .clear, lineWidth: 2))
+                                .strokeBorder(style == s.rawValue ? SnappetColor.brand : .clear, lineWidth: 2))
                             .opacity(s.available ? 1 : 0.55)
                         }
                         .buttonStyle(.plain)

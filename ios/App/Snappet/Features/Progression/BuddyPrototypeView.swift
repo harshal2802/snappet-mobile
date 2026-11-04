@@ -63,7 +63,7 @@ struct BuddyPrototypeView: View {
             BuddyCreatureView(look: look, cheerTrigger: cheer, animated: !studio)
                 .padding(.bottom, studio ? 0 : 56)
             VStack(spacing: 2) {
-                Text(stage.title).font(.title3.weight(.heavy)).foregroundStyle(.white)
+                Text(stage.title).font(.title3.weight(.semibold)).foregroundStyle(.white)
                 Text(look.mood).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
                     .accessibilityIdentifier("buddy.mood")
             }
@@ -77,7 +77,7 @@ struct BuddyPrototypeView: View {
 
     private var stylePicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("STYLE").font(.caption.weight(.heavy)).tracking(0.8).foregroundStyle(.secondary)
+            Text("Style").snappetLabel()
             HStack(spacing: 10) {
                 ForEach(Style.allCases) { s in
                     Button {
@@ -91,7 +91,7 @@ struct BuddyPrototypeView: View {
                         .frame(maxWidth: .infinity, minHeight: 78)
                         .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 14))
                         .overlay(RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(style == s ? SnappetColor.workout : .clear, lineWidth: 2))
+                            .strokeBorder(style == s ? SnappetColor.brand : .clear, lineWidth: 2))
                         .opacity(s.available ? 1 : 0.55)
                     }
                     .buttonStyle(.plain)
@@ -103,7 +103,7 @@ struct BuddyPrototypeView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("GROWTH STAGE").font(.caption.weight(.heavy)).tracking(0.8).foregroundStyle(.secondary)
+            Text("Growth stage").snappetLabel()
             Picker("Stage", selection: $stage) {
                 ForEach(BuddyStage.allCases) { Text($0.title).tag($0) }
             }
@@ -116,7 +116,7 @@ struct BuddyPrototypeView: View {
                 Text("\(Int((form * 100).rounded()))%").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
             }
             Slider(value: $form, in: 0...1)
-                .tint(SnappetColor.workout)
+                .tint(SnappetColor.brand)
                 .disabled(paused)
                 .accessibilityIdentifier("buddy.form")
 
@@ -128,8 +128,7 @@ struct BuddyPrototypeView: View {
             } label: {
                 Label("Cheer (like after a PR)", systemImage: "party.popper.fill").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("buddy.cheer")
 
             // P3: see the full-screen moments without having to level up.
