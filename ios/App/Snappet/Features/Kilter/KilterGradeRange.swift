@@ -91,8 +91,7 @@ struct KilterGradeRangeSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.moduleAccent("kilter"))
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("kilter.grade.show")
                 Spacer(minLength: 0)
             }
@@ -152,7 +151,7 @@ struct GradeRangeSlider: View {
                     .frame(height: 5)
                     .padding(.horizontal, Self.thumbSize / 2)
                 Capsule()
-                    .fill(SnappetColor.moduleAccent("kilter"))
+                    .fill(SnappetColor.brand)
                     .frame(width: hiX - loX + Self.thumbSize, height: 5)
                     .offset(x: loX)
                 let loLabel = displayLabel(loIndex), hiLabel = displayLabel(hiIndex)
@@ -165,8 +164,8 @@ struct GradeRangeSlider: View {
                     let half = KilterGradeRange.labelWidth(text) / 2
                     let mid = (loX + hiX) / 2 + Self.thumbSize / 2
                     Text(text)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(SnappetColor.brand)
                         .fixedSize()
                         .position(x: min(max(mid, half), geo.size.width - half), y: geo.size.height / 2 - 22 - 9)
                         .allowsHitTesting(false)
@@ -198,8 +197,8 @@ struct GradeRangeSlider: View {
             .overlay(alignment: .top) {
                 Text(displayLabel(index))
                     .opacity(showsLabel ? 1 : 0)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SnappetColor.brand)
                     .fixedSize()
                     .offset(y: -22)
             }

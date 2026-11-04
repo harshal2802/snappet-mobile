@@ -51,8 +51,7 @@ struct KilterHeatmapView: View {
                 .padding(.vertical, 2)
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
         .accessibilityIdentifier("kilter.history.heatmap")
     }
@@ -67,7 +66,7 @@ struct KilterHeatmapView: View {
                 .frame(width: cell, height: cell)
                 .overlay(
                     RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(isToday ? SnappetColor.moduleAccent("kilter") : .clear, lineWidth: 1.5)
+                        .strokeBorder(isToday ? SnappetColor.brand : .clear, lineWidth: 1.5)
                 )
                 .contentShape(Rectangle())
                 .onTapGesture { if !day.isEmpty { onSelectDay(day) } }
@@ -80,7 +79,7 @@ struct KilterHeatmapView: View {
     private func fill(_ day: KilterConsistency.Day) -> Color {
         guard !day.isEmpty else { return Color(.tertiarySystemFill) }
         // Floor the opacity so even a one-send day reads, then scale to the busiest day.
-        return SnappetColor.moduleAccent("kilter").opacity(0.30 + 0.70 * day.intensity)
+        return SnappetColor.brand.opacity(0.30 + 0.70 * day.intensity)
     }
 }
 
@@ -123,8 +122,7 @@ struct KilterMonthCalendarView: View {
                 ForEach(days) { day in dayCell(day) }
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
         .accessibilityIdentifier("kilter.history.calendar")
     }
@@ -133,11 +131,11 @@ struct KilterMonthCalendarView: View {
         let isToday = calendar.isDateInToday(day.date)
         VStack(spacing: 2) {
             Text("\(calendar.component(.day, from: day.date))")
-                .font(.caption.weight(isToday ? .bold : .regular))
-                .foregroundStyle(isToday ? SnappetColor.moduleAccent("kilter") : .primary)
+                .font(.caption.weight(isToday ? .semibold : .regular))
+                .foregroundStyle(isToday ? SnappetColor.brand : .primary)
             if !day.isEmpty {
                 Circle()
-                    .fill(SnappetColor.moduleAccent("kilter").opacity(0.4 + 0.6 * day.intensity))
+                    .fill(SnappetColor.brand.opacity(0.4 + 0.6 * day.intensity))
                     .frame(width: 6, height: 6)
             } else {
                 Circle().fill(.clear).frame(width: 6, height: 6)
@@ -145,7 +143,7 @@ struct KilterMonthCalendarView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 30)
-        .background(isToday ? SnappetColor.moduleAccent("kilter").opacity(0.10) : .clear,
+        .background(isToday ? SnappetColor.brand.opacity(0.10) : .clear,
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { if !day.isEmpty { onSelectDay(day) } }

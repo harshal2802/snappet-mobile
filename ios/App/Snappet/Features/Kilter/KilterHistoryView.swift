@@ -68,7 +68,7 @@ struct KilterHistoryView: View {
             Button { router.push(KilterStatsRoute()) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "chart.bar.xaxis").font(.title3)
-                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                        .foregroundStyle(SnappetColor.brand)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("See your stats").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                         Text("Climbing level, grade pyramid & trends").font(.caption).foregroundStyle(.secondary)
@@ -128,8 +128,7 @@ struct KilterHistoryView: View {
     /// One horizontal chip rail for a facet — each value toggles on tap, re-tap clears (single select).
     private func facetChips(_ facet: KilterHistoryModel.Facet, _ values: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(facet.label.uppercased())
-                .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+            Text(facet.label).snappetLabel()
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(facetLabelValues(facet, values), id: \.token) { entry in
@@ -139,10 +138,7 @@ struct KilterHistoryView: View {
                         } label: {
                             Text(entry.label)
                                 .font(.subheadline).lineLimit(1)
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(on ? SnappetColor.moduleAccent("kilter").opacity(0.2)
-                                               : Color(.secondarySystemFill), in: Capsule())
-                                .foregroundStyle(on ? SnappetColor.moduleAccent("kilter") : Color.primary)
+                                .snappetPill(selected: on)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("kilter.history.facetChip")
@@ -301,7 +297,7 @@ private struct KilterSessionCard: View {
                 Text(displayTitle(card.title)).font(.headline).lineLimit(1)
                 if card.isLive {
                     Label("Live", systemImage: "record.circle")
-                        .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                        .font(.caption2.weight(.medium)).foregroundStyle(SnappetColor.perfFresh)
                         .labelStyle(.titleAndIcon)
                         .symbolEffect(.pulse, options: .repeating)
                         .accessibilityIdentifier("kilter.card.live")
@@ -331,7 +327,7 @@ private struct KilterSessionCard: View {
 
     private func factView(_ fact: KilterHistoryModel.CardFact) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(gradeAware(fact)).font(.subheadline.weight(.semibold)).monospacedDigit()
+            Text(gradeAware(fact)).font(.system(size: 17, weight: .light)).monospacedDigit()
             Text(fact.label).font(.caption2).foregroundStyle(.secondary)
         }
     }
@@ -339,19 +335,19 @@ private struct KilterSessionCard: View {
     private func badgeView(_ badge: KilterHistoryModel.CardFact) -> some View {
         let (icon, tint) = badgeStyle(badge.kind)
         return Label("\(gradeAware(badge)) \(badge.label)", systemImage: icon)
-            .font(.caption2.weight(.semibold))
+            .font(.caption2.weight(.medium))
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(tint.opacity(0.18), in: Capsule())
+            .overlay(Capsule().strokeBorder(tint.opacity(0.55)))   // an outline (prompt 228 — was a tinted fill)
             .foregroundStyle(tint)
             .accessibilityIdentifier("kilter.card.badge")
     }
 
     private func badgeStyle(_ kind: KilterHistoryModel.CardFact.Kind) -> (String, Color) {
         switch kind {
-        case .prBadge: return ("trophy.fill", .orange)
-        case .flashRate: return ("bolt.fill", .yellow)
-        case .projects: return ("target", .blue)
+        case .prBadge: return ("trophy.fill", SnappetColor.brand)
+        case .flashRate: return ("bolt.fill", KilterAscentStyle.color(.flash))
+        case .projects: return ("target", KilterAscentStyle.color(.project))
         default: return ("sparkles", .secondary)
         }
     }
@@ -393,11 +389,7 @@ private struct KilterAscentRow: View {
     }
 
     private var statusColor: Color {
-        switch entry.status {
-        case .flash, .sent: return .green
-        case .project: return .orange
-        case .attempt: return .secondary
-        }
+        KilterAscentStyle.color(entry.status)   // the shared climb meaning colours (Flash blue-green, prompt 228)
     }
 }
 

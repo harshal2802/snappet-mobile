@@ -10498,3 +10498,10 @@ stripes, and the panel read as an opaque slab.
 - **Conditional UI is part of every restyle's inventory** (see the memory rule). The sweep found one restyle
   regression (the unlabelled recent-grades row) and three older issues on the same screens: chip truncation, a
   contradicting "one session" line, and the contrast above.
+
+## 2026-11-04 — Design-system reset: Kilter history, session, stats & trends (prompt 228)
+
+- **Flash is blue-green everywhere.** History's ascent rows painted Flash and Sent the same green. They now use
+  `KilterAscentStyle.color`, like the pager, timers and stats.
+- **Affected-suites run (the user's new policy):** all 11 Kilter UI suites. Gotcha: in zsh a `$ARGS` list of
+  `-only-testing:` flags must be expanded as `${=ARGS}`, or xcodebuild runs **0 tests** and still reports success.

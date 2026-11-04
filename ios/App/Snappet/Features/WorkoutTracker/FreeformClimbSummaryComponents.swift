@@ -105,8 +105,7 @@ struct ClimbGradePyramid: View {
             .frame(height: CGFloat(pyramid.count) * 30 + 20)
             .accessibilityIdentifier("freeform.statsPyramid")
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     // MARK: - Segmented (P3 dashboard)
@@ -201,8 +200,7 @@ struct ClimbGradePyramid: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 
     /// Resolve the grade under a tap and filter to it. The tap must land inside the plot's bounds; the

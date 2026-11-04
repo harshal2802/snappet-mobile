@@ -235,7 +235,7 @@ struct KilterCreatedView: View {
                     Label("Set a climb", systemImage: "plus")
                         .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.regular)
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.created.setCTA")
             }
             Picker("Status", selection: $segment) {
@@ -478,7 +478,7 @@ struct KilterCreatedView: View {
             Text("Set your first climb — design it hold by hold, or generate one on-device.")
         } actions: {
             Button { showingCreate = true } label: { Text("Set a climb") }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand)
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.created.emptySet")
             Button { showingCreate = true } label: { Text("Generate one") }
                 .accessibilityIdentifier("kilter.created.emptyGenerate")
