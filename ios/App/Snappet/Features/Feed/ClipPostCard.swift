@@ -795,8 +795,8 @@ private struct ClipPosterView: View {
     /// A bake wrote the edit into the pixels (prompt 117): full parity — trims, filters, text, the HR
     /// tile at the user's placement — because it's just video; the app's live overlay stands down.
     private var bakedChip: some View {
-        Text("BAKED ✓")
-            .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
+        Text("Baked ✓")
+            .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(SnappetColor.perfFresh)   // "done/positive" state → the perf ramp token
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(.black.opacity(0.45), in: Capsule())
@@ -805,12 +805,12 @@ private struct ClipPosterView: View {
     }
 
     private func editedChip(_ kept: ClosedRange<Double>) -> some View {
-        Text("EDITED · \(SetMeasure.formatDuration(kept.lowerBound))–\(SetMeasure.formatDuration(kept.upperBound))")
-            .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
-            .foregroundStyle(SnappetColor.workout)
+        Text("Edited · \(SetMeasure.formatDuration(kept.lowerBound))–\(SetMeasure.formatDuration(kept.upperBound))")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(SnappetColor.brand)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(.black.opacity(0.45), in: Capsule())
-            .overlay(Capsule().strokeBorder(SnappetColor.workout.opacity(0.6), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.6), lineWidth: 1))
             .accessibilityIdentifier("clips.post.edited")
     }
 

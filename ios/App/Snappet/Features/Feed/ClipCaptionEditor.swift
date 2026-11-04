@@ -35,10 +35,10 @@ struct ClipCaptionEditor: View {
                             HStack(spacing: 6) {
                                 ForEach(suggestions, id: \.self) { tag in
                                     Button { add(tag) } label: {
-                                        Text("#\(tag)").font(.caption.weight(.bold))
+                                        Text("#\(tag)").font(.caption.weight(.medium))
                                             .padding(.horizontal, 10).padding(.vertical, 5)
-                                            .background(SnappetColor.budget.opacity(0.14), in: Capsule())
-                                            .foregroundStyle(SnappetColor.budget)
+                                            .background(SnappetColor.brand.opacity(0.14), in: Capsule())
+                                            .foregroundStyle(SnappetColor.brand)
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("clips.caption.tag.\(tag)")

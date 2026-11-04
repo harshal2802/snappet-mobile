@@ -87,7 +87,7 @@ struct FeedReactionStrip: View {
                 FeedInteractionWriter.toggleSave(contentId: contentId, in: context)
             } label: {
                 Label("Save", systemImage: saved ? "bookmark.fill" : "bookmark")
-                    .foregroundStyle(saved ? SnappetColor.kilter : SnappetColor.textSecondary)
+                    .foregroundStyle(saved ? SnappetColor.brand : SnappetColor.textSecondary)
             }
             .accessibilityIdentifier("feed.save")
             Spacer()

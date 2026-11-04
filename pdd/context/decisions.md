@@ -10516,3 +10516,11 @@ stripes, and the panel read as an opaque slab.
   has an orange Hatch / Resume button with white text. Those states were never drawn, so never restyled. Queued with
   the Buddy & progression group.
 - **The Kilter plan header's chips moved below the text.** Side by side they truncated.
+
+## 2026-11-04 — Design-system reset: Recap tab + Clips leftovers (prompt 231)
+
+- **`DisciplineHero` went calm by default; share images opt into `display: true`.** The heavy hero was still on
+  Recap and on two Kilter screens the earlier passes missed. Fixing it at the component catches every use.
+- **Recap leaked catalog ids.** `SessionExercise.displayName` is nil for catalog picks. The feed bridge now resolves
+  the catalog name (main-actor converters).
+- **Missed scope:** the earlier remaining-work estimate folded the Recap tab into "Clips". Found while scoping Clips.

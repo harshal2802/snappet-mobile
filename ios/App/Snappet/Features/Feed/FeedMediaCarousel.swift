@@ -91,7 +91,7 @@ struct FeedMediaCarousel: View {
                 HStack(spacing: 5) {
                     ForEach(ordered.indices, id: \.self) { i in
                         Circle()
-                            .fill(i == page ? SnappetColor.kilter : SnappetColor.textSecondary.opacity(0.35))
+                            .fill(i == page ? SnappetColor.brand : SnappetColor.textSecondary.opacity(0.35))
                             .frame(width: 6, height: 6)
                     }
                 }
@@ -100,7 +100,7 @@ struct FeedMediaCarousel: View {
             Spacer()
             Button { showingBrowser = true } label: {
                 Label("View all (\(ordered.count))", systemImage: "rectangle.grid.2x2")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.kilter)
+                    .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.brand)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("feed.card.carousel.viewAll")

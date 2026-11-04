@@ -322,7 +322,7 @@ struct ClipsGridView: View {
             }
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 2) {
-                Text(post.title).font(.headline.weight(.heavy)).foregroundStyle(.white)
+                Text(post.title).font(.headline.weight(.semibold)).foregroundStyle(.white)
                 Text(post.overlayDetail.isEmpty ? post.subtitle : post.overlayDetail)
                     .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
             }
@@ -378,7 +378,7 @@ struct ClipsGridView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(month.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink)
+                    Text(month.title).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
                         .accessibilityIdentifier("clips.grid.month")
                     Text(month.summary).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
                 }
@@ -433,7 +433,7 @@ struct ClipsGridView: View {
             duration: first.flatMap { f in
                 f.media.kind == "video" ? ClipGridModel.durationLabel(ClipHROverlay.playedRange(f.media).span) : nil },
             isReel: post.isReel,
-            sendLabel: send?.label.uppercased(), sendColor: send.map { KilterAscentStyle.color($0) },
+            sendLabel: send?.label, sendColor: send.map { KilterAscentStyle.color($0) },
             peak: peakHR(of: post).map { Int($0.rounded()) },
             isFavorite: reactions?.isFavorite(post) == true,
             isMulti: post.clipCount > 1)
@@ -441,9 +441,9 @@ struct ClipsGridView: View {
 
     @ViewBuilder private func badges(_ post: ClipFeedPost) -> some View {
         HStack(spacing: 3) {
-            if post.isReel { badge("✦ REEL", fg: SnappetColor.onBrand, bg: SnappetColor.reels) }
+            if post.isReel { badge("✦ Reel", fg: SnappetColor.onBrand, bg: SnappetColor.reels) }
             if let r = post.climbResult, r.status.isSend {
-                badge(r.status.label.uppercased(), fg: .white, bg: KilterAscentStyle.color(r.status))
+                badge(r.status.label, fg: .white, bg: KilterAscentStyle.color(r.status))
             }
             if let peak = peakHR(of: post) {
                 badge("♥\(Int(peak.rounded()))", fg: Color(red: 1, green: 0.55, blue: 0.48), bg: .black.opacity(0.55))
@@ -452,7 +452,7 @@ struct ClipsGridView: View {
     }
 
     private func badge(_ text: String, fg: Color, bg: Color) -> some View {
-        Text(text).font(.system(size: 8, weight: .heavy)).foregroundStyle(fg)
+        Text(text).font(.system(size: 9, weight: .semibold)).foregroundStyle(fg)
             .padding(.horizontal, 4).padding(.vertical, 1)
             .background(bg, in: Capsule())
     }
@@ -518,7 +518,7 @@ struct ClipGridScrubber: View {
                 ZStack(alignment: .topTrailing) {
                     Color.clear.allowsHitTesting(false)
                     if let scrubbing = state.scrubbing {
-                        Text(scrubbing).font(.subheadline.weight(.heavy))
+                        Text(scrubbing).font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 12).padding(.vertical, 8)
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                             .offset(x: -44, y: y + handleH / 2 - 18)

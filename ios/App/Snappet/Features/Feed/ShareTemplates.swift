@@ -87,7 +87,7 @@ struct GradePRTicketTemplate: View {
                 if visibleMetrics.contains(.headline) {
                     DisciplineHero(value: spec.hero, caption: "New grade",
                                    sublabel: visibleMetrics.contains(.primary) ? upFrom : nil,
-                                   systemImage: "trophy.fill", accent: spec.accent)
+                                   systemImage: "trophy.fill", accent: spec.accent, display: true)
                 }
 
                 // The torn-ticket perforation: a dashed rule separating hero from the stub.
@@ -217,7 +217,7 @@ struct PyramidCardTemplate: View {
                 if visibleMetrics.contains(.headline) {
                     DisciplineHero(value: spec.hero, caption: "Top grade",
                                    sublabel: visibleMetrics.contains(.primary) ? spec.primaryLine : nil,
-                                   systemImage: "triangle", accent: spec.accent)
+                                   systemImage: "triangle", accent: spec.accent, display: true)
                 }
 
                 if visibleMetrics.contains(.secondary) {
