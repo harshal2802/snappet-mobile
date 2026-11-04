@@ -186,7 +186,7 @@ struct KilterSessionDetailView: View {
                 Text(session.source == "ble" ? "Board session" : "Manual session")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text("\(session.angle)°").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                Text("\(session.angle)°").font(.system(size: 17, weight: .light).monospacedDigit()).foregroundStyle(.secondary)
             }
             // The session note (P4), when set.
             if let notes = session.notes, !notes.isEmpty {
@@ -200,7 +200,7 @@ struct KilterSessionDetailView: View {
                 Spacer()
                 if session.isActive {
                     Label { Text(session.startedAt, style: .timer).monospacedDigit() }
-                        icon: { Image(systemName: "record.circle").foregroundStyle(.green) }
+                        icon: { Image(systemName: "record.circle").foregroundStyle(SnappetColor.perfFresh) }
                         .font(.caption.weight(.medium))
                 } else {
                     Text(durationString(session.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -210,14 +210,17 @@ struct KilterSessionDetailView: View {
                 // Close by id, not the in-memory `current`, so this works even for a session recovered
                 // after navigation/relaunch (where `current` may be a different/!nil reference).
                 Button(role: .destructive) { sessions.end(sessionID: sessionID, in: modelContext) } label: {
-                    Label("End session", systemImage: "stop.circle").frame(maxWidth: .infinity)
+                    Label("End session", systemImage: "stop.circle").font(.system(size: 15))
+                        .foregroundStyle(SnappetColor.brand)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.55)))
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("kilter.summary.end")
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -247,15 +250,14 @@ struct KilterSessionDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
     @ViewBuilder private func planGoalGlyph(_ status: KilterPlanItemStatus) -> some View {
         switch status {
         case .sent:      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
-        case .attempted: Image(systemName: "circle.lefthalf.filled").foregroundStyle(.orange).font(.caption)
+        case .attempted: Image(systemName: "circle.lefthalf.filled").foregroundStyle(SnappetColor.perfModerate).font(.caption)
         case .skipped:   Image(systemName: "minus.circle").foregroundStyle(.secondary).font(.caption)
         case .pending:   Image(systemName: "circle").foregroundStyle(.secondary).font(.caption)
         }
@@ -263,30 +265,32 @@ struct KilterSessionDetailView: View {
 
     // MARK: - Summary grid
 
+    /// One card, two rows of three split by hairlines, light numbers; the icons stay, neutral except the send
+    /// tick (meaning) — prompt 228 (were six tiles with green / orange / blue icons).
     private func summaryGrid(_ s: KilterSessionStats) -> some View {
-        let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+        let columns = [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            metric("\(s.sends)", "Sends", "checkmark.seal.fill", .green)
-            metric("\(s.totalClimbs)", "Climbs", "figure.climbing", .primary)
-            metric(s.hardestSendGrade.map { kilterGrade($0) } ?? "—", "Hardest", "flame.fill", .orange)
-            metric("\(s.projects)", "Projects", "target", .blue)
+            metric("\(s.sends)", "Sends", "checkmark.seal.fill", SnappetColor.perfFresh)
+            metric("\(s.totalClimbs)", "Climbs", "figure.climbing", SnappetColor.textSecondary)
+            metric(s.hardestSendGrade.map { kilterGrade($0) } ?? "—", "Hardest", "flame.fill", SnappetColor.textSecondary)
+            metric("\(s.projects)", "Projects", "target", SnappetColor.textSecondary)
             // Total tries across all climbs (matches the per-climb "N attempts" in the timeline) —
             // clearer than "climbs left unsent", which read as 0 after a worked climb was finally sent.
-            metric("\(s.totalAttempts)", "Tries", "arrow.uturn.up", .secondary)
-            metric(String(format: "%.1f", s.sendsPerHour), "Sends/hr", "speedometer", .secondary)
+            metric("\(s.totalAttempts)", "Tries", "arrow.uturn.up", SnappetColor.textSecondary)
+            metric(String(format: "%.1f", s.sendsPerHour), "Sends/hr", "speedometer", SnappetColor.textSecondary)
         }
+        .snappetPanel()
         .padding(.horizontal)
     }
 
     private func metric(_ value: String, _ label: String, _ icon: String, _ tint: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon).font(.title3).foregroundStyle(tint)
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(tint)
+            Text(value).font(.system(size: 20, weight: .light)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+            Text(label).font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 10)
     }
 
     // MARK: - Heart rate
@@ -345,8 +349,7 @@ struct KilterSessionDetailView: View {
                 .accessibilityIdentifier("kilter.hr.setupProfile")
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -364,7 +367,7 @@ struct KilterSessionDetailView: View {
             sectionTitle("Grade pyramid", systemImage: "chart.bar.fill")
             Chart(s.pyramid) { g in
                 BarMark(x: .value("Sends", g.sends), y: .value("Grade", kilterGrade(g.gradeLabel)))
-                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                    .foregroundStyle(SnappetColor.brand)
                     .annotation(position: .trailing) {
                         Text("\(g.sends)").font(.caption2).foregroundStyle(.secondary)
                     }
@@ -372,8 +375,7 @@ struct KilterSessionDetailView: View {
             .chartXAxis(.hidden)
             .frame(height: CGFloat(s.pyramid.count) * 30 + 20)
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -395,7 +397,7 @@ struct KilterSessionDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Image(systemName: statusIcon(item.status))
-                            .foregroundStyle(item.status.isSend ? .green : .orange)
+                            .foregroundStyle(item.status.isSend ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(item.climbName).font(.subheadline).lineLimit(1)
@@ -425,8 +427,7 @@ struct KilterSessionDetailView: View {
                 .padding(.vertical, 4)
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -524,7 +525,7 @@ struct KilterSessionDetailView: View {
                 Button { showingReel = true } label: {
                     Label("Highlight reel", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.moduleAccent("kilter"))
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .disabled(videoCount == 0)
                 .accessibilityIdentifier("kilter.summary.generateReel")
                 Button { presentStudio(session, visible: nil, focusing: nil, climbUUID: nil, single: nil) } label: {
@@ -535,8 +536,7 @@ struct KilterSessionDetailView: View {
                 findClipsButton
             }
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .padding(.horizontal)
     }
 
@@ -631,7 +631,7 @@ struct KilterSessionDetailView: View {
 
     private func sectionTitle(_ title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.headline)
+            .font(SnappetType.label).foregroundStyle(SnappetColor.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 

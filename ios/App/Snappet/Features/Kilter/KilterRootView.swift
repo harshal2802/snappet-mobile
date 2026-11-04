@@ -1207,7 +1207,7 @@ struct KilterRootView: View {
                 Button { acceptArrivalSuggestion() } label: {
                     Text("Set it up").font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.small)
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.arrival.setup")
                 Button { dismissArrivalSuggestion() } label: {
                     Text("NOT NOW").font(.caption.weight(.bold)).tracking(0.5)
@@ -1252,7 +1252,7 @@ struct KilterRootView: View {
                 Button { confirmPendingBoard() } label: {
                     Text("Got it").font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.small)
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.confirm.gotIt")
                 Spacer()
             }
@@ -1659,8 +1659,7 @@ struct KilterFiltersSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .padding(.horizontal).padding(.vertical, 8)
                 .background(.bar)
                 .accessibilityIdentifier("kilter.filter.show")

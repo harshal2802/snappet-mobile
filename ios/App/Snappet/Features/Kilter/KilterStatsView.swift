@@ -78,7 +78,7 @@ struct KilterStatsView: View {
     /// Whether any board session captured a heart-rate series — gates the optional HR trend tile.
     private var hasHRData: Bool { allSessions.contains { !$0.hrSeries.isEmpty } }
 
-    private var accent: Color { SnappetColor.kilter }
+    private var accent: Color { SnappetColor.brand }
 
     var body: some View {
         let s = stats
@@ -128,11 +128,18 @@ struct KilterStatsView: View {
         // crush the perf-ramp delta chip when both shared one HStack. Give the chip its own trailing row
         // so it's always fully visible (F5) — leading `Spacer()` parks it in the hero's trailing slot.
         VStack(alignment: .leading, spacing: 10) {
-            DisciplineHero(value: s.climbingLevelLabel ?? "—",
-                           caption: "Climbing level",
-                           sublabel: s.maxGradeLabel.map { "All-time best \($0)" },
-                           systemImage: "figure.climbing",
-                           accent: accent)
+            // A light hero (prompt 228 — `DisciplineHero` is heavy rounded with an amber halo; it stays for share
+            // images / Clips cards).
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Climbing level", systemImage: "figure.climbing").snappetLabel()
+                Text(s.climbingLevelLabel ?? "—").font(.system(size: 44, weight: .light)).monospacedDigit()
+                    .foregroundStyle(SnappetColor.ink).minimumScaleFactor(0.5).lineLimit(1)
+                if let best = s.maxGradeLabel {
+                    Text("All-time best \(best)").snappetDetail()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
             if let levelDelta, levelDelta.steps != 0 {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -150,34 +157,38 @@ struct KilterStatsView: View {
         let color = up ? SnappetColor.perfFresh : SnappetColor.perfHard
         return HStack(spacing: 4) {
             Image(systemName: up ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.caption2)
-            Text("\(up ? "+" : "")\(d.steps) vs 90d").font(.caption.weight(.bold))
+            Text("\(up ? "+" : "")\(d.steps) vs 90d").font(.caption.weight(.medium))
         }
         .padding(.horizontal, 9).padding(.vertical, 5)
         .foregroundStyle(color)
-        .background(color.opacity(0.16), in: Capsule())
+        .overlay(Capsule().strokeBorder(color.opacity(0.55)))
         .accessibilityLabel("Climbing level \(up ? "up" : "down") \(abs(d.steps)) grades versus 90 days ago")
     }
 
     // MARK: - Tier 1: stat ribbon (SENT / FLASH RATE / THIS WEEK)
 
+    /// One card, three columns split by hairlines, light numbers (prompt 228 — were three bold caps tiles).
     private func statRibbon(_ s: KilterAllTimeStats) -> some View {
-        HStack(spacing: 10) {
-            statTile("\(s.totalSends)", "Sent")
+        HStack(spacing: 0) {
+            statTile("\(s.totalSends)", "Sent", first: true)
             statTile("\(Int((s.flashRate * 100).rounded()))%", "Flash rate")
             statTile("\(s.sendsPerWeek.last?.sends ?? 0)", "This week")
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .snappetPanel()
     }
 
-    private func statTile(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title2.weight(.bold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
-                .foregroundStyle(SnappetColor.ink)
-            Text(label.uppercased()).font(.caption2.weight(.bold)).tracking(0.4)
-                .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+    private func statTile(_ value: String, _ label: String, first: Bool = false) -> some View {
+        HStack(spacing: 0) {
+            if !first { SnappetColor.hairline.frame(width: 1).padding(.trailing, 11) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value).font(.system(size: 22, weight: .light)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1)
+                    .foregroundStyle(SnappetColor.ink)
+                Text(label).font(.system(size: 10.5))
+                    .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12).padding(.horizontal, 14)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     // MARK: - Tier 2: segmented pyramid (tap → filter)
@@ -211,14 +222,13 @@ struct KilterStatsView: View {
                     .stroke(color, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text("\(Int((fraction * 100).rounded()))%")
-                    .font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(SnappetColor.ink)
+                    .font(.system(size: 20, weight: .light)).monospacedDigit().foregroundStyle(SnappetColor.ink)
             }
             .frame(width: 92, height: 92)
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) \(Int((fraction * 100).rounded())) percent")
     }
@@ -259,20 +269,22 @@ struct KilterStatsView: View {
                            headline: String, caption: String, spark: [Double]) -> some View {
         Button { router.push(KilterTrendRoute(kind: kind)) } label: {
             HStack(spacing: 12) {
-                Image(systemName: systemImage).font(.title3).foregroundStyle(accent).frame(width: 26)
+                Image(systemName: systemImage).font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 32, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text(title).snappetLabel()
                     HStack(spacing: 6) {
-                        Text(headline).font(.headline.weight(.bold)).monospacedDigit()
+                        Text(headline).font(.system(size: 17, weight: .light)).monospacedDigit()
                             .foregroundStyle(SnappetColor.ink)
                         Text(caption).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer(minLength: 8)
                 if spark.count >= 2 { Sparkline(values: spark, color: accent).frame(width: 64, height: 30) }
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(SnappetColor.textTertiary)
             }
-            .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .snappetPanel()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -359,7 +371,7 @@ struct KilterStatsView: View {
 /// only plots them. Flat / single-value series render nothing (the tile gates on `count >= 2`).
 struct Sparkline: View {
     let values: [Double]
-    var color: Color = SnappetColor.kilter
+    var color: Color = SnappetColor.brand
 
     var body: some View {
         Chart(Array(values.enumerated()), id: \.offset) { i, v in

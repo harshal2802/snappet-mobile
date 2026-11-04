@@ -20,7 +20,7 @@ struct KilterTrendDetailView: View {
     @State private var range: KilterStatsTrend.Range = .months3
     @State private var drawn = false
 
-    private var accent: Color { SnappetColor.kilter }
+    private var accent: Color { SnappetColor.brand }
 
     var body: some View {
         ScrollView {
@@ -61,7 +61,7 @@ struct KilterTrendDetailView: View {
         let delta = KilterStatsTrend.delta(stats.sendsPerWeek, range: range, now: now)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Sends / week").font(.title3.weight(.bold))
+                Text("Sends / week").font(.system(size: 20, weight: .semibold))
                 Spacer()
                 if let delta { deltaChip(delta) }
             }
@@ -96,7 +96,7 @@ struct KilterTrendDetailView: View {
             ForEach(KilterStatsTrend.Range.allCases) { r in
                 Button { withAnimation(.snappy) { range = r } } label: {
                     Text(r.label)
-                        .font(.subheadline.weight(range == r ? .bold : .medium))
+                        .font(.subheadline.weight(range == r ? .semibold : .regular))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
                         .background(range == r ? AnyShapeStyle(SnappetColor.surface)
@@ -115,7 +115,7 @@ struct KilterTrendDetailView: View {
     private func deltaChip(_ d: KilterStatsTrend.Delta) -> some View {
         let color = d.isUp ? SnappetColor.perfFresh : SnappetColor.perfHard
         return Text(d.caption(for: range))
-            .font(.caption.weight(.bold))
+            .font(.caption.weight(.medium))
             .padding(.horizontal, 9).padding(.vertical, 5)
             .foregroundStyle(color)
             .background(color.opacity(0.16), in: Capsule())
@@ -137,7 +137,7 @@ struct KilterTrendDetailView: View {
         let points = stats.maxGradeProgression
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Max grade progression").font(.title3.weight(.bold))
+                Text("Max grade progression").font(.system(size: 20, weight: .semibold))
                 Spacer()
                 // Full-span chip: the oldest progression point → the latest. Read the endpoints directly
                 // (not a date-windowed `levelDelta`) so the chip always spans the whole displayed series.
@@ -145,7 +145,7 @@ struct KilterTrendDetailView: View {
                    first.periodLabel != last.periodLabel,
                    Int(last.difficulty.rounded()) != Int(first.difficulty.rounded()) {
                     Text("\(first.gradeLabel) → \(last.gradeLabel)")
-                        .font(.caption.weight(.bold))
+                        .font(.caption.weight(.medium))
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .foregroundStyle(SnappetColor.perfFresh)
                         .background(SnappetColor.perfFresh.opacity(0.16), in: Capsule())
@@ -176,7 +176,7 @@ struct KilterTrendDetailView: View {
 
     private var velocityScreen: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Attempts to send").font(.title3.weight(.bold))
+            Text("Attempts to send").font(.system(size: 20, weight: .semibold))
             if let v = stats.attemptsToSend {
                 DisciplineHero(value: String(format: "%.1f", v),
                                caption: "Avg tries per send",
@@ -199,7 +199,7 @@ struct KilterTrendDetailView: View {
     private var angleScreen: some View {
         let angles = stats.angleDistribution
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Sends by angle").font(.title3.weight(.bold))
+            Text("Sends by angle").font(.system(size: 20, weight: .semibold))
             if angles.isEmpty {
                 emptyTrend("Log a send to see which angles you climb most.")
             } else {
@@ -226,7 +226,7 @@ struct KilterTrendDetailView: View {
         let weeks = stats.sendsPerWeek
         let active = weeks.filter { $0.sends > 0 }.count
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Consistency").font(.title3.weight(.bold))
+            Text("Consistency").font(.system(size: 20, weight: .semibold))
             DisciplineHero(value: "\(active)/\(weeks.count)",
                            caption: "Weeks you climbed",
                            sublabel: active >= max(1, weeks.count - 1)
@@ -261,7 +261,7 @@ struct KilterTrendDetailView: View {
         let pooled = hrSessions.flatMap { $0.hrSeries }
         let pooledStats = WorkoutHRStats.make(from: pooled, maxHR: maxHR)
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Heart rate").font(.title3.weight(.bold))
+            Text("Heart rate").font(.system(size: 20, weight: .semibold))
             if let pooledStats, pooledStats.totalSeconds > 0 {
                 VStack(alignment: .leading, spacing: 10) {
                     ClimbSummarySectionTitle("Time in zone (all sessions)", systemImage: "heart.fill")
@@ -293,8 +293,8 @@ struct KilterTrendDetailView: View {
 
     private func factTile(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(SnappetColor.ink)
-            Text(label).font(.caption2.weight(.bold)).tracking(0.4).foregroundStyle(SnappetColor.textSecondary)
+            Text(value).font(.system(size: 20, weight: .semibold)).monospacedDigit().foregroundStyle(SnappetColor.ink)
+            Text(label).font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12).padding(.horizontal, 14)
