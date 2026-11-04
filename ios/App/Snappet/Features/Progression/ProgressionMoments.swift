@@ -70,9 +70,9 @@ struct ProgressionMomentView: View {
                 }
                 Spacer(minLength: 8)
                 Button(action: onDone) {
-                    Text(buttonTitle).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    Text(buttonTitle)
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("moment.done")
             }
             .padding(24)
@@ -94,22 +94,22 @@ struct ProgressionMomentView: View {
     }
 
     private func kicker(_ text: String) -> some View {
-        Text(text).font(.subheadline.weight(.heavy)).tracking(2).foregroundStyle(SnappetColor.workout)
+        Text(text).font(.system(size: 14, weight: .medium)).foregroundStyle(SnappetColor.brand)
     }
 
     @ViewBuilder private func levelUp(_ level: Int) -> some View {
         let stage = Progression.stage(forLevel: level)
         BuddyCreatureView(look: BuddyLook(stage: stage, form: form), cheerTrigger: cheer)
             .frame(height: 300)
-        kicker("LEVEL UP")
-        Text("Level \(level)").font(.system(size: 52, weight: .black, design: .rounded)).foregroundStyle(.white)
+        kicker("Level up")
+        Text("Level \(level)").font(.system(size: 52, weight: .light)).foregroundStyle(.white)
             .accessibilityIdentifier("moment.title")
         Text("\(sessions) sessions · \(totalXP.formatted()) XP all-time").font(.subheadline).foregroundStyle(.secondary)
         if let next = Progression.nextStageLevel(after: level) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Next growth: **\(Progression.stage(forLevel: next).title)** at Level \(next)").foregroundStyle(.white)
                 let from = [1, 2, 5, 10, 20].last { $0 <= level } ?? 1
-                ProgressView(value: Double(level - from), total: Double(max(1, next - from))).tint(SnappetColor.workout)
+                ProgressView(value: Double(level - from), total: Double(max(1, next - from))).tint(SnappetColor.brand)
                 Text("\(next - level) level\(next - level == 1 ? "" : "s") to go").font(.caption).foregroundStyle(.secondary)
             }
             .padding(14)
@@ -118,7 +118,7 @@ struct ProgressionMomentView: View {
     }
 
     @ViewBuilder private func grewUp(_ from: BuddyStage, _ to: BuddyStage, _ level: Int) -> some View {
-        kicker("YOUR BUDDY GREW UP")
+        kicker("Your buddy grew up")
         // One buddy that grows in front of you: the old stage first, then the new one with a cheer.
         BuddyCreatureView(look: BuddyLook(stage: grown ? to : from, form: form), cheerTrigger: cheer)
             .frame(height: 280)
@@ -128,11 +128,11 @@ struct ProgressionMomentView: View {
             }
         HStack(spacing: 8) {
             Text(from.title).foregroundStyle(.secondary)
-            Image(systemName: "arrow.right").foregroundStyle(SnappetColor.workout)
+            Image(systemName: "arrow.right").foregroundStyle(SnappetColor.brand)
             Text(to.title).foregroundStyle(.white)
         }
         .font(.subheadline.weight(.bold))
-        Text(to.title).font(.system(size: 44, weight: .black, design: .rounded)).foregroundStyle(.white)
+        Text(to.title).font(.system(size: 44, weight: .light)).foregroundStyle(.white)
             .accessibilityIdentifier("moment.title")
         Text("Reached at Level \(level) · \(sessions) sessions").font(.subheadline).foregroundStyle(.secondary)
         if !to.unlocks.isEmpty {

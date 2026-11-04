@@ -443,12 +443,12 @@ struct BuddyHero: View {
     @ViewBuilder private var info: some View {
         if !hatched || hatchingStage != nil {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Meet your training buddy").font(.title3.weight(.heavy)).foregroundStyle(.white)
+                Text("Meet your training buddy").font(.title3.weight(.semibold)).foregroundStyle(.white)
                 Text("Your \(snapshot.ledger.sessionCount) sessions already count — it hatches straight to **Level \(snapshot.level.level) · \(snapshot.level.stage.title)**.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.75))
                 Button(hatchingStage == nil ? "Hatch" : "Hatching…") { hatch() }
-                    .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(SnappetWidePrimaryStyle())   // ink-on-accent (prompt 230 — was orange with white text)
+                    .padding(.top, 6)
                     .disabled(hatchingStage != nil)
                     .accessibilityIdentifier("buddy.hatch")
             }
@@ -465,12 +465,12 @@ struct BuddyHero: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(alignment: .firstTextBaseline) {
-                            Text(active.routineName).font(.title3.weight(.heavy)).foregroundStyle(.white)
+                            Text(active.routineName).font(.title3.weight(.semibold)).foregroundStyle(.white)
                             Spacer()
                             Text("Your buddy ›").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
                         }
                         Text(soFar > 0 ? "+\(soFar) XP so far" : "Keep going — XP lands at 5 minutes")
-                            .font(.subheadline.weight(.bold)).foregroundStyle(.yellow)
+                            .font(.subheadline.weight(.medium)).foregroundStyle(SnappetColor.brand)
                             .accessibilityIdentifier("home.hero.xpSoFar")
                         HStack {
                             Text("\(active.completedSetCount) logged").font(.caption)
@@ -478,7 +478,7 @@ struct BuddyHero: View {
                             Text("Level \(level.level + 1) in \(level.xpToNext) XP").font(.caption)
                         }
                         .foregroundStyle(.white.opacity(0.65))
-                        ProgressView(value: level.fraction).tint(SnappetColor.workout)
+                        ProgressView(value: level.fraction).tint(SnappetColor.brand)
                     }
                     .contentShape(Rectangle())
                 }
@@ -488,9 +488,9 @@ struct BuddyHero: View {
                     router.pendingWorkoutResume = true
                     router.open(module: WorkoutTrackerModule.id)
                 } label: {
-                    Text("Resume workout").frame(maxWidth: .infinity)
+                    Text("Resume workout")
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .padding(.top, 4)
                 .accessibilityIdentifier("home.hero.resume")
             }
@@ -500,12 +500,12 @@ struct BuddyHero: View {
             } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(snapshot.level.stage.title) · Level \(snapshot.level.level)")
-                        .font(.title3.weight(.heavy)).foregroundStyle(.white)
+                        .font(.title3.weight(.semibold)).foregroundStyle(.white)
                         .accessibilityIdentifier("buddy.level")
                     Text(snapshot.pause != nil ? "Resting — Form and streak are held"
                          : snapshot.look.mood + " · Form \(Int((snapshot.form.value * 100).rounded()))%")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(snapshot.pause != nil ? .cyan : snapshot.form.value >= 0.45 ? .green : .yellow)
+                        .foregroundStyle(snapshot.pause != nil ? SnappetColor.brand : snapshot.form.value >= 0.45 ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                     HStack {
                         Text("\(snapshot.level.xpIntoLevel) / \(snapshot.level.levelCost) XP")
                         Spacer()
@@ -514,7 +514,7 @@ struct BuddyHero: View {
                         }
                     }
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
-                    ProgressView(value: snapshot.level.fraction).tint(SnappetColor.workout)
+                    ProgressView(value: snapshot.level.fraction).tint(SnappetColor.brand)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
