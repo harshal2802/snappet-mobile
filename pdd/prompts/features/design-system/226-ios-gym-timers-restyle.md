@@ -42,5 +42,5 @@ It is visual only: ids and actions are unchanged.
 
 - [x] Timer suites green: StructuredIntervalRunner (except the known `525 kg`), ClimbAttemptTimer, TimedSetTimer,
   TimedStrengthSet. Dark screenshots match the mockup.
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite: only the known `525 kg` test failed. Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-03 ("merge after testing").
