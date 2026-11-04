@@ -43,5 +43,5 @@ had never been restyled and carried a raw-id bug. This prompt covers both: visua
 
 - [x] Affected suites: Clips feed / post, Feed view / wall / HR cards / media carousel, Recap story / clip export,
   Kilter stats / created gallery, Activity progress — 33 tests green. As built matches.
-- [ ] Unit suite alone.
-- [ ] Device: user on MrRobot.
+- [x] Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-04 ("looks good", "merge").
