@@ -46,5 +46,5 @@ filtered ascent log, the level-change chip, the month recap, empty states and th
 ## Acceptance
 
 - [x] Affected suites: all 11 Kilter UI suites (23 tests) green. Dark screenshots match the mockup.
-- [ ] Unit suite alone.
-- [ ] Device: user on MrRobot.
+- [x] Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-04 ("merge after testing").
