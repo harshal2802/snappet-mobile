@@ -10485,3 +10485,10 @@ stripes, and the panel read as an opaque slab.
   Rest = grey, Done = green. The orange-brown wash is gone.
 - **Display case is the view's job.** The schedule model keeps "WORK" / "REST" / "GO" (unit-tested). The runner
   shows them in sentence case, and the UI test moved to "Go" / "Rest".
+
+## 2026-11-03 — Design-system reset, step 3f: Gym sheets & pickers (prompt 227)
+
+- **`.primary` inside a List `Button` is the tint.** The timed sheet's row titles rendered link-blue. Restyled rows
+  set `SnappetColor.ink` explicitly.
+- **`DisciplineHero` keeps its heavy caps for now.** It also renders Clips feed cards and share images, which are
+  their own restyle question. The plan screen inlines a light hero instead.

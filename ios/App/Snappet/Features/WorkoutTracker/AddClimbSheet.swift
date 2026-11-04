@@ -213,7 +213,7 @@ struct AddClimbSheet: View {
                 Text("Grade").font(.subheadline.weight(.medium))
                 Text(grade)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SnappetColor.workout)
+                    .foregroundStyle(SnappetColor.brand)
                     .accessibilityIdentifier("addClimb.gradeValue")
                 Spacer()
                 // V/Font (or YDS/French) toggle — flips the rung labels to the companion notation and
@@ -285,9 +285,9 @@ struct AddClimbSheet: View {
                     Button { color = nil } label: {
                         Image(systemName: "slash.circle")
                             .font(.title3)
-                            .foregroundStyle(color == nil ? SnappetColor.workout : .secondary)
+                            .foregroundStyle(color == nil ? SnappetColor.brand : .secondary)
                             .frame(width: 30, height: 30)
-                            .overlay(Circle().stroke(color == nil ? SnappetColor.workout : Color.clear, lineWidth: 2))
+                            .overlay(Circle().stroke(color == nil ? SnappetColor.brand : Color.clear, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("addClimb.color.none")
@@ -302,7 +302,7 @@ struct AddClimbSheet: View {
                                     Circle().stroke(Color.primary.opacity(c.needsRing ? 0.3 : 0),
                                                     lineWidth: 1))
                                 .overlay(
-                                    Circle().stroke(SnappetColor.workout, lineWidth: color == c ? 3 : 0)
+                                    Circle().stroke(SnappetColor.brand, lineWidth: color == c ? 3 : 0)
                                         .padding(-3))
                         }
                         .buttonStyle(.plain)
@@ -384,29 +384,30 @@ struct AddClimbSheet: View {
                 Button {
                     commit(logFirstAttempt: true)
                 } label: {
-                    Text("Add & log first attempt").frame(maxWidth: .infinity)
+                    Text("Add & log first attempt")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.workout)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("addClimb.addAndLog")
 
                 Button {
                     commit(logFirstAttempt: false)
                 } label: {
-                    Text("Add climb").frame(maxWidth: .infinity)
+                    // An accent outline under the filled Add & log (prompt 227).
+                    Text("Add climb").font(.system(size: 15)).foregroundStyle(SnappetColor.brand)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(0.55)))
+                        .contentShape(Capsule())
                 }
-                .buttonStyle(.bordered)
-                .tint(SnappetColor.workout)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("addClimb.add")
             } else {
                 // EDIT mode (prompt 09): a single "Save" that overwrites the climb's fields in place.
                 Button {
                     commit(logFirstAttempt: false)
                 } label: {
-                    Text("Save").frame(maxWidth: .infinity)
+                    Text("Save")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.workout)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("addClimb.save")
             }
         }
@@ -536,17 +537,17 @@ struct AddClimbSheet: View {
                 Button { startFreshClimb() } label: {
                     Label("Add a new climb instead", systemImage: "plus")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(SnappetColor.workout)
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 .accessibilityIdentifier("addClimb.previousNew")
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(SnappetColor.workout)
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(SnappetColor.brand)
                     Text("Log a previous climb").font(.subheadline.weight(.medium))
                     Spacer(minLength: 8)
                     if let name = selectedPreviousName {
                         Text(name).font(.caption.weight(.semibold))
-                            .foregroundStyle(SnappetColor.workout).lineLimit(1)
+                            .foregroundStyle(SnappetColor.brand).lineLimit(1)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -559,7 +560,7 @@ struct AddClimbSheet: View {
     }
 
     /// One previous-climb row: a photo-preview thumb (or the type glyph) with a colour-dot + count badge,
-    /// the climb name, a `gym · wall · when` subtitle, and the grade pill (amber boulder / azure route).
+    /// the climb name, a `gym · wall · when` subtitle, and the grade on a neutral tile.
     private func previousRow(_ pc: PreviousClimb) -> some View {
         HStack(spacing: 11) {
             previousThumb(pc)
@@ -568,12 +569,12 @@ struct AddClimbSheet: View {
                 Text(previousSubtitle(pc)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
+            // The grade on a neutral tile (prompt 227 — was amber boulder / azure route).
             Text(pc.params.grade)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(pc.params.type.isRoute ? SnappetColor.budget : SnappetColor.kilter)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(SnappetColor.ink)
                 .padding(.horizontal, 9).padding(.vertical, 4)
-                .background((pc.params.type.isRoute ? SnappetColor.budget : SnappetColor.kilter).opacity(0.18),
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .contentShape(Rectangle())
     }
@@ -670,10 +671,8 @@ struct AddClimbSheet: View {
     private func chip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(text)
-                .font(.subheadline.weight(selected ? .bold : .regular))
-                .foregroundStyle(selected ? Color.white : .primary)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(selected ? SnappetColor.workout : SnappetColor.surfaceMuted, in: Capsule())
+                .font(.subheadline)
+                .snappetPill(selected: selected)
         }
         .buttonStyle(.plain)
     }

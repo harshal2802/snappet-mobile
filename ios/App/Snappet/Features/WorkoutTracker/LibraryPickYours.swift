@@ -70,23 +70,25 @@ struct LibraryPickRow: View {
     var body: some View {
         HStack(spacing: 12) {
             if let c = row.climb {
-                Text(c.grade ?? "–").font(.caption.weight(.heavy)).monospacedDigit()
-                    .foregroundStyle(SnappetColor.kilter)
-                    .frame(width: 36, height: 30)
-                    .background(SnappetColor.kilter.opacity(0.15), in: RoundedRectangle(cornerRadius: 7))
+                // Neutral grade / glyph tiles (prompt 227 — were Kilter amber / the discipline colour).
+                Text(c.grade ?? "–").font(.caption.weight(.medium)).monospacedDigit()
+                    .foregroundStyle(SnappetColor.ink)
+                    .frame(width: 34, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             } else {
                 Image(systemName: row.discipline.symbol)
-                    .font(.title3).foregroundStyle(row.discipline.accent)
-                    .frame(width: 36, height: 30)
+                    .font(.system(size: 14)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 34, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.headline).lineLimit(1)
+                Text(row.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
                 Text(LibraryPick.subtitle(row)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 6)
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
-                .foregroundStyle(selected ? row.discipline.accent : Color.secondary)
+                .foregroundStyle(selected ? SnappetColor.brand : Color.secondary)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())

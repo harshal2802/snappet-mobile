@@ -149,12 +149,21 @@ struct WorkoutPlanView: View {
                 HStack(spacing: 12) {
                     Image(systemName: t.readiness.systemImage)
                         .font(.title2).foregroundStyle(ramp)
-                    DisciplineHero(value: t.readiness.headline, caption: "Today", accent: ramp)
+                    // A light sentence-case hero (prompt 227 — `DisciplineHero` is heavy caps with a halo; it stays for
+                    // the Clips cards / share images).
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Today").snappetLabel()
+                        Text(t.readiness.headline.prefix(1).uppercased() + t.readiness.headline.dropFirst().lowercased())
+                            .font(.system(size: 40, weight: .light)).foregroundStyle(SnappetColor.ink)
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .accessibilityLabel("\(t.readiness.headline) Today")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Text(t.why).font(.subheadline).foregroundStyle(SnappetColor.textSecondary)
                 if !t.focusMuscles.isEmpty {
                     StatRibbon(items: t.focusMuscles.prefix(3).enumerated().map { i, m in
-                        StatRibbon.Item(text: m.display, tint: SnappetColor.workout, emphasized: i == 0,
+                        StatRibbon.Item(text: m.display, tint: SnappetColor.brand, emphasized: i == 0,
                                         systemImage: "target")
                     })
                     .accessibilityIdentifier("workout.plan.focus")
@@ -225,7 +234,7 @@ struct WorkoutPlanView: View {
     private var tweakSection: some View {
         Section {
             HStack(spacing: 8) {
-                Image(systemName: "wand.and.stars").foregroundStyle(SnappetColor.workout)
+                Image(systemName: "wand.and.stars").foregroundStyle(SnappetColor.brand)
                 TextField("e.g. 15 min, no barbell", text: $tweakText)
                     .submitLabel(.go)
                     .onSubmit { applyTweak() }
@@ -290,7 +299,7 @@ struct WorkoutPlanView: View {
             Button(role: .destructive) { remove(pick) } label: { Label("Remove", systemImage: "trash") }
                 .accessibilityIdentifier("workout.plan.remove")
             Button { swapping = pick } label: { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }
-                .tint(SnappetColor.workout)
+                .tint(SnappetColor.brand)
                 .accessibilityIdentifier("workout.plan.swap")
         }
     }
@@ -417,11 +426,9 @@ struct WorkoutPlanView: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: systemImage).font(.caption2)
-                Text(label).font(.caption.weight(.semibold)).lineLimit(1)
+                Text(label).font(.caption).lineLimit(1)
             }
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .foregroundStyle(selected ? .white : SnappetColor.textSecondary)
-            .background(selected ? SnappetColor.workout : SnappetColor.surfaceMuted, in: Capsule())
+            .snappetPill(selected: selected)
         }
         .buttonStyle(.plain)
     }
@@ -431,7 +438,7 @@ struct WorkoutPlanView: View {
             Image(systemName: systemImage).font(.caption.weight(.bold))
                 .frame(width: 26, height: 26)
                 .background(SnappetColor.surfaceMuted, in: Circle())
-                .foregroundStyle(SnappetColor.workout)
+                .foregroundStyle(SnappetColor.brand)
         }
         .buttonStyle(.plain)
     }
