@@ -214,7 +214,7 @@ struct KilterPlanView: View {
                         .accessibilityIdentifier("kilter.plan.progress")
                 }
                 ProgressView(value: Double(p.done), total: Double(max(1, p.total)))
-                    .tint(SnappetColor.moduleAccent("kilter"))
+                    .tint(SnappetColor.brand)
                 if let grade = plan.workingGradeLabel {
                     Label("Working grade ~ \(kilterDisplayGrade(grade, gradeFormat)) · \(plan.angle)°",
                           systemImage: "target")
@@ -266,8 +266,8 @@ struct KilterPlanView: View {
                     HStack(spacing: 6) {
                         Text("by \(item.setter)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         if isNext {
-                            Text("NEXT UP").font(.caption2.weight(.bold))
-                                .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                            Text("Next up").font(.caption2.weight(.medium))
+                                .foregroundStyle(SnappetColor.brand)
                         }
                         let clips = clipCount(item.climbUUID)
                         if clips > 0 {
@@ -309,8 +309,8 @@ struct KilterPlanView: View {
 
     @ViewBuilder private func statusGlyph(_ status: KilterPlanItemStatus) -> some View {
         switch status {
-        case .sent:      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .attempted: Image(systemName: "circle.lefthalf.filled").foregroundStyle(.orange)
+        case .sent:      Image(systemName: "checkmark.circle.fill").foregroundStyle(SnappetColor.perfFresh)
+        case .attempted: Image(systemName: "circle.lefthalf.filled").foregroundStyle(SnappetColor.perfModerate)
         case .skipped:   Image(systemName: "minus.circle").foregroundStyle(.secondary)
         case .pending:   Image(systemName: "circle").foregroundStyle(.secondary)
         }
@@ -321,11 +321,20 @@ struct KilterPlanView: View {
     private var previewHeader: some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    // The whole log feeds the plan — not a window of recent climbs ("your last 20" read like a cut-off).
-                    Text(Self.historyLine(ascentIndex, climbs: planClimbs))
-                        .font(.subheadline)
-                    Spacer()
+                // The whole log feeds the plan — not a window of recent climbs ("your last 20" read like a cut-off).
+                // Own line, chips below (prompt 229 — beside the chips it squeezed to a narrow column and the chips
+                // truncated: "Re-set", "Bal…").
+                Text(Self.historyLine(ascentIndex, climbs: planClimbs))
+                    .font(.subheadline)
+                if let grade = preview.workingGradeLabel {
+                    Label("Working grade ~ \(kilterDisplayGrade(grade, gradeFormat)) · \(angle)°",
+                          systemImage: "target")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Label("No send history yet — starting easy at \(angle)°.", systemImage: "sparkles")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
                     if draft != nil {
                         // Edited: no more shuffling — go back to the suggestion explicitly.
                         Button { draft = nil; draftKey = nil; editing = false } label: {
@@ -354,15 +363,9 @@ struct KilterPlanView: View {
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .accessibilityIdentifier("kilter.plan.adjust")
+                    Spacer(minLength: 0)
                 }
-                if let grade = preview.workingGradeLabel {
-                    Label("Working grade ~ \(kilterDisplayGrade(grade, gradeFormat)) · \(angle)°",
-                          systemImage: "target")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Label("No send history yet — starting easy at \(angle)°.", systemImage: "sparkles")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                .padding(.top, 4)
             }
             .padding(.vertical, 2)
         }
@@ -377,7 +380,7 @@ struct KilterPlanView: View {
                         Text("Your settings changed. Rebuild the plan and lose your edits?").font(.subheadline)
                         HStack {
                             Button("Rebuild") { self.draft = nil; draftKey = nil; editing = false }
-                                .buttonStyle(.borderedProminent).controlSize(.small)
+                                .buttonStyle(.snappetPrimary)
                                 .accessibilityIdentifier("kilter.plan.rebuild")
                             Button("Keep my edits") { draftKey = planKey }
                                 .buttonStyle(.bordered).controlSize(.small)
@@ -495,10 +498,10 @@ struct KilterPlanView: View {
 
     private func ascentBadge(_ badge: String) -> some View {
         let sent = badge.hasPrefix("✓")
-        return Text(badge).font(.caption2.weight(.bold))
+        return Text(badge).font(.caption2.weight(.medium))
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background((sent ? Color.green : Color.orange).opacity(0.18), in: Capsule())
-            .foregroundStyle(sent ? Color.green : Color.orange)
+            .overlay(Capsule().strokeBorder((sent ? SnappetColor.perfFresh : SnappetColor.perfModerate).opacity(0.55)))
+            .foregroundStyle(sent ? SnappetColor.perfFresh : SnappetColor.perfModerate)
     }
 
     /// "+ Add a send" (preview) / "+ Add a climb" (session): the picker sheet, scoped to that section's grade band.
@@ -537,10 +540,10 @@ struct KilterPlanView: View {
                         Text(pick.item.name).font(.headline).lineLimit(1)
                         if let badge {
                             let sent = badge.hasPrefix("✓")
-                            Text(badge).font(.caption2.weight(.bold))
+                            Text(badge).font(.caption2.weight(.medium))
                                 .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background((sent ? Color.green : Color.orange).opacity(0.18), in: Capsule())
-                                .foregroundStyle(sent ? Color.green : Color.orange)
+                                .overlay(Capsule().strokeBorder((sent ? SnappetColor.perfFresh : SnappetColor.perfModerate).opacity(0.55)))
+                                .foregroundStyle(sent ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                                 .accessibilityIdentifier("kilter.plan.pick.ascent")
                         }
                     }

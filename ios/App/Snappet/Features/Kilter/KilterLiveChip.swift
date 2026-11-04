@@ -30,10 +30,10 @@ struct KilterLiveChip: View {
                     .opacity(0.6)
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(SnappetColor.onBrand)   // ink on the accent (prompt 229 — was white on Kilter amber)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(SnappetColor.moduleAccent("kilter"), in: Capsule())
+            .background(SnappetColor.brand, in: Capsule())
             .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
         }
         .buttonStyle(.plain)

@@ -230,7 +230,7 @@ struct KilterCreatedView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 DisciplineHero(value: "\(createdClimbs.count)", caption: "Climbs set",
-                               systemImage: "hammer.fill", accent: SnappetColor.kilter)
+                               systemImage: "hammer.fill", accent: SnappetColor.brand)
                 Button { showingCreate = true } label: {
                     Label("Set a climb", systemImage: "plus")
                         .font(.subheadline.weight(.semibold))
@@ -427,10 +427,10 @@ struct KilterCreatedView: View {
 
     private func gradeBadge(_ item: KilterCreatedGallery.Item) -> some View {
         Text(item.predictedGrade.map { catalog.gradeLabel($0) } ?? "—")
-            .font(.caption.weight(.bold)).monospacedDigit()
+            .font(.caption.weight(.medium)).monospacedDigit()
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(SnappetColor.kilter.opacity(0.18), in: Capsule())
-            .foregroundStyle(SnappetColor.kilter)
+            .background(SnappetColor.surfaceMuted, in: Capsule())   // neutral (prompt 229 — was Kilter amber)
+            .foregroundStyle(SnappetColor.ink)
     }
 
     private func provenanceLabel(_ p: KilterCreatedGallery.Provenance) -> some View {
@@ -458,11 +458,11 @@ struct KilterCreatedView: View {
             .accessibilityIdentifier("kilter.created.ownStatus")
     }
 
-    /// A neutral/muted DRAFT pill (F9) — distinct from the amber grade badge (`SnappetColor.kilter`) and
+    /// A neutral/muted DRAFT pill (F9) — distinct from the grade badge and
     /// the amber Project chip (`perfModerate`), which previously all read as the same amber on a
     /// draft/project card. Neutral here lets the three signals read distinctly.
     private var draftPill: some View {
-        Text("DRAFT").font(.caption2.weight(.bold)).tracking(0.5)
+        Text("Draft").font(.caption2.weight(.medium))
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(SnappetColor.surfaceMuted, in: Capsule())
             .foregroundStyle(SnappetColor.textSecondary)
@@ -541,7 +541,7 @@ struct KilterCreatedView: View {
         }
         .font(.subheadline)
         .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(filled ? AnyShapeStyle(SnappetColor.kilter) : AnyShapeStyle(Color(.secondarySystemBackground)),
+        .background(filled ? AnyShapeStyle(SnappetColor.brand) : AnyShapeStyle(Color(.secondarySystemBackground)),
                     in: Capsule())
         .foregroundStyle(filled ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
     }

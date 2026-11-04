@@ -44,12 +44,12 @@ struct KilterNearbyBoardsSheet: View {
                     HStack(spacing: 6) {
                         Text(remembered?.label ?? "New board").font(.body.weight(.semibold))
                         if remembered == nil, let serial = nearby.serial {
-                            Text("#\(serial)").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                            Text("#\(serial)").font(.caption.weight(.medium)).foregroundStyle(SnappetColor.textSecondary)
                         }
                     }
                     Text(flashing ? "Corners lit — look for the blue lights." : detail(remembered))
                         .font(.caption)
-                        .foregroundStyle(flashing ? Color.blue : .secondary)
+                        .foregroundStyle(flashing ? SnappetColor.brand : .secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -80,7 +80,7 @@ private struct SignalBars: View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach(1...4, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(i <= bars ? Color.green : Color.secondary.opacity(0.3))
+                    .fill(i <= bars ? SnappetColor.perfFresh : Color.secondary.opacity(0.3))
                     .frame(width: 3, height: CGFloat(3 + i * 3))
             }
         }

@@ -83,12 +83,12 @@ struct KilterOnTheBoardView: View {
     private func hero(_ model: KilterOnTheBoard.DisplayModel) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(model.climbsWorked)")
-                .font(.system(size: 52, weight: .bold, design: .rounded))
-                .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                .font(.system(size: 52, weight: .light))
+                .foregroundStyle(SnappetColor.brand)
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Text("CLIMBS WORKED")
-                .font(.caption.weight(.bold)).tracking(0.5)
+                .font(SnappetType.label)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
@@ -122,7 +122,7 @@ struct KilterOnTheBoardView: View {
             Text(title)
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(isOn ? AnyShapeStyle(SnappetColor.moduleAccent("kilter"))
+                .background(isOn ? AnyShapeStyle(SnappetColor.brand)
                                  : AnyShapeStyle(SnappetColor.surfaceMuted), in: Capsule())
                 .foregroundStyle(isOn ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         }
@@ -220,7 +220,7 @@ struct KilterOnTheBoardView: View {
         } label: {
             Image(systemName: relitRowID == row.id ? "checkmark.circle.fill" : "arrow.clockwise.circle")
                 .font(.title3)
-                .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                .foregroundStyle(SnappetColor.brand)
                 .symbolEffect(.bounce, value: relitRowID == row.id)
         }
         .buttonStyle(.plain)

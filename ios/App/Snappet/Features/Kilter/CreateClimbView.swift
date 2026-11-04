@@ -362,7 +362,7 @@ struct CreateClimbView: View {
         case .new: ("Not in the training data", "sparkles", .green)
         }
         VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: icon).font(.subheadline.weight(.bold)).foregroundStyle(tint)
+            Label(title, systemImage: icon).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
             Text(trainingDetail(m)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let c = m.climb {
@@ -435,8 +435,7 @@ struct CreateClimbView: View {
                         }
                         Spacer()
                         Button(litFrames == result.frames ? "Light again" : "Light on board") { lightGenerated() }
-                            .buttonStyle(.borderedProminent).controlSize(.small)
-                            .tint(SnappetColor.moduleAccent("kilter"))
+                            .buttonStyle(.snappetPrimary)
                             .accessibilityIdentifier("kilter.generate.light")
                     }
                     Toggle("Auto-light each new climb", isOn: $autoLight)
@@ -473,8 +472,7 @@ struct CreateClimbView: View {
             Text("No Bluetooth").font(.caption).foregroundStyle(.secondary)
         default:
             Button("Connect board") { lightAfterConnect = true; board.connect() }
-                .buttonStyle(.borderedProminent).controlSize(.small)
-                .tint(SnappetColor.moduleAccent("kilter"))
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.generate.connect")
         }
     }

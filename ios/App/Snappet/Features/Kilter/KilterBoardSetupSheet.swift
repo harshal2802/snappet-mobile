@@ -110,8 +110,8 @@ struct KilterBoardSetupSheet: View {
     private var header: some View {
         VStack(spacing: 6) {
             Image(systemName: "bolt.badge.checkmark")
-                .font(.largeTitle).foregroundStyle(SnappetColor.moduleAccent("kilter"))
-            Text("Set up this board").font(.title3.weight(.bold))
+                .font(.largeTitle).foregroundStyle(SnappetColor.brand)
+            Text("Set up this board").font(.title3.weight(.semibold))
             Text("Pick a layout and size, then look at the wall. When the lit holds match your board, tap confirm.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -139,7 +139,7 @@ struct KilterBoardSetupSheet: View {
                         }
                         Spacer()
                         Image(systemName: matchedMyBoard == mine.id ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                            .foregroundStyle(SnappetColor.brand)
                     }
                     .padding(.vertical, 8)
                     .contentShape(Rectangle())
@@ -156,7 +156,7 @@ struct KilterBoardSetupSheet: View {
                     Text("A different board…").font(.subheadline)
                     Spacer()
                     Image(systemName: matchedMyBoard == nil ? "largecircle.fill.circle" : "circle")
-                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 .padding(.vertical, 8)
                 .contentShape(Rectangle())
@@ -184,7 +184,7 @@ struct KilterBoardSetupSheet: View {
                         Button(suggestion) { name = suggestion }
                             .font(.caption.weight(.semibold))
                             .buttonStyle(.bordered).controlSize(.small)
-                            .tint(name == suggestion ? SnappetColor.moduleAccent("kilter") : .secondary)
+                            .tint(name == suggestion ? SnappetColor.brand : .secondary)
                     }
                 }
             }
@@ -245,7 +245,7 @@ struct KilterBoardSetupSheet: View {
                 Label("Light on board", systemImage: "bolt.fill").frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .tint(SnappetColor.moduleAccent("kilter"))
+            .tint(SnappetColor.brand)
             .accessibilityIdentifier("kilter.setup.light")
 
             Button {
@@ -256,7 +256,7 @@ struct KilterBoardSetupSheet: View {
             } label: {
                 Label("This looks right", systemImage: "checkmark.circle.fill").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .tint(.green)
             .accessibilityIdentifier("kilter.setup.confirm")
         }
