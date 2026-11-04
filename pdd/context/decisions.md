@@ -10505,3 +10505,14 @@ stripes, and the panel read as an opaque slab.
   `KilterAscentStyle.color`, like the pager, timers and stats.
 - **Affected-suites run (the user's new policy):** all 11 Kilter UI suites. Gotcha: in zsh a `$ARGS` list of
   `-only-testing:` flags must be expanded as `${=ARGS}`, or xcodebuild runs **0 tests** and still reports success.
+
+## 2026-11-04 — Design-system reset: Kilter part 3 + the wireframe audit (prompt 229)
+
+- **Wireframes never truncate.** The user caught the Adjust plan sheet drawn with 4 of 6 strategies. An audit of
+  all 17 restyle wireframes found lists and sections routinely cut to fit the phone frame. The apps were intact,
+  since every restyle was an in-place style edit. Each wireframe now ends with an "As built" screenshot row and an
+  omissions table. New wireframes draw tall, fully scrolled frames instead of cutting.
+- **The audit found one real leftover.** Home's buddy hero, in its not-yet-hatched and workout-running states, still
+  has an orange Hatch / Resume button with white text. Those states were never drawn, so never restyled. Queued with
+  the Buddy & progression group.
+- **The Kilter plan header's chips moved below the text.** Side by side they truncated.

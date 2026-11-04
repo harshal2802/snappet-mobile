@@ -20,7 +20,7 @@ struct KilterScannerView: View {
                     onScan: { link in onScan(link); dismiss() })
                     .accessibilityIdentifier("kilter.scanner")
                 // A screenshot of a climb code works too (prompt 201).
-                PhotoCodePickerRow(idPrefix: "kilter.scanner", tint: SnappetColor.kilter,
+                PhotoCodePickerRow(idPrefix: "kilter.scanner", tint: SnappetColor.brand,
                                    decode: { KilterClimbLink(decoding: $0) },
                                    onFound: { link in onScan(link); dismiss() })
             }

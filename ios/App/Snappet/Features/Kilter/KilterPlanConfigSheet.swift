@@ -23,7 +23,7 @@ struct KilterPlanConfigSheet: View {
                             HStack(spacing: 12) {
                                 Image(systemName: s.systemImage)
                                     .frame(width: 26)
-                                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                                    .foregroundStyle(SnappetColor.brand)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(s.label).font(.subheadline.weight(.medium))
                                     Text(s.subtitle).font(.caption).foregroundStyle(.secondary)
@@ -31,7 +31,7 @@ struct KilterPlanConfigSheet: View {
                                 Spacer()
                                 if s == strategy {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                                        .foregroundStyle(SnappetColor.brand)
                                 }
                             }
                             .contentShape(Rectangle())

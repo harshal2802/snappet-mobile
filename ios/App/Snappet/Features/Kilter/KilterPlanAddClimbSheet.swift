@@ -164,7 +164,7 @@ struct KilterPlanAddClimbSheet: View {
         let badge = ascents.badge(item.uuid, angle: angle)
         return HStack(spacing: 10) {
             Text(kilterDisplayGrade(item.gradeLabel, gradeFormat))
-                .font(.caption.weight(.bold)).monospacedDigit()
+                .font(.caption.weight(.medium)).monospacedDigit()
                 .frame(width: 56, height: 26)
                 .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 7))
             VStack(alignment: .leading, spacing: 2) {
@@ -175,10 +175,10 @@ struct KilterPlanAddClimbSheet: View {
                     }
                     if let badge {
                         let sent = badge.hasPrefix("✓")
-                        Text(badge).font(.caption2.weight(.bold))
+                        Text(badge).font(.caption2.weight(.medium))
                             .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background((sent ? Color.green : Color.orange).opacity(0.18), in: Capsule())
-                            .foregroundStyle(sent ? Color.green : Color.orange)
+                            .overlay(Capsule().strokeBorder((sent ? SnappetColor.perfFresh : SnappetColor.perfModerate).opacity(0.55)))
+                            .foregroundStyle(sent ? SnappetColor.perfFresh : SnappetColor.perfModerate)
                     }
                 }
                 HStack(spacing: 6) {
@@ -189,7 +189,7 @@ struct KilterPlanAddClimbSheet: View {
             }
             Spacer()
             if already {
-                Label("Added", systemImage: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.green)
+                Label("Added", systemImage: "checkmark").font(.caption.weight(.medium)).foregroundStyle(SnappetColor.perfFresh)
                     .labelStyle(.titleAndIcon)
             } else {
                 Button("Add") {
@@ -197,7 +197,7 @@ struct KilterPlanAddClimbSheet: View {
                     added.insert(item.uuid)
                     Haptics.tap()
                 }
-                .buttonStyle(.borderedProminent).controlSize(.small)
+                .buttonStyle(.snappetPrimary)
                 .accessibilityIdentifier("kilter.planAdd.add")
             }
         }
