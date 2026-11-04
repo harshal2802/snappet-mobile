@@ -234,6 +234,8 @@ struct AddClimbSheet: View {
             if !recentGrades.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
+                        // Labelled (prompt 227): as bare outline chips the recent row read as a stray duplicate.
+                        Text("Recent").snappetLabel()
                         ForEach(recentGrades, id: \.self) { g in
                             chip(g, selected: g == grade) { grade = g }
                                 .accessibilityIdentifier("addClimb.recent.\(g)")
