@@ -106,8 +106,7 @@ struct FestivalEmptyStateView: View {
     private var privacyCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label {
-                Text("**Community packs, kept on-device.** Lineups are public schedule data; "
-                     + "installing is one GET, and nothing is ever uploaded.")
+                Text("**Community packs, kept on-device.** Lineups are public schedule data; installing is one GET, and nothing is ever uploaded.")
             } icon: {
                 Image(systemName: "lock.fill").foregroundStyle(SnappetColor.festival)
             }

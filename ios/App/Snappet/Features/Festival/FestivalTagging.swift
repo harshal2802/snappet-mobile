@@ -193,6 +193,9 @@ enum FestivalTagTimeline {
         var artist: String
         var x: Double        // leading edge, 0…1
         var width: Double    // 0…1
+        /// Row of the bar (prompt 232): overlapping sets (two stages at once) stack instead of
+        /// printing their names over each other.
+        var lane: Int = 0
         var id: UUID { setID }
     }
 
@@ -206,6 +209,7 @@ enum FestivalTagTimeline {
     struct Layout: Equatable {
         var blocks: [Block] = []
         var ticks: [Tick] = []
+        var laneCount: Int { (blocks.map(\.lane).max() ?? -1) + 1 }
     }
 
     /// Lay out one day's sets + clip stamps. `needsYou` marks the ticks the sheet paints amber.
@@ -223,12 +227,17 @@ enum FestivalTagTimeline {
             min(1, max(0, date.timeIntervalSince(origin) / span))
         }
 
+        // Greedy lanes: each set takes the first row whose last set has ended by its start.
+        var laneEnds: [Date] = []
         let blocks = sets
             .sorted { $0.start != $1.start ? $0.start < $1.start : $0.artist < $1.artist }
-            .map { set in
-                Block(setID: set.id, artist: set.artist,
-                      x: fraction(set.start),
-                      width: max(0.01, fraction(set.end) - fraction(set.start)))
+            .map { set -> Block in
+                let lane = laneEnds.firstIndex { $0 <= set.start } ?? laneEnds.count
+                if lane == laneEnds.count { laneEnds.append(set.end) } else { laneEnds[lane] = set.end }
+                return Block(setID: set.id, artist: set.artist,
+                             x: fraction(set.start),
+                             width: max(0.01, fraction(set.end) - fraction(set.start)),
+                             lane: lane)
             }
         let ticks = stamps.compactMap { stamp -> Tick? in
             guard let mediaID = UUID(uuidString: stamp.id) else { return nil }

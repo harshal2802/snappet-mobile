@@ -65,7 +65,7 @@ enum SnappetBackup {
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
         WardrobeItem.self, WardrobePhoto.self, WardrobeVocabulary.self, WardrobeTidyEdit.self,
         WearEvent.self, WardrobeOutfit.self,
-        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
+        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self, FestivalNightStretch.self,
         Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
         ClipOverlayDefaults.self,
         LibraryEntry.self,
@@ -124,6 +124,8 @@ enum SnappetBackup {
         var festivalAttendance: [FestivalAttendanceRow] = []
         // Festival clip tags — defaulted so prompt-02-era backup blobs still decode.
         var festivalClipTags: [FestivalClipTagRow] = []
+        // Festival night stretches (prompt 232) — defaulted so older blobs still decode.
+        var festivalNightStretches: [FestivalNightStretchRow] = []
         // Household — defaulted so pre-household backup blobs still decode.
         var households: [HouseholdRow] = []
         var householdOps: [HouseholdOpRecordRow] = []
@@ -180,6 +182,7 @@ enum SnappetBackup {
             n += festivalStars.count
             n += festivalAttendance.count
             n += festivalClipTags.count
+            n += festivalNightStretches.count
             n += households.count
             n += householdOps.count
             n += householdPeers.count
@@ -270,6 +273,7 @@ enum SnappetBackup {
         file.festivalStars = try all(FestivalStar.self).map(FestivalStarRow.init).sorted(by: rowKey)
         file.festivalAttendance = try all(FestivalAttendance.self).map(FestivalAttendanceRow.init).sorted(by: rowKey)
         file.festivalClipTags = try all(FestivalClipTag.self).map(FestivalClipTagRow.init).sorted(by: rowKey)
+        file.festivalNightStretches = try all(FestivalNightStretch.self).map(FestivalNightStretchRow.init).sorted(by: rowKey)
         file.households = try all(Household.self).map(HouseholdRow.init).sorted(by: rowKey)
         file.householdOps = try all(HouseholdOpRecord.self).map(HouseholdOpRecordRow.init).sorted(by: rowKey)
         file.householdPeers = try all(HouseholdPeer.self).map(HouseholdPeerRow.init).sorted(by: rowKey)
@@ -387,6 +391,8 @@ enum SnappetBackup {
             uniqued(file.festivalAttendance, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(FestivalClipTag.self)
             uniqued(file.festivalClipTags, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FestivalNightStretch.self)
+            uniqued(file.festivalNightStretches, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(Household.self)
             uniqued(file.households, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(HouseholdOpRecord.self)
@@ -1304,20 +1310,25 @@ extension SnappetBackup {
         /// The verbatim `.fpack` bytes ride the backup (base64 in JSON — a lineup is tens of KB);
         /// a restored festival without its schedule is not a restored festival.
         var fpackData: Data
+        /// The user's lineup edits (prompt 232); optional so older blobs decode.
+        var editsData: Data?
 
         init(_ m: FestivalLineup) {
             id = m.id; packID = m.packID; name = m.name; location = m.location
             startDate = m.startDate; endDate = m.endDate; utcOffsetSeconds = m.utcOffsetSeconds
             stageCount = m.stageCount; setCount = m.setCount; sourceLabel = m.sourceLabel
             installedAt = m.installedAt; fpackData = m.fpackData
+            editsData = m.editsData.isEmpty ? nil : m.editsData
         }
         func make() -> FestivalLineup {
-            FestivalLineup(id: id, packID: packID, name: name, location: location,
-                           startDate: startDate, endDate: endDate,
-                           utcOffsetSeconds: utcOffsetSeconds,
-                           stageCount: stageCount, setCount: setCount,
-                           sourceLabel: sourceLabel, installedAt: installedAt,
-                           fpackData: fpackData)
+            let lineup = FestivalLineup(id: id, packID: packID, name: name, location: location,
+                                        startDate: startDate, endDate: endDate,
+                                        utcOffsetSeconds: utcOffsetSeconds,
+                                        stageCount: stageCount, setCount: setCount,
+                                        sourceLabel: sourceLabel, installedAt: installedAt,
+                                        fpackData: fpackData)
+            lineup.editsData = editsData ?? Data()
+            return lineup
         }
         var sortKey: String { id.uuidString }
     }
@@ -1344,14 +1355,40 @@ extension SnappetBackup {
         var sessionID: UUID
         var startedAt: Date
         var endedAt: Date?
+        /// Prompt 232; optional so older blobs decode.
+        var autoMoved: Bool?
 
         init(_ m: FestivalAttendance) {
             id = m.id; packID = m.packID; setID = m.setID; artist = m.artist; stage = m.stage
             sessionID = m.sessionID; startedAt = m.startedAt; endedAt = m.endedAt
+            autoMoved = m.autoMoved ? true : nil
         }
         func make() -> FestivalAttendance {
-            FestivalAttendance(id: id, packID: packID, setID: setID, artist: artist, stage: stage,
-                               sessionID: sessionID, startedAt: startedAt, endedAt: endedAt)
+            let row = FestivalAttendance(id: id, packID: packID, setID: setID, artist: artist, stage: stage,
+                                         sessionID: sessionID, startedAt: startedAt, endedAt: endedAt)
+            row.autoMoved = autoMoved ?? false
+            return row
+        }
+        var sortKey: String { "\(startedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    struct FestivalNightStretchRow: BackupRow {
+        var id: UUID
+        var packID: String
+        var sessionID: UUID
+        var kindRaw: String
+        var startedAt: Date
+        var endedAt: Date?
+
+        init(_ m: FestivalNightStretch) {
+            id = m.id; packID = m.packID; sessionID = m.sessionID; kindRaw = m.kindRaw
+            startedAt = m.startedAt; endedAt = m.endedAt
+        }
+        func make() -> FestivalNightStretch {
+            let row = FestivalNightStretch(id: id, packID: packID, sessionID: sessionID, kind: .rest,
+                                           startedAt: startedAt, endedAt: endedAt)
+            row.kindRaw = kindRaw
+            return row
         }
         var sortKey: String { "\(startedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
     }

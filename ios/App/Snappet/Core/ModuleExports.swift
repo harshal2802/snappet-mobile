@@ -109,7 +109,7 @@ enum ModuleExports {
 
         var out = "festival,day,stage,artist,start,end,starred,danced_minutes,clips\n"
         for lineup in lineups.sorted(by: { $0.packID < $1.packID }) {
-            guard let pack = try? FestivalPack.decode(fpack: lineup.fpackData) else { continue }
+            guard let pack = lineup.pack() else { continue }
             for day in pack.days {
                 var rows: [(stage: String, set: FestivalSet)] = []
                 for stage in day.stages {

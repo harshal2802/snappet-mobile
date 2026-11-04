@@ -58,7 +58,7 @@ enum SnappetSchema {
         // Festival (lineups, sets & your night) — installed `.fpack` lineups + stars + "I'm here"
         // claims + clip→set tags; capture rides WorkoutSession (festival prompts 02–03),
         // see FestivalModels.swift
-        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
+        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self, FestivalNightStretch.self,
         // Household (shared chores) — the op log is the data; see HouseholdModels.swift
         Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
         // Clips — the user's default HR tile + title (prompt 163), one row

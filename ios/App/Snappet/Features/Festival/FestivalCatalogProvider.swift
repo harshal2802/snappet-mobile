@@ -247,6 +247,11 @@ final class FestivalLineupInstaller {
             let packID = pack.id
             let existing = (try? context.fetch(FetchDescriptor<FestivalLineup>(
                 predicate: #Predicate { $0.packID == packID }))) ?? []
+            // The user's edits ride a reinstall (prompt 232): they're keyed by set id, so a revised
+            // lineup keeps every edit whose set is still there, and the rest simply stop applying.
+            if let carried = existing.first(where: { !$0.editsData.isEmpty }) {
+                lineup.edits = carried.edits
+            }
             existing.forEach { context.delete($0) }
             context.insert(lineup)
             try context.save()
@@ -276,6 +281,11 @@ final class FestivalLineupInstaller {
             let packID = pack.id
             let existing = (try? context.fetch(FetchDescriptor<FestivalLineup>(
                 predicate: #Predicate { $0.packID == packID }))) ?? []
+            // The user's edits ride a reinstall (prompt 232): they're keyed by set id, so a revised
+            // lineup keeps every edit whose set is still there, and the rest simply stop applying.
+            if let carried = existing.first(where: { !$0.editsData.isEmpty }) {
+                lineup.edits = carried.edits
+            }
             existing.forEach { context.delete($0) }
             context.insert(lineup)
             try context.save()

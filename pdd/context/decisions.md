@@ -10524,3 +10524,25 @@ stripes, and the panel read as an opaque slab.
 - **Recap leaked catalog ids.** `SessionExercise.displayName` is nil for catalog picks. The feed bridge now resolves
   the catalog name (main-actor converters).
 - **Missed scope:** the earlier remaining-work estimate folded the Recap tab into "Clips". Found while scoping Clips.
+
+## 2026-11-04 — Festival: your night + lineup edits (prompt 232)
+
+- **A claim ends with its set.** The Halloween bug was a claim that never closed, so the bar stayed stuck on one
+  artist all night. At a set's (edited) end, the night moves on by itself to the next starred set playing then or
+  starting within 30 min. The bar then reads "Moved you … Not there? Change". Otherwise the night asks "Where are
+  you now?". A claim made after the scheduled end is treated as a running-late set and left alone. The rule is the
+  pure `FestivalNight`; `FestivalNightController.reconcile` applies it on every tick and loops.
+- **Break / walking / arriving get their own table (`FestivalNightStretch`), not attendance rows.** Attendance is the
+  matcher's evidence, the danced total, the recap's "sets seen" and the CSV. A break row there would tag clips to
+  nothing and count as dancing. Separate rows keep every existing consumer correct untouched.
+- **"End this set" vs "End the night".** Per the user, ending the night means going home. End this set keeps the
+  session running and asks what's next: a set, a break, walking, or heading home.
+- **Lineup edits are an overlay, never a rewrite.** Set ids are UUIDv5 over artist / stage / times. Rewriting the
+  `.fpack` with new times would re-key the set and orphan its stars, claims and tags. `FestivalLineupEdits`
+  (JSON on `FestivalLineup.editsData`) is applied in `pack()`, the single decode entry point, so the edits reach
+  every surface, including the matcher, recap, reminders and CSV. The original bytes stay intact for Reset, and
+  edits ride a reinstall.
+- **A delay touches one festival day.** Without that limit, a Friday weather hold would also move all of Saturday.
+  A set already playing at the delay time keeps its start and ends later.
+- **A forgotten night ends itself.** A night left between sets for 6 h is finished, back-dated to when it went quiet.
+  A night like the Halloween one, never ended, can't run for days. A break the user chose is never auto-ended.

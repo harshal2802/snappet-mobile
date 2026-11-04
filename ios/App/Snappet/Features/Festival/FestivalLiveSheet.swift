@@ -12,14 +12,16 @@ struct FestivalLiveSheet: View {
     let attendance: FestivalAttendance
     /// The dance session the claim rides; `nil` only if the row's session was deleted underneath us.
     let session: WorkoutSession?
-    var onSwitch: (FestivalSet) -> Void
+    /// "Switch set ›" — the host opens "Where are you now?" once this sheet is gone (prompt 232).
+    var onSwitch: () -> Void
+    /// "End this set" — close the claim, keep the night on; the host asks "What's next?".
+    var onEndSet: () -> Void
     var onEnd: () -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingSwitcher = false
     @State private var recordedClips: [RecordedClip] = []
     @State private var savingClip = false
     /// Clips already attached to the session (by array index), so a new recording attaches once.
@@ -54,16 +56,38 @@ struct FestivalLiveSheet: View {
                              idPrefix: "festival.live", attachNoun: "set")
             autoTagPromise
             upNextRow(now: now)
-            Button(role: .destructive) {
-                onEnd()
-                dismiss()
-            } label: {
-                Text("End the night")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                Button {
+                    onEndSet()
+                    dismiss()
+                } label: {
+                    Text("End this set")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(SnappetColor.ink)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .pagerOutline()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("festival.live.endSet")
+                Button(role: .destructive) {
+                    onEnd()
+                    dismiss()
+                } label: {
+                    Text("End the night")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(SnappetColor.perfHard)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .overlay(Capsule().strokeBorder(SnappetColor.perfHard.opacity(0.6), lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("festival.live.end")
             }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("festival.live.end")
+            Text("End this set to pick what's next — another set, a break, or walking. End the night when you're heading home.")
+                .font(.caption2)
+                .foregroundStyle(SnappetColor.textTertiary)
             Spacer(minLength: 0)
         }
     }
@@ -84,7 +108,7 @@ struct FestivalLiveSheet: View {
                     + " – \(FestivalSchedule.timeLabel(set.end, offsetSeconds: pack.utcOffsetSeconds))"
                 Text(now < set.end
                      ? "\(range) · \(FestivalSchedule.remainingLabel(set.end.timeIntervalSince(now)))"
-                     : "\(range) · over — switch or end the night")
+                     : "\(range) · running late? Switch or end this set")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(SnappetColor.textSecondary)
             }
@@ -114,8 +138,8 @@ struct FestivalLiveSheet: View {
 
     private var autoTagPromise: some View {
         Label {
-            Text("Anything you film — here or straight from the Camera app — tags to "
-                 + "**\(attendance.artist)** while this set plays.")
+            // Interpolated, not concatenated: `+` makes a String and drops the markdown (prompt 232).
+            Text("Anything you film — here or straight from the Camera app — tags to **\(attendance.artist)** while this set plays.")
         } icon: {
             Image(systemName: "sparkles").foregroundStyle(SnappetColor.festival)
         }
@@ -126,33 +150,19 @@ struct FestivalLiveSheet: View {
     @ViewBuilder private func upNextRow(now: Date) -> some View {
         HStack(spacing: 6) {
             if let next = FestivalSchedule.upNext(in: pack, now: now) {
-                Text("Up next: **\(next.artist)** · \(next.stage) · "
-                     + FestivalSchedule.timeLabel(next.start, offsetSeconds: pack.utcOffsetSeconds))
+                Text("Up next: **\(next.artist)** · \(next.stage) · \(FestivalSchedule.timeLabel(next.start, offsetSeconds: pack.utcOffsetSeconds))")
                     .font(.caption)
                     .foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer()
-            Button("Switch set ›") { showingSwitcher = true }
-                .font(.caption.weight(.bold))
-                .tint(SnappetColor.festival)
-                .accessibilityIdentifier("festival.live.switch")
+            Button("Switch set ›") {
+                onSwitch()
+                dismiss()
+            }
+            .font(.caption.weight(.bold))
+            .tint(SnappetColor.festival)
+            .accessibilityIdentifier("festival.live.switch")
         }
-        .confirmationDialog("Where are you?", isPresented: $showingSwitcher, titleVisibility: .visible) {
-            switcherButtons(now: now)
-        }
-    }
-
-    /// The sets live right now (minus the claimed one) + the next set to start — exactly the
-    /// choices "two stages live" needs; a dialog, not a Menu, so taps fire under XCUITest.
-    @ViewBuilder private func switcherButtons(now: Date) -> some View {
-        let live = FestivalSchedule.liveSets(in: pack, now: now).filter { $0.id != attendance.setID }
-        ForEach(live) { set in
-            Button("\(set.artist) · \(set.stage)") { onSwitch(set) }
-        }
-        if let next = FestivalSchedule.upNext(in: pack, now: now) {
-            Button("\(next.artist) · \(next.stage) (up next)") { onSwitch(next) }
-        }
-        Button("Cancel", role: .cancel) {}
     }
 
     // MARK: - Clip attachment (the one funnel — SessionMediaService.candidate)

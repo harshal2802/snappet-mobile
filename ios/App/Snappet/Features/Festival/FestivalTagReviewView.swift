@@ -172,29 +172,31 @@ struct FestivalTagReviewView: View {
             stamps: dayIDs.compactMap { snap.stamps[$0] },
             needsYou: needsYou)
         if !layout.blocks.isEmpty {
+            let laneHeight: CGFloat = 20
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     ForEach(layout.blocks) { block in
                         Text(block.artist)
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .semibold))
                             .lineLimit(1)
                             .foregroundStyle(SnappetColor.festival)
                             .padding(.horizontal, 3)
-                            .frame(width: max(10, geo.size.width * block.width), height: 26,
-                                   alignment: .leading)
+                            .frame(width: max(10, geo.size.width * block.width - 2),
+                                   height: laneHeight - 3, alignment: .leading)
                             .background(SnappetColor.festival.opacity(0.16),
                                         in: RoundedRectangle(cornerRadius: 5))
-                            .offset(x: geo.size.width * block.x, y: 10)
+                            .offset(x: geo.size.width * block.x,
+                                    y: 6 + CGFloat(block.lane) * laneHeight)
                     }
                     ForEach(layout.ticks) { tick in
                         Capsule()
                             .fill(tick.needsYou ? SnappetColor.perfModerate : SnappetColor.festival)
-                            .frame(width: 3, height: 14)
-                            .offset(x: geo.size.width * tick.x, y: 16)
+                            .frame(width: 3, height: CGFloat(layout.laneCount) * laneHeight)
+                            .offset(x: geo.size.width * tick.x, y: 4)
                     }
                 }
             }
-            .frame(height: 46)
+            .frame(height: 12 + CGFloat(layout.laneCount) * laneHeight)
             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
             .accessibilityIdentifier("festival.review.timeline")
         }

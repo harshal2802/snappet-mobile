@@ -31,6 +31,9 @@ final class FestivalLineup {
     /// The verbatim `.fpack` bytes (magic + version + raw-DEFLATE JSON). A lineup is tens of KB, so
     /// the blob lives inline; decode on demand via `pack()`.
     var fpackData: Data = Data()
+    /// The user's edits layered over the original pack (prompt 232) — JSON `FestivalLineupEdits`,
+    /// empty when untouched. Additive: older rows decode with no edits.
+    var editsData: Data = Data()
 
     init(id: UUID = UUID(), packID: String, name: String, location: String,
          startDate: String, endDate: String, utcOffsetSeconds: Int,
@@ -52,8 +55,28 @@ final class FestivalLineup {
 
     /// Inflate the stored pack (stamped content ids included — `decode` is the single entry point).
     /// `nil` only if the stored blob is damaged; the installer validated it before persisting.
+    /// The user's edits (prompt 232) are applied here, so every surface sees edited times; set ids
+    /// stay the original content ids.
     func pack() -> FestivalPack? {
+        originalPack().map { edits.apply(to: $0) }
+    }
+
+    /// The lineup as installed, before the user's edits.
+    func originalPack() -> FestivalPack? {
         try? FestivalPack.decode(fpack: fpackData)
+    }
+
+    var edits: FestivalLineupEdits {
+        get { FestivalLineupEdits.decode(editsData) }
+        set {
+            editsData = newValue.encoded()
+            // Keep the denormalized list-row fields honest.
+            if let pack = pack() {
+                name = pack.name
+                stageCount = Set(pack.allSets.map(\.stage)).count
+                setCount = pack.allSets.count
+            }
+        }
     }
 }
 
@@ -92,6 +115,9 @@ final class FestivalAttendance {
     var sessionID: UUID = UUID()
     var startedAt: Date = Date()
     var endedAt: Date? = nil
+    /// Started by itself when the previous set ended and this starred set was next (prompt 232) —
+    /// the bar shows "Moved you to … · Not there? Change" until the user confirms.
+    var autoMoved: Bool = false
 
     init(id: UUID = UUID(), packID: String, setID: UUID, artist: String, stage: String,
          sessionID: UUID, startedAt: Date = .now, endedAt: Date? = nil) {
@@ -114,6 +140,34 @@ final class FestivalAttendance {
                             interval: DateInterval(start: startedAt,
                                                    end: max(startedAt, endedAt ?? now)))
     }
+}
+
+/// One non-set stretch of a festival night (prompt 232): arriving, on a break, or walking to
+/// another stage. Its own table — not `FestivalAttendance` rows — because attendance is the
+/// matcher's evidence and the "danced" total; a break must never tag clips or count as dancing.
+@Model
+final class FestivalNightStretch {
+    var id: UUID = UUID()
+    var packID: String = ""
+    /// The dance `WorkoutSession` the night rides.
+    var sessionID: UUID = UUID()
+    /// `FestivalNight.StretchKind.rawValue` — arriving | break | walking.
+    var kindRaw: String = FestivalNight.StretchKind.rest.rawValue
+    var startedAt: Date = Date()
+    var endedAt: Date? = nil
+
+    init(id: UUID = UUID(), packID: String, sessionID: UUID, kind: FestivalNight.StretchKind,
+         startedAt: Date = .now, endedAt: Date? = nil) {
+        self.id = id
+        self.packID = packID
+        self.sessionID = sessionID
+        self.kindRaw = kind.rawValue
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+    }
+
+    var kind: FestivalNight.StretchKind { FestivalNight.StretchKind(rawValue: kindRaw) ?? .rest }
+    var isOpen: Bool { endedAt == nil }
 }
 
 /// One clip → set tag (festival prompt 03): `mediaID` points at the `SessionMedia` row (the clip),
