@@ -61,5 +61,6 @@ Checked and fine:
 ## Acceptance
 
 - [x] Dark screenshots match the mockup (add a climb, plan, picker, timed sheet).
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite on the final code: only the known `525 kg` test failed. Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-03/04. The user caught the recent-grades chip and approved the sweep fixes
+  ("okay looks good").
