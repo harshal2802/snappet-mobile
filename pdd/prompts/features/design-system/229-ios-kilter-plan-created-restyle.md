@@ -40,5 +40,5 @@ decisions).
 ## Acceptance
 
 - [x] Affected suites: all 11 Kilter UI suites (22 tests) green. As-built plan / running plan match the mockup.
-- [ ] Unit suite alone.
-- [ ] Device: user on MrRobot.
+- [x] Unit suite alone: 2653 green.
+- [x] Device: user on MrRobot 2026-11-04 ("looks good", "merge").
