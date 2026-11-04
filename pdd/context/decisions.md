@@ -10476,3 +10476,12 @@ stripes, and the panel read as an opaque slab.
   like the camera icon, so the restyle keeps the `video.fill` annotation and the "📷 = has clips" legend, in the
   accent. Lesson for later mockups: carry every glyph over, not just every control.
 - **Open on the board uses the user's accent, not Kilter amber.** Kilter has used the user's accent since prompt 213.
+
+## 2026-11-03 — Design-system reset, step 3f: Gym timers (prompt 226)
+
+- **Stop is a red outline, not a red slab** (the user's pick in the mockup). It is still red because it ends the
+  set; the outline keeps the screen from shouting. The rule applies to every timer.
+- **The interval runner's phase colour lives in the word and the ring, not the background.** Work = accent,
+  Rest = grey, Done = green. The orange-brown wash is gone.
+- **Display case is the view's job.** The schedule model keeps "WORK" / "REST" / "GO" (unit-tested). The runner
+  shows them in sentence case, and the UI test moved to "Go" / "Rest".

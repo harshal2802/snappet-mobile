@@ -164,7 +164,7 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         // After the 5 s get-ready, rep 1 waits for DONE — well past any fixed hang length.
         let done = app.buttons["intervalRunner.repDone"]
         XCTAssertTrue(done.waitForExistence(timeout: 10), "a tap-done rep shows DONE")
-        XCTAssertEqual(app.staticTexts["intervalRunner.phase"].label, "GO")
+        XCTAssertEqual(app.staticTexts["intervalRunner.phase"].label, "Go")
         sleep(3)
         XCTAssertTrue(done.exists, "the rep never times out on its own")
         snap("contact-rep")
@@ -173,8 +173,8 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         // The 30 s rest runs next.
         let phase = app.staticTexts["intervalRunner.phase"]
         let deadline = Date().addingTimeInterval(4)
-        while phase.label != "REST", Date() < deadline { usleep(200_000) }
-        XCTAssertEqual(phase.label, "REST")
+        while phase.label != "Rest", Date() < deadline { usleep(200_000) }
+        XCTAssertEqual(phase.label, "Rest")
         XCTAssertTrue(app.staticTexts["intervalRunner.timer"].exists, "rests keep the count-down ring")
 
         app.buttons["intervalRunner.stop"].tap()

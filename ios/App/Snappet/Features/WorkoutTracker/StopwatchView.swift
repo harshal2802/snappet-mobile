@@ -180,22 +180,22 @@ struct StopwatchView: View {
                     Text(SetMeasure.formatDuration(vm.reading.elapsed))
                 }
             }
-            .font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
+            .font(.system(size: 56, weight: .light).monospacedDigit())
             .contentTransition(.numericText())
             .accessibilityIdentifier("stopwatch.elapsed")
 
         case .countDown(let target):
             let remaining = vm.reading.remaining ?? target
             ZStack {
-                Circle().stroke(Color(.systemGray5), lineWidth: 14)
+                Circle().stroke(SnappetColor.hairline, lineWidth: 10)
                 Circle()
                     .trim(from: 0, to: target > 0 ? CGFloat(remaining / target) : 0)
-                    .stroke(SnappetColor.workout, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                    .stroke(SnappetColor.brand, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     // The drain is a quiet linear tick; under Reduce Motion it snaps (the rest timer's rule).
                     .animation(reduceMotion ? nil : .linear(duration: 0.2), value: remaining)
                 Text(SetMeasure.formatDuration(remaining))
-                    .font(.system(size: 48, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 48, weight: .light).monospacedDigit())
                     .contentTransition(.numericText())
             }
             .frame(width: 220, height: 220)
@@ -211,13 +211,16 @@ struct StopwatchView: View {
                 vm.start()
             }
         } label: {
+            // Start = the accent; Stop = a red outline like every timer's Stop (prompt 226).
             Label(vm.isRunning ? "Stop" : "Start", systemImage: vm.isRunning ? "stop.fill" : "play.fill")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(vm.isRunning ? SnappetColor.perfHard : SnappetColor.onBrand)
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(vm.isRunning ? Color.clear : SnappetColor.brand, in: Capsule())
+                .overlay(Capsule().strokeBorder(SnappetColor.perfHard.opacity(vm.isRunning ? 0.6 : 0), lineWidth: 1.5))
+                .contentShape(Capsule())
         }
-        .buttonStyle(.borderedProminent)
-        .tint(vm.isRunning ? .red : SnappetColor.workout)
+        .buttonStyle(.plain)
         .accessibilityIdentifier("stopwatch.toggle")
     }
 }
