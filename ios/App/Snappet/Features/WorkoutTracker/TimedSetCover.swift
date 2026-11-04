@@ -120,7 +120,7 @@ struct TimedSetCover: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("timedSet.cancel")
@@ -144,8 +144,7 @@ struct TimedSetCover: View {
                         editableWeight: $weight)
             }
         }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .snappetPanel()
     }
 
     private func stepper(idBase: String, label: String, value: String,
@@ -176,12 +175,12 @@ struct TimedSetCover: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var heroTimer: some View {
         Text(SetMeasure.formatDuration(vm.reading.elapsed))
-            .font(.system(size: 54, weight: .bold, design: .rounded).monospacedDigit())
+            .font(.system(size: 56, weight: .light).monospacedDigit())
             .foregroundStyle(.white)
             .contentTransition(.numericText())
             .accessibilityIdentifier("timedSet.timer")
@@ -200,7 +199,7 @@ struct TimedSetCover: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.hairline))
         .accessibilityIdentifier("timedSet.hr")
     }
 
@@ -217,10 +216,12 @@ struct TimedSetCover: View {
     /// STOP & LOG: capture the elapsed seconds, commit the set (reps/weight + duration), dismiss.
     private var stopButton: some View {
         Button { stopAndLog() } label: {
-            Text("STOP & LOG")
-                .font(.title3.weight(.bold)).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 64)
-                .background(Color.red, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // A red outline (prompt 226 — the user's call for every timer's Stop).
+            Text("Stop & log")
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.perfHard)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .overlay(Capsule().strokeBorder(SnappetColor.perfHard.opacity(0.6), lineWidth: 1.5))
+                .contentShape(Capsule())
                 .opacity(savingClip ? 0.5 : 1)
         }
         .buttonStyle(.plain)

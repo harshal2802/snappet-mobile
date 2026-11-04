@@ -6,7 +6,7 @@ import HighlightEngine
 /// The **structured interval runner** (Quick Session redesign Phase 6): a dark, glass, full-screen cover
 /// that runs a `.repeaters` / `.tabata` / `.emom` timed exercise off its `IntervalSchedule` — a 3-2-1
 /// lead-in, a big WORK / REST phase label, a draining count-down ring, a "Set i/n · Rep j/m" counter, a
-/// "next ▸ …" preview chip, per-phase color (WORK = `SnappetColor.workout` ember / REST = a muted tint),
+/// "next ▸ …" preview chip, per-phase color (Work = the user's accent / Rest = grey — prompt 226),
 /// and audio + haptic cues. On finish (or STOP) it shows a **capture card** pre-filled with the completed
 /// reps·sets + total time-under-tension (and avg/peak HR if present); "Log set" commits a
 /// `SetLog(durationSec: TUT)` under the exercise — "the timer is the log".
@@ -115,22 +115,9 @@ struct StructuredTimedRunner: View {
 
     // MARK: - Background
 
-    private var phaseBackground: some View {
-        let top: Color
-        let bottom: Color
-        switch vm.state.phase.kind {
-        case .work:
-            top = SnappetColor.workout.opacity(0.42)
-            bottom = Color(red: 0.10, green: 0.04, blue: 0.0)
-        case .rest, .restBetweenSets:
-            top = Color(red: 0.06, green: 0.09, blue: 0.13)
-            bottom = Color.black
-        case .leadIn, .done:
-            top = Color(red: 0.05, green: 0.05, blue: 0.08)
-            bottom = Color.black
-        }
-        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
-    }
+    /// The plain dark background (prompt 226 — was a per-phase orange-brown / blue wash); the phase word and the
+    /// ring carry the phase colour.
+    private var phaseBackground: some View { SnappetColor.paper }
 
     // MARK: - Top row (name · cue toggle)
 
@@ -150,7 +137,7 @@ struct StructuredTimedRunner: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(SnappetColor.surfaceMuted, in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("intervalRunner.cueToggle")
@@ -208,8 +195,8 @@ struct StructuredTimedRunner: View {
         let band = targetBand
         VStack(spacing: 6) {
             Text("\(SetMeasure.formatWeight((kg * 10).rounded() / 10)) kg")
-                .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(band.map { ForceAnalysis.isUnderTarget(kg, band: $0) } == true ? Color.orange : .white)
+                .font(.system(size: 34, weight: .light).monospacedDigit())
+                .foregroundStyle(band.map { ForceAnalysis.isUnderTarget(kg, band: $0) } == true ? SnappetColor.perfModerate : .white)
                 .contentTransition(.numericText())
                 .accessibilityIdentifier("intervalRunner.forceNow")
             if let band, let pct = vm.spec.targetPercentOfMax {
@@ -222,7 +209,7 @@ struct StructuredTimedRunner: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.12))
                     if let band {
-                        Rectangle().fill(Color.green.opacity(0.35))
+                        Rectangle().fill(SnappetColor.perfFresh.opacity(0.35))
                             .frame(width: geo.size.width * (band.upperBound - band.lowerBound) / top)
                             .offset(x: geo.size.width * band.lowerBound / top)
                     }
@@ -253,8 +240,8 @@ struct StructuredTimedRunner: View {
                 }
                 .foregroundStyle(.white)
                 .padding(12)
-                .background(Color.green.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.green.opacity(0.5)))
+                .background(SnappetColor.perfFresh.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.perfFresh.opacity(0.5)))
             }
             .buttonStyle(.plain)
             .disabled(sensor.state == .connecting)
@@ -279,16 +266,17 @@ struct StructuredTimedRunner: View {
             // One-hand protocol: which hand, on every hang (prompt 142, wireframe frame 5B).
             if vm.state.phase.isWork, let hand = vm.state.phase.hand {
                 Label(hand.label, systemImage: "hand.raised.fill")
-                    .font(.title2.weight(.heavy)).tracking(2)
-                    .foregroundStyle(Color(red: 0.16, green: 0.08, blue: 0.02))
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(SnappetColor.onBrand)
                     .padding(.horizontal, 22).padding(.vertical, 8)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(SnappetColor.brand, in: Capsule())
                     .accessibilityIdentifier("intervalRunner.hand")
             }
             droppedBanner
-            // Phase label — READY / WORK / REST, tinted per phase (LOAD TO START while waiting for load).
-            Text(vm.isWaitingForLoad ? "LOAD TO START" : vm.state.phase.label)
-                .font(.system(size: 40, weight: .heavy, design: .rounded))
+            // Phase label — Ready / Work / Rest, tinted per phase (Load to start while waiting for load). Sentence
+            // case since prompt 226 (the model's labels are caps).
+            Text(vm.isWaitingForLoad ? "Load to start" : Self.sentenceCase(vm.state.phase.label))
+                .font(.system(size: 30, weight: .medium))
                 .foregroundStyle(phaseTint)
                 .accessibilityIdentifier("intervalRunner.phase")
 
@@ -302,17 +290,17 @@ struct StructuredTimedRunner: View {
             // Set/rep counter (hidden during lead-in / between-set rest, where there's no live rep).
             if vm.state.repIndex > 0, let hand = vm.state.phase.hand {
                 Text("Set \(vm.state.setIndex)/\(vm.schedule.totalSets) · \(hand == .left ? "Left" : "Right") \(vm.state.repIndex) of \(vm.schedule.repsPerSet)")
-                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .font(.system(size: 16).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.9))
                     .accessibilityIdentifier("intervalRunner.setrep")
             } else if vm.state.repIndex > 0 {
                 Text("Set \(vm.state.setIndex)/\(vm.schedule.totalSets) · Rep \(vm.state.repIndex)/\(vm.schedule.repsPerSet)")
-                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .font(.system(size: 16).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.9))
                     .accessibilityIdentifier("intervalRunner.setrep")
             } else if vm.state.phase.kind == .restBetweenSets {
                 Text("Set \(vm.state.setIndex)/\(vm.schedule.totalSets) done")
-                    .font(.headline.weight(.semibold))
+                    .font(.system(size: 16))
                     .foregroundStyle(.white.opacity(0.9))
                     .accessibilityIdentifier("intervalRunner.setrep")
             }
@@ -327,18 +315,18 @@ struct StructuredTimedRunner: View {
             if vm.state.phase.isRest || vm.state.phase.kind == .leadIn,
                let next = vm.schedule.nextWorkHand(after: vm.state.phase) {
                 Text("Next: \(next.label) hand")
-                    .font(.headline.weight(.bold)).foregroundStyle(.white.opacity(0.85))
+                    .font(.system(size: 16, weight: .medium)).foregroundStyle(.white.opacity(0.85))
                     .accessibilityIdentifier("intervalRunner.nextHand")
             }
             // What you can change mid-run (prompt 143, wireframe frame 3): each chip opens Adjust.
             if vm.spec.mode == .repeaters || vm.spec.mode == .tabata { adjustChips }
             // Next-phase preview chip.
             if let next = vm.state.phase.nextLabel {
-                Label("next ▸ \(next)", systemImage: "arrow.forward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+                Label("next ▸ \(Self.sentenceCase(next))", systemImage: "arrow.forward")
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.textSecondary)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.white.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
                     .accessibilityIdentifier("intervalRunner.next")
             }
 
@@ -346,8 +334,8 @@ struct StructuredTimedRunner: View {
             if let bpm = app.liveWorkout.latestHR { hrChip(bpm) }
 
             if vm.isPaused {
-                Text("PAUSED")
-                    .font(.caption.weight(.bold))
+                Text("Paused")
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.white.opacity(0.6))
             }
         }
@@ -358,7 +346,7 @@ struct StructuredTimedRunner: View {
     private var openRepBody: some View {
         VStack(spacing: 14) {
             Text(SetMeasure.formatDuration(vm.openRepElapsed ?? 0))
-                .font(.system(size: 64, weight: .bold, design: .rounded).monospacedDigit())
+                .font(.system(size: 64, weight: .light).monospacedDigit())
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .accessibilityIdentifier("intervalRunner.repTimer")
@@ -367,11 +355,11 @@ struct StructuredTimedRunner: View {
                 vm.completeOpenRep()
                 Haptics.success()
             } label: {
-                Label("DONE", systemImage: "checkmark")
-                    .font(.title.weight(.heavy))
-                    .foregroundStyle(Color(red: 0.16, green: 0.08, blue: 0.02))
+                Label("Done", systemImage: "checkmark")
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(SnappetColor.onBrand)
                     .frame(maxWidth: .infinity, minHeight: 84)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .background(SnappetColor.brand, in: Capsule())
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
@@ -408,11 +396,10 @@ struct StructuredTimedRunner: View {
                 Text(text).lineLimit(1)
                 Image(systemName: "pencil").font(.caption2).opacity(0.6)
             }
-            .font(.caption.weight(.semibold))
+            .font(.caption)
             .foregroundStyle(.white)
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(.white.opacity(0.14), in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
+            .overlay(Capsule().strokeBorder(SnappetColor.hairline))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -458,15 +445,23 @@ struct StructuredTimedRunner: View {
         .font(.subheadline.monospacedDigit())
         .foregroundStyle(.white)
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.hairline))
         .accessibilityIdentifier("intervalRunner.load")
+    }
+
+    /// "WORK" → "Work", "GET READY" → "Get ready" — the model's caps labels shown in sentence case (prompt 226).
+    static func sentenceCase(_ label: String) -> String {
+        let lower = label.lowercased()
+        return lower.prefix(1).uppercased() + lower.dropFirst()
     }
 
     private var phaseTint: Color {
         switch vm.state.phase.kind {
-        case .work:                    return SnappetColor.workout
-        case .rest, .restBetweenSets:  return Color(red: 0.55, green: 0.74, blue: 0.95)
-        case .leadIn, .done:           return .white
+        case .work:                    return SnappetColor.brand
+        case .rest, .restBetweenSets:  return SnappetColor.textSecondary
+        case .leadIn:                  return .white
+        case .done:                    return SnappetColor.perfFresh
         }
     }
 
@@ -477,15 +472,15 @@ struct StructuredTimedRunner: View {
         let remaining = vm.state.remainingInPhase
         let frac = CGFloat(remaining) / CGFloat(dur)
         return ZStack {
-            Circle().stroke(Color.white.opacity(0.14), lineWidth: 14)
+            Circle().stroke(SnappetColor.hairline, lineWidth: 10)
             Circle()
                 .trim(from: 0, to: max(0, min(1, frac)))
-                .stroke(phaseTint, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                .stroke(phaseTint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(reduceMotion ? nil : .linear(duration: 0.2), value: remaining)
             VStack(spacing: 2) {
                 Text(SetMeasure.formatDuration(Double(remaining)))
-                    .font(.system(size: 52, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 56, weight: .light).monospacedDigit())
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
                     .accessibilityIdentifier("intervalRunner.timer")
@@ -507,7 +502,7 @@ struct StructuredTimedRunner: View {
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.hairline))
         .accessibilityIdentifier("intervalRunner.hr")
     }
 
@@ -530,11 +525,13 @@ struct StructuredTimedRunner: View {
             Button {
                 vm.stopEarly()
             } label: {
-                Text("STOP")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(Color.red, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                // A red outline (user's call, prompt 226): still the destructive one, without shouting.
+                Text("Stop")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(SnappetColor.perfHard)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .overlay(Capsule().strokeBorder(SnappetColor.perfHard.opacity(0.6), lineWidth: 1.5))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("intervalRunner.stop")
@@ -545,10 +542,11 @@ struct StructuredTimedRunner: View {
                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.headline)
+                .font(.system(size: 16))
                 .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -560,11 +558,11 @@ struct StructuredTimedRunner: View {
         let cap = vm.capture
         return VStack(spacing: 16) {
             Text(cap.finishedEarly ? "Stopped" : "Complete")
-                .font(.title2.weight(.bold))
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.white)
             Text(SetMeasure.formatDuration(cap.tut))
-                .font(.system(size: 52, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundStyle(SnappetColor.workout)
+                .font(.system(size: 52, weight: .light).monospacedDigit())
+                .foregroundStyle(SnappetColor.brand)
                 .accessibilityIdentifier("intervalRunner.captureTUT")
 
             VStack(spacing: 8) {
@@ -579,8 +577,7 @@ struct StructuredTimedRunner: View {
                 // Measured force (prompt 145).
                 ForEach(forceSummaryRows, id: \.0) { row in captureRow(row.0, row.1) }
             }
-            .padding(16)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .snappetPanel()
 
             useAsMax
             if vm.hasChanges {
@@ -591,12 +588,8 @@ struct StructuredTimedRunner: View {
                     dismiss()
                 } label: {
                     Label("Log set", systemImage: "checkmark.circle.fill")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 60)
-                        .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("intervalRunner.logSet")
             }
 
@@ -649,10 +642,10 @@ struct StructuredTimedRunner: View {
                 Haptics.success()
             } label: {
                 Text(usedAsMax ? "Saved as your max ✓" : "Use as my max")
-                    .font(.headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color.green.opacity(usedAsMax ? 0.3 : 0.6),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .font(.system(size: 16, weight: .medium)).foregroundStyle(SnappetColor.perfFresh)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .overlay(Capsule().strokeBorder(SnappetColor.perfFresh.opacity(usedAsMax ? 0.3 : 0.6)))
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(usedAsMax)
@@ -664,14 +657,12 @@ struct StructuredTimedRunner: View {
     /// is logged; "Keep" also saves the adjusted protocol for next time, "Just this once" doesn't.
     @ViewBuilder private var keepOrOnce: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("YOU CHANGED").font(.caption.weight(.heavy)).tracking(1).foregroundStyle(.white.opacity(0.6))
+            Text("You changed").snappetLabel()
             ForEach(ProtocolChanges.lines(from: vm.originalSpec, to: vm.spec), id: \.self) { line in
                 Text(line).font(.subheadline).foregroundStyle(.white)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .snappetPanel()
         .accessibilityIdentifier("intervalRunner.changes")
 
         if let onKeep {
@@ -681,22 +672,22 @@ struct StructuredTimedRunner: View {
                 dismiss()
             } label: {
                 Text("Keep for next time")
-                    .font(.title3.weight(.bold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("intervalRunner.keep")
         }
         Button {
             onLog(vm.buildSetLog())
             dismiss()
         } label: {
+            // Log set alone = the filled accent; beside Keep it's the accent outline (prompt 226).
             Text(onKeep == nil ? "Log set" : "Just this once")
-                .font(.headline).foregroundStyle(onKeep == nil ? .white : SnappetColor.workout)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(onKeep == nil ? AnyShapeStyle(SnappetColor.workout) : AnyShapeStyle(.white.opacity(0.12)),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .font(.system(size: 15, weight: onKeep == nil ? .semibold : .regular))
+                .foregroundStyle(onKeep == nil ? SnappetColor.onBrand : SnappetColor.brand)
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(onKeep == nil ? AnyShapeStyle(SnappetColor.brand) : AnyShapeStyle(Color.clear), in: Capsule())
+                .overlay(Capsule().strokeBorder(SnappetColor.brand.opacity(onKeep == nil ? 0 : 0.55)))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(onKeep == nil ? "intervalRunner.logSet" : "intervalRunner.justOnce")

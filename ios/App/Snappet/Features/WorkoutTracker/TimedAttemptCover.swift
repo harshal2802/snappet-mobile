@@ -120,7 +120,7 @@ struct TimedAttemptCover: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("timedAttempt.cancel")
@@ -150,7 +150,7 @@ struct TimedAttemptCover: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.9))
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(.white.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
                 Spacer(minLength: 8)
                 gradePill
             }
@@ -160,17 +160,16 @@ struct TimedAttemptCover: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
         }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .snappetPanel()
     }
 
+    /// The grade as a light number on a neutral tile (prompt 226 — was a Kilter-amber / blue pill).
     private var gradePill: some View {
-        let isBoulder = !climbType.isRoute
-        return Text(gradeLabel ?? "—")
-            .font(.caption.weight(.bold))
+        Text(gradeLabel ?? "—")
+            .font(.system(size: 18, weight: .light))
             .foregroundStyle(.white)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(isBoulder ? SnappetColor.kilter : SnappetColor.budget, in: Capsule())
+            .padding(.horizontal, 10).padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(SnappetColor.hairline))
     }
 
     // MARK: - Hero timer
@@ -180,7 +179,7 @@ struct TimedAttemptCover: View {
     /// stopped to read as a frozen capture.
     private var heroTimer: some View {
         Text(SetMeasure.formatDuration(vm.reading.elapsed))
-            .font(.system(size: 54, weight: .bold, design: .rounded).monospacedDigit())
+            .font(.system(size: 56, weight: .light).monospacedDigit())
             .foregroundStyle(isStopped ? .white.opacity(0.45) : .white)
             .contentTransition(.numericText())
             .accessibilityIdentifier("timedAttempt.timer")
@@ -204,7 +203,7 @@ struct TimedAttemptCover: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.hairline))
         .accessibilityIdentifier("timedAttempt.hr")
     }
 
@@ -242,11 +241,13 @@ struct TimedAttemptCover: View {
 
     private var stopButton: some View {
         Button { stop() } label: {
-            Text("STOP")
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 64)
-                .background(Color.red, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // A red outline (prompt 226 — the user's call for every timer's Stop).
+            Text("Stop")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(SnappetColor.perfHard)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .overlay(Capsule().strokeBorder(SnappetColor.perfHard.opacity(0.6), lineWidth: 1.5))
+                .contentShape(Capsule())
                 .opacity(savingClip ? 0.5 : 1)
         }
         .buttonStyle(.plain)
@@ -291,10 +292,12 @@ struct TimedAttemptCover: View {
                 Image(systemName: outcomeSymbol(status))
                 Text(climbType.statusLabel(status))
             }
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 60)
-            .background(tint.opacity(0.85), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(status == .attempt ? Color.white : tint)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(tint.opacity(status == .attempt ? 0 : 0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(status == .attempt ? SnappetColor.hairline : tint.opacity(0.5)))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("timedAttempt.outcome.\(status.rawValue)")
@@ -309,13 +312,9 @@ struct TimedAttemptCover: View {
         }
     }
 
+    /// The climb meaning colours shared with Kilter and the pager (prompt 226).
     private func outcomeTint(_ status: KilterAscentStatus) -> Color {
-        switch status {
-        case .flash:   return SnappetColor.kilter
-        case .sent:    return SnappetColor.habits
-        case .project: return SnappetColor.workout
-        case .attempt: return Color(white: 0.3)
-        }
+        KilterAscentStyle.color(status)
     }
 
     /// Commit the chosen outcome with the captured duration + any recorded clips, then dismiss. Clears
