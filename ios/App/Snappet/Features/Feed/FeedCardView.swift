@@ -96,7 +96,7 @@ private struct EffortCardView: View {
                 ForEach(payload.zones.filter { $0.seconds > 0 }, id: \.zone) { slice in
                     HStack(spacing: 4) {
                         Circle().fill(SnappetColor.performance(forZone: HeartRateZone(rawValue: slice.zone) ?? .none)).frame(width: 7, height: 7)
-                        Text("Z\(slice.zone)").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
+                        Text("Z\(slice.zone)").font(.caption2.weight(.medium)).foregroundStyle(SnappetColor.textSecondary)
                     }
                 }
             }
@@ -156,7 +156,7 @@ private struct HRTrendCardView: View {
         return GeometryReader { geo in
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(Array(avgs.enumerated()), id: \.offset) { _, v in
-                    RoundedRectangle(cornerRadius: 2).fill(SnappetColor.workout.opacity(0.85))
+                    RoundedRectangle(cornerRadius: 2).fill(SnappetColor.brand.opacity(0.85))
                         .frame(height: 8 + (geo.size.height - 8) * ((v - lo) / range))
                 }
             }
@@ -185,7 +185,7 @@ private struct ClimbSessionCardView: View {
             hero
             StatRibbon(items: [
                 .init(text: "\(payload.totalClimbs) climbs"),
-                .init(text: "\(payload.sends) sends", tint: SnappetColor.kilter, emphasized: true),
+                .init(text: "\(payload.sends) sends", tint: SnappetColor.brand, emphasized: true),
                 .init(text: "\(payload.totalAttempts) tries")
             ])
             if let media, !media.clips.isEmpty {
@@ -199,7 +199,7 @@ private struct ClimbSessionCardView: View {
                 // affordance — tap the card → CardDetail → Media browser.
                 Label("\(payload.clipCount) clip\(payload.clipCount == 1 ? "" : "s") · tap to view",
                       systemImage: "play.rectangle.fill")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.kilter)
+                    .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.brand)
                     .accessibilityIdentifier("feed.card.clips")
             }
         }
@@ -241,14 +241,14 @@ private struct WorkoutSessionCardView: View {
                                accent: display.accent.color)
                 StatRibbon(items: [
                     .init(text: durationText(payload.durationSec)),
-                    .init(text: "\(payload.setCount) splits", tint: SnappetColor.workout, emphasized: true)
+                    .init(text: "\(payload.setCount) splits", tint: SnappetColor.brand, emphasized: true)
                 ])
             } else {
                 DisciplineHero(value: display.hero, caption: display.heroCaption,
                                sublabel: "\(payload.exerciseCount) exercises", accent: display.accent.color)
                 StatRibbon(items: [
                     .init(text: "\(payload.exerciseCount) exercises"),
-                    .init(text: "\(payload.setCount) sets", tint: SnappetColor.workout, emphasized: true),
+                    .init(text: "\(payload.setCount) sets", tint: SnappetColor.brand, emphasized: true),
                     .init(text: durationText(payload.durationSec))
                 ])
             }
@@ -294,36 +294,30 @@ private struct FeedCardHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // A neutral icon tile (prompt 231 — was a discipline-tinted chip); the grade text sits beside it.
             if let badge {
-                HStack(spacing: 4) {
-                    Image(systemName: badge.icon).font(.caption2.weight(.bold))
-                    if !badge.text.isEmpty { Text(badge.text).font(.caption2.weight(.heavy)) }
-                }
-                .foregroundStyle(badge.tint)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(badge.tint.opacity(0.16), in: Capsule())
+                Image(systemName: badge.icon).font(.system(size: 12)).foregroundStyle(SnappetColor.ink)
+                    .frame(width: 26, height: 26)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+            Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+            if let badge, !badge.text.isEmpty {
+                Text(badge.text).font(.caption.weight(.medium)).foregroundStyle(SnappetColor.textSecondary)
+            }
             Spacer(minLength: 4)
             if let trailing {
-                Text(trailing).font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
+                Text(trailing).font(SnappetType.label).foregroundStyle(SnappetColor.textSecondary)
             }
         }
     }
 }
 
 private extension View {
-    /// A Pulse-Pro card with a discipline edge accent on the leading edge.
+    /// The one card (prompt 231 — the discipline edge bar went with the one-accent rule; `accent` is unused now).
     func feedCard(accent: Color) -> some View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)
-            .snappetCard()
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(accent)
-                    .frame(width: 4)
-                    .padding(.vertical, 14)
-            }
+            .snappetPanel()
     }
 }
 

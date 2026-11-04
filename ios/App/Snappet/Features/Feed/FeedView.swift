@@ -161,9 +161,9 @@ struct FeedView: View {
                             dismissPill(current: all)
                         } label: {
                             Label(text, systemImage: "arrow.up.circle.fill")
-                                .font(.caption.weight(.bold))
+                                .font(.caption.weight(.semibold))
                                 .padding(.horizontal, 14).padding(.vertical, 8)
-                                .foregroundStyle(Color.black)
+                                .foregroundStyle(SnappetColor.onBrand)
                                 .background(SnappetColor.brand, in: Capsule())
                                 .shadow(color: SnappetColor.brand.opacity(0.5), radius: 10, y: 4)
                         }
@@ -317,10 +317,8 @@ struct FeedView: View {
                     let on = chip == lens
                     Button { lens = chip; visibleCount = pageSize } label: {
                         Text(chip.label)
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .foregroundStyle(on ? Color.black : SnappetColor.ink)
-                            .background(on ? SnappetColor.kilter : SnappetColor.surfaceMuted, in: Capsule())
+                            .font(.caption)
+                            .snappetPill(selected: on)   // prompt 231 — was a Kilter-amber fill
                     }
                     .accessibilityIdentifier("feed.lens.\(chip.rawValue)")
                 }
@@ -333,7 +331,7 @@ struct FeedView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 44, weight: .semibold)).foregroundStyle(SnappetColor.kilter)
+                .font(.system(size: 44, weight: .light)).foregroundStyle(SnappetColor.textSecondary)
             Text("Your Recap starts with your first session")
                 .font(.headline).multilineTextAlignment(.center)
             Text("Log a Kilter climb or a workout and it shows up here — with PRs, streaks and recaps as you go.")
@@ -451,9 +449,9 @@ private struct StoryCoverPlaceholder: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Image(systemName: icon).font(.subheadline.weight(.bold)).foregroundStyle(accent)
+            Image(systemName: icon).font(.subheadline).foregroundStyle(isNew ? SnappetColor.brand : SnappetColor.textSecondary)
             Spacer(minLength: 0)
-            Text(title).font(.caption.weight(.heavy)).foregroundStyle(SnappetColor.ink).lineLimit(2)
+            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(SnappetColor.ink).lineLimit(2)
             Text("recap").font(.caption2).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(width: 88, height: 116, alignment: .leading)
@@ -461,6 +459,6 @@ private struct StoryCoverPlaceholder: View {
         .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(isNew ? accent : SnappetColor.hairline, lineWidth: isNew ? 2 : 0.5))
+                .strokeBorder(isNew ? SnappetColor.brand : SnappetColor.hairline, lineWidth: isNew ? 1.5 : 1))   // accent, not the old per-period colour
     }
 }

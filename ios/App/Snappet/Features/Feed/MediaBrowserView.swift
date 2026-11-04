@@ -305,9 +305,9 @@ private struct PagedMediaViewer: View {
                     Button { showingShare = true } label: {
                         Label(clipContext != nil ? "Animate" : "Share",
                               systemImage: clipContext != nil ? "wand.and.stars" : "square.and.arrow.up")
-                            .font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.onBrand)
                             .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(SnappetColor.kilter, in: Capsule())
+                            .background(SnappetColor.brand, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("feed.media.share")

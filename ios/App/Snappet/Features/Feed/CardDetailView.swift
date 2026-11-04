@@ -94,7 +94,7 @@ struct CardDetailView: View {
             sectionTitle("Climb-by-climb")
             ForEach(items) { item in
                 HStack(spacing: 10) {
-                    Text("\(item.index + 1)").font(.caption.weight(.bold)).foregroundStyle(SnappetColor.textSecondary).frame(width: 18)
+                    Text("\(item.index + 1)").font(.caption.weight(.medium)).foregroundStyle(SnappetColor.textSecondary).frame(width: 18)
                     Text(item.gradeLabel).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
                     ascentChip(item.status)
                     Spacer()
@@ -219,17 +219,14 @@ struct CardDetailView: View {
     }
 
     private func sectionTitle(_ t: String) -> some View {
-        Text(t.uppercased()).font(.caption.weight(.bold)).tracking(0.5).foregroundStyle(SnappetColor.textSecondary)
+        Text(t).snappetLabel()
     }
 
     private func ascentChip(_ status: KilterAscentStatus) -> some View {
-        let tint: Color = status == .flash ? SnappetColor.kilter
-            : status == .sent ? SnappetColor.performance(forZone: .aerobic)
-            : status == .project ? SnappetColor.performance(forZone: .threshold)
-            : SnappetColor.textSecondary
-        return Text(status.label).font(.caption2.weight(.bold))
+        let tint = KilterAscentStyle.color(status)   // the shared climb meaning colours (prompt 231)
+        return Text(status.label).font(.caption2.weight(.medium))
             .padding(.horizontal, 7).padding(.vertical, 3)
-            .foregroundStyle(tint).background(tint.opacity(0.16), in: Capsule())
+            .foregroundStyle(tint).overlay(Capsule().strokeBorder(tint.opacity(0.55)))
     }
 
     private func minSec(_ s: Double) -> String {

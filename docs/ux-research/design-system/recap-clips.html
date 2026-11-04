@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recap Clips Restyle</title><style>
+:root{--bg:#0A0B0D;--card:#14161A;--muted:#1C1F24;--line:#23262C;--t1:#F2F3F5;--t2:#8C9099;--t3:#5D616B;--accent:#8EA2FF;--ink:#0b1030;--ok:#5BC074;--amb:#E8B04A}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;background:#050506;color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;padding:40px 28px}
+h1{font-size:30px;font-weight:700;margin:0 0 6px}.sub{color:#9aa0aa;max-width:1200px;margin:0 0 24px;font-size:15px}
+.wrap{display:flex;gap:30px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:10px;align-items:center}.cap{font-size:13px;color:#9aa0aa;font-weight:600}
+.device{width:340px;height:736px;border-radius:52px;background:#000;padding:11px;box-shadow:0 0 0 2px #24262b inset;flex:none}
+.screen{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative}
+.shot{width:100%;height:100%;object-fit:cover;object-position:top}
+.bar{display:flex;justify-content:space-between;padding:14px 24px 0;font-size:13px;font-weight:600}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:6px 16px 4px;font-size:14px;color:var(--accent)}
+.nav .ic{display:flex;gap:15px;font-size:15px;color:var(--t2)}
+.sess{margin:2px 14px 6px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--t2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 10px}
+.sess .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}.sess a{color:var(--accent);text-decoration:none}.sess .hr{color:#ff6b7a}
+.boardw{margin:0 14px;border-radius:18px;overflow:hidden;background:#15171b;border:1px solid var(--line);position:relative}
+.pill{position:absolute;top:8px;right:8px;font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(20,22,26,.78);border:1px solid #2b2e35}
+.pill i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.arr{position:absolute;top:45%;width:26px;height:26px;border-radius:50%;background:rgba(20,22,26,.7);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px}
+.under{display:flex;justify-content:space-between;align-items:center;margin:6px 18px 0;font-size:10.5px;color:var(--t2)}
+.legend{display:flex;gap:10px}.legend span{white-space:nowrap}
+.warn{margin:8px 18px 0;font-size:11.5px;color:var(--amb)}
+.hd{padding:10px 18px 0}.hd .t{font-size:21px;font-weight:600;letter-spacing:-.01em}.hd .s{font-size:12px;color:var(--t2);margin-top:2px}
+.tags{display:flex;gap:6px;margin:8px 18px 0;flex-wrap:wrap}.tag{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--t1)}.tag.amb{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden;margin:10px 14px 0}
+.row2{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;margin:10px 14px 0}.row2 .card{margin:0}
+.k{font-size:11px;color:var(--t2);display:flex;justify-content:space-between;align-items:center}
+.chip{font-size:11.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--accent);color:var(--accent)}
+.big{font-size:25px;font-weight:300;letter-spacing:-.02em;margin-top:4px}.big small{font-size:12.5px;color:var(--t2);font-weight:400;margin-left:3px}
+.s{font-size:11.5px;color:var(--t2);margin-top:2px}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}.pills span{font-size:13px;text-align:center;padding:9px 0;border-radius:999px;border:1px solid var(--line)}
+.pills .snd{border-color:rgba(91,192,116,.55);color:var(--ok)}.pills .prj{border-color:rgba(232,176,74,.5);color:var(--amb)}
+.conf{font-size:11.5px;color:var(--ok);margin-top:9px}.conf u{text-decoration:none;color:var(--accent);margin-left:6px}
+.pri{display:block;text-align:center;background:var(--accent);color:var(--ink);font-weight:600;font-size:14px;border-radius:999px;padding:10px 0;margin-top:10px}
+.sec{display:block;text-align:center;border:1px solid var(--line);font-size:13px;border-radius:999px;padding:8px 0;margin-top:8px}
+.links{display:flex;justify-content:space-between;font-size:11.5px;color:var(--accent);margin-top:10px}
+.note{font-size:11.5px;color:var(--t2);margin-top:8px}.note u{text-decoration:none;color:var(--accent)}
+.bars{display:flex;gap:5px;align-items:flex-end;height:50px;margin-top:8px}.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t3)}
+.bars i{width:100%;border-radius:3px;background:var(--line);display:block}.bars .on i{background:var(--accent)}.bars .on{color:var(--t1)}
+.li{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.li.first{border-top:0}
+.ico{width:28px;height:28px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.li b{font-size:13px;font-weight:500;display:block}.li span{font-size:11px;color:var(--t2)}.chev{margin-left:auto;color:var(--t3)}
+.foot{text-align:center;font-size:11px;color:var(--t3);margin-top:10px}
+.tab{position:absolute;left:14px;right:14px;bottom:14px;height:56px;border-radius:30px;background:rgba(30,32,38,.92);border:1px solid #2a2d34;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:var(--t2)}
+.states{width:340px;display:flex;flex-direction:column;gap:10px}.states .card{margin:0}.states .lbl{font-size:11px;color:#9aa0aa;font-weight:600;margin:4px 2px -4px}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:6px;font-size:12px}.seg span{flex:1;text-align:center;padding:6px 0}.seg .on{background:var(--muted)}
+.sel{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:6px}
+table{border-collapse:collapse;font-size:12.5px;color:#c9ccd3;width:100%}td{padding:5px 6px;border-bottom:1px solid #1d1f24;vertical-align:top}td:first-child{color:#fff;white-space:nowrap}
+.notes{flex:1;min-width:420px;max-width:640px}.notes h3{font-size:16px;margin:16px 0 8px;color:#fff}
+.ok{color:#86d79b;font-weight:700}
+.cm{width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--ink);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(142,162,255,.3)}
+
+.seg2{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.search{margin:8px 14px 0;background:var(--muted);border-radius:11px;padding:8px 12px;font-size:13.5px;color:var(--t3)}
+.chips{display:flex;gap:6px;padding:10px 14px 0;white-space:nowrap;overflow:hidden}.c{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line)}.c.on{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.1)}
+.offer{margin:10px 14px 0;display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-size:12.5px}
+.ic2{width:30px;height:30px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.hero{margin:10px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;position:relative;overflow:hidden}
+.strip{display:flex;gap:4px;margin-top:9px}.strip i{flex:1;height:44px;border-radius:7px;background:linear-gradient(160deg,#2c3440,#15171b)}
+.play{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:12px}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 6px;font-size:12px;color:var(--t2)}.sh b{color:var(--t1);font-weight:500;font-size:13.5px}
+.ph{display:flex;align-items:center;gap:10px;padding:2px 16px 8px}.av{width:34px;height:34px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.ph b{font-size:14.5px;font-weight:600}.ph span{font-size:11.5px;color:var(--t2)}
+.media{height:300px;background:linear-gradient(170deg,#2f3a48 0%,#1a1d22 70%);position:relative}
+.hrt{position:absolute;left:12px;bottom:12px;background:rgba(10,11,13,.6);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:5px 8px;font-size:11px}
+.cnt{position:absolute;right:10px;top:10px;font-size:10.5px;background:rgba(10,11,13,.6);padding:2px 7px;border-radius:999px}
+.mute{position:absolute;right:10px;bottom:10px;width:26px;height:26px;border-radius:50%;background:rgba(10,11,13,.6);display:flex;align-items:center;justify-content:center;font-size:11px}
+.acts{display:flex;gap:16px;align-items:center;padding:10px 16px 0;font-size:17px;color:var(--t1)}.acts small{margin-left:auto;font-size:11.5px;color:var(--t2)}
+.pd{padding:6px 16px 0;font-size:13px}.pd .st{font-weight:500}.pd .cap{color:var(--t2);margin-top:2px}.pd .va{color:var(--accent);margin-top:4px;font-size:12.5px}.pd .mt{color:var(--t3);font-size:11px;margin-top:4px}
+.ac{display:flex;gap:6px;margin-top:6px}.ac span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.gtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:8px}.gtiles div{aspect-ratio:3/4;background:linear-gradient(160deg,#2c3440,#15171b);position:relative;font-size:10px}
+.gtiles b{position:absolute;left:5px;bottom:4px;font-weight:500}.gtiles em{position:absolute;right:5px;bottom:4px;font-style:normal;color:var(--t2)}.gtiles u{position:absolute;left:5px;top:4px;text-decoration:none;font-size:9.5px;color:var(--ok)}
+.days{display:flex;gap:2px;margin:8px 14px 0}.days i{flex:1;height:6px;border-radius:2px;background:var(--line)}.days i.on{background:var(--accent)}
+
+.navc{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 6px;font-size:15px}.navc b{font-weight:600}.navc .ic{color:var(--t2);font-size:15px;display:flex;gap:14px}
+.seg4{display:flex;margin:0 14px;background:var(--muted);border-radius:10px;padding:2px;font-size:12px}.seg4 span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg4 .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.dots{display:flex;justify-content:space-between;margin-top:10px;font-size:9.5px;color:var(--t3);text-align:center}.dots div{display:flex;flex-direction:column;align-items:center;gap:3px}.dots i{width:7px;height:7px;border-radius:50%;background:var(--line);display:block}.dots .on i{background:var(--accent)}.dots .td{color:var(--t1)}
+.pills2{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}.pills2 span{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.vb{display:flex;gap:8px;align-items:flex-end;height:64px;margin-top:10px}.vb div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;color:var(--t3)}.vb i{display:block;width:100%;border-radius:3px;background:var(--line)}.vb .on i{background:var(--accent)}
+.r{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}.r.first{border-top:0}.r b{font-size:13.5px;font-weight:500;display:block}.r span{font-size:11px;color:var(--t2)}.r .v{margin-left:auto;font-size:13px;font-weight:500;white-space:nowrap}.r .chev{margin-left:6px;color:var(--t3)}
+.tg{font-size:10px;padding:1px 6px;border:1px solid var(--line);border-radius:999px;color:var(--t2);margin-left:5px;vertical-align:1px}
+
+.seg2b{display:flex;margin:8px 14px 0;background:var(--muted);border-radius:10px;padding:2px;font-size:12.5px}.seg2b span{flex:1;text-align:center;padding:6px 0;color:var(--t2)}.seg2b .on{background:#2a2d34;color:var(--t1);border-radius:8px}
+.lh2{display:flex;justify-content:space-between;padding:12px 18px 2px;font-size:11.5px;color:var(--t2)}.lh2 u{text-decoration:none;color:var(--accent)}
+.lr{display:flex;gap:11px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.lr .ico{width:32px;height:32px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.lr b{font-size:14.5px;font-weight:500;display:block}.lr span{font-size:11.5px;color:var(--t2)}.lr .rt{margin-left:auto;text-align:right;white-space:nowrap}.lr .rt b{font-size:13.5px}.lr .rt span{color:var(--t3);font-size:10.5px}
+.gr{font-size:11px;font-weight:600}
+
+.wk{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;text-align:center;font-size:9.5px;color:var(--t3)}
+.wk i{display:flex;align-items:center;justify-content:center;height:24px;border-radius:7px;background:var(--muted);font-style:normal;font-size:10px;margin-top:3px;color:var(--t2)}
+.wk .done i{background:var(--accent);color:var(--ink)}.wk .plan i{border:1px solid var(--accent);background:transparent;color:var(--accent)}.wk .td{color:var(--t1)}
+.btn2{display:flex;gap:8px;margin-top:12px}.btn2 .pri{margin:0;flex:1}.btn2 .sec{margin:0;padding:9px 14px}
+.secl{padding:14px 18px 4px;font-size:11.5px;color:var(--t2)}
+.sch{font-size:10px;padding:1px 7px;border:1px solid var(--line);border-radius:999px;color:var(--t2);margin-left:6px;vertical-align:1px}
+.ex3{font-size:10.5px;color:var(--t3);margin-top:1px}
+
+.navs{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 6px;font-size:15px}.navs b{font-weight:600}
+.xp{display:flex;gap:12px;align-items:center}.av2{width:46px;height:46px;border-radius:12px;background:radial-gradient(circle at 40% 35%,#9fd3ff,#4a7bd1 70%);flex:none}
+.xp .n{font-size:22px;font-weight:300}.xp .n small{font-size:12px;color:var(--t2);margin-left:3px}
+.meta{padding:10px 18px 0;font-size:12px;color:var(--t2)}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:2px}.trio div{padding:2px 4px}.trio div+div{border-left:1px solid var(--line);padding-left:12px}
+.trio b{display:block;font-size:22px;font-weight:300}.trio span{font-size:10.5px;color:var(--t2)}.trio em{display:block;font-style:normal;font-size:10.5px;color:var(--ok);margin-top:2px}
+.badges{display:flex;gap:8px;margin-top:8px}.badges div{flex:1;border:1px solid var(--line);border-radius:14px;padding:9px 10px;background:var(--card)}.badges b{display:block;font-size:12.5px;font-weight:500;margin-top:3px}.badges span{font-size:10.5px;color:var(--t2)}
+.line2{margin-top:8px;height:58px;position:relative}
+.bar3{height:4px;border-radius:2px;background:var(--line);margin-top:8px;position:relative}.bar3 i{position:absolute;left:0;top:0;bottom:0;width:80%;background:var(--accent);border-radius:2px}
+.cmp b{font-size:14px;font-weight:500}.cmp .d{float:right;font-size:11.5px;color:var(--ok)}.cmp .sc{display:flex;gap:4px;margin-top:7px;flex-wrap:nowrap}.cmp .sc span{white-space:nowrap;font-size:9.5px;padding:2px 6px;border:1px solid var(--line);border-radius:999px;color:var(--t2)}.cmp .sc span.up{color:var(--ok);border-color:rgba(91,192,116,.45)}
+.setrow{display:flex;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:13px}.setrow.first{border-top:0}.setrow .z{margin-left:10px;font-size:10.5px;padding:1px 7px;border-radius:999px}
+.hdr2{display:flex;justify-content:space-between;align-items:center;padding:12px 18px 4px;font-size:13.5px;font-weight:500}.hdr2 span{color:var(--accent);font-size:13px}
+
+.rc{margin:8px 14px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px}
+.rk{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500}.rk .t{width:26px;height:26px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px}
+.rl{font-size:11px;color:var(--t2);margin-top:8px}.rh{font-size:40px;font-weight:200;line-height:1.1}.rs{font-size:12px;color:var(--t2)}
+.ract{display:flex;gap:16px;font-size:12px;color:var(--t2);margin:6px 18px 0}
+.rch{display:flex;gap:6px;margin:10px 14px 0;overflow:hidden}.rch span{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 11px;white-space:nowrap}.rch span.on{border-color:var(--accent);color:var(--accent);background:rgba(142,162,255,.12)}
+.rtiles{display:flex;gap:8px;margin:10px 14px 0}.rtiles>div{width:96px;height:112px;border-radius:16px;background:var(--card);border:1px solid var(--line);padding:9px;display:flex;flex-direction:column;justify-content:space-between}.rtiles>div.on{border-color:var(--accent)}.rtiles b{font-size:13px;font-weight:500}.rtiles span{font-size:10.5px;color:var(--t2)}
+.rrow{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0}.rrow span{color:var(--t2)}
+</style></head><body>
+<h1>Recap tab + Clips leftovers, restyled</h1>
+<p class="sub">While scoping “Clips inner screens” I found the Clips tab is already almost all restyled (#409) — but the <b>Recap</b> tab next to it was never touched: amber / orange tiles and chips, coloured edge bars, tracked caps, heavy glowing numbers, and a bug (a raw exercise id on the Lift PR card). This covers both. Restyle only — every card kind, tile, chip and action stays (checklist). Frames drawn complete (the feed frame is tall).</p>
+<div class="wrap">
+<div class="col"><div class="cap">Today — Recap</div><div class="device"><div class="screen"><img class="shot" src="recap-before-feed.png" alt=""></div></div></div><div class="col"><div class="cap">Restyled — Recap (scrolled)</div><div class="device" style="height:1250px"><div class="screen" style="position:relative"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="display:flex;justify-content:flex-end;padding:4px 16px;color:var(--accent)">▦</div><div style="font-size:28px;font-weight:600;padding:0 16px">Recap</div><div class="rtiles"><div class="on"><span style="color:var(--accent)">✦</span><div><b>This Week</b><br><span>recap</span></div></div><div><span>▦</span><div><b>This Month</b><br><span>recap</span></div></div></div><div class="rch"><span class="on">All</span><span>Climbing</span><span>Strength</span><span>Effort</span><span>Milestones</span></div><div class="rc"><div class="rk"><div class="t">🏋</div>Lift PR</div><div class="rl">Est. 1RM · Barbell Bench Press - Medium Grip</div><div class="rh">81 kg</div><div class="rs">was 78 kg</div></div><div class="ract">♡ React &nbsp; ⌑ Save</div><div class="rc"><div class="rk"><div class="t">🏆</div>New hardest ever</div><div class="rl">New grade</div><div class="rh">6b+/V4</div><div class="rs">your first peak</div></div><div class="ract">♡ React &nbsp; ⌑ Save</div><div class="rc"><div class="rk"><div class="t">▦</div>Streak</div><div class="rl">Days in a row</div><div class="rh">3</div><div class="rs"></div></div><div class="rc"><div class="rk"><div class="t">✓</div>Project sent</div><div class="rl">After 1 session</div><div class="rh">6b+/V4</div><div class="rs">Spicy Pringle</div></div><div class="ract">♡ React &nbsp; ⌑ Save</div><div class="rc"><div class="rk"><div class="t">▦</div>This period</div><div class="rl">Sends · 2026-11</div><div class="rh">1</div><div class="rs"><span style="color:var(--ok)">▲ 1 vs last</span></div></div><div class="tab"><span>Home</span><span>Clips</span><span style="color:var(--accent)">Recap</span><span>Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — Recap, more cards</div><div class="device"><div class="screen"><img class="shot" src="recap-before-feed-2.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Today — card detail</div><div class="device"><div class="screen"><img class="shot" src="recap-before-detail.png" alt=""></div></div></div><div class="col"><div class="cap">Restyled — card detail</div><div class="device" style="height:736px"><div class="screen" style="position:relative"><div class="bar"><span>9:41</span><span>5G ▮</span></div><div style="display:flex;justify-content:space-between;padding:6px 16px"><span style="color:var(--accent)">‹</span><b style="font-weight:600">Session</b><span style="color:var(--accent)">⇪</span></div><div class="rc"><div class="rk"><div class="t">🏋</div>Lift PR</div><div class="rl">Est. 1RM · Barbell Bench Press - Medium Grip</div><div class="rh">81 kg</div><div class="rs">was 78 kg</div></div><div class="ract">♡ React &nbsp; ⌑ Save</div><div class="rc"><div class="rl" style="margin-top:0">Session</div><div style="font-size:14px">3 exercises · 10 sets</div></div><div class="rc"><div class="rl" style="margin-top:0">HR zones · 158 TRIMP</div><div style="display:flex;height:9px;border-radius:5px;overflow:hidden;margin:8px 0"><i style="flex:25;background:#5BC074"></i><i style="flex:40;background:#E8B04A"></i><i style="flex:25;background:#ff6b6b"></i><i style="flex:8;background:#ff4d6b"></i></div><div class="rrow">● Z2 · Easy<span>12m 40s</span></div><div class="rrow">● Z3 · Aerobic<span>20m 5s</span></div><div class="rrow">● Z4 · Threshold<span>13m 0s</span></div><div class="rrow">● Z5 · Max<span>4m 15s</span></div></div><div style="margin:12px 14px 0;text-align:center;border:1px solid rgba(142,162,255,.55);color:var(--accent);border-radius:999px;padding:10px 0;font-size:14px">↗ Open in module</div><div class="tab"><span>Home</span><span>Clips</span><span style="color:var(--accent)">Recap</span><span>Apps</span></div></div></div></div>
+<div class="col"><div class="cap">Today — Clips grid (already restyled; badges only)</div><div class="device"><div class="screen"><img class="shot" src="clips2-before-grid.png" alt=""></div></div></div>
+<div class="col"><div class="cap">Today — caption editor (tags blue → accent)</div><div class="device"><div class="screen"><img class="shot" src="clips2-before-editor.png" alt=""></div></div></div>
+<div class="notes"><h3>Every element → where it lives</h3><table><tr><td><span class="ok">✓</span></td><td>Recap: grid toggle, title, period story tiles (This Week / This Month / This Year — new dot), lens chips (All, Climbing, Strength, Effort, Milestones, Sessions…)</td><td>Selected tile: accent outline (was amber); tile icons neutral (were amber / orange); chips = outline pills (All was an orange fill)</td></tr><tr><td><span class="ok">✓</span></td><td>Recap cards (23 kinds: Lift PR, New hardest ever, Project sent, Streak, This period, Weekly volume, Grade pyramid, Climbing level, HR trend, Recovery, Go gentler, On this day, 90-day trends, Angles, Discipline split, Biggest session, First at grade, Fitness gain, Hardest-effort send, On the board, Progression, Pyramid health, Consistency) + React / Save</td><td>One card style: neutral icon tile (was a discipline-tinted chip), coloured left edge bar removed, sentence-case label (was tracked caps), light hero number (was heavy with a glow), change lines keep green / amber; Save in your accent (was Kilter amber)</td></tr><tr><td><span class="ok">✓</span></td><td>BUG: Lift PR shows the raw catalog id “BARBELL_BENCH_PRESS_-_MEDIUM_GRIP”</td><td>Fixed: the exercise’s real name (catalog exercises had no display name, so the id leaked)</td></tr><tr><td><span class="ok">✓</span></td><td>Grid (Wall) view, day scrubber bar, story player (This Week recap), card detail: hero card, Session, HR zones, clips (media browser), Share, Open in module</td><td>Same card style; detail sections = panels with sentence labels; HR zone colours stay; Open in module accent outline; the story player and share images are output and keep their look</td></tr><tr><td><span class="ok">✓</span></td><td>Clips leftovers: caption editor tags (were blue), “Edited” chip (orange caps), “Baked” chip (caps), grid badges (SENT / ✦ REEL caps, heavy), year label (heavy), media viewer Share (Kilter amber), carousel page dots (amber)</td><td>Tags + Edited in your accent, sentence case; badges sentence case, semibold; year label light; Share ink-on-accent; dots accent. Burned-in HR overlays and the overlay style sheet are output — unchanged</td></tr></table></div>
+</div><div id="asbuilt" style="margin-top:40px;padding-bottom:40px"><h1 style="font-size:22px">As built</h1><div class="wrap"><div class="col"><div class="cap">As built</div><div class="device"><div class="screen"><img class="shot" src="recap-after-feed.png" alt=""></div></div></div><div class="col"><div class="cap">As built</div><div class="device"><div class="screen"><img class="shot" src="recap-after-detail.png" alt=""></div></div></div></div></div></body></html>

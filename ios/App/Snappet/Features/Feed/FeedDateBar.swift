@@ -16,8 +16,8 @@ struct FeedDateBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(label.era.uppercased())
-                .font(.caption2.weight(.heavy)).tracking(1.2)
+            Text(label.era)
+                .font(SnappetType.label.weight(.medium))
                 .foregroundStyle(revealed ? SnappetColor.ink : SnappetColor.textSecondary)
             Spacer(minLength: 0)
             if revealed {
@@ -41,8 +41,7 @@ struct FeedDateBar: View {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         SnappetColor.hairline
-                        LinearGradient(colors: [SnappetColor.kilter, SnappetColor.workout],
-                                       startPoint: .leading, endPoint: .trailing)
+                        SnappetColor.brand
                             .frame(width: g.size.width * max(0, min(1, progress)))
                     }
                 }

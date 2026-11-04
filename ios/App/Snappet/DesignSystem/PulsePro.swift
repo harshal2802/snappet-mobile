@@ -16,6 +16,9 @@ struct DisciplineHero: View {
     var systemImage: String? = nil
     /// The discipline accent (wayfinding). Defaults to the gym-tracker ember.
     var accent: Color = SnappetColor.workout
+    /// `true` = the original heavy rounded numeral + caps caption + halo — kept for share images (output, prompt
+    /// 231). In-app screens use the calm default: a light numeral, a sentence-case caption, no halo.
+    var display: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 56
@@ -24,19 +27,24 @@ struct DisciplineHero: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 if let systemImage {
-                    Image(systemName: systemImage).font(.subheadline.weight(.semibold)).foregroundStyle(accent)
+                    Image(systemName: systemImage).font(.subheadline.weight(.semibold))
+                        .foregroundStyle(display ? accent : SnappetColor.textSecondary)
                 }
-                Text(caption.uppercased())
-                    .font(.caption.weight(.bold)).tracking(0.6)
-                    .foregroundStyle(SnappetColor.textSecondary)
+                if display {
+                    Text(caption.uppercased())
+                        .font(.caption.weight(.bold)).tracking(0.6)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                } else {
+                    Text(caption).font(SnappetType.label).foregroundStyle(SnappetColor.textSecondary)
+                }
             }
             Text(value)
-                .font(.system(size: size, weight: .bold, design: .rounded))
+                .font(display ? .system(size: size, weight: .bold, design: .rounded) : .system(size: size * 0.8, weight: .light))
                 .monospacedDigit().minimumScaleFactor(0.5).lineLimit(1)
                 .foregroundStyle(SnappetColor.ink)
                 .contentTransition(.numericText())
-                // A soft accent halo so the number reads as the focal point (calmer than a filled tile).
-                .shadow(color: accent.opacity(reduceMotion ? 0 : 0.28), radius: 14, x: 0, y: 4)
+                // A soft accent halo on share images only, so the number reads as the focal point.
+                .shadow(color: accent.opacity(reduceMotion || !display ? 0 : 0.28), radius: 14, x: 0, y: 4)
                 .accessibilityLabel("\(value) \(caption)")
             if let sublabel {
                 Text(sublabel).font(.footnote).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)

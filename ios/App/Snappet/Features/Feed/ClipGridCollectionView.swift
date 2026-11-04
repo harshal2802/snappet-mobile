@@ -676,11 +676,11 @@ final class ClipGridCoverCell: UICollectionViewCell {
         titleLabel.accessibilityIdentifier = "clips.grid.cell.title"
         durationLabel.style(font: .systemFont(ofSize: 9, weight: .bold), fg: .white,
                             bg: UIColor.black.withAlphaComponent(0.5), radius: 4)
-        reelBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: UIColor(SnappetColor.onBrand),
+        reelBadge.style(font: .systemFont(ofSize: 9, weight: .semibold), fg: UIColor(SnappetColor.onBrand),
                         bg: UIColor(SnappetColor.reels), radius: nil)
-        reelBadge.text = "✦ REEL"
-        sendBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: .white, bg: .clear, radius: nil)
-        peakBadge.style(font: .systemFont(ofSize: 8, weight: .heavy), fg: UIColor(red: 1, green: 0.55, blue: 0.48, alpha: 1),
+        reelBadge.text = "✦ Reel"
+        sendBadge.style(font: .systemFont(ofSize: 9, weight: .semibold), fg: .white, bg: .clear, radius: nil)
+        peakBadge.style(font: .systemFont(ofSize: 9, weight: .semibold), fg: UIColor(red: 1, green: 0.55, blue: 0.48, alpha: 1),
                         bg: UIColor.black.withAlphaComponent(0.55), radius: nil)
         let small = UIImage.SymbolConfiguration(pointSize: 9, weight: .bold)
         heartView.image = UIImage(systemName: "heart.fill", withConfiguration: small)
@@ -859,7 +859,7 @@ final class ClipGridYearLabelView: UICollectionReusableView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(SnappetColor.paper)
-        yearLabel.font = .systemFont(ofSize: 24, weight: .heavy)
+        yearLabel.font = .systemFont(ofSize: 24, weight: .light)
         yearLabel.textColor = UIColor(SnappetColor.ink)
         yearLabel.accessibilityIdentifier = "clips.grid.year"
         summaryLabel.font = .systemFont(ofSize: 11, weight: .medium)

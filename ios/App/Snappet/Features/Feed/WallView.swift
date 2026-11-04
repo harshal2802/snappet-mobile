@@ -104,7 +104,7 @@ private struct WallTile: View {
         let base = (hero: d.hero, label: d.heroCaption, badge: d.kicker, icon: d.iconName, accent: d.accent.color)
         switch card.payload {
         case .climbSession(let p):
-            var ribbon: [RibbonItem] = [.init(text: "\(p.sends) sends", tint: SnappetColor.kilter, emphasized: true)]
+            var ribbon: [RibbonItem] = [.init(text: "\(p.sends) sends", tint: SnappetColor.brand, emphasized: true)]
             if p.projects > 0 { ribbon.append(.init(text: "\(p.projects) proj")) }
             return (base.hero, "hardest send", p.isPRSession ? "PR session" : "Climb", base.icon, base.accent, ribbon)
         case .workoutSession(let p):
@@ -125,7 +125,7 @@ private struct WallTile: View {
                     [.init(text: p.exerciseName, tint: SnappetColor.brand, emphasized: true)])
         case .onTheBoard(let p):
             var ribbon: [RibbonItem] = []
-            if let g = p.hardestGrade { ribbon.append(.init(text: g, tint: SnappetColor.kilter, emphasized: true)) }
+            if let g = p.hardestGrade { ribbon.append(.init(text: g, tint: SnappetColor.brand, emphasized: true)) }
             return (base.hero, "lit", base.badge, base.icon, base.accent, ribbon)
         case .firstAtGrade(let p):
             return (base.hero, "first at grade", base.badge, base.icon, base.accent,

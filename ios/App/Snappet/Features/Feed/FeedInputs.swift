@@ -24,8 +24,13 @@ extension WorkoutSetInput {
 }
 
 extension WorkoutExerciseInput {
-    static func from(_ ex: SessionExercise) -> WorkoutExerciseInput {
-        WorkoutExerciseInput(exerciseId: ex.exerciseId, disciplineRaw: ex.disciplineRaw, displayName: ex.displayName,
+    @MainActor static func from(_ ex: SessionExercise) -> WorkoutExerciseInput {
+        // A catalog pick stores no display name — resolve it here so Recap never shows the raw id (prompt 231 bug:
+        // "BARBELL_BENCH_PRESS_-_MEDIUM_GRIP" on the Lift PR card).
+        let name: String?
+        if let given = ex.displayName { name = given } else { name = ExerciseCatalog.byID[ex.exerciseId]?.name }
+        return WorkoutExerciseInput(exerciseId: ex.exerciseId, disciplineRaw: ex.disciplineRaw,
+                             displayName: name,
                              skipped: ex.skipped, sets: ex.sets.map(WorkoutSetInput.from))
     }
 }
@@ -52,7 +57,7 @@ extension MediaInput {
 /// Bridges @Model arrays → composed FeedCards. Shared by FeedView (F1) + WallView (F7) so the
 /// derive-on-read pipeline lives in one place.
 enum FeedQuery {
-    static func cards(kilterSessions: [KilterSession], kilterLogs: [KilterLogEntry],
+    @MainActor static func cards(kilterSessions: [KilterSession], kilterLogs: [KilterLogEntry],
                       workoutSessions: [WorkoutSession], litEvents: [KilterLitEvent],
                       sessionMedia: [SessionMedia] = [],
                       window: FeedWindow = .allTime, now: Date) -> [FeedCard] {
@@ -68,7 +73,7 @@ enum FeedQuery {
             window: window,
             kilterSessions: kilterSessions.map(KilterSessionInput.from),
             kilterLogs: logs,
-            workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
+            workoutSessions: workoutSessions.map { WorkoutSessionInput.from($0) },
             kilterLitEvents: litEvents.map(LitEventInput.from),
             mediaCountBySession: mediaCount,
             allTimeStats: allTime, now: now)
@@ -76,8 +81,8 @@ enum FeedQuery {
 }
 
 extension WorkoutSessionInput {
-    static func from(_ w: WorkoutSession) -> WorkoutSessionInput {
+    @MainActor static func from(_ w: WorkoutSession) -> WorkoutSessionInput {
         WorkoutSessionInput(id: w.id, routineName: w.routineName, startedAt: w.startedAt,
-                            completedAt: w.completedAt, exercises: w.exercises.map(WorkoutExerciseInput.from))
+                            completedAt: w.completedAt, exercises: w.exercises.map { WorkoutExerciseInput.from($0) })
     }
 }
