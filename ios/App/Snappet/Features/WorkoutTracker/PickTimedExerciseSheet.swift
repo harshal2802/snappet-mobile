@@ -86,7 +86,7 @@ struct PickTimedExerciseSheet: View {
                     creating = true
                 } label: {
                     Label("Create new timed exercise", systemImage: "plus.circle.fill")
-                        .foregroundStyle(SnappetColor.workout)
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 .accessibilityIdentifier("timed.createNew")
             }
@@ -169,7 +169,7 @@ struct PickTimedExerciseSheet: View {
         .accessibilityIdentifier("timed.pick.\(item.id.uuidString)")
         .swipeActions(edge: .trailing) {
             Button { editingPreset = item } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-                .tint(SnappetColor.workout)
+                .tint(SnappetColor.brand)
         }
         .contextMenu {
             Button { editingPreset = item } label: { Label("Edit preset", systemImage: "slider.horizontal.3") }
@@ -224,10 +224,11 @@ struct PickTimedExerciseSheet: View {
                                spec: TimedExerciseSpec?) -> some View {
         HStack(spacing: 12) {
             Image(systemName: category.symbol)
-                .foregroundStyle(SnappetColor.workout)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.body.weight(.medium)).foregroundStyle(.primary)
+                // Explicit ink: `.primary` inside a List Button resolves to the tint (read as link-blue).
+                Text(name).font(.body.weight(.medium)).foregroundStyle(SnappetColor.ink)
                 Text((spec ?? TimedExerciseSpec(mode: .openCountUp)).summary)
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -272,12 +273,11 @@ struct CreateTimedExerciseForm: View {
             Button {
                 commit()
             } label: {
-                Text(ctaTitle).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                Text(ctaTitle)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .padding(.horizontal).padding(.vertical, 10)
-            .background(.bar)
+            .background(SnappetColor.paper)
             .accessibilityIdentifier("timed.create.add")
         }
         .navigationTitle("New timed exercise")

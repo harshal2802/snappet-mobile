@@ -59,7 +59,7 @@ struct ActivityComparePicker: View {
                 Button { comparing = true } label: {
                     Text(pair == nil ? "Pick \(2 - picked.count) more" : "Compare").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.large)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .disabled(pair == nil)
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(.bar)

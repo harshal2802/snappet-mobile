@@ -92,12 +92,10 @@ struct RoutineImportSheet: View {
                     dismiss()
                 } label: {
                     Label("Add to my routines", systemImage: "plus.circle.fill")
-                        .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.workout)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .padding()
-                .background(.bar)
+                .background(SnappetColor.paper)
                 .accessibilityIdentifier("routine.import.confirm")
             }
             .toolbar {
@@ -118,12 +116,12 @@ struct RoutineImportSheet: View {
             Toggle(isOn: $addSchedule) {
                 Label("Add this schedule", systemImage: "calendar")
             }
-            .tint(SnappetColor.workout)
+            .tint(SnappetColor.brand)
             .accessibilityIdentifier("routine.import.addSchedule")
             if addSchedule {
                 Button { editingSchedule = true } label: {
                     LabeledContent {
-                        Text("Edit").foregroundStyle(SnappetColor.workout)
+                        Text("Edit").foregroundStyle(SnappetColor.brand)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(s.summary()).foregroundStyle(.primary)
@@ -138,7 +136,7 @@ struct RoutineImportSheet: View {
                 .accessibilityIdentifier("routine.import.editSchedule")
                 Toggle("Track in Habits", isOn: Binding(
                     get: { habitLink != .none }, set: { habitLink = $0 ? .newHabit : .none }))
-                    .tint(SnappetColor.workout)
+                    .tint(SnappetColor.brand)
                     .accessibilityIdentifier("routine.import.trackHabit")
             }
         } header: {

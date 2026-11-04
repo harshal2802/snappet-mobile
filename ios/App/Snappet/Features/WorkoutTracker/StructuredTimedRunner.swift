@@ -372,15 +372,26 @@ struct StructuredTimedRunner: View {
 
     private var adjustChips: some View {
         let s = vm.spec
-        return HStack(spacing: 8) {
+        // One centred row when it fits, else two (prompt 227 review): a one-hand protocol's fourth chip truncated
+        // every chip to "+10…" / "Res…".
+        let first = Group {
             adjustChip("scalemass", s.load.map(TimedExerciseSpec.loadText) ?? "Bodyweight", id: "intervalRunner.adjust.load")
             if s.effectiveRepsPerSet > 1 {
                 adjustChip("timer", "Rest \(SetMeasure.formatDuration(Double(s.restSec)))", id: "intervalRunner.adjust.rest")
             }
+        }
+        let second = Group {
             adjustChip("repeat", "\(s.reps) reps", id: "intervalRunner.adjust.reps")
             if let hands = s.handMode {
                 adjustChip("hand.raised", hands == .leftOnly ? "Left" : hands == .rightOnly ? "Right" : "L / R",
                            id: "intervalRunner.adjust.hands")
+            }
+        }
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { first; second }
+            VStack(spacing: 8) {
+                HStack(spacing: 8) { first }
+                HStack(spacing: 8) { second }
             }
         }
         .sheet(isPresented: $adjusting) { adjustSheet }
@@ -393,7 +404,7 @@ struct StructuredTimedRunner: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: symbol)
-                Text(text).lineLimit(1)
+                Text(text).lineLimit(1).fixedSize()
                 Image(systemName: "pencil").font(.caption2).opacity(0.6)
             }
             .font(.caption)

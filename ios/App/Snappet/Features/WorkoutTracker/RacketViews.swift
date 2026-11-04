@@ -185,8 +185,7 @@ struct RacketSetupSheet: View {
                 } label: {
                     Text("Next").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("racket.next")
             }
             .padding(16)
@@ -468,8 +467,7 @@ struct RacketMatchHero: View {
                                           : "\(noun.capitalized) over · enter score")
                     .font(.headline).frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("racket.endUnit")
             if unitStartedAt == nil {
                 Button(action: onStartUnit) {
@@ -524,8 +522,7 @@ struct RacketMatchHero: View {
                 Text(ex.racketRound.flatMap { RacketRounds.next(after: $0) }.map { "Next match · \($0)" } ?? "Next match")
                     .font(.headline).frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("racket.nextMatch")
             Button(action: onFinish) {
                 Text("Done for now").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 42)
@@ -722,8 +719,7 @@ struct RacketScoreSheet: View {
                 Text(isSTB ? "Save super tiebreak" : "Save \(unit.noun) \(unitIndex + 1)")
                     .font(.headline).frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("racket.score.save")
         }
         .padding(20)
@@ -864,8 +860,7 @@ struct RacketDrillHero: View {
             } label: {
                 Text("Log block \(ex.sets.count + 1)").font(.headline).frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("racket.logBlock")
             Button(action: onToggleTimer) {
                 Label(blockStartedAt == nil ? "Time this block" : "Stop timer", systemImage: "stopwatch")

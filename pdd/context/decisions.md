@@ -10485,3 +10485,16 @@ stripes, and the panel read as an opaque slab.
   Rest = grey, Done = green. The orange-brown wash is gone.
 - **Display case is the view's job.** The schedule model keeps "WORK" / "REST" / "GO" (unit-tested). The runner
   shows them in sentence case, and the UI test moved to "Go" / "Rest".
+
+## 2026-11-03 — Design-system reset, step 3f: Gym sheets & pickers (prompt 227)
+
+- **`.primary` inside a List `Button` is the tint.** The timed sheet's row titles rendered link-blue. Restyled rows
+  set `SnappetColor.ink` explicitly.
+- **`DisciplineHero` keeps its heavy caps for now.** It also renders Clips feed cards and share images, which are
+  their own restyle question. The plan screen inlines a light hero instead.
+- **Never a white label on the light accent.** `.borderedProminent` + `.tint(brand)` renders white text, about 2:1
+  on periwinkle. Filled accent buttons use `SnappetWidePrimaryStyle` (`onBrand` ink, dims when disabled). Found in
+  the prompt 227 review sweep; the Gym Tracker is fixed and the other modules follow in their own passes.
+- **Conditional UI is part of every restyle's inventory** (see the memory rule). The sweep found one restyle
+  regression (the unlabelled recent-grades row) and three older issues on the same screens: chip truncation, a
+  contradicting "one session" line, and the contrast above.

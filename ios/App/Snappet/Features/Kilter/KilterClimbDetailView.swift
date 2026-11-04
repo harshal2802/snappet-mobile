@@ -1359,14 +1359,23 @@ private struct KilterDotLabelStyle: LabelStyle {
 }
 
 /// The full-width filled accent button (Light up this climb / Try again / Connect board).
+/// Ink-on-accent (`onBrand`), never white: `.borderedProminent` tinted with the light accents put white text on
+/// periwinkle (~2:1) — prompt 227 review. Dims when disabled, like the system style it replaces.
 struct SnappetWidePrimaryStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(SnappetColor.onBrand)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity)
-            .background(SnappetColor.brand, in: Capsule())
-            .opacity(configuration.isPressed ? 0.8 : 1)
+    func makeBody(configuration: Configuration) -> some View { WideBody(configuration: configuration) }
+
+    private struct WideBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(SnappetColor.onBrand)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity)
+                .background(SnappetColor.brand, in: Capsule())
+                .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.8 : 1)
+        }
     }
 }

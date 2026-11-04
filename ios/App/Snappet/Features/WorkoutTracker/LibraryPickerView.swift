@@ -133,7 +133,7 @@ struct LibraryPickerView: View {
                     HStack {
                         LibraryItemRow(item: item)
                         Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(on ? item.discipline.accent : Color.secondary)
+                            .foregroundStyle(on ? SnappetColor.brand : Color.secondary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -156,18 +156,18 @@ struct LibraryPickerView: View {
     private func symbol(of choice: LibraryPick.Choice) -> (String, Color) {
         switch choice {
         case .catalog(let id):
-            return item(id).map { ($0.symbol, $0.discipline.accent) } ?? ("circle", .secondary)
+            return item(id).map { ($0.symbol, SnappetColor.ink) } ?? ("circle", .secondary)
         case .yours(let key):
-            return source.row(key).map { ($0.discipline.symbol, $0.discipline.accent) } ?? ("circle", .secondary)
+            return source.row(key).map { ($0.discipline.symbol, SnappetColor.ink) } ?? ("circle", .secondary)
         }
     }
 
     private var disciplineChipBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip(nil, label: "All", symbol: "square.grid.2x2", accent: SnappetColor.workout)
+                chip(nil, label: "All", symbol: "square.grid.2x2", accent: SnappetColor.brand)
                 ForEach(disciplines) { d in
-                    chip(d, label: d.label, symbol: d.symbol, accent: d.accent)
+                    chip(d, label: d.label, symbol: d.symbol, accent: SnappetColor.brand)
                 }
             }
             .padding(.vertical, 4)
@@ -273,7 +273,7 @@ private struct LibraryPickerFilterSheet: View {
                     HStack {
                         Text(item[keyPath: label]).foregroundStyle(.primary)
                         Spacer()
-                        if isOn(item) { Image(systemName: "checkmark").foregroundStyle(SnappetColor.workout) }
+                        if isOn(item) { Image(systemName: "checkmark").foregroundStyle(SnappetColor.brand) }
                     }
                 }
             }

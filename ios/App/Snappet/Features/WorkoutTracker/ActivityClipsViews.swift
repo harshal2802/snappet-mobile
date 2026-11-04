@@ -258,7 +258,7 @@ struct ActivityClipsContent: View {
             } label: {
                 Label("Progress reel", systemImage: "sparkles").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("activity.clips.reel")
         }
         .controlSize(.large)
