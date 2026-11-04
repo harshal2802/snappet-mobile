@@ -39,5 +39,6 @@ Restyle an activity's page (`ActivityDashboardView`: Progress / Clips / About). 
 ## Acceptance
 
 - [x] Dark screenshots match the mockup (Progress top, records, About).
-- [ ] Full UI suite, then the unit suite separately.
-- [ ] Device: user on MrRobot.
+- [x] Full UI suite: only the known `525 kg` test failed. Unit suite alone: 2653 green (the first run's runner never
+  started and the re-run passed).
+- [x] Device: user on MrRobot 2026-11-03 ("merge after testing").
