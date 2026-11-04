@@ -709,8 +709,7 @@ struct FreeformPlayerView: View {
                     Text("Finish workout").font(.headline)
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("freeform.finishSession")
                 .padding(.top, 6)
             }
@@ -1074,8 +1073,7 @@ struct FreeformPlayerView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("freeform.addSet")
                 if let last = ex.sets.last {
                     repeatButton(ex, last: last, kind: .duration)
@@ -1112,8 +1110,7 @@ struct FreeformPlayerView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("freeform.logLeg")
             }
         }

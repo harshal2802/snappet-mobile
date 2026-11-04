@@ -163,8 +163,7 @@ struct PlanEditorSheet: View {
             } label: {
                 Text("Set plan").font(.headline).frame(maxWidth: .infinity, minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("freeform.planSave")
             .padding(.horizontal)
         }
@@ -304,8 +303,7 @@ struct StrengthHeroCard: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity, minHeight: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("freeform.quickLog")
             HStack(spacing: 8) {
                 ghostAction("Time this set", symbol: "stopwatch") { onTime(reps, weight, unitSel) }
@@ -758,8 +756,7 @@ struct PlanCompleteNudge: View {
             Button(action: onNext) {
                 Text(nextTitle).font(.headline).frame(maxWidth: .infinity, minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.brand)
+            .buttonStyle(SnappetWidePrimaryStyle())
             .accessibilityIdentifier("freeform.nudgeNext")
             Button(action: onExtraSet) {
                 Label("1 extra set", systemImage: "plus")

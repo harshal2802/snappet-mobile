@@ -547,7 +547,12 @@ struct ActivityDashboardView: View {
                 .accessibilityIdentifier("activity.dashboard.chart")
             } else if let only = d.points.first {
                 Text(only.label).font(.system(size: 28, weight: .light)).monospacedDigit()
-                Text("One session so far — the trend appears after the next.").font(SnappetType.label)
+                // Says why there's no line yet without contradicting the Sessions KPI (prompt 227 review: a board climb
+                // with 3 sessions but 1 send read "One session so far").
+                Text(d.sessionCount <= 1
+                     ? "One session so far — the trend appears after the next."
+                     : "Only 1 of \(d.sessionCount) sessions has a \(d.metric.title.lowercased()) — the trend appears with the next.")
+                    .font(SnappetType.label)
                     .foregroundStyle(SnappetColor.textSecondary)
             }
             if let s = selectedPoint { selectionRow(s) }

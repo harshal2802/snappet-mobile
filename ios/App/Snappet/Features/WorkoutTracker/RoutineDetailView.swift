@@ -96,7 +96,6 @@ struct RoutineDetailView: View {
             .padding(.horizontal).padding(.vertical, 10)
             .background(SnappetColor.paper)
             .disabled(routine.exercises.isEmpty)
-            .opacity(routine.exercises.isEmpty ? 0.5 : 1)
         }
         .toolbar {
             // Share-via-QR (workout-redesign E6) — mirrors KilterClimbDetailView's qrcode toolbar button.
