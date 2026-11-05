@@ -25,7 +25,7 @@ struct PomodoroLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     countdown(context)
-                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .font(.title3.monospacedDigit().weight(.light))
                         .foregroundStyle(tint(context))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -62,9 +62,11 @@ struct PomodoroLiveActivity: Widget {
         context.state.isFocus ? "brain.head.profile" : "cup.and.saucer.fill"
     }
 
-    /// Tomato while focusing, leaf-green on a break — matches the in-app ring.
+    /// The user's accent while focusing, green on a break — matches the in-app ring (prompt 238 / 243).
+    fileprivate static func tint(focus: Bool) -> Color { focus ? WidgetPalette.accentOnDark : WidgetPalette.fresh }
+
     private func tint(_ context: ActivityViewContext<PomodoroActivityAttributes>) -> Color {
-        context.state.isFocus ? .red : .green
+        Self.tint(focus: context.state.isFocus)
     }
 }
 
@@ -72,7 +74,7 @@ struct PomodoroLiveActivity: Widget {
 private struct PomodoroLockScreenView: View {
     let context: ActivityViewContext<PomodoroActivityAttributes>
 
-    private var tint: Color { context.state.isFocus ? .red : .green }
+    private var tint: Color { PomodoroLiveActivity.tint(focus: context.state.isFocus) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -84,7 +86,7 @@ private struct PomodoroLockScreenView: View {
                 Spacer()
                 Text(timerInterval: context.state.phaseStartedAt...context.state.endDate,
                      countsDown: true)
-                    .font(.title2.monospacedDigit().weight(.semibold))
+                    .font(.title2.monospacedDigit().weight(.light))
                     .frame(maxWidth: 80, alignment: .trailing)
             }
             ProgressView(timerInterval: context.state.phaseStartedAt...context.state.endDate,

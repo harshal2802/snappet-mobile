@@ -21,11 +21,11 @@ struct KilterLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label {
-                        timerText(context).font(.title3.monospacedDigit().weight(.semibold))
+                        timerText(context).font(.title3.monospacedDigit().weight(.light))
                     } icon: {
                         Image(systemName: "stopwatch")
                     }
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WidgetPalette.accentOnDark)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     heartLabel(context).font(.title3.monospacedDigit().weight(.semibold))
@@ -46,14 +46,14 @@ struct KilterLiveActivity: Widget {
                 }
             } compactLeading: {
                 Image(systemName: context.state.paused ? "pause.fill" : "stopwatch")
-                    .foregroundStyle(context.state.paused ? .yellow : .green)
+                    .foregroundStyle(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
             } compactTrailing: {
                 timerText(context).font(.caption2.monospacedDigit()).frame(width: 44)
             } minimal: {
                 Image(systemName: context.state.paused ? "pause.fill" : "figure.climbing")
-                    .foregroundStyle(context.state.paused ? .yellow : .green)
+                    .foregroundStyle(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
             }
-            .keylineTint(context.state.paused ? .yellow : .green)
+            .keylineTint(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
         }
     }
 
@@ -90,21 +90,21 @@ private struct KilterLockScreenView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(context.attributes.boardName, systemImage: "figure.climbing")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.green)
+                    .font(.subheadline.weight(.medium)).foregroundStyle(WidgetPalette.accentOnDark)
                     .lineLimit(1)
                 if context.state.paused {
-                    Text("PAUSED")
-                        .font(.caption2.weight(.bold))
+                    Text("Paused")
+                        .font(.caption2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.yellow.opacity(0.25), in: Capsule())
-                        .foregroundStyle(.yellow)
+                        .overlay(Capsule().strokeBorder(WidgetPalette.warn.opacity(0.6), lineWidth: 1))
+                        .foregroundStyle(WidgetPalette.warn)
                 }
                 if context.state.recoveryReady {
                     Label("Recovered", systemImage: "checkmark.circle.fill")
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.green.opacity(0.22), in: Capsule())
-                        .foregroundStyle(.green)
+                        .overlay(Capsule().strokeBorder(WidgetPalette.fresh.opacity(0.6), lineWidth: 1))
+                        .foregroundStyle(WidgetPalette.fresh)
                 }
                 Spacer()
                 Label {
@@ -130,10 +130,10 @@ private struct KilterLockScreenView: View {
                 Spacer()
                 if context.state.paused {
                     Label("Paused", systemImage: "pause.fill")
-                        .font(.headline.weight(.bold)).foregroundStyle(.yellow)
+                        .font(.headline.weight(.medium)).foregroundStyle(WidgetPalette.warn)
                 } else {
                     Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.title.monospacedDigit().weight(.bold))
+                        .font(.title.monospacedDigit().weight(.light))
                         .foregroundStyle(.primary)
                 }
             }

@@ -10608,3 +10608,12 @@ stripes, and the panel read as an opaque slab.
   - Budget's donut slices keep categorical colours.
 - **A primary button inside `ContentUnavailableView` actions needs a fixed width.** With only `maxWidth`, the
   full-width style collapsed to its label.
+
+## 2026-11-05 — Widgets read the accent from the App Group (prompt 243)
+
+- **The app mirrors the picked accent into the App Group.** The widget extension can't read the app's
+  `@AppStorage`, so `SnappetAccent` moved to `Shared/`. The theme modifier writes it to the group defaults and calls
+  `reloadAllTimelines()` only when the value changed. Live Activities read it at render time, so a running one
+  updates on its next push.
+- **Dark surfaces use the accent's dark value.** Live Activities sit on a translucent black tint, and the Buddy /
+  Household widgets on a fixed dark ground. The light-mode accent would be too dark there.

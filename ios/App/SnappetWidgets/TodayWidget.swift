@@ -95,6 +95,7 @@ struct TodayWidgetView: View {
                 Link(destination: URL(string: "snappet://pomodoro/start")!) {
                     Label("Start focus", systemImage: "play.fill")
                         .font(.caption.weight(.semibold))
+                        .foregroundStyle(WidgetPalette.accent)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -120,9 +121,10 @@ struct TodayWidgetView: View {
     // MARK: shared
 
     private var streakBadge: some View {
+        // The user's accent, a light number (prompt 243; was a bold orange).
         Label("\(snap.dayStreak)", systemImage: "flame.fill")
-            .font(.title2.weight(.bold))
-            .foregroundStyle(snap.dayStreak > 0 ? .orange : .secondary)
+            .font(.title2.weight(.light))
+            .foregroundStyle(snap.dayStreak > 0 ? WidgetPalette.accent : .secondary)
             .accessibilityLabel(snap.dayStreak == 1 ? "1 day streak" : "\(snap.dayStreak) day streak")
     }
 
@@ -141,7 +143,7 @@ private struct HabitCheckRow: View {
         HStack(spacing: 6) {
             Button(intent: ToggleHabitIntent(habitID: habit.id.uuidString)) {
                 Image(systemName: habit.doneToday ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(habit.doneToday ? .green : .secondary)
+                    .foregroundStyle(habit.doneToday ? WidgetPalette.accent : .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(habit.doneToday ? "Uncheck \(habit.name)" : "Check off \(habit.name)")
