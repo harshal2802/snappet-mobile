@@ -23,7 +23,9 @@ struct SpendByCategoryChart: View {
     var body: some View {
         Chart(slices) { slice in
             SectorMark(
-                angle: .value("Spent", drawn || reduceMotion ? slice.amount : 0),
+                // Draw-in starts each slice at a sliver of its share, never 0: an all-zero SectorMark total
+                // makes Charts divide by zero and trap (NaN → Int).
+                angle: .value("Spent", drawn || reduceMotion ? slice.amount : slice.amount * 0.001),
                 innerRadius: .ratio(0.6),
                 angularInset: 1.5
             )
@@ -31,7 +33,6 @@ struct SpendByCategoryChart: View {
             .foregroundStyle(by: .value("Category", slice.name))
         }
         .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
-        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: total)
         .onAppear { drawn = true }
         .onDisappear { drawn = false }
         .chartLegend(position: .bottom, alignment: .center, spacing: 8)
