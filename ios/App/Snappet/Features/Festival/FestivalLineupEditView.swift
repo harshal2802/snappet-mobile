@@ -19,6 +19,8 @@ struct FestivalLineupEditView: View {
     @State private var editing: FestivalSetEditSheet.Request?
     @State private var renaming = false
     @State private var newName = ""
+    @State private var newLocation = ""
+    @State private var addingDay = false
     @State private var confirmingReset = false
 
     var body: some View {
@@ -42,8 +44,14 @@ struct FestivalLineupEditView: View {
                     Menu {
                         Button {
                             newName = lineup.name
+                            newLocation = pack?.location ?? lineup.location
                             renaming = true
-                        } label: { Label("Rename festival", systemImage: "pencil") }
+                        } label: { Label("Name & location", systemImage: "pencil") }
+                        .accessibilityIdentifier("festival.edit.rename")
+                        Button {
+                            addingDay = true
+                        } label: { Label("Add a day", systemImage: "calendar.badge.plus") }
+                        .accessibilityIdentifier("festival.edit.addDay")
                         if let pack {
                             Button {
                                 editing = .init(setID: nil, stage: "",
@@ -60,14 +68,25 @@ struct FestivalLineupEditView: View {
                     .accessibilityIdentifier("festival.edit.menu")
                 }
             }
-            .alert("Rename festival", isPresented: $renaming) {
+            .alert("Name & location", isPresented: $renaming) {
                 TextField("Name", text: $newName)
+                TextField("Location", text: $newLocation)
                 Button("Cancel", role: .cancel) {}
                 Button("Save") {
                     let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty else { return }
+                    let location = newLocation.trimmingCharacters(in: .whitespacesAndNewlines)
                     mutate { edits, original in
-                        edits.name = name == original.name ? nil : name
+                        if !name.isEmpty { edits.name = name == original.name ? nil : name }
+                        edits.location = location == original.location ? nil : location
+                    }
+                }
+            }
+            .sheet(isPresented: $addingDay) {
+                if let pack {
+                    FestivalAddDaySheet(pack: pack) { date in
+                        mutate { edits, _ in
+                            if !edits.addedDays.contains(date) { edits.addedDays.append(date) }
+                        }
                     }
                 }
             }
@@ -153,15 +172,30 @@ struct FestivalLineupEditView: View {
                 }
                 if day.stages.isEmpty {
                     Section("\(label)") {
-                        Text("No sets this day").foregroundStyle(SnappetColor.textSecondary)
+                        Text("No sets this day yet").foregroundStyle(SnappetColor.textSecondary)
+                        Button {
+                            editing = .init(setID: nil, stage: pack.days.flatMap { $0.stages.map(\.name) }.first ?? "",
+                                            day: day.date)
+                        } label: {
+                            Label("Add a set", systemImage: "plus")
+                        }
+                        .tint(SnappetColor.brand)
+                        .accessibilityIdentifier("festival.edit.add.\(day.date)")
+                        if lineup.edits.addedDays.contains(day.date) {
+                            Button("Remove this day", role: .destructive) {
+                                mutate { edits, _ in edits.addedDays.removeAll { $0 == day.date } }
+                            }
+                            .accessibilityIdentifier("festival.edit.removeDay.\(day.date)")
+                        }
                     }
                 }
             }
             Section {
                 EmptyView()
             } footer: {
-                Text("Edits stay on this phone, on top of the lineup as installed. Reinstalling a newer "
-                     + "version keeps them. ⋯ → Reset all edits puts everything back.")
+                Text("Edits sit on top of the lineup as installed: reinstalling a newer version keeps them, "
+                     + "sharing the lineup or your plan sends them along, and ⋯ → Reset all edits puts "
+                     + "everything back.")
             }
         }
     }
@@ -209,6 +243,49 @@ struct FestivalLineupEditView: View {
         lineup.edits = edits
         try? context.save()
         pack = lineup.pack()
+    }
+}
+
+// MARK: - Add a day
+
+/// Pick a date to add as a festival day (prompt 232) — the day after the last one by default.
+struct FestivalAddDaySheet: View {
+    let pack: FestivalPack
+    var onAdd: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Day", selection: FestivalPosterDraftView.dayBinding($date),
+                           displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                if pack.days.contains(where: { $0.date == date }) {
+                    Text("That day is already in the lineup.")
+                        .font(.footnote)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+            }
+            .navigationTitle("Add a day")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { onAdd(date); dismiss() }
+                        .disabled(date.isEmpty || pack.days.contains { $0.date == date })
+                        .accessibilityIdentifier("festival.addDay.save")
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear {
+            var draft = FestivalDraft(name: "", location: "", startDate: pack.startDate,
+                                      endDate: pack.endDate, utcOffsetSeconds: 0, days: [])
+            draft.days = pack.days.map { .init(date: $0.date, stages: []) }
+            date = draft.nextDayDate
+        }
     }
 }
 

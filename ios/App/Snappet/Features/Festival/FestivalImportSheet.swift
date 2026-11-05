@@ -19,7 +19,7 @@ struct FestivalImportSheet: View {
     }
 
     /// The carried set count (payload forms) — the "· N sets" line.
-    private var setCount: Int? { shared.carriedPack?.allSets.count }
+    private var setCount: Int? { shared.displayPack?.allSets.count }
 
     var body: some View {
         NavigationStack {
@@ -102,7 +102,7 @@ struct FestivalImportSheet: View {
     private var ctaLabel: String {
         switch action {
         case .applyPlan(let packID, _):
-            let name = shared.carriedPack?.name ?? packID
+            let name = shared.displayPack?.name ?? packID
             return "Add to my \(name)"
         case .fetchInstall:
             return "Get this lineup"

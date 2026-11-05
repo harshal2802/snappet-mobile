@@ -10546,3 +10546,10 @@ stripes, and the panel read as an opaque slab.
   A set already playing at the delay time keeps its start and ends later.
 - **A forgotten night ends itself.** A night left between sets for 6 h is finished, back-dated to when it went quiet.
   A night like the Halloween one, never ended, can't run for days. A break the user chose is never auto-ended.
+- **Shares send the original pack plus the edits, never an edited pack.** An edited pack re-stamps to new set ids, so a
+  shared plan would star nothing on a friend's copy. The receiver merges the edits, with theirs winning per set.
+  Lineups made on a phone (`poster-` / `mine-` ids) are never shared as an install link, because nothing is hosted at it.
+- **Create a lineup reuses the poster review form** in a `.manual` draft mode rather than adding a second editor. One
+  form means one validator gate and one set of fixes (date pickers, time zone, the duplicate-day "Add a day" bug).
+  Hand-made lineups get a minted `mine-` id, not a content-derived one, so two lineups with the same name never
+  replace each other.

@@ -33,11 +33,67 @@ struct FestivalLineupEdits: Codable, Equatable, Sendable {
     }
 
     var name: String?
+    var location: String?
     var changes: [UUID: SetChange] = [:]
     var removed: Set<UUID> = []
     var added: [AddedSet] = []
+    /// Poster days the user added (`yyyy-MM-dd`) — a lineup created by hand grows a day at a time.
+    var addedDays: [String] = []
 
-    var isEmpty: Bool { name == nil && changes.isEmpty && removed.isEmpty && added.isEmpty }
+    var isEmpty: Bool {
+        name == nil && location == nil && changes.isEmpty && removed.isEmpty && added.isEmpty
+            && addedDays.isEmpty
+    }
+
+    init() {}
+
+    // Every key optional on decode, so a blob written before a field existed (or by an older app on
+    // a friend's phone) still reads.
+    private enum CodingKeys: String, CodingKey { case name, location, changes, removed, added, addedDays }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
+        changes = try c.decodeIfPresent([UUID: SetChange].self, forKey: .changes) ?? [:]
+        removed = try c.decodeIfPresent(Set<UUID>.self, forKey: .removed) ?? []
+        added = try c.decodeIfPresent([AddedSet].self, forKey: .added) ?? []
+        addedDays = try c.decodeIfPresent([String].self, forKey: .addedDays) ?? []
+    }
+
+    /// `other` layered over these edits (a friend's shared edits onto mine): their field changes win
+    /// per set, removals and additions union.
+    func merging(_ other: FestivalLineupEdits) -> FestivalLineupEdits {
+        var out = self
+        if let n = other.name { out.name = n }
+        if let l = other.location { out.location = l }
+        for (id, change) in other.changes {
+            var mine = out.changes[id] ?? SetChange()
+            if let v = change.artist { mine.artist = v }
+            if let v = change.stage { mine.stage = v }
+            if let v = change.start { mine.start = v }
+            if let v = change.end { mine.end = v }
+            out.changes[id] = mine
+        }
+        out.removed.formUnion(other.removed)
+        for a in other.added {
+            if let i = out.added.firstIndex(where: { $0.id == a.id }) { out.added[i] = a } else { out.added.append(a) }
+        }
+        for d in other.addedDays where !out.addedDays.contains(d) { out.addedDays.append(d) }
+        return out
+    }
+
+    /// Only what a shared PLAN of `setIDs` needs: the changes / additions of those sets, plus the
+    /// festival-level fields and added days.
+    func restricted(to setIDs: Set<UUID>) -> FestivalLineupEdits {
+        var out = FestivalLineupEdits()
+        out.name = name
+        out.location = location
+        out.changes = changes.filter { setIDs.contains($0.key) }
+        out.added = added.filter { setIDs.contains($0.id) }
+        out.addedDays = addedDays
+        return out
+    }
 
     // MARK: Storage
 
@@ -59,6 +115,18 @@ struct FestivalLineupEdits: Codable, Equatable, Sendable {
         guard !isEmpty else { return original }
         var pack = original
         if let name, !name.isEmpty { pack.name = name }
+        if let location { pack.location = location }
+        // Added days join the poster's, in date order; the festival's range widens to cover them.
+        var base = original
+        for date in addedDays where !base.days.contains(where: { $0.date == date }) {
+            base.days.append(FestivalDay(date: date, stages: []))
+        }
+        base.days.sort { $0.date < $1.date }
+        if let first = base.days.first?.date, first < pack.startDate || pack.startDate.isEmpty {
+            pack.startDate = first
+        }
+        if let last = base.days.last?.date, last > pack.endDate { pack.endDate = last }
+        let original = base
 
         var entries: [(day: String, set: FestivalSet)] = []
         for day in original.days {

@@ -133,3 +133,133 @@ final class FestivalLineupEditsTests: XCTestCase {
         XCTAssertEqual(FestivalLineupEdits.shiftLabel(4500), "+1 h 15")
     }
 }
+
+/// Prompt 232 completeness: added days, location, merge/restrict for sharing, old-blob decode.
+final class FestivalLineupEditsSharingTests: XCTestCase {
+
+    private let pack = FestivalFixtures.glastonbury()
+    private func set(_ name: String) -> FestivalSet { FestivalFixtures.set(named: name, in: pack) }
+
+    func testAddedDayWidensTheFestivalAndTakesSets() throws {
+        var edits = FestivalLineupEdits()
+        edits.addedDays = ["2026-06-29"]
+        edits.location = "Pilton"
+        let start = FestivalFixtures.date("2026-06-29T20:00")
+        let id = edits.add(artist: "Encore", stage: "Pyramid Stage", start: start, end: start + 3600,
+                           festivalID: pack.id)
+        let edited = edits.apply(to: pack)
+        XCTAssertEqual(edited.days.map(\.date), ["2026-06-27", "2026-06-28", "2026-06-29"])
+        XCTAssertEqual(edited.endDate, "2026-06-29")
+        XCTAssertEqual(edited.location, "Pilton")
+        let monday = try XCTUnwrap(edited.days.last)
+        XCTAssertEqual(monday.allSets.map(\.id), [id], "a set on an added day files under it")
+    }
+
+    func testAnEmptyAddedDayStillShows() {
+        var edits = FestivalLineupEdits()
+        edits.addedDays = ["2026-06-26"]
+        let edited = edits.apply(to: pack)
+        XCTAssertEqual(edited.days.first?.date, "2026-06-26")
+        XCTAssertEqual(edited.startDate, "2026-06-26")
+        XCTAssertTrue(edited.days.first?.stages.isEmpty ?? false)
+    }
+
+    func testOldBlobsWithoutNewKeysStillDecode() throws {
+        let fred = set("Fred again..")
+        let json = #"{"changes":[],"removed":["\#(fred.id.uuidString)"],"added":[]}"#
+        let edits = FestivalLineupEdits.decode(Data(json.utf8))
+        XCTAssertEqual(edits.removed, [fred.id])
+        XCTAssertTrue(edits.addedDays.isEmpty)
+        XCTAssertNil(edits.location)
+    }
+
+    func testMergingLetsTheirChangesWinAndUnionsTheRest() {
+        let fred = set("Fred again..")
+        var mine = FestivalLineupEdits()
+        mine.update(fred.id, artist: "Fred", start: fred.start + 600, original: pack)
+        mine.remove(set("Little Simz").id)
+        var theirs = FestivalLineupEdits()
+        theirs.update(fred.id, start: fred.start + 1800, original: pack)
+        theirs.remove(set("Jayda G").id)
+        let merged = mine.merging(theirs)
+        XCTAssertEqual(merged.changes[fred.id]?.start, fred.start + 1800, "theirs wins per field")
+        XCTAssertEqual(merged.changes[fred.id]?.artist, "Fred", "fields they didn't touch keep mine")
+        XCTAssertEqual(merged.removed, [set("Little Simz").id, set("Jayda G").id])
+    }
+
+    func testRestrictedKeepsOnlyThePlansSets() {
+        let fred = set("Fred again.."), simz = set("Little Simz")
+        var edits = FestivalLineupEdits()
+        edits.update(fred.id, start: fred.start + 600, original: pack)
+        edits.update(simz.id, start: simz.start + 600, original: pack)
+        let start = FestivalFixtures.date("2026-06-27T18:00")
+        let guest = edits.add(artist: "Guest", stage: "Park", start: start, end: start + 3600,
+                              festivalID: pack.id)
+        _ = edits.add(artist: "Other", stage: "Park", start: start + 3600, end: start + 7200,
+                      festivalID: pack.id)
+        let r = edits.restricted(to: [fred.id, guest])
+        XCTAssertEqual(Set(r.changes.keys), [fred.id])
+        XCTAssertEqual(r.added.map(\.id), [guest])
+    }
+
+    // MARK: Sharing
+
+    func testSharedLineupCarriesEditsAndKeepsOriginalIDs() throws {
+        let fred = set("Fred again..")
+        var edits = FestivalLineupEdits()
+        edits.update(fred.id, start: fred.start + 1800, end: fred.end + 1800, original: pack)
+        let shared = SharedLineup.plan(from: pack, starredSetIDs: [fred.id], title: "My plan", edits: edits)
+        let decoded = try XCTUnwrap(SharedLineup(decoding: shared.encoded))
+        XCTAssertEqual(decoded.carriedPack?.allSets.map(\.id), [fred.id],
+                       "the ORIGINAL pack travels, so ids match everyone's copy")
+        XCTAssertEqual(decoded.edits, edits.restricted(to: [fred.id]))
+        XCTAssertEqual(decoded.displayPack?.setsByID[fred.id]?.start, fred.start + 1800,
+                       "the receiver sees the delay")
+    }
+
+    func testCodesWithoutEditsStillDecode() throws {
+        let shared = SharedLineup.lineup(from: pack, title: pack.name)
+        let decoded = try XCTUnwrap(SharedLineup(decoding: shared.encoded))
+        XCTAssertNil(decoded.edits)
+        XCTAssertEqual(decoded.displayPack, decoded.carriedPack)
+    }
+
+    func testALocalLineupNeverFallsBackToAnInstallLink() {
+        let big = FestivalFixtures.bigFestival(days: 3, stagesPerDay: 8, setsPerStage: 18)
+        var local = big
+        local.id = "mine-abc123def456"
+        XCTAssertFalse(SharedLineup.lineup(from: local, title: "Mine").fitsInScannableQR)
+        guard case .payload = SharedLineup.lineup(from: local, title: "Mine").scannableForm().content else {
+            return XCTFail("a hand-made lineup has no host — it must travel whole")
+        }
+        guard case .installLink = SharedLineup.lineup(from: big, title: "Hosted").scannableForm().content else {
+            return XCTFail("a hosted lineup still falls back to its install link")
+        }
+    }
+
+    // MARK: Create a lineup
+
+    func testBlankDraftIsADatedOneStageStarterWithAUniqueID() {
+        let tz = TimeZone(secondsFromGMT: 3600)!
+        let now = FestivalFixtures.date("2026-06-27T12:00")
+        let a = FestivalDraft.blank(now: now, timeZone: tz)
+        let b = FestivalDraft.blank(now: now, timeZone: tz)
+        XCTAssertEqual(a.startDate, "2026-06-27")
+        XCTAssertEqual(a.utcOffsetSeconds, 3600)
+        XCTAssertEqual(a.source, .manual)
+        XCTAssertEqual(a.days.first?.stages.first?.sets.count, 1, "an empty row ready to type into")
+        XCTAssertTrue(a.localPackID.hasPrefix("mine-"))
+        XCTAssertNotEqual(a.localPackID, b.localPackID, "two lineups you create never replace each other")
+    }
+
+    func testFilledBlankDraftValidatesAndNextDayNeverDuplicates() throws {
+        var draft = FestivalDraft.blank(now: FestivalFixtures.date("2026-06-27T12:00"),
+                                        timeZone: TimeZone(secondsFromGMT: 3600)!)
+        draft.name = "Backyard Fest"
+        draft.days[0].stages[0].sets[0] = .init(artist: "DJ Me", start: "22:00", end: "01:00")
+        XCTAssertNoThrow(try FestivalPackValidator.validate(draft.toPack()))
+        XCTAssertEqual(draft.nextDayDate, "2026-06-28")
+        draft.days.append(.init(date: draft.nextDayDate, stages: []))
+        XCTAssertEqual(draft.nextDayDate, "2026-06-29")
+    }
+}

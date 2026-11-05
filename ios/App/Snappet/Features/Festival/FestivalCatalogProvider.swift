@@ -268,7 +268,8 @@ final class FestivalLineupInstaller {
     /// (replace-on-reinstall by `packID`, exactly like `install(using:)`). Returns the row, or nil on a
     /// validation failure (with `phase == .failed`). Synchronous — there's no I/O.
     @discardableResult
-    func install(pack: FestivalPack, sourceLabel: String, into context: ModelContext) -> FestivalLineup? {
+    func install(pack: FestivalPack, sourceLabel: String, into context: ModelContext,
+                 edits incoming: FestivalLineupEdits? = nil) -> FestivalLineup? {
         do {
             let validated = try FestivalPackValidator.validate(pack)
             let data = try pack.fpackData()
@@ -283,9 +284,10 @@ final class FestivalLineupInstaller {
                 predicate: #Predicate { $0.packID == packID }))) ?? []
             // The user's edits ride a reinstall (prompt 232): they're keyed by set id, so a revised
             // lineup keeps every edit whose set is still there, and the rest simply stop applying.
-            if let carried = existing.first(where: { !$0.editsData.isEmpty }) {
-                lineup.edits = carried.edits
-            }
+            // A friend's shared edits layer over mine (prompt 232) — theirs win per set.
+            let mine = existing.first(where: { !$0.editsData.isEmpty })?.edits ?? FestivalLineupEdits()
+            let combined = incoming.map { mine.merging($0) } ?? mine
+            if !combined.isEmpty { lineup.edits = combined }
             existing.forEach { context.delete($0) }
             context.insert(lineup)
             try context.save()

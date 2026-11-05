@@ -502,6 +502,50 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Sunset Sounds 2026"].waitForExistence(timeout: 6),
                       "a valid poster draft installs as a lineup")
     }
+
+    // MARK: - Flow I · create a lineup by hand (prompt 232)
+
+    func testCreateALineupFromScratchThenAddADay() {
+        let app = launch(["-uiTestFreshStore"])
+        openFestival(app)
+
+        let create = app.buttons["festival.create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 6), "the empty state should offer Create a lineup")
+        create.tap()
+
+        let name = app.textFields["festival.poster.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 6), "Create opens a blank lineup form")
+        XCTAssertTrue(app.navigationBars["New lineup"].exists)
+        name.tap(); name.typeText("Backyard Fest")
+        let artist = app.textFields["Artist"].firstMatch
+        artist.tap(); artist.typeText("DJ Me")
+        let times = app.textFields.matching(NSPredicate(format: "placeholderValue == 'HH:mm'"))
+        times.element(boundBy: 0).tap(); times.element(boundBy: 0).typeText("22:00")
+        times.element(boundBy: 1).tap(); times.element(boundBy: 1).typeText("23:30")
+        snap("festival-create")
+        app.buttons["festival.poster.install"].tap()
+
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Backyard Fest'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "a filled-in lineup installs")
+        row.tap()
+        XCTAssertTrue(app.buttons["festival.set.DJ Me"].waitForExistence(timeout: 6),
+                      "the created set is on the schedule")
+
+        // Grow it: Edit lineup → Add a day.
+        app.buttons["festival.share.menu"].tap()
+        app.buttons["festival.editLineup"].tap()
+        let menu = app.buttons["festival.edit.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 6))
+        menu.tap()
+        app.buttons["festival.edit.addDay"].tap()
+        let add = app.buttons["festival.addDay.save"]
+        XCTAssertTrue(add.waitForExistence(timeout: 6))
+        add.tap()
+        XCTAssertTrue(app.staticTexts["No sets this day yet"].waitForExistence(timeout: 6),
+                      "the new day appears, ready for sets")
+        snap("festival-create-add-day")
+        app.buttons["festival.edit.done"].tap()
+    }
 }
 
 /// Mirrors of the app-side seed arguments (the UI-test target can't import the app module's enums).

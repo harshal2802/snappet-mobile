@@ -83,14 +83,42 @@ the night and wouldn't let them say they'd moved. Their asks, in their words:
   - The timeline uses greedy lanes (`Block.lane`, `Layout.laneCount`).
   - The CSV export reads the edited pack.
 
+## Follow-up in the same PR: Create a lineup + completeness (user: "why do i not see create a lineup option?" →
+"implement it and be smart on completeness")
+
+- **Create a lineup:** a new entry on the Festival home list, the empty state and the getting-started checklist ("Create
+  my own"). It opens the poster review form in create mode:
+  - The form is titled "New lineup" and pre-fills today's date, the phone's UTC offset, and one day with one stage and
+    an empty set row.
+  - Each lineup gets a minted `mine-<12 hex>` id, so two of your lineups never replace each other.
+  - It installs with the source label "Created by you".
+- **The form (poster + create):**
+  - Festival and day dates use date pickers (they were typed yyyy-MM-dd).
+  - A Time zone picker (UTC−12…+14, ½ h steps) covers festivals abroad.
+  - Times use a numbers keyboard.
+  - "Add a day" now adds the day *after* the last one and widens the range. It used to repeat the last date, which the
+    validator rejects as a duplicate day.
+  - The install button is ink-on-accent.
+- **Edit lineup:** Add a day, with Remove this day on an empty added day. "Name & location" replaces Rename. An empty
+  day offers Add a set. Stored as `addedDays` / `location` in the overlay. The overlay now decodes every key optionally,
+  so older blobs and older apps still read.
+- **Sharing keeps edits and ids:**
+  - Shares send the ORIGINAL pack plus the edits (`SharedLineup.edits`, wire key `e`). Re-stamping edited times would
+    have changed set ids, so a shared plan wouldn't star the friend's copy and hand-added sets wouldn't travel.
+  - The receiver installs the original and merges the edits (theirs win per set). The import preview shows the
+    edited lineup.
+  - A plan carries only its own sets' edits.
+  - A phone-made lineup (`poster-` / `mine-`) never falls back to an install link, which would point at nothing.
+    The Share link carries it whole, and the sheet says so when it's too big for one code.
+
 ## Acceptance
 
 - [x] Unit: `FestivalLineupEditsTests` (apply / ids kept / reset / remove / add / re-file / delay targets / later
   sets), `FestivalNightTests` (claim end, outcome, where options, status, still out / abandoned, notification copy,
   timeline lanes), backup round trip incl. edits + a stretch (45 rows).
-- [x] Affected UI suite: `FestivalUITests` (10/10 green, incl. the new Flow H + the home card) — the live sheet's switch → "Where are you now?" → claim; End this set →
+- [x] Affected UI suite: `FestivalUITests` 11/11 green (incl. Flow H, the home card, and Flow I: create → schedule → Add a day) — the live sheet's switch → "Where are you now?" → claim; End this set →
   "What's next?" → break bar → End the night; the set page's Edit time (+15, "Edited (was …)") + I'm here; Edit
   lineup → Delay the schedule.
-- [x] Unit suite alone green: 2674 (5 skipped).
+- [x] Unit suite alone green: 2684 (5 skipped); new `FestivalLineupEditsSharingTests` (added days, old-blob decode, merge / restrict, shared edits + original ids, local packs never link, blank draft).
 - [ ] Device (MrRobot): a real night — start the night, a set ending into the next starred set, End this set →
   break, Edit time with later sets, a stage delay, the home card.

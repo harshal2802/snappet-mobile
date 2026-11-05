@@ -288,6 +288,8 @@ struct FestivalSetupChecklistView: View {
     var onBrowse: () -> Void
     var onScanPoster: () -> Void
     var onScan: () -> Void
+    /// Build a lineup by hand (prompt 232).
+    var onCreate: () -> Void = {}
     /// Set `festival.gettingStartedDismissed` — fall through to the plain empty state.
     var onDismiss: () -> Void
 
@@ -306,7 +308,7 @@ struct FestivalSetupChecklistView: View {
 
                 VStack(spacing: 10) {
                     stepRow(.addLineup, title: "Add your first lineup",
-                            detail: "Download one, scan a poster, or scan a friend's code")
+                            detail: "Download one, scan a poster or a friend's code, or create your own")
                     stepRow(.starSets, title: "Star a few sets",
                             detail: "Tap ★ on the acts you can't miss")
                     stepRow(.enableReminders, title: "Turn on set reminders",
@@ -342,6 +344,7 @@ struct FestivalSetupChecklistView: View {
             Button("Download a festival") { onBrowse() }
             Button("Scan a poster") { onScanPoster() }
             Button("Scan a friend's code") { onScan() }
+            Button("Create my own") { onCreate() }
             Button("Cancel", role: .cancel) {}
         }
     }

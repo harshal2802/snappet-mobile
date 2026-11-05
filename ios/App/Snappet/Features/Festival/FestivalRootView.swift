@@ -60,11 +60,13 @@ struct FestivalRootView: View {
                                                onBrowse: { showingBrowse = true },
                                                onScanPoster: { showingPosterScan = true },
                                                onScan: { showingScan = true },
+                                               onCreate: { posterDraft = .blank() },
                                                onDismiss: { checklistDismissed = true })
                 } else {
                     FestivalEmptyStateView(installer: installer, onBrowse: { showingBrowse = true },
                                            onScan: { showingScan = true },
-                                           onScanPoster: { showingPosterScan = true })
+                                           onScanPoster: { showingPosterScan = true },
+                                           onCreate: { posterDraft = .blank() })
                 }
             } else {
                 lineupList
@@ -104,8 +106,11 @@ struct FestivalRootView: View {
         .sheet(item: $posterDraft) { draft in
             FestivalPosterDraftView(draft: draft, installer: installer,
                                     onInstalled: { pack in
-                                        core.log(module: FestivalModule.id, action: "installPoster",
-                                                 summary: "Built lineup from a poster: \(pack.name)",
+                                        let created = draft.source == .manual
+                                        core.log(module: FestivalModule.id,
+                                                 action: created ? "createLineup" : "installPoster",
+                                                 summary: created ? "Created a lineup: \(pack.name)"
+                                                                  : "Built lineup from a poster: \(pack.name)",
                                                  metric: Double(pack.allSets.count))
                                     })
         }
@@ -186,6 +191,12 @@ struct FestivalRootView: View {
                     Label("Scan a friend's QR", systemImage: "qrcode.viewfinder")
                 }
                 .accessibilityIdentifier("festival.scan")
+                Button {
+                    posterDraft = .blank()
+                } label: {
+                    Label("Create a lineup", systemImage: "square.and.pencil")
+                }
+                .accessibilityIdentifier("festival.create")
                 if case .failed(let message) = installer.phase {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
@@ -232,13 +243,13 @@ struct FestivalRootView: View {
         switch shared.receiveAction(installedPackIDs: Set(lineups.map(\.packID))) {
         case .installLineup:
             if let pack = shared.carriedPack {
-                installer.install(pack: pack, sourceLabel: "Shared code", into: context)
+                installer.install(pack: pack, sourceLabel: "Shared code", into: context, edits: shared.edits)
                 logInstall(pack)
             }
         case .installPlan(let packID):
             // Install the carried subset as a lineup, then star every set it carried.
             if let pack = shared.carriedPack {
-                installer.install(pack: pack, sourceLabel: "Shared plan", into: context)
+                installer.install(pack: pack, sourceLabel: "Shared plan", into: context, edits: shared.edits)
                 star(setIDs: pack.allSets.map(\.id), packID: packID)
                 logInstall(pack)
             }

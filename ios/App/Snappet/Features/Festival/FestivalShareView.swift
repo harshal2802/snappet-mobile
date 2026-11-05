@@ -13,7 +13,10 @@ import UIKit
 ///
 /// All the payload-vs-link math is the pure `SharedLineup`; this view renders it.
 struct FestivalShareView: View {
+    /// The lineup AS INSTALLED — set ids are content-derived, so sharing the original keeps them
+    /// equal to everyone's copy; the user's edits ride separately (prompt 232).
     let pack: FestivalPack
+    var edits: FestivalLineupEdits? = nil
     let lineupName: String
     let starredSetIDs: Set<UUID>
     /// Where the sheet opens: from the schedule's ⋯ "Share my plan" vs "Share this lineup" vs "Scan".
@@ -27,9 +30,10 @@ struct FestivalShareView: View {
 
     enum Start { case plan, lineup, scan }
 
-    init(pack: FestivalPack, lineupName: String, starredSetIDs: Set<UUID>,
-         start: Start = .plan, onScan: @escaping (SharedLineup) -> Void) {
+    init(pack: FestivalPack, edits: FestivalLineupEdits? = nil, lineupName: String,
+         starredSetIDs: Set<UUID>, start: Start = .plan, onScan: @escaping (SharedLineup) -> Void) {
         self.pack = pack
+        self.edits = edits
         self.lineupName = lineupName
         self.starredSetIDs = starredSetIDs
         self.start = start
@@ -55,9 +59,10 @@ struct FestivalShareView: View {
     /// The value to render: the chosen subject, resolved through the payload-vs-link cliff.
     private var shared: SharedLineup {
         switch subject {
-        case .plan:  return SharedLineup.plan(from: pack, starredSetIDs: starredSetIDs, title: planTitle)
+        case .plan:  return SharedLineup.plan(from: pack, starredSetIDs: starredSetIDs, title: planTitle,
+                                                       edits: edits)
                         .scannableForm()
-        case .lineup: return SharedLineup.lineup(from: pack, title: lineupName).scannableForm()
+        case .lineup: return SharedLineup.lineup(from: pack, title: lineupName, edits: edits).scannableForm()
         }
     }
 
@@ -121,7 +126,15 @@ struct FestivalShareView: View {
             Text(subject == .plan ? planTitle : lineupName)
                 .font(.headline).multilineTextAlignment(.center)
 
-            if let image = QRCodeImage.make(for: SnappetWebLink.webForm(shared.encoded)) {
+            if !shared.fitsInScannableQR {
+                // A lineup made on this phone isn't hosted, so there's no install link to fall back
+                // to — the link below carries the whole lineup instead.
+                Label("Too big for one code — send it with Share link. The link carries the whole lineup.",
+                      systemImage: "square.and.arrow.up")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("festival.share.tooBig")
+            } else if let image = QRCodeImage.make(for: SnappetWebLink.webForm(shared.encoded)) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable().scaledToFit()
@@ -134,6 +147,8 @@ struct FestivalShareView: View {
 
             // Honest about which form the code is: in-the-code (offline) vs an install link (fetch).
             switch shared.content {
+            case .payload where !shared.fitsInScannableQR:
+                EmptyView()
             case .payload:
                 Label("The lineup is in the code — scanning works with no signal.",
                       systemImage: "wifi.slash")

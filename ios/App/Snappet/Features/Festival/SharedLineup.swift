@@ -40,32 +40,46 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
     var title: String
     /// Whether this shares a starred-set PLAN (star these on your copy) vs a whole LINEUP (install it).
     var isPlan: Bool
+    /// The sharer's lineup edits (prompt 232) riding along with the ORIGINAL pack: the receiver
+    /// installs the original (so set ids match everyone's copy) and layers these on top — a delay,
+    /// a renamed act or a set added by hand all arrive. `nil` = none (and from older apps).
+    var edits: FestivalLineupEdits? = nil
 
-    init(content: Content, title: String, isPlan: Bool) {
+    init(content: Content, title: String, isPlan: Bool, edits: FestivalLineupEdits? = nil) {
         self.content = content
         self.title = title
         self.isPlan = isPlan
+        self.edits = edits.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     // MARK: - Builders (the pure share-site decisions)
 
     /// Share the user's starred sets as a plan: the same pack, its set list filtered to the stars, so
     /// content ids (and therefore the receiver's stars) line up. Titled for the import-confirm.
-    static func plan(from pack: FestivalPack, starredSetIDs: Set<UUID>, title: String) -> SharedLineup {
+    static func plan(from pack: FestivalPack, starredSetIDs: Set<UUID>, title: String,
+                     edits: FestivalLineupEdits? = nil) -> SharedLineup {
         SharedLineup(content: .payload(subsetPack(pack, starredSetIDs: starredSetIDs)),
-                     title: title, isPlan: true)
+                     title: title, isPlan: true, edits: edits?.restricted(to: starredSetIDs))
     }
 
     /// Share the whole lineup as a payload (the caller falls back to the link via `scannableForm`).
-    static func lineup(from pack: FestivalPack, title: String) -> SharedLineup {
-        SharedLineup(content: .payload(pack), title: title, isPlan: false)
+    static func lineup(from pack: FestivalPack, title: String,
+                       edits: FestivalLineupEdits? = nil) -> SharedLineup {
+        SharedLineup(content: .payload(pack), title: title, isPlan: false, edits: edits)
+    }
+
+    /// A lineup built on a phone (poster scan or created by hand) isn't hosted, so an install link
+    /// would point at nothing — it always travels whole.
+    static func isLocalPack(_ packID: String) -> Bool {
+        packID.hasPrefix("poster-") || packID.hasPrefix("mine-")
     }
 
     /// The pure payload-vs-link cliff (the `SharedRoutine.fitsInScannableQR` boundary): keep the offline
     /// payload QR when it's dense enough to scan; otherwise fall back to the tiny install-link QR
     /// pointing at the hosted pack. A no-op for a value that's already an install link.
     func scannableForm(host: String = festivalDefaultCatalogHost) -> SharedLineup {
-        guard case .payload(let pack) = content, !fitsInScannableQR else { return self }
+        guard case .payload(let pack) = content, !fitsInScannableQR,
+              !Self.isLocalPack(pack.id) else { return self }
         return SharedLineup(content: .installLink(packID: pack.id, host: host),
                             title: title, isPlan: isPlan)
     }
@@ -93,7 +107,8 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
         c.host = "festival"
         switch content {
         case .payload(let pack):
-            guard let blob = SharedLineup.encodeBlob(pack: pack, title: title, isPlan: isPlan) else {
+            guard let blob = SharedLineup.encodeBlob(pack: pack, title: title, isPlan: isPlan,
+                                                     edits: edits) else {
                 return nil
             }
             c.path = "/v\(SharedLineup.version)/\(blob)"
@@ -143,6 +158,7 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
             self.content = .payload(decoded.pack)
             self.title = decoded.title
             self.isPlan = decoded.isPlan
+            self.edits = decoded.edits
             return
         }
         // installLink: /install/<packID>?h=&t=&k=
@@ -165,11 +181,14 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
         var pack: FestivalPack
         var title: String
         var isPlan: Bool
-        enum CodingKeys: String, CodingKey { case pack = "p", title = "t", isPlan = "k" }
+        /// Optional, so codes from before prompt 232 still decode (and older apps ignore it).
+        var edits: FestivalLineupEdits?
+        enum CodingKeys: String, CodingKey { case pack = "p", title = "t", isPlan = "k", edits = "e" }
     }
 
-    private static func encodeBlob(pack: FestivalPack, title: String, isPlan: Bool) -> String? {
-        let wire = PayloadWire(pack: pack, title: title, isPlan: isPlan)
+    private static func encodeBlob(pack: FestivalPack, title: String, isPlan: Bool,
+                                   edits: FestivalLineupEdits?) -> String? {
+        let wire = PayloadWire(pack: pack, title: title, isPlan: isPlan, edits: edits)
         guard let json = try? JSONEncoder().encode(wire),
               let deflated = ZlibCodec.deflate(json) else { return nil }
         return Base64URL.encode(deflated)
@@ -218,6 +237,11 @@ struct SharedLineup: Equatable, Sendable, Identifiable {
     var carriedPack: FestivalPack? {
         if case .payload(let pack) = content { return pack }
         return nil
+    }
+
+    /// What the receiver will actually see — the carried pack with the sharer's edits applied.
+    var displayPack: FestivalPack? {
+        carriedPack.map { pack in edits.map { $0.apply(to: pack) } ?? pack }
     }
 
     // MARK: Identifiable (stable `.sheet(item:)` identity — the encoded string)

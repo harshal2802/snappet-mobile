@@ -231,7 +231,8 @@ struct FestivalScheduleView: View {
         }
         .sheet(isPresented: $showingShare) {
             if let pack {
-                FestivalShareView(pack: pack, lineupName: lineup.name, starredSetIDs: starredIDs,
+                FestivalShareView(pack: lineup.originalPack() ?? pack, edits: lineup.edits,
+                                  lineupName: lineup.name, starredSetIDs: starredIDs,
                                   start: shareStart,
                                   // An in-app scan routes through the shell one-shot: pop to the
                                   // Festival root, which owns the import-confirm + installer.

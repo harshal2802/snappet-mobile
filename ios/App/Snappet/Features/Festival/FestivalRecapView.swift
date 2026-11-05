@@ -84,7 +84,8 @@ struct FestivalRecapView: View {
             }
         }
         .sheet(isPresented: $showingShare) {
-            FestivalShareView(pack: pack, lineupName: lineup.name,
+            FestivalShareView(pack: lineup.originalPack() ?? pack, edits: lineup.edits,
+                              lineupName: lineup.name,
                               starredSetIDs: Set(stars.map(\.setID)), start: .plan,
                               onScan: { shared in
                                   router.pendingFestivalImport = shared
