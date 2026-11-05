@@ -35,10 +35,19 @@ struct OutfitHistoryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Picker("Filter", selection: $segment) {
-                    ForEach(Segment.allCases) { Text($0.title).tag($0) }
+                // Calm pills under the sections' segmented control (prompt 234 — a second segmented
+                // control nested right under the first read as one stacked control).
+                HStack(spacing: 6) {
+                    ForEach(Segment.allCases) { seg in
+                        Button {
+                            segment = seg
+                        } label: {
+                            Text(seg.title).font(.caption).snappetPill(selected: segment == seg)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("wardrobe.outfits.filter.\(seg.rawValue)")
+                    }
                 }
-                .pickerStyle(.segmented)
 
                 if shown.isEmpty {
                     ContentUnavailableView("No outfits here yet", systemImage: "square.grid.2x2",
@@ -97,15 +106,15 @@ private struct OutfitHistoryCard: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text(outfit.title.isEmpty ? outfit.occasion.title : outfit.title)
-                    .font(.subheadline.weight(.bold))
+                    .font(.subheadline.weight(.semibold))
                 if outfit.isFavorite {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(SnappetColor.wardrobe)
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 Spacer()
                 Text(dateLine)
-                    .font(.caption2.weight(.semibold))
+                    .font(.caption2)
                     .foregroundStyle(SnappetColor.textSecondary)
                 Menu {
                     Button(action: onToggleFavorite) {
@@ -116,7 +125,7 @@ private struct OutfitHistoryCard: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(SnappetColor.textSecondary)
                         .padding(4)
                 }
@@ -128,12 +137,19 @@ private struct OutfitHistoryCard: View {
                             .frame(width: 50)
                     }
                 }
-                Spacer()
-                Button("Wear again ›", action: onWearAgain)
-                    .font(.caption.weight(.bold))
-                    .tint(SnappetColor.wardrobe)
-                    .accessibilityIdentifier("wardrobe.outfits.wearAgain")
             }
+            // A full-width outline button (prompt 234) — beside five thumbnails "Wear again ›"
+            // wrapped onto three lines.
+            Button(action: onWearAgain) {
+                Text("Wear again")
+                    .font(.subheadline)
+                    .foregroundStyle(SnappetColor.ink)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .pagerOutline()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("wardrobe.outfits.wearAgain")
         }
         .padding(12)
         .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

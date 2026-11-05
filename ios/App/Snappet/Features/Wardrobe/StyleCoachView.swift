@@ -50,12 +50,8 @@ struct StyleCoachView: View {
                             ask(q)
                         } label: {
                             Text(q)
-                                .font(.caption.weight(.bold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(SnappetColor.wardrobe.opacity(0.08), in: Capsule())
-                                .overlay(Capsule().strokeBorder(SnappetColor.wardrobe.opacity(0.25)))
-                                .foregroundStyle(SnappetColor.wardrobe)
+                                .font(.caption)
+                                .snappetPill(selected: false)
                         }
                         .buttonStyle(.plain)
                     }
@@ -73,10 +69,10 @@ struct StyleCoachView: View {
                     ask(draft)
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(SnappetColor.onBrand)
                         .frame(width: 28, height: 28)
-                        .background(SnappetColor.wardrobe, in: Circle())
+                        .background(SnappetColor.brand, in: Circle())
                 }
                 .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || thinking)
             }
@@ -92,7 +88,7 @@ struct StyleCoachView: View {
                 .padding(.vertical, 6)
         }
         .background(SnappetColor.paper)
-        .navigationTitle("Style Coach")
+        .navigationTitle("Style coach")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -103,11 +99,11 @@ struct StyleCoachView: View {
                 .font(.footnote)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(message.isUser ? AnyShapeStyle(SnappetColor.wardrobe) : AnyShapeStyle(SnappetColor.surface),
+                .background(message.isUser ? AnyShapeStyle(SnappetColor.brand) : AnyShapeStyle(SnappetColor.surface),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(message.isUser ? .clear : SnappetColor.hairline))
-                .foregroundStyle(message.isUser ? .white : SnappetColor.ink)
+                .foregroundStyle(message.isUser ? SnappetColor.onBrand : SnappetColor.ink)
                 .frame(maxWidth: 300, alignment: message.isUser ? .trailing : .leading)
 
             if !message.suggestedItemIDs.isEmpty {
@@ -120,7 +116,7 @@ struct StyleCoachView: View {
                                         WardrobeItemTile(item: cited, height: 54)
                                             .frame(width: 80)
                                         Text(cited.name)
-                                            .font(.system(size: 9, weight: .bold))
+                                            .font(.system(size: 9.5))
                                             .foregroundStyle(SnappetColor.textSecondary)
                                             .lineLimit(1)
                                     }

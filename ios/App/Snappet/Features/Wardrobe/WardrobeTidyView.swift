@@ -59,7 +59,7 @@ struct WardrobeTidyView: View {
                 plan = WardrobeTidyStore.plan(in: modelContext)
             } label: {
                 Label("Undo tidy up", systemImage: "arrow.uturn.backward")
-                    .font(.subheadline.weight(.bold))
+                    .font(.subheadline)
             }
             .buttonStyle(.bordered)
             .padding(.top, 6)
@@ -112,10 +112,10 @@ struct WardrobeTidyView: View {
 
     private func header(_ title: String, detail: String) -> some View {
         HStack {
-            Text(title.uppercased())
-                .font(.system(size: 10.5, weight: .heavy)).tracking(0.08)
+            Text(title)
+                .font(SnappetType.label)
             Spacer()
-            Text(detail).font(.system(size: 10.5, weight: .semibold))
+            Text(detail).font(SnappetType.label)
         }
         .foregroundStyle(SnappetColor.textSecondary)
         .padding(.top, 8).padding(.horizontal, 4)
@@ -125,8 +125,8 @@ struct WardrobeTidyView: View {
         HStack {
             Text(label).font(.subheadline).lineLimit(1)
             Spacer()
-            Text("\(count) →").font(.subheadline.weight(.bold))
-                .foregroundStyle(SnappetColor.wardrobe)
+            Text("\(count) →").font(.subheadline.weight(.medium))
+                .foregroundStyle(SnappetColor.brand)
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -138,7 +138,7 @@ struct WardrobeTidyView: View {
     /// unanswered question must not become a silent write.
     private var uncertainSection: some View {
         VStack(alignment: .leading, spacing: 7) {
-            header("Not sure", detail: "\(plan.uncertain.count) values")
+            header("Not sure", detail: plan.uncertain.count == 1 ? "1 value" : "\(plan.uncertain.count) values")
             Text("These look like prints rather than brands. Pick where each belongs, or leave "
                  + "them alone.")
                 .font(.system(size: 10.5)).foregroundStyle(SnappetColor.textSecondary)
@@ -146,7 +146,7 @@ struct WardrobeTidyView: View {
 
             ForEach(plan.uncertain) { item in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(item.value).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(item.value).font(.subheadline).lineLimit(2)
                     Picker("", selection: binding(for: item)) {
                         Text("Skip").tag(Optional<WardrobeTidyPlan.Field>.none)
                         Text("Brand").tag(Optional(WardrobeTidyPlan.Field.brand))
@@ -168,13 +168,22 @@ struct WardrobeTidyView: View {
             appliedCount = edits.count
             appliedBatch = WardrobeTidyStore.apply(edits, in: modelContext)
         } label: {
-            Text("Apply \(plan.changeCount + uncertainEdits.count) changes")
-                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 4)
+            Text(applyTitle)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(SnappetColor.brand)
+        .buttonStyle(SnappetWidePrimaryStyle())
+        // Nothing picked yet → nothing to apply (prompt 234 — "Apply 0 changes" was tappable).
+        .disabled(plan.changeCount + uncertainEdits.count == 0)
         .padding(.top, 12)
         .accessibilityIdentifier("wardrobe.tidy.apply")
+    }
+
+    private var applyTitle: String {
+        let n = plan.changeCount + uncertainEdits.count
+        switch n {
+        case 0: return "Nothing to apply yet"
+        case 1: return "Apply 1 change"
+        default: return "Apply \(n) changes"
+        }
     }
 
     // MARK: - Helpers

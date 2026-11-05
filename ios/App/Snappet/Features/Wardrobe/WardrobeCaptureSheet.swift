@@ -145,7 +145,7 @@ struct WardrobeCaptureSheet: View {
             Spacer()
             Text("🧺").font(.system(size: 56))
             Text("One piece per photo")
-                .font(.title3.weight(.bold))
+                .font(.title3.weight(.semibold))
             Text("Lay the item flat and fill the frame — the background is removed automatically.")
                 .font(.subheadline)
                 .foregroundStyle(SnappetColor.textSecondary)
@@ -157,22 +157,21 @@ struct WardrobeCaptureSheet: View {
                     showCamera = true
                 } label: {
                     Label("Take photo", systemImage: "camera.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("wardrobe.capture.camera")
             }
             PhotosPicker(selection: $photoSelection, matching: .images) {
                 Label("Import from Photos", systemImage: "photo.on.rectangle")
-                    .font(.headline)
+                    .font(.system(size: 15))
+                    .foregroundStyle(SnappetColor.ink)
+                    .padding(.vertical, 11)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    // Inline, not `pagerOutline()`: a PhotosPicker label is built off the main actor.
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.bordered)
-            .tint(SnappetColor.wardrobe)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("wardrobe.capture.photos")
             Label("On-device — the photo never leaves this iPhone", systemImage: "lock.fill")
                 .font(.caption2)
@@ -190,7 +189,7 @@ struct WardrobeCaptureSheet: View {
                 .foregroundStyle(SnappetColor.textSecondary)
             Label("Vision + Apple Intelligence · on-device", systemImage: "sparkles")
                 .font(.caption2)
-                .foregroundStyle(SnappetColor.wardrobe)
+                .foregroundStyle(SnappetColor.brand)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -218,8 +217,8 @@ struct WardrobeCaptureSheet: View {
                     Label(draft.sharpenedByAI ? "Tagged on-device · Apple Intelligence"
                                               : "Tagged on-device",
                           systemImage: "sparkles")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(SnappetColor.wardrobe)
+                        .font(.caption2)
+                        .foregroundStyle(SnappetColor.textSecondary)
                 }
                 .listRowBackground(Color.clear)
             }
@@ -271,11 +270,8 @@ struct WardrobeCaptureSheet: View {
                     Task { await save() }
                 } label: {
                     Text(isSaving ? "Saving…" : "Save to closet")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .disabled(isSaving)     // the encode is async now — a double tap would add twice
                 .listRowBackground(Color.clear)
                 .accessibilityIdentifier("wardrobe.capture.save")
@@ -309,7 +305,7 @@ struct WardrobeCaptureSheet: View {
                             .frame(width: 66, height: 80)
                             .overlay(Image(systemName: "plus")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(SnappetColor.wardrobe))
+                                .foregroundStyle(SnappetColor.brand))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("wardrobe.capture.addPhoto")
@@ -333,8 +329,8 @@ struct WardrobeCaptureSheet: View {
             .frame(width: 66, height: 80)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(alignment: .bottom) {
-                Text(photo.role.title.uppercased())
-                    .font(.system(size: 8, weight: .heavy))
+                Text(photo.role.title)
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 2)
@@ -342,11 +338,11 @@ struct WardrobeCaptureSheet: View {
             }
             .overlay(alignment: .topLeading) {
                 if isCover {
-                    Text("COVER")
-                        .font(.system(size: 7, weight: .black))
-                        .foregroundStyle(.white)
+                    Text("Cover")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(SnappetColor.onBrand)
                         .padding(.horizontal, 4).padding(.vertical, 2)
-                        .background(SnappetColor.wardrobe, in: RoundedRectangle(cornerRadius: 4))
+                        .background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: 4))
                         .padding(3)
                 }
             }
@@ -378,8 +374,8 @@ struct WardrobeCaptureSheet: View {
                             ? "Background will be removed"
                             : "Background kept — you want the whole shot",
                           systemImage: addRole.shouldLiftSubject ? "scissors" : "photo")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(SnappetColor.wardrobe)
+                        .font(.caption2)
+                        .foregroundStyle(SnappetColor.textSecondary)
                 }
                 Section {
                     if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -418,11 +414,8 @@ struct WardrobeCaptureSheet: View {
                     if on { draft.seasons.remove(season) } else { draft.seasons.insert(season) }
                 } label: {
                     Text(season.title)
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(on ? SnappetColor.wardrobe : SnappetColor.surfaceMuted, in: Capsule())
-                        .foregroundStyle(on ? .white : SnappetColor.textSecondary)
+                        .font(.caption)
+                        .snappetPill(selected: on)
                 }
                 .buttonStyle(.plain)
             }
