@@ -28,7 +28,7 @@ struct ReceiptValidationBanner: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: icon(report.overall))
-                    Text(report.headline).fontWeight(.semibold)
+                    Text(report.headline).fontWeight(.medium)
                 }
                 .foregroundStyle(color(report.overall))
                 .accessibilityIdentifier("expense.receipt.validation")
@@ -46,9 +46,10 @@ struct ReceiptValidationBanner: View {
 
     private func color(_ status: ReceiptValidation.Status) -> Color {
         switch status {
-        case .pass: return SnappetColor.habits
-        case .warn: return .orange
-        case .fail: return SnappetColor.pomodoro
+        // Meaning colours (prompt 242; were module colours + system orange).
+        case .pass: return SnappetColor.perfFresh
+        case .warn: return SnappetColor.perfModerate
+        case .fail: return SnappetColor.perfHard
         }
     }
 }

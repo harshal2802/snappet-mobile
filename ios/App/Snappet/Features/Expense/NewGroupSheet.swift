@@ -70,10 +70,11 @@ struct NewGroupSheet: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(suggestions, id: \.self) { suggestion in
-                                    Button(suggestion) { fill(with: suggestion) }
-                                        .buttonStyle(.bordered)
-                                        .buttonBorderShape(.capsule)
-                                        .controlSize(.small)
+                                    Button { fill(with: suggestion) } label: {
+                                        Text(suggestion).font(.system(size: 13))
+                                            .snappetPill(selected: false)   // calm outline chip (prompt 242)
+                                    }
+                                    .buttonStyle(.plain)
                                         .accessibilityIdentifier("expense.group.suggest.\(suggestion)")
                                 }
                             }

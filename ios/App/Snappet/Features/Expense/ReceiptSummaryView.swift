@@ -11,19 +11,19 @@ struct ReceiptSummaryView: View {
         Section("Totals") {
             totalsRow("Items subtotal", result.itemsSubtotal)
             if result.discount > 0.005 {
-                totalsRow("Discount", -result.discount, tint: SnappetColor.habits)
+                totalsRow("Discount", -result.discount, tint: SnappetColor.perfFresh)
             }
             if result.tax > 0.005 {
                 totalsRow("Tax", result.tax)
             }
             if result.unassignedSubtotal > 0.005 {
-                totalsRow("Unassigned", result.unassignedSubtotal, tint: SnappetColor.pomodoro)
+                totalsRow("Unassigned", result.unassignedSubtotal, tint: SnappetColor.perfHard)
             }
             HStack {
-                Text("Total").fontWeight(.semibold)
+                Text("Total").fontWeight(.medium)
                 Spacer()
                 Text(currency(result.grandTotal))
-                    .fontWeight(.semibold)
+                    .fontWeight(.medium)
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .animation(.snappy, value: result.grandTotal)
@@ -63,10 +63,10 @@ private struct PersonShareRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(share.name).font(.headline)
+                Text(share.name).font(.system(size: 15, weight: .medium))
                 Spacer()
                 Text(currency(share.total))
-                    .font(.headline)
+                    .font(.system(size: 15))
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .animation(.snappy, value: share.total)

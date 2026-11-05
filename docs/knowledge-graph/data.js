@@ -604,7 +604,7 @@ const nodes = [
 
   // ═════════════════ MODULE: Split Expenses ═════════════════
   { id: "m-expense", label: "Split Expenses", type: "module", group: "expense", category: "finance", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Expense/ExpenseModule.swift", desc: "Settle up with friends: groups, expenses, manual settlements.", tags: ["split","groups"] },
+    file: "ios/App/Snappet/Features/Expense/ExpenseModule.swift", desc: "Restyled to the design system in prompt 242 (user accent instead of cyan, group cards with chevrons, owed green / owe red and receipt checks as meaning tokens, outline known-name pills). Settle up with friends: groups, expenses, manual settlements.", tags: ["split","groups"] },
   { id: "expense-root", label: "ExpenseRootView", type: "screen", group: "expense", category: "finance", platform: "ios",
     file: "ios/App/Snappet/Features/Expense/ExpenseRootView.swift", desc: "List of groups + balances. Pushes a group; presents New Group.", tags: ["root","list"], shot: "../screenshots/08-expenses.png" },
   { id: "expense-group", label: "ExpenseGroupView", type: "screen", group: "expense", category: "finance", platform: "ios+android",

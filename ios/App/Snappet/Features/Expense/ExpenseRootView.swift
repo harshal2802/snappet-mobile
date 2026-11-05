@@ -80,10 +80,13 @@ struct ExpenseRootView: View {
             LazyVStack(spacing: 12) {
                 ForEach(groups) { group in
                     Button { router.push(group) } label: {
-                        GroupRow(group: group)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                        HStack {
+                            GroupRow(group: group)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(SnappetColor.textTertiary)
+                        }
+                        .snappetPanel()   // the one card (prompt 242; was a plain grey box)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
@@ -127,11 +130,11 @@ private struct GroupRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(group.name)
-                .font(.headline)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(SnappetColor.ink)
                 .lineLimit(1)
             Text(participantSummary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .snappetDetail()
                 .lineLimit(1)
         }
     }
