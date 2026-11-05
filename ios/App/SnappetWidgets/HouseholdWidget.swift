@@ -48,7 +48,8 @@ struct HouseholdWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: HouseholdEntry
     private var s: HouseholdWidgetSnapshot { entry.snapshot }
-    private let sage = Color(red: 0.66, green: 0.78, blue: 0.31)
+    /// The user's accent (prompt 243; was sage).
+    private var sage: Color { WidgetPalette.accentOnDark }
 
     var body: some View {
         switch family {
@@ -85,11 +86,11 @@ struct HouseholdWidgetView: View {
                     .foregroundStyle(chore.done ? sage : .white.opacity(0.6))
                 Text("\(chore.emoji) \(chore.name)")
                     .strikethrough(chore.done)
-                    .foregroundStyle(chore.done ? .white.opacity(0.5) : chore.overdueDays > 0 ? .orange : .white)
+                    .foregroundStyle(chore.done ? .white.opacity(0.5) : chore.overdueDays > 0 ? WidgetPalette.hard : .white)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .font(.caption.weight(.semibold))
+            .font(.caption)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(chore.done ? "\(chore.name), done. Tap to undo." : "Tick off \(chore.name)")
@@ -103,7 +104,7 @@ struct HouseholdWidgetView: View {
                 pet.frame(width: 44, height: 44)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text("\(s.remaining)").font(.title2.weight(.heavy)).foregroundStyle(.white)
+                    Text("\(s.remaining)").font(.title2.weight(.light)).foregroundStyle(.white)
                     Text("to do").font(.caption2).foregroundStyle(.white.opacity(0.6))
                 }
             }
@@ -122,14 +123,14 @@ struct HouseholdWidgetView: View {
         HStack(spacing: 12) {
             VStack(spacing: 4) {
                 pet.frame(width: 96, height: 96)
-                Text("\(s.petName) · Lv \(s.level)").font(.caption2.weight(.heavy)).foregroundStyle(.white).lineLimit(1)
+                Text("\(s.petName) · Lv \(s.level)").font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
                 Text(goalLine).font(.caption2).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
                 bar(4)
             }
             .frame(width: 110)
             VStack(alignment: .leading, spacing: 5) {
-                Text(entry.isEmpty ? "HOUSEHOLD" : s.remaining == 0 ? "ALL DONE TODAY" : "YOURS TODAY · \(s.remaining)")
-                    .font(.caption2.weight(.heavy)).foregroundStyle(.white.opacity(0.55))
+                Text(entry.isEmpty ? "Household" : s.remaining == 0 ? "All done today" : "Yours today · \(s.remaining)")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.55))
                 if entry.isEmpty {
                     Text("Open Household to set up your chores").font(.caption).foregroundStyle(.white)
                 } else if s.chores.isEmpty {

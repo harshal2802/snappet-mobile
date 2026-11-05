@@ -6,7 +6,8 @@ import ActivityKit
 /// frame 7). The countdown is `Text(timerInterval:)`, ticked by the OS; the count is whatever the app last
 /// synced.
 struct PowerHourLiveActivity: Widget {
-    private static let sage = Color(red: 0.66, green: 0.78, blue: 0.31)
+    /// The user's accent (prompt 243; was sage).
+    private static var sage: Color { WidgetPalette.accentOnDark }
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PowerHourActivityAttributes.self) { context in
@@ -21,7 +22,7 @@ struct PowerHourLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: context.state.start...context.state.end, countsDown: true)
-                        .font(.title3.monospacedDigit().weight(.semibold)).foregroundStyle(Self.sage)
+                        .font(.title3.monospacedDigit().weight(.light)).foregroundStyle(Self.sage)
                         .frame(maxWidth: 80)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -35,9 +36,9 @@ struct PowerHourLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: "sparkles").foregroundStyle(Self.sage)
             } compactTrailing: {
-                Text("\(context.state.done)").font(.caption2.monospacedDigit().weight(.bold)).foregroundStyle(Self.sage)
+                Text("\(context.state.done)").font(.caption2.monospacedDigit().weight(.semibold)).foregroundStyle(Self.sage)
             } minimal: {
-                Text("\(context.state.done)").font(.caption2.weight(.bold)).foregroundStyle(Self.sage)
+                Text("\(context.state.done)").font(.caption2.weight(.semibold)).foregroundStyle(Self.sage)
             }
             .keylineTint(Self.sage)
         }
@@ -51,16 +52,16 @@ struct PowerHourLiveActivity: Widget {
 
 private struct PowerHourLockScreenView: View {
     let context: ActivityViewContext<PowerHourActivityAttributes>
-    private let sage = Color(red: 0.66, green: 0.78, blue: 0.31)
+    private var sage: Color { WidgetPalette.accentOnDark }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Power hour · \(context.attributes.householdName)", systemImage: "sparkles")
-                    .font(.subheadline.weight(.bold)).foregroundStyle(sage)
+                    .font(.subheadline.weight(.medium)).foregroundStyle(sage)
                 Spacer()
                 Text(timerInterval: context.state.start...context.state.end, countsDown: true)
-                    .font(.title3.monospacedDigit().weight(.semibold))
+                    .font(.title3.monospacedDigit().weight(.light))
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 90)
             }
