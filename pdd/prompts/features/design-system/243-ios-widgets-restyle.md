@@ -46,5 +46,5 @@ Layouts, data and intents are unchanged.
 
 - [x] Unit: `SnappetAccentPublishTests` (round trip, change-only reload, unknown value / no container → default).
 - [x] Unit suite alone green; the watch target builds (it compiles `Shared/`).
-- [ ] Device: user on MrRobot (add the widgets; start a workout / power hour / focus). Simulator shots aren't
+- [x] Device: user on MrRobot 2026-11-05 ("merge it"; add the widgets; start a workout / power hour / focus). Simulator shots aren't
   possible for widgets here, so the mockup's "before" side is drawn from the code.
