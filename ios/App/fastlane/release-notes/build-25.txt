@@ -1,0 +1,30 @@
+A new look across the whole app, racket sports, and a much steadier Kilter Board connection.
+
+A NEW LOOK
+• Snappet has been restyled end to end: calmer screens, one card style, light big numbers, thin charts and one accent colour.
+• Pick your accent in Settings → Appearance (Periwinkle, Glacier, Teal or Coral). Every screen, sheet, widget and Live Activity follows it.
+• Home: a small buddy avatar, and everything on Home taps through to where it came from.
+• Done: Home, Clips, Recap, Gym Tracker (dashboard, library, routines, player, finish, history, timers), Kilter, the buddy, Festival, Wardrobe, Household, Habits, Pomodoro, Journal, Tip, Budget, Split Expenses, and the widgets.
+
+RACKET SPORTS
+• Log matches and drills for tennis, padel, pickleball, badminton, squash and table tennis in a Quick Session, with heart rate back-filled from Apple Health.
+
+KILTER BOARD
+• More than one board: name them, pick which board to use, and Flash to find it.
+• Connecting is more reliable (retry and auto-reconnect), and Snappet lets go of a shared board after 10 s idle.
+• Lighting a climb is now on tap by default ("Light climbs automatically" in settings turns it back on).
+• Filter by Not tried / Projects / Sent, and edit a planned session before or during it.
+• Use your own photo of your board behind the holds.
+
+FESTIVAL
+• Your night: end a set, see what's next, breaks, and edit the lineup and set delays.
+
+FIXES
+• Budget no longer crashes when the month has spending in two categories.
+• Wardrobe cards no longer squeeze "Open" and "Wear" into a sliver; Tidy counts are right.
+
+WHAT WOULD HELP MOST
+• Try each accent in Settings → Appearance. Does anything still show an old colour?
+• Add the Today, Buddy and Household widgets, and start a workout or a focus session: do the Lock Screen and Dynamic Island use your accent?
+• Log spending in two Budget categories. Does Budget stay open?
+• Log a racket match or drill. Did the heart rate come in from Health?
