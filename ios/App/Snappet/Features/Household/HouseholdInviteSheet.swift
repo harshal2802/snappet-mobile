@@ -67,8 +67,8 @@ struct HouseholdInviteSheet: View {
             } label: {
                 Label(copied ? "Link copied" : "Copy invite link", systemImage: copied ? "checkmark" : "link")
             }
-            .buttonStyle(.bordered)
-            .tint(SnappetColor.household)
+            .buttonStyle(HouseholdOutlineStyle(wide: true))
+            .frame(maxWidth: 230)
             .accessibilityIdentifier("household.invite.copy")
             ProgressView().controlSize(.small).opacity(service.isSyncing ? 1 : 0)
         }
@@ -76,22 +76,22 @@ struct HouseholdInviteSheet: View {
 
     private func joinedView(_ name: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 54)).foregroundStyle(SnappetColor.household)
-            Text("\(name) joined").font(.title3.weight(.bold))
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 54, weight: .light)).foregroundStyle(SnappetColor.brand)
+            Text("\(name) joined").font(.title3.weight(.semibold))
                 .accessibilityIdentifier("household.invite.joined")
             Text("Your phones now share one board. They catch up whenever they're on the same Wi-Fi with Snappet open.")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Invite someone else") { service.openInvite() }
-                .buttonStyle(.bordered).tint(SnappetColor.household)
+                .buttonStyle(HouseholdOutlineStyle(wide: true)).frame(maxWidth: 230)
         }
         .padding(.vertical, 20)
     }
 
     private var expiredView: some View {
         VStack(spacing: 10) {
-            Text("This code has expired.").font(.headline)
+            Text("This code has expired.").snappetTitle()
             Button("Make a new code") { service.openInvite() }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.household)
+                .buttonStyle(SnappetWidePrimaryStyle()).frame(maxWidth: 230)
         }
         .padding(.vertical, 30)
     }
@@ -104,13 +104,14 @@ struct HouseholdInviteSheet: View {
             Divider()
             trust("icloud.slash", "Nothing goes to a server. Chores travel phone to phone.")
         }
-        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 12))
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous).strokeBorder(SnappetColor.hairline))
     }
 
     private func trust(_ symbol: String, _ text: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(SnappetColor.household).frame(width: 22)
-            Text(text).font(.subheadline)
+            Image(systemName: symbol).foregroundStyle(SnappetColor.textSecondary).frame(width: 22)
+            Text(text).font(SnappetType.body)
             Spacer(minLength: 0)
         }
         .padding(12)

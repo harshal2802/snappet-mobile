@@ -17,13 +17,14 @@ struct HouseholdMembersView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("Local Network is off for Snappet", systemImage: "wifi.exclamationmark")
-                            .font(.headline).foregroundStyle(SnappetColor.perfHard)
+                            .snappetTitle().foregroundStyle(SnappetColor.perfHard)
                         Text("Phones can't find each other until it's on: Settings › Privacy & Security › Local Network › Snappet.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .snappetDetail()
                         Button("Open Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                         }
-                        .buttonStyle(.borderedProminent).tint(SnappetColor.household)
+                        .buttonStyle(SnappetWidePrimaryStyle())
+                        .padding(.top, 4)
                     }
                     .padding(.vertical, 4)
                     .accessibilityIdentifier("household.localNetworkDenied")
@@ -63,19 +64,20 @@ struct HouseholdMembersView: View {
                             MemberAvatar(name: peer.name, id: peer.memberID ?? peer.deviceID)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(peer.name.isEmpty ? "A phone" : peer.name).font(.body.weight(.semibold))
+                                    Text(peer.name.isEmpty ? "A phone" : peer.name).font(.system(size: 15, weight: .medium))
                                     Text(peer.platform == "ios" ? "iPhone" : peer.platform.capitalized)
-                                        .font(.caption2.weight(.heavy))
-                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 4))
+                                        .font(.system(size: 10)).foregroundStyle(SnappetColor.textSecondary)
+                                        .padding(.horizontal, 4).padding(.vertical, 1)
+                                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(SnappetColor.hairline))
                                 }
                                 Text(service.nearby[peer.deviceID] != nil
                                      ? "Nearby · synced \(peer.lastSyncedAt.formatted(.relative(presentation: .named)))"
                                      : "Last synced \(peer.lastSyncedAt.formatted(.relative(presentation: .named)))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .snappetDetail()
                             }
                             Spacer()
-                            Circle().fill(service.nearby[peer.deviceID] != nil ? SnappetColor.household : SnappetColor.hairline)
+                            // Green = online right now (a meaning colour, not the accent).
+                            Circle().fill(service.nearby[peer.deviceID] != nil ? SnappetColor.perfFresh : SnappetColor.hairline)
                                 .frame(width: 9, height: 9)
                         }
                     }
@@ -123,7 +125,7 @@ struct MemberAvatar: View {
                              SnappetColor.wardrobe, SnappetColor.tip]
         let tint = hues[Int(id.uuid.0) % hues.count]   // stable per member
         Text(String(name.first ?? "?").uppercased())
-            .font(.caption.weight(.heavy))
+            .font(.system(size: 12, weight: .semibold))
             .frame(width: 28, height: 28)
             .background(tint, in: Circle())
             .foregroundStyle(.black.opacity(0.75))
@@ -139,20 +141,20 @@ struct HouseholdSyncPill: View {
     var body: some View {
         let waiting = store.changesWaiting
         let (text, tint): (String, Color) = {
-            if service.isSyncing { return ("Syncing…", SnappetColor.household) }
+            if service.isSyncing { return ("Syncing…", SnappetColor.brand) }
             if waiting > 0 { return ("\(waiting) change\(waiting == 1 ? "" : "s") waiting", SnappetColor.perfModerate) }
             let phones = store.peers.count + 1
             if let last = store.lastSyncedAt {
-                return ("\(phones) phones · synced \(last.formatted(.relative(presentation: .named)))", SnappetColor.household)
+                return ("\(phones) phones · synced \(last.formatted(.relative(presentation: .named)))", SnappetColor.perfFresh)
             }
             return ("Not synced yet", SnappetColor.textSecondary)
         }()
         HStack(spacing: 6) {
             Circle().fill(tint).frame(width: 7, height: 7)
-            Text(text).font(.caption.weight(.semibold)).foregroundStyle(tint)
+            Text(text).font(.system(size: 11)).foregroundStyle(.white)
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(tint.opacity(0.14), in: Capsule())
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.black.opacity(0.35), in: Capsule())
         .accessibilityIdentifier("household.syncPill")
     }
 }

@@ -84,9 +84,9 @@ struct HouseholdJoinSheet: View {
         return Form {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Join \(invite.name.isEmpty ? "this household" : invite.name)?").font(.title3.weight(.bold))
+                    Text("Join \(invite.name.isEmpty ? "this household" : invite.name)?").font(.title3.weight(.semibold))
                     Text("You'll share one chore board, and work towards the same goal.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .snappetDetail()
                 }
                 .padding(.vertical, 4)
             }
@@ -112,9 +112,11 @@ struct HouseholdJoinSheet: View {
                 Button {
                     service.join(invite, myName: myName, bringChores: bringChores)
                 } label: {
-                    Text("Join").frame(maxWidth: .infinity).font(.headline)
+                    Text("Join")
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.household)
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
                 .disabled(myName.trimmingCharacters(in: .whitespaces).isEmpty)
                 .accessibilityIdentifier("household.join.confirm")
             } footer: {
@@ -126,8 +128,8 @@ struct HouseholdJoinSheet: View {
     private func progress(_ name: String) -> some View {
         VStack(spacing: 14) {
             ProgressView().controlSize(.large)
-            Text("Looking for \(name.isEmpty ? "the household" : name) on this Wi-Fi…").font(.headline)
-            Text("Keep the invite code open on the other phone.").font(.subheadline).foregroundStyle(.secondary)
+            Text("Looking for \(name.isEmpty ? "the household" : name) on this Wi-Fi…").snappetTitle()
+            Text("Keep the invite code open on the other phone.").snappetDetail()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -135,10 +137,10 @@ struct HouseholdJoinSheet: View {
 
     private func done(_ name: String) -> some View {
         VStack(spacing: 12) {
-            Image(systemName: "house.fill").font(.system(size: 54)).foregroundStyle(SnappetColor.household)
-            Text("You're in \(name)").font(.title3.weight(.bold))
+            Image(systemName: "house.fill").font(.system(size: 54, weight: .light)).foregroundStyle(SnappetColor.brand)
+            Text("You're in \(name)").font(.title3.weight(.semibold))
                 .accessibilityIdentifier("household.join.done")
-            Text("Your board now matches everyone else's.").font(.subheadline).foregroundStyle(.secondary)
+            Text("Your board now matches everyone else's.").snappetDetail()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

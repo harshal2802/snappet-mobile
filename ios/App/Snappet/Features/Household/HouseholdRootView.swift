@@ -158,14 +158,17 @@ struct HouseholdRootView: View {
         } description: {
             Text("Keep the household's chores in one place and work towards a goal together. Everything stays on this phone.")
         } actions: {
-            Button("Add a chore") { editing = .new }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.household)
-                .accessibilityIdentifier("household.empty.add")
-            Button("Start with common chores") {
-                for fields in HouseholdStarter.chores(me: store.me) { store.create(fields) }
+            VStack(spacing: 10) {
+                Button("Add a chore") { editing = .new }
+                    .buttonStyle(SnappetWidePrimaryStyle())
+                    .accessibilityIdentifier("household.empty.add")
+                Button("Start with common chores") {
+                    for fields in HouseholdStarter.chores(me: store.me) { store.create(fields) }
+                }
+                .buttonStyle(HouseholdOutlineStyle(wide: true))
+                .accessibilityIdentifier("household.empty.starter")
             }
-            .accessibilityIdentifier("household.empty.starter")
+            .frame(maxWidth: 260)
         }
         .frame(maxHeight: .infinity)
     }
@@ -232,13 +235,13 @@ struct HouseholdTodayView: View {
                         HStack(spacing: 10) {
                             Text(item.chore.emoji).font(.title3)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.chore.name).font(.subheadline.weight(.semibold))
+                                Text(item.chore.name).font(.system(size: 15, weight: .medium))
                                 Text("Done by \(item.others.map { board.name(of: $0) }.joined(separator: " & ")) and you. It counts once for the goal; you're both credited.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .snappetDetail()
                             }
                             Spacer()
                             Button("👏 Thank") { for m in item.others { store.thank(m, for: item.chore.id) } }
-                                .font(.caption.weight(.bold)).buttonStyle(.bordered).tint(SnappetColor.household)
+                                .buttonStyle(HouseholdPillStyle())
                                 .accessibilityIdentifier("household.thank")
                         }
                     }
@@ -263,7 +266,7 @@ struct HouseholdTodayView: View {
             if mine.isEmpty && grabs.isEmpty && others.isEmpty {
                 Section {
                     Label("Nothing due today. Enjoy it.", systemImage: "sparkles")
-                        .foregroundStyle(.secondary)
+                        .font(SnappetType.body).foregroundStyle(SnappetColor.textSecondary)
                 }
             }
             if !later.isEmpty {
@@ -272,9 +275,9 @@ struct HouseholdTodayView: View {
                         Button { edit(chore) } label: {
                             HStack(spacing: 12) {
                                 Text(chore.emoji).font(.title3)
-                                Text(chore.name).foregroundStyle(SnappetColor.ink)
+                                Text(chore.name).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
                                 Spacer()
-                                Text(HouseholdFormat.next(next)).font(.subheadline).foregroundStyle(.secondary)
+                                Text(HouseholdFormat.next(next)).snappetDetail()
                             }
                         }
                     }
@@ -337,23 +340,24 @@ struct ChoreRow: View {
             Text(chore.emoji).font(.title3).frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(chore.name).font(.body.weight(.semibold)).strikethrough(isDone)
+                    Text(chore.name).font(.system(size: 15, weight: .medium)).strikethrough(isDone)
                     EffortBadge(effort: chore.effort)
                 }
-                Text(detail).font(.caption).foregroundStyle(detailColor)
+                Text(detail).font(SnappetType.detail).foregroundStyle(detailColor)
             }
             .opacity(isDone ? 0.55 : 1)
             Spacer()
             if let grab, !isDone {
                 Button("I'll do it", action: grab)
-                    .font(.caption.weight(.bold))
-                    .buttonStyle(.bordered).tint(SnappetColor.household)
+                    .buttonStyle(HouseholdPillStyle())
                     .accessibilityIdentifier("household.claim.\(chore.name)")
             }
             Button(action: toggle) {
                 Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(isDone ? SnappetColor.household : SnappetColor.textSecondary)
+                    .font(.title2.weight(.light))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(isDone ? SnappetColor.onBrand : SnappetColor.textTertiary,
+                                     isDone ? SnappetColor.brand : SnappetColor.textTertiary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isDone ? "Mark \(chore.name) not done" : "Mark \(chore.name) done")
@@ -391,9 +395,9 @@ struct EffortBadge: View {
     let effort: ChoreEffort
     var body: some View {
         Text(effort.label)
-            .font(.caption2.weight(.heavy))
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 4))
+            .font(.system(size: 10))
+            .padding(.horizontal, 4).padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(SnappetColor.hairline))
             .foregroundStyle(SnappetColor.textSecondary)
             .accessibilityLabel("Effort \(effort.label)")
     }
@@ -427,31 +431,21 @@ struct HouseholdGoalCard: View {
         Button(action: setGoal) {
             VStack(alignment: .leading, spacing: 6) {
                 if let goal = board.goal(now: now), goal.target > 0 {
-                    Text("HOUSE GOAL · ENDS \(end.formatted(.dateTime.weekday(.abbreviated)).uppercased())")
-                        .font(.caption2.weight(.heavy)).kerning(1).foregroundStyle(SnappetColor.household)
-                    Text(goal.reward.isEmpty ? "\(done) of \(goal.target) chores"
-                                             : "\(done) of \(goal.target) chores → \(goal.reward)")
-                        .font(.headline).foregroundStyle(SnappetColor.ink)
+                    Text("House goal · ends \(end.formatted(.dateTime.weekday(.abbreviated)))").snappetLabel()
+                    Text("\(Text("\(done)").font(SnappetType.metric).foregroundStyle(SnappetColor.ink)) \(Text(goal.reward.isEmpty ? "of \(goal.target) chores" : "of \(goal.target) chores → \(goal.reward)").font(SnappetType.metricUnit).foregroundStyle(SnappetColor.textSecondary))")
+                        .monospacedDigit()
                         .accessibilityIdentifier("household.goal.progress")
-                    ProgressView(value: Double(min(done, goal.target)), total: Double(goal.target))
-                        .tint(SnappetColor.household)
-                    Text(done >= goal.target ? "Goal reached. Nice work." : "\(goal.target - done) to go")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HouseholdThinBar(fraction: Double(min(done, goal.target)) / Double(goal.target))
+                    Text(done >= goal.target ? "Goal reached. Nice work." : "\(goal.target - done) to go").snappetDetail()
                 } else {
-                    Text("HOUSE GOAL").font(.caption2.weight(.heavy)).kerning(1).foregroundStyle(SnappetColor.household)
-                    Text(done == 1 ? "1 chore done this week" : "\(done) chores done this week").font(.headline).foregroundStyle(SnappetColor.ink)
+                    Text("House goal").snappetLabel()
+                    Text("\(Text("\(done)").font(SnappetType.metric).foregroundStyle(SnappetColor.ink)) \(Text(done == 1 ? "chore done this week" : "chores done this week").font(SnappetType.metricUnit).foregroundStyle(SnappetColor.textSecondary))")
+                        .monospacedDigit()
                         .accessibilityIdentifier("household.goal.progress")
-                    Text("Set a weekly goal and a reward to work towards ›").font(.caption).foregroundStyle(.secondary)
+                    Text("Set a weekly goal and a reward to work towards ›").snappetDetail()
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(
-                LinearGradient(colors: [SnappetColor.household.opacity(0.22), SnappetColor.budget.opacity(0.08)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(SnappetColor.household.opacity(0.35)))
+            .snappetPanel()
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("household.goal.card")
@@ -476,11 +470,11 @@ struct HouseholdChoresView: View {
                                 Text(chore.emoji).font(.title3).frame(width: 30)
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
-                                        Text(chore.name).font(.body.weight(.semibold)).foregroundStyle(SnappetColor.ink)
+                                        Text(chore.name).font(.system(size: 15, weight: .medium)).foregroundStyle(SnappetColor.ink)
                                         EffortBadge(effort: chore.effort)
                                     }
                                     Text("\(ChoreSchedule.summary(chore.repeats, short: true)) · \(who(chore))")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .snappetDetail()
                                 }
                             }
                         }
@@ -526,13 +520,15 @@ struct HouseholdWeekView: View {
                     ForEach(0..<7, id: \.self) { i in
                         let day = cal.date(byAdding: .day, value: i, to: start) ?? start
                         VStack(spacing: 4) {
-                            Text(counts[i] > 0 ? "\(counts[i])" : " ").font(.caption2.weight(.bold))
-                                .foregroundStyle(.secondary)
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(i == todayIndex ? SnappetColor.household : SnappetColor.household.opacity(0.55))
-                                .frame(height: max(4, 70 * CGFloat(counts[i]) / CGFloat(peak)))
+                            Text(counts[i] > 0 ? "\(counts[i])" : " ").font(.system(size: 10)).monospacedDigit()
+                                .foregroundStyle(SnappetColor.textSecondary)
+                            // Thin bars: the accent on days with chores, a hairline stub on empty ones.
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(counts[i] > 0 ? SnappetColor.brand : SnappetColor.hairline)
+                                .frame(height: max(3, 70 * CGFloat(counts[i]) / CGFloat(peak)))
                             Text(day.formatted(.dateTime.weekday(.narrow)))
-                                .font(.caption2.weight(i == todayIndex ? .heavy : .regular))
+                                .font(.system(size: 10, weight: i == todayIndex ? .semibold : .regular))
+                                .foregroundStyle(i == todayIndex ? SnappetColor.ink : SnappetColor.textTertiary)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -553,14 +549,66 @@ struct HouseholdWeekView: View {
             } else {
                 Section {
                     Text("Once others join, you'll see everyone's share of the effort here, and anyone can ask for a hand with a chore.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .snappetDetail()
                 }
             }
             Section {
-                Button(action: recap) { Label("Last week in the house", systemImage: "sparkles") }
-                    .accessibilityIdentifier("household.week.recap")
+                Button(action: recap) {
+                    HStack {
+                        Label("Last week in the house", systemImage: "sparkles")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(SnappetColor.textTertiary)
+                    }
+                }
+                .accessibilityIdentifier("household.week.recap")
             }
         }
         .scrollContentBackground(.hidden)
+    }
+}
+
+// MARK: - Shared styles (design-system restyle, prompt 235)
+
+/// The row action ("I'll do it", "Take it", "👏 Thank"): an accent outline pill.
+struct HouseholdPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .medium))
+            .snappetPill(selected: false, tint: SnappetColor.brand)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// A secondary action: a neutral hairline outline (or a meaning `tint`, e.g. red for End).
+struct HouseholdOutlineStyle: ButtonStyle {
+    var wide = false
+    var tint: Color? = nil
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: wide ? 15 : 12.5, weight: .medium))
+            .foregroundStyle(tint ?? SnappetColor.ink)
+            .padding(.horizontal, wide ? 16 : 11).padding(.vertical, wide ? 10 : 6)
+            .frame(maxWidth: wide ? .infinity : nil)
+            .overlay(Capsule().strokeBorder(tint.map { $0.opacity(0.5) } ?? SnappetColor.hairline, lineWidth: 1))
+            .contentShape(Capsule())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// A thin accent progress bar on a hairline track.
+struct HouseholdThinBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(SnappetColor.hairline)
+                Capsule().fill(SnappetColor.brand).frame(width: geo.size.width * min(1, max(0, fraction)))
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
     }
 }
