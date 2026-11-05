@@ -8,38 +8,38 @@ struct BudgetSummaryView: View {
     let remaining: Double
 
     var body: some View {
-        HStack(spacing: SnappetSpacing.md) {
-            tile(value: totalLimit.asCurrency, label: "Budget",
-                 systemImage: "banknote.fill", tint: SnappetColor.budget)
+        // One panel, three light numbers (prompt 241; were three coloured bold tiles). Remaining turns red with a
+        // warning glyph only when over.
+        HStack(alignment: .top, spacing: SnappetSpacing.md) {
+            metric(value: totalLimit.asCurrency, label: "Budget")
                 .accessibilityIdentifier("budget.total")
-            tile(value: totalSpent.asCurrency, label: "Spent",
-                 systemImage: "cart.fill", tint: SnappetColor.journal)
+            metric(value: totalSpent.asCurrency, label: "Spent")
                 .accessibilityIdentifier("budget.spent")
-            tile(value: remaining.asCurrency, label: "Remaining",
-                 systemImage: remaining < 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
-                 tint: remaining < 0 ? SnappetColor.pomodoro : SnappetColor.habits)
+            metric(value: remaining.asCurrency, label: "Remaining",
+                   systemImage: remaining < 0 ? "exclamationmark.triangle.fill" : nil,
+                   tint: remaining < 0 ? SnappetColor.perfHard : SnappetColor.ink)
                 .accessibilityIdentifier("budget.remaining")
         }
-        .padding(.horizontal)
+        .snappetPanel()   // the list row has zero insets, so the panel lines up with the rows below
     }
 
-    private func tile(value: String, label: String, systemImage: String, tint: Color) -> some View {
-        VStack(spacing: SnappetSpacing.xs) {
-            // Icon is a non-colour signal in addition to the tint (issue #30 accessibility).
-            Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
+    private func metric(value: String, label: String, systemImage: String? = nil,
+                        tint: Color = SnappetColor.ink) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                if let systemImage { Image(systemName: systemImage).font(.caption2).foregroundStyle(tint) }
+                Text(label).snappetLabel()
+            }
             Text(value)
-                .font(.headline.bold())
+                .font(.system(size: 22, weight: .light))
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .monospacedDigit()
                 .contentTransition(.numericText())
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(SnappetColor.textSecondary)
         }
-        .frame(maxWidth: .infinity)
-        .snappetTile()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
         // Balances move toward their new value rather than snapping (issue #30 §5.8).
         .animation(.snappy, value: value)
     }

@@ -16,28 +16,34 @@ struct BudgetCategoryRow: View {
     private var isOver: Bool { limit > 0 && spent > limit }
 
     private var barTint: Color {
-        if isOver { return .red }
-        if fraction >= 0.85 { return .orange }
-        return .blue
+        if isOver { return SnappetColor.perfHard }
+        if fraction >= 0.85 { return SnappetColor.perfModerate }
+        return SnappetColor.brand
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(name).font(.headline)
+                Text(name).font(.system(size: 15, weight: .medium))
                 Spacer()
                 Text("\(spent.asCurrency) / \(limit.asCurrency)")
-                    .font(.subheadline)
-                    .foregroundStyle(isOver ? .red : .secondary)
+                    .font(SnappetType.detail)
+                    .foregroundStyle(isOver ? SnappetColor.perfHard : SnappetColor.textSecondary)
             }
 
-            ProgressView(value: fraction)
-                .tint(barTint)
+            // A thin bar on a hairline track (was a system ProgressView).
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(SnappetColor.hairline)
+                    Capsule().fill(barTint).frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 4)
 
             if isOver {
                 Label("Over by \((spent - limit).asCurrency)", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(SnappetColor.perfHard)
             }
         }
         .padding(.vertical, 4)
