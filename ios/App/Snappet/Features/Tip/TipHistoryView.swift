@@ -25,6 +25,7 @@ struct TipHistoryView: View {
             if !calculations.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Clear all", role: .destructive) { clearAll() }
+                        .tint(SnappetColor.perfHard)   // a toolbar button ignores the destructive role's red
                         .accessibilityIdentifier("tip.history.clear")
                 }
             }
@@ -65,7 +66,7 @@ private struct TipHistoryRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(calculation.bill.formatted(.currency(code: currencyCode)))
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .medium))
                 Spacer()
                 Text("\(Int(calculation.tipPct.rounded()))% · \(calculation.people)p")
                     .font(.subheadline)
