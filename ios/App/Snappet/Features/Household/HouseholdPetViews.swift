@@ -12,6 +12,12 @@ struct HousePetState {
 
     var look: BuddyLook { BuddyLook(stage: level.stage, form: mood, paused: paused) }
 
+    /// The buddy's rule (prompt 230): green when the house is well, amber when it slips, the accent while paused.
+    var moodColor: Color {
+        if paused { return SnappetColor.brand }
+        return mood >= 0.5 ? SnappetColor.perfFresh : SnappetColor.perfModerate
+    }
+
     @MainActor
     init(store: HouseholdStore, now: Date = .now) {
         let board = store.board
@@ -45,7 +51,7 @@ struct HouseholdPetCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: openPet) {
                 ZStack(alignment: .top) {
-                    LinearGradient(colors: [Color(hue: pet.look.hue, saturation: 0.3, brightness: 0.32), Color(white: 0.1)],
+                    LinearGradient(colors: [Color(hue: pet.look.hue, saturation: 0.3, brightness: 0.32), SnappetColor.surface],
                                    startPoint: .top, endPoint: .bottom)
                     Group {
                         if covered { Color.clear } else { BuddyCreatureView(look: pet.look, cheerTrigger: cheer, interactive: false) }
@@ -70,9 +76,8 @@ struct HouseholdPetCard: View {
 
             Button(action: setGoal) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("\(pet.name) · House Lv \(pet.level.level)").font(.headline).foregroundStyle(.white)
-                    Text(pet.moodTitle).font(.caption.weight(.semibold))
-                        .foregroundStyle(pet.mood >= 0.5 || pet.paused ? Color(hex: 0x8CE09F) : Color(hex: 0xE6C55C))
+                    Text("\(pet.name) · House Lv \(pet.level.level)").snappetTitle()
+                    Text(pet.moodTitle).font(SnappetType.detail).foregroundStyle(pet.moodColor)
                     HStack {
                         if let goal, goal.target > 0 {
                             Text("House goal \(done) / \(goal.target) this week")
@@ -84,9 +89,9 @@ struct HouseholdPetCard: View {
                             Text("Set a goal ›")
                         }
                     }
-                    .font(.caption2).foregroundStyle(.white.opacity(0.65))
-                    ProgressView(value: Double(min(done, max(1, goal?.target ?? done))), total: Double(max(1, goal?.target ?? max(done, 1))))
-                        .tint(SnappetColor.household)
+                    .font(.system(size: 11.5)).foregroundStyle(SnappetColor.textSecondary)
+                    HouseholdThinBar(fraction: Double(min(done, max(1, goal?.target ?? done))) / Double(max(1, goal?.target ?? max(done, 1))))
+                        .padding(.top, 2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 13).padding(.bottom, 11).padding(.top, 2)
@@ -95,13 +100,15 @@ struct HouseholdPetCard: View {
             .accessibilityIdentifier("household.goal.card")
             .accessibilityElement(children: .combine)
         }
-        .background(Color(white: 0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(SnappetColor.surface)
+        .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.panel, style: .continuous)
+            .strokeBorder(SnappetColor.hairline, lineWidth: 1))
         .padding(.vertical, 4)
     }
 
     private func chip(_ text: String) -> some View {
-        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(.white)
+        Text(text).font(.system(size: 11)).foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(.black.opacity(0.35), in: Capsule())
     }
@@ -128,19 +135,19 @@ struct HouseholdPetScreen: View {
                     }
                     .frame(height: 260)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    Text(pet.moodTitle).font(.title3.weight(.bold)).multilineTextAlignment(.center)
+                    Text(pet.moodTitle).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
                         .accessibilityIdentifier("household.pet.mood")
                     if let detail = pet.moodDetail {
-                        Text(detail).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Text(detail).font(SnappetType.body).foregroundStyle(SnappetColor.textSecondary).multilineTextAlignment(.center)
                     }
                     HStack(spacing: 14) {
                         Label("House Lv \(pet.level.level) · \(pet.level.stage.title)", systemImage: "house.fill")
                         if pet.streak > 0 { Label("\(pet.streak) week\(pet.streak == 1 ? "" : "s")", systemImage: "flame.fill") }
                     }
-                    .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.household)
-                    ProgressView(value: pet.level.fraction).tint(SnappetColor.household)
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    HouseholdThinBar(fraction: pet.level.fraction).padding(.top, 2)
                     Text("\(pet.level.xpToNext) house XP to Level \(pet.level.level + 1)")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(SnappetColor.textTertiary)
                 }
 
                 if !late.isEmpty, !pet.paused {
@@ -149,13 +156,12 @@ struct HouseholdPetScreen: View {
                             HStack(spacing: 12) {
                                 Text(item.chore.emoji).font(.title3)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.chore.name).font(.body.weight(.semibold))
-                                    Text(item.days == 1 ? "1 day over" : "\(item.days) days over")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    Text(item.chore.name).font(.system(size: 15, weight: .medium))
+                                    Text(item.days == 1 ? "1 day over" : "\(item.days) days over").snappetDetail()
                                 }
                                 Spacer()
                                 Button("I'll do it") { store.complete(item.chore); cheer += 1 }
-                                    .buttonStyle(.bordered).tint(SnappetColor.household).font(.caption.weight(.bold))
+                                    .buttonStyle(HouseholdPillStyle())
                             }
                             .padding(.vertical, 4)
                         }
@@ -176,7 +182,7 @@ struct HouseholdPetScreen: View {
                     }
                 }
                 Text("\(pet.name) grows with every chore anyone does, and its mood follows how the house is doing. While the house is paused, nothing counts as overdue and the streak waits for you.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .snappetDetail()
             }
             .padding()
         }
@@ -187,12 +193,10 @@ struct HouseholdPetScreen: View {
 
     private func card(title: String?, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let title { Text(title).font(.headline) }
+            if let title { Text(title).snappetTitle() }
             content()
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .snappetPanel()
     }
 }
 
@@ -207,18 +211,18 @@ struct HouseholdFairShareCard: View {
                               SnappetColor.wardrobe, SnappetColor.tip]
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Fair share").font(.headline)
+                Text("Fair share").snappetTitle()
                 Spacer()
                 if let balance {
-                    Text(balance.rawValue).font(.caption.weight(.bold))
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background((balance == .balanced ? SnappetColor.household : SnappetColor.perfModerate).opacity(0.18),
-                                    in: Capsule())
-                        .foregroundStyle(balance == .balanced ? SnappetColor.household : SnappetColor.perfModerate)
+                    let tint = balance == .balanced ? SnappetColor.perfFresh : SnappetColor.perfModerate
+                    Text(balance.rawValue).font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .foregroundStyle(tint)
+                        .overlay(Capsule().strokeBorder(tint.opacity(0.6), lineWidth: 1))
                         .accessibilityIdentifier("household.fairShare.balance")
                 }
             }
-            Text("Effort this week (S 1 · M 2 · L 3), not a ranking").font(.caption).foregroundStyle(.secondary)
+            Text("Effort this week (S 1 · M 2 · L 3), not a ranking").snappetDetail()
             GeometryReader { geo in
                 HStack(spacing: 0) {
                     ForEach(Array(shares.enumerated()), id: \.element.member.id) { i, share in
@@ -227,8 +231,8 @@ struct HouseholdFairShareCard: View {
                     }
                 }
             }
-            .frame(height: 14)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .frame(height: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
             FlowLegend(items: shares.enumerated().map { i, s in
                 (tints[i % tints.count], "\(s.member.id == store.me ? "You" : s.member.name) \(s.points)")
             })
@@ -244,7 +248,7 @@ private struct FlowLegend: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 5) {
                     RoundedRectangle(cornerRadius: 3).fill(item.0).frame(width: 9, height: 9)
-                    Text(item.1).font(.caption).foregroundStyle(.secondary)
+                    Text(item.1).snappetDetail()
                 }
             }
         }
@@ -263,18 +267,18 @@ struct HouseholdHelpCard: View {
             Text("🤝").font(.title3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(mine ? "You asked for a hand" : "\(store.board.name(of: request.member)) asked for a hand")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 15, weight: .medium))
                 Text([chore.map { "\($0.name) · \($0.effort.label)" }, request.note.isEmpty ? nil : request.note]
                     .compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .snappetDetail()
             }
             Spacer()
             if mine {
                 Button("Take back") { store.retractHelp(request) }
-                    .font(.caption.weight(.bold)).buttonStyle(.bordered)
+                    .buttonStyle(HouseholdOutlineStyle())
             } else if let chore {
                 Button("Take it") { store.claim(chore) }
-                    .font(.caption.weight(.bold)).buttonStyle(.bordered).tint(SnappetColor.household)
+                    .buttonStyle(HouseholdPillStyle())
                     .accessibilityIdentifier("household.help.take")
             }
         }
@@ -292,7 +296,7 @@ struct HouseholdAskHelpSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("\(chore.emoji) \(chore.name)").font(.headline)
+                    Text("\(chore.emoji) \(chore.name)").snappetTitle()
                 } footer: {
                     Text("Everyone in the household sees it, and anyone can take it. It closes when the chore's done.")
                 }
@@ -337,7 +341,7 @@ struct HouseholdRecapSheet: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if let image = ImageRenderer(content: HouseholdRecapCard(store: store, recap: recap)
-                        .frame(width: 360).padding().background(Color(white: 0.08))).uiImage {
+                        .frame(width: 360).padding().background(SnappetColor.paper).environment(\.colorScheme, .dark)).uiImage {
                         ShareLink(item: Image(uiImage: image), preview: SharePreview("Week in the house", image: Image(uiImage: image)))
                     }
                 }
@@ -353,24 +357,26 @@ struct HouseholdRecapCard: View {
     var body: some View {
         let end = Calendar.current.date(byAdding: .day, value: 6, to: recap.weekStart) ?? recap.weekStart
         VStack(alignment: .leading, spacing: 10) {
-            Text("\(recap.weekStart.formatted(.dateTime.day().month(.abbreviated))) – \(end.formatted(.dateTime.day().month(.abbreviated)))".uppercased())
-                .font(.caption.weight(.heavy)).kerning(1).foregroundStyle(Color(hex: 0x8CE09F))
-            Text(recap.rounds == 1 ? "1 chore" : "\(recap.rounds) chores")
-                .font(.system(size: 40, weight: .black)).foregroundStyle(.white)
+            Text("\(recap.weekStart.formatted(.dateTime.day().month(.abbreviated))) – \(end.formatted(.dateTime.day().month(.abbreviated)))")
+                .font(.system(size: 12.5, weight: .medium)).foregroundStyle(SnappetColor.brand)
+            // One Text (a big light number + a small unit) so it stays a static text for the UI test.
+            Text("\(Text("\(recap.rounds)").font(.system(size: 40, weight: .light)).foregroundStyle(SnappetColor.ink)) \(Text(recap.rounds == 1 ? "chore" : "chores").font(SnappetType.metricUnit).foregroundStyle(SnappetColor.textSecondary))")
+                .monospacedDigit()
                 .accessibilityIdentifier("household.recap.total")
             if let goal = recap.goal, goal.target > 0 {
                 Text(recap.goalMet ? "Goal smashed\(goal.reward.isEmpty ? "" : ": \(goal.reward) unlocked") 🎉"
                                    : "\(recap.rounds) of \(goal.target) towards the goal")
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                    .font(SnappetType.body).foregroundStyle(SnappetColor.ink)
             } else if recap.rounds == 0 {
-                Text("A quiet week. \(store.petName) is ready when you are.").font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                Text("A quiet week. \(store.petName) is ready when you are.").font(SnappetType.body)
+                    .foregroundStyle(SnappetColor.textSecondary)
             }
             if recap.levelAfter > recap.levelBefore {
-                Text("\(store.petName) grew to House Lv \(recap.levelAfter)").font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(hex: 0x8CE09F))
+                Text("\(store.petName) grew to House Lv \(recap.levelAfter)").font(SnappetType.body)
+                    .foregroundStyle(SnappetColor.brand)
             }
             if !recap.lines.isEmpty || !recap.thanks.isEmpty || recap.balanced {
-                Text("THANK-YOUS").font(.caption.weight(.heavy)).kerning(1).foregroundStyle(.white.opacity(0.6)).padding(.top, 6)
+                Text("Thank-yous").snappetLabel().padding(.top, 6)
             }
             ForEach(recap.lines, id: \.member.id) { line in
                 row(MemberAvatar(name: line.member.id == store.me ? store.myName : line.member.name, id: line.member.id),
@@ -384,21 +390,17 @@ struct HouseholdRecapCard: View {
                 row(Text("⚖️"), Text("Everyone's share stayed close"))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(LinearGradient(colors: [Color(hex: 0x2A3B33), Color(hex: 0x1A1C22)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .environment(\.colorScheme, .dark)
+        .snappetPanel()
     }
 
     private func row(_ icon: some View, _ text: Text) -> some View {
         HStack(spacing: 8) {
             icon
-            text.font(.subheadline).foregroundStyle(.white)
+            text.font(SnappetType.detail).foregroundStyle(SnappetColor.ink)
             Spacer(minLength: 0)
         }
         .padding(9)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -415,8 +417,12 @@ struct HouseholdPowerHourRow: View {
                 banner(hour, now: context.date)
             } else {
                 Button { starting = true } label: {
-                    Label("Start a power hour", systemImage: "sparkles")
-                        .font(.subheadline.weight(.semibold))
+                    HStack {
+                        Label("Start a power hour", systemImage: "sparkles").font(SnappetType.body)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(SnappetColor.textTertiary)
+                    }
                 }
                 .accessibilityIdentifier("household.powerHour.start")
             }
@@ -432,21 +438,24 @@ struct HouseholdPowerHourRow: View {
         let who = progress.members.map { $0 == store.me ? "you" : store.board.name(of: $0) }
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("Power hour", systemImage: "sparkles").font(.headline).foregroundStyle(SnappetColor.household)
+                Label("Power hour", systemImage: "sparkles").snappetTitle()
                 Spacer()
-                Text("\(left / 60):\(String(format: "%02d", left % 60)) left").font(.subheadline.monospacedDigit().weight(.semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text("\(left / 60):\(String(format: "%02d", left % 60))").font(.system(size: 24, weight: .light)).monospacedDigit()
+                    Text("left").font(SnappetType.metricUnit).foregroundStyle(SnappetColor.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
             }
             Text(hour.target > 0 ? "\(progress.done) of \(hour.target) chores" : "\(progress.done) chores so far")
-                .font(.subheadline)
+                .font(SnappetType.body)
                 .accessibilityIdentifier("household.powerHour.count")
-            ProgressView(value: Double(min(progress.done, max(1, hour.target))), total: Double(max(1, hour.target)))
-                .tint(SnappetColor.household)
+            HouseholdThinBar(fraction: Double(min(progress.done, max(1, hour.target))) / Double(max(1, hour.target)))
             HStack {
                 Text(who.isEmpty ? "Tick something to get it going" : "In: \(who.joined(separator: ", "))")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .snappetDetail()
                 Spacer()
                 Button("End", role: .destructive) { store.endPowerHour() }
-                    .font(.caption.weight(.bold)).buttonStyle(.bordered)
+                    .buttonStyle(HouseholdOutlineStyle(tint: SnappetColor.perfHard))
                     .accessibilityIdentifier("household.powerHour.end")
             }
         }

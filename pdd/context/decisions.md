@@ -10576,3 +10576,15 @@ stripes, and the panel read as an opaque slab.
 - **Don't put an action label beside a row of thumbnails.** On the For you, home and outfit cards, "Open ›", "Wear ›"
   and "Wear again ›" got the leftover width and wrapped letter by letter. Actions go in the title row, or become a
   full-width button.
+
+## 2026-11-05 — Design-system reset: Household (prompt 235)
+
+- **Per-person colours stay.** Member avatars and the fair-share bar keep the categorical palette (it still includes
+  sage) because the colour tells people apart; it is identity, not module wayfinding. Everything else that was sage
+  takes the user's accent.
+- **Status uses meaning colours, not the accent.** A nearby phone and the synced pill are green (`perfFresh`), changes
+  waiting is amber, and the pet's mood follows the buddy's rule from prompt 230: green when well, amber when low,
+  accent while paused.
+- **A big-number-plus-unit that a UI test reads stays one `Text`.** The recap total and goal progress interpolate
+  two styled `Text`s into one. An HStack would turn `staticTexts["household.recap.total"]` into an "other" element and
+  break `HouseholdUITests`.

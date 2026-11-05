@@ -79,6 +79,7 @@ struct ChoreEditorSheet: View {
                         Text("Anywhere").tag("")
                         ForEach(Self.rooms, id: \.self) { Text($0).tag($0) }
                     }
+                    .tint(SnappetColor.textSecondary)   // picked values grey, like Settings
                 }
 
                 Section("Effort") {
@@ -92,6 +93,7 @@ struct ChoreEditorSheet: View {
                     Picker("Repeats", selection: $mode) {
                         ForEach(RepeatMode.allCases) { Text($0.rawValue).tag($0) }
                     }
+                    .tint(SnappetColor.textSecondary)
                     .accessibilityIdentifier("household.editor.repeats")
                     switch mode {
                     case .weekdays:
@@ -122,6 +124,7 @@ struct ChoreEditorSheet: View {
                         Picker("Person", selection: Binding(get: { fixedMember ?? me }, set: { fixedMember = $0 })) {
                             ForEach(members) { m in Text(m.id == me ? "You" : m.name).tag(m.id) }
                         }
+                        .tint(SnappetColor.textSecondary)
                     }
                 } header: {
                     Text("Who does it")
@@ -196,10 +199,10 @@ struct WeekdayToggles: View {
                     if on { selection.remove(d) } else { selection.insert(d) }
                 } label: {
                     Text(cal.veryShortWeekdaySymbols[d - 1])
-                        .font(.caption.weight(.bold))
+                        .font(.system(size: 12, weight: on ? .semibold : .regular))
                         .frame(maxWidth: .infinity, minHeight: 32)
-                        .background(on ? SnappetColor.household : SnappetColor.surfaceMuted, in: Circle())
-                        .foregroundStyle(on ? Color.black.opacity(0.8) : SnappetColor.textSecondary)
+                        .background(on ? SnappetColor.brand : SnappetColor.surfaceMuted, in: Circle())
+                        .foregroundStyle(on ? SnappetColor.onBrand : SnappetColor.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(cal.weekdaySymbols[d - 1])
