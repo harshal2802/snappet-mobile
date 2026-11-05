@@ -70,11 +70,11 @@ private struct SessionRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "brain.head.profile").foregroundStyle(.red)
+            Image(systemName: "brain.head.profile").foregroundStyle(SnappetColor.textSecondary)
             Text(session.completedAt, format: .dateTime.hour().minute())
             Spacer()
             Text("\(session.minutes) min")
-                .font(.subheadline.weight(.semibold)).monospacedDigit()
+                .font(.subheadline).monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }

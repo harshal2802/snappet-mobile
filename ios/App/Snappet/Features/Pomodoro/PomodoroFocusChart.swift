@@ -39,17 +39,23 @@ struct PomodoroFocusChart: View {
     let data: [DailyFocus]
 
     private var total: Int { data.reduce(0) { $0 + $1.minutes } }
+    /// At least 0–25 min, so a stub (or a short day) stays short when the week is empty.
+    private var top: Double { Double(max(data.map(\.minutes).max() ?? 0, 25)) }
+    private var stub: Double { top * 0.04 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Last 7 days").font(.headline)
+            Text("Last 7 days").snappetLabel()
             Chart(data) { point in
                 BarMark(
                     x: .value("Day", point.day, unit: .day),
-                    y: .value("Minutes", point.minutes)
+                    // An empty day draws a short stub so it still reads as a day.
+                    y: .value("Minutes", point.minutes > 0 ? Double(point.minutes) : stub),
+                    width: .ratio(0.5)
                 )
-                .foregroundStyle(.red)
-                .cornerRadius(4)
+                // Thin accent bars; empty days are a hairline stub (prompt 238; were red).
+                .foregroundStyle(point.minutes > 0 ? SnappetColor.brand : SnappetColor.hairline)
+                .cornerRadius(3)
             }
             .chartXAxis {
                 AxisMarks(values: .stride(by: .day)) { value in
@@ -57,11 +63,11 @@ struct PomodoroFocusChart: View {
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) }
+            .chartYScale(domain: 0...top)
             .frame(height: 160)
             .accessibilityIdentifier("pomodoro.chart")
             .accessibilityLabel("Focus minutes for the last 7 days, \(total) minutes total")
         }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
     }
 }

@@ -385,7 +385,7 @@ const nodes = [
 
   // ═════════════════ MODULE: Pomodoro ═════════════════
   { id: "m-pomodoro", label: "Pomodoro", type: "module", group: "pomodoro", category: "productivity", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Pomodoro/PomodoroModule.swift", desc: "Focus timer with session history and persisted settings.", tags: ["timer","focus"] },
+    file: "ios/App/Snappet/Features/Pomodoro/PomodoroModule.swift", desc: "Restyled to the design system in prompt 238 (focus = user accent, break green; thin ring, light countdown, one stats panel, thin accent bars, ink-on-accent live chip). Focus timer with session history and persisted settings.", tags: ["timer","focus"] },
   { id: "pomodoro-root", label: "PomodoroRootView", type: "screen", group: "pomodoro", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroRootView.swift", desc: "The timer face + a 7-day focus chart. Pushes History; presents Settings.", tags: ["root","timer"], shot: "../screenshots/04-pomodoro.png" },
   { id: "pomodoro-history", label: "PomodoroHistoryView", type: "screen", group: "pomodoro", category: "productivity", platform: "ios+android",

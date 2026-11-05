@@ -175,7 +175,7 @@ struct AppLibraryView: View {
     }
 
     /// Modules restyled in the design-system reset — they take the user's accent, not their wayfinding tint.
-    static let suiteAccentModules: Set<String> = ["kilter", WorkoutTrackerModule.id, "festival", "wardrobe", "household", "habit"]
+    static let suiteAccentModules: Set<String> = ["kilter", WorkoutTrackerModule.id, "festival", "wardrobe", "household", "habit", "pomodoro"]
 
     /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).
     @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
