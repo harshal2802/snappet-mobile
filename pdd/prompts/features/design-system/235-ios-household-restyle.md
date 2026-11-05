@@ -46,4 +46,4 @@ Restyle the Household mini-app to the design system. It is visual only: ids, flo
 - [x] Affected suites: `HouseholdUITests` 5/5. `HouseholdE2ETests` needs two simulators and is skipped in normal runs.
   As built matches the mockup.
 - [x] Unit suite alone: 2690 green.
-- [ ] Device: user on MrRobot.
+- [x] Device: user on MrRobot 2026-11-05 ("looks good").
