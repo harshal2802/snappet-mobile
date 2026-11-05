@@ -10594,3 +10594,17 @@ stripes, and the panel read as an opaque slab.
 - **Don't animate a Charts `SectorMark` donut between totals.** When a slice was added, Charts interpolated the
   sectors through a NaN angle and trapped (NaN → Int), crashing Budget. The donut only sweeps in on appear, and the
   sweep starts at a sliver of each slice, never 0.
+
+## 2026-11-05 — Design-system reset: the small apps (prompts 237–242)
+
+- **One mockup, six stacked PRs.** The user approved one page covering Habits, Pomodoro, Journal, Tip, Budget and
+  Split Expenses. Each app ships as its own PR, stacked so `suiteAccentModules`, this file and the knowledge graph
+  don't conflict.
+- **Meaning colours stay:**
+  - Pomodoro's break is green, and focus takes the accent.
+  - Split Expenses: owed is green and owe is red.
+  - Budget: amber at 85%, red when over.
+  - The receipt check is green / amber / red.
+  - Budget's donut slices keep categorical colours.
+- **A primary button inside `ContentUnavailableView` actions needs a fixed width.** With only `maxWidth`, the
+  full-width style collapsed to its label.

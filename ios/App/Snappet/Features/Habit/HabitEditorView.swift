@@ -80,9 +80,11 @@ struct HabitEditorView: View {
                                 Image(systemName: sym)
                                     .font(.title2)
                                     .frame(width: 44, height: 44)
-                                    .background(symbol == sym ? Color.green.opacity(0.2) : Color.clear)
+                                    .background(symbol == sym ? SnappetColor.brand.opacity(0.12) : Color.clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(symbol == sym ? .green : .primary)
+                                    .overlay(RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(symbol == sym ? SnappetColor.brand : Color.clear, lineWidth: 1))
+                                    .foregroundStyle(symbol == sym ? SnappetColor.brand : SnappetColor.ink)
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("habit.symbol.\(sym)")
@@ -146,6 +148,7 @@ struct HabitEditorView: View {
                 Text("Excused").tag(false)
                 Text("Missed").tag(true)
             }
+            .tint(SnappetColor.textSecondary)   // picked value grey, like Settings
             .accessibilityIdentifier("habit.skipPolicy")
             if let unlink {
                 Button("Unlink from routine\(linkedRoutines.count == 1 ? "" : "s")", role: .destructive) {

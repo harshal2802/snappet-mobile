@@ -35,8 +35,9 @@ struct HabitRootView: View {
                 } description: {
                     Text("Add a habit to start building a daily streak.")
                 } actions: {
-                    Button("Add Habit") { showingAdd = true }
-                        .buttonStyle(.borderedProminent)
+                    Button("Add habit") { showingAdd = true }
+                        .buttonStyle(SnappetWidePrimaryStyle())
+                        .frame(width: 220)   // the empty view gives actions no width of their own
                         .accessibilityIdentifier("habit.add")
                 }
             } else {
@@ -77,9 +78,11 @@ struct HabitRootView: View {
 
     private var list: some View {
         List {
+            // One card per habit (design-system restyle, prompt 237). Delete is the row's swipe / context action,
+            // which confirms first.
             ForEach(Array(habits.enumerated()), id: \.element.id) { index, habit in
                 let schedule = schedule(for: habit)
-                HabitRow(
+                Section { HabitRow(
                     habit: habit,
                     index: index,
                     streak: streak(for: habit),
@@ -96,10 +99,10 @@ struct HabitRootView: View {
                     toggleDay: { day in toggle(habit, day: day) },
                     edit: { editingHabit = habit },
                     requestDelete: { pendingDelete = habit }
-                )
+                ) }
             }
-            .onDelete(perform: deleteHabits)
         }
+        .listSectionSpacing(10)
     }
 
     private var deleteDialogBinding: Binding<Bool> {
@@ -261,11 +264,6 @@ struct HabitRootView: View {
         try? context.save()
     }
 
-    private func deleteHabits(at offsets: IndexSet) {
-        for index in offsets {
-            delete(habits[index])
-        }
-    }
 }
 
 // MARK: - Week strip model
@@ -316,17 +314,17 @@ private struct HabitRow: View {
         VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
             HStack(spacing: SnappetSpacing.md) {
                 Image(systemName: habit.symbol)
-                    .font(.title2)
-                    .foregroundStyle(SnappetColor.habits)
-                    .frame(width: 32)
+                    .font(.system(size: 15))
+                    .foregroundStyle(SnappetColor.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(habit.name).font(.headline)
+                    Text(habit.name).font(.system(size: 15, weight: .medium))
                     streakLabel
                     Text("\(scheduleLine) · \(ratePercent) last 30 days")
                         .lineLimit(1)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .snappetDetail()
                         .accessibilityIdentifier("habit.rate.\(index)")
                 }
 
@@ -334,8 +332,10 @@ private struct HabitRow: View {
 
                 Button(action: toggle) {
                     Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                        .font(.title)
-                        .foregroundStyle(isDoneToday ? SnappetColor.habits : Color.secondary)
+                        .font(.title.weight(.light))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(isDoneToday ? SnappetColor.onBrand : SnappetColor.textTertiary,
+                                         isDoneToday ? SnappetColor.brand : SnappetColor.textTertiary)
                         // Checkmark springs/bounces on toggle (issue #30 §5.5).
                         .symbolEffect(.bounce, value: reduceMotion ? false : isDoneToday)
                         .contentTransition(.symbolEffect(.replace))
@@ -359,7 +359,7 @@ private struct HabitRow: View {
             Button(action: edit) {
                 Label("Edit", systemImage: "pencil")
             }
-            .tint(SnappetColor.habits)
+            .tint(SnappetColor.brand)
         }
         .contextMenu {
             Button { edit() } label: { Label("Edit", systemImage: "pencil") }
@@ -388,15 +388,17 @@ private struct HabitRow: View {
                 Button { startLinked(linked.routine) } label: {
                     Label("Start", systemImage: "play.fill").font(.caption.weight(.semibold))
                         .imageScale(.small)
+                        .foregroundStyle(SnappetColor.onBrand)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(SnappetColor.brand, in: Capsule())
                 }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
-                .tint(SnappetColor.workout).controlSize(.small)
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("habit.startLinked")
             }
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9))
         // .contain first: an id on a bare container is stamped onto every child, hiding the Start button's own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("habit.linked")
@@ -408,15 +410,18 @@ private struct HabitRow: View {
     @ViewBuilder
     private var streakLabel: some View {
         if streak > 0 {
-            Label("\(streak) \(streakUnit)\(streak == 1 ? "" : "s") streak", systemImage: "flame.fill")
-                .font(.subheadline)
-                .foregroundStyle(SnappetColor.workout)
+            // "3-day streak": grey text, the flame in the accent (was an orange headline).
+            HStack(spacing: 4) {
+                Image(systemName: "flame.fill").foregroundStyle(SnappetColor.brand)
+                Text("\(streak) \(streakUnit)\(streak == 1 ? "" : "s") streak")
+            }
+                .font(SnappetType.detail)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .contentTransition(.numericText())
                 .animation(.snappy, value: streak)
         } else {
             Text("No streak yet")
-                .font(.subheadline)
-                .foregroundStyle(SnappetColor.textSecondary)
+                .snappetDetail()
         }
     }
 
@@ -430,7 +435,7 @@ private struct HabitRow: View {
                     .frame(width: 28, height: 36)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(SnappetColor.habits)
+            .foregroundStyle(SnappetColor.textTertiary)
             .accessibilityLabel("Edit habit")
             .accessibilityIdentifier("habit.edit")
 
@@ -470,15 +475,15 @@ private struct DayCell: View {
             VStack(spacing: 2) {
                 Text(weekdayLetter)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SnappetColor.textTertiary)
                 ZStack {
                     if day.isDone {
-                        Circle().fill(SnappetColor.habits)
+                        Circle().fill(SnappetColor.brand)
                     } else if !day.isDue || day.isSkipped {
                         // Off the schedule (or an excused skip) — drawn as an outline: it doesn't count.
                         Circle().strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                     } else {
-                        Circle().fill(SnappetColor.habits.opacity(0.12))
+                        Circle().fill(SnappetColor.surfaceMuted)
                     }
                     if day.isSkipped && !day.isDone {
                         Image(systemName: "arrow.uturn.right").font(.system(size: 9, weight: .bold))
@@ -486,7 +491,8 @@ private struct DayCell: View {
                     } else {
                         Text(dayNumber)
                             .font(.caption2)
-                            .foregroundStyle(day.isDone ? Color.white : day.isDue ? Color.secondary : Color.secondary.opacity(0.5))
+                            .font(.system(size: 11, weight: day.isDone ? .semibold : .regular))
+                            .foregroundStyle(day.isDone ? SnappetColor.onBrand : day.isDue ? SnappetColor.textSecondary : SnappetColor.textTertiary)
                     }
                 }
                 .frame(width: 28, height: 28)
