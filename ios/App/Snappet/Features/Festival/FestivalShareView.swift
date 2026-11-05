@@ -168,8 +168,7 @@ struct FestivalShareView: View {
                           message: Text("A festival lineup from Snappet")) {
                     Label("Share link", systemImage: "square.and.arrow.up")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.festival)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("festival.share.link")
             }
         }

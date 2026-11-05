@@ -76,11 +76,11 @@ struct FestivalForYouView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("✨ BUILT FROM HOW YOU DANCE")
-                .font(.caption2.weight(.bold)).kerning(1)
-                .foregroundStyle(SnappetColor.festival)
+            Text("✨ Built from how you dance")
+                .font(SnappetType.label)
+                .foregroundStyle(SnappetColor.brand)
             Text(heroHeadline)
-                .font(.title3.weight(.bold))
+                .font(.title3)
                 .foregroundStyle(SnappetColor.ink)
             Text("Ranked from your own heart-rate history and the gaps in your plan"
                  + (FestivalPlanIntelligence.isIntelligenceAvailable ? " — reasons written on device." : "."))
@@ -89,7 +89,7 @@ struct FestivalForYouView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(SnappetColor.festival.opacity(0.10), in: RoundedRectangle(cornerRadius: SnappetRadius.lg))
+        .snappetPanel()
         .accessibilityIdentifier("festival.forYou.hero")
     }
 
@@ -107,19 +107,19 @@ struct FestivalForYouView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(set.artist)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline)
                     .foregroundStyle(SnappetColor.ink)
                 Spacer(minLength: 6)
                 Text("\(set.stage) · \(FestivalSchedule.timeLabel(set.start, offsetSeconds: pack.utcOffsetSeconds))")
-                    .font(.caption2.weight(.semibold))
+                    .font(.caption2)
                     .foregroundStyle(SnappetColor.textSecondary)
                 Button {
                     star(set)
                 } label: {
                     Label("Star", systemImage: "plus")
                         .labelStyle(.iconOnly)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(SnappetColor.festival)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Star \(set.artist)")
@@ -154,7 +154,7 @@ struct FestivalForYouView: View {
 
     private var leadSettingRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "alarm").foregroundStyle(SnappetColor.festival)
+            Image(systemName: "alarm").foregroundStyle(SnappetColor.brand)
             Text("Remind me before starred sets").font(.footnote)
             Spacer()
             Menu {
@@ -164,7 +164,7 @@ struct FestivalForYouView: View {
             } label: {
                 Text(FestivalNotifications.leadLabel(leadMinutes))
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(SnappetColor.festival)
+                    .foregroundStyle(SnappetColor.brand)
             }
             .accessibilityIdentifier("festival.forYou.lead")
         }
@@ -174,7 +174,7 @@ struct FestivalForYouView: View {
 
     private var privacyCard: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles").foregroundStyle(SnappetColor.festival)
+            Image(systemName: "sparkles").foregroundStyle(SnappetColor.brand)
             Text("On-device only. Foundation Models write the “why” lines; the ranking is pure Snappet "
                  + "logic. Nothing about your taste leaves the phone.")
                 .font(.caption2)

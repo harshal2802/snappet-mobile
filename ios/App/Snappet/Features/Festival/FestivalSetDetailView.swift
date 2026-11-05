@@ -118,7 +118,7 @@ struct FestivalSetDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(set.artist)
-                .font(.title.bold())
+                .font(.title.weight(.semibold))
                 .accessibilityIdentifier("festival.set.artist")
             Text("\(set.stage) · "
                  + "\(FestivalSchedule.timeLabel(set.start, offsetSeconds: pack.utcOffsetSeconds))–"
@@ -180,13 +180,13 @@ struct FestivalSetDetailView: View {
             stat("\(resolvedTags.count)", "Clips")
         }
         .padding(.vertical, 12)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .snappetPanel()
         .accessibilityIdentifier("festival.set.stats")
     }
 
     private func stat(_ value: String, _ label: String, tint: Color = SnappetColor.ink) -> some View {
         VStack(spacing: 2) {
-            Text(value).font(.headline.monospacedDigit()).foregroundStyle(tint)
+            Text(value).font(.system(size: 22, weight: .light).monospacedDigit()).foregroundStyle(tint)
             Text(label).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -200,12 +200,11 @@ struct FestivalSetDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Your heart rate")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SnappetColor.textSecondary)
+                        .snappetLabel()
                     Spacer()
                     if let callout = peakCallout {
                         Text(callout)
-                            .font(.caption2.weight(.bold))
+                            .font(.caption2)
                             .foregroundStyle(SnappetColor.perfHard)
                             .accessibilityIdentifier("festival.set.peak")
                     }
@@ -215,22 +214,18 @@ struct FestivalSetDetailView: View {
                     .accessibilityIdentifier("festival.set.hrChart")
             }
             .padding(12)
-            .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md)
-                .strokeBorder(SnappetColor.hairline))
+            .snappetPanel()
         }
     }
 
     @ViewBuilder private var clipsSection: some View {
         HStack {
-            Text("CLIPS FROM THIS SET")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(SnappetColor.textSecondary)
-                .kerning(1)
+            Text("Clips from this set")
+                .snappetLabel()
             Spacer()
             Button("Review tags ›") { showingReview = true }
-                .font(.caption.weight(.bold))
-                .tint(SnappetColor.festival)
+                .font(.caption.weight(.medium))
+                .tint(SnappetColor.brand)
                 .accessibilityIdentifier("festival.set.reviewTags")
         }
         if clipRows.isEmpty {
@@ -259,11 +254,11 @@ struct FestivalSetDetailView: View {
             FestivalClipThumb(localIdentifier: row.localIdentifier, isVideo: row.isVideo)
                 .frame(width: 84, height: 106)
             if row.isAuto {
-                Text("✦ AUTO")
-                    .font(.system(size: 8, weight: .bold))
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(SnappetColor.festival.opacity(0.85), in: Capsule())
-                    .foregroundStyle(.white)
+                Text("✦ Auto")
+                    .font(.system(size: 9, weight: .semibold))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(SnappetColor.brand, in: Capsule())
+                    .foregroundStyle(SnappetColor.onBrand)
                     .padding(4)
             }
         }
@@ -272,11 +267,8 @@ struct FestivalSetDetailView: View {
     private var reelCTA: some View {
         NavigationLink(value: FestivalSetReelRoute()) {
             Label("Make a reel of this set", systemImage: "sparkles")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(SnappetColor.festival)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .disabled(clipRows.isEmpty)
         .accessibilityIdentifier("festival.set.reel")
     }
