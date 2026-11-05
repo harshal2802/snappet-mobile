@@ -5,7 +5,7 @@ import SwiftUI
 //   • `FestivalTourView`             — the 3-card value tour shown once on first open (frames 1–4)
 //   • `FestivalSetupChecklistView`   — the guided checklist that replaces the empty state (frame 5)
 //   • `FestivalGettingStartedBanner` — the collapsed nudge above the schedule (frame 6)
-// All use `SnappetColor.festival` (UV orchid); coral appears only on nothing here — the festival
+// All use `SnappetColor.brand` (UV orchid); coral appears only on nothing here — the festival
 // accent carries the primary path, per the wireframe.
 
 // MARK: - The value tour (frames 1–4)
@@ -45,15 +45,15 @@ struct FestivalTourView: View {
         HStack {
             Button { withAnimation { page -= 1 } } label: {
                 Image(systemName: "chevron.left").font(.headline)
-                    .foregroundStyle(SnappetColor.festival)
+                    .foregroundStyle(SnappetColor.brand)
             }
             .accessibilityIdentifier("festival.tour.back")
             Spacer()
-            Text("How it works").font(.subheadline.weight(.bold))
+            Text("How it works").font(.subheadline.weight(.semibold))
             Spacer()
             Button("Skip") { onFinish() }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(SnappetColor.festival)
+                .foregroundStyle(SnappetColor.brand)
                 .accessibilityIdentifier("festival.tour.skip")
         }
         .padding(.horizontal).padding(.vertical, 10)
@@ -64,11 +64,10 @@ struct FestivalTourView: View {
         VStack(spacing: 14) {
             Spacer()
             Text("🎪").font(.system(size: 56))
-                .shadow(color: SnappetColor.festival.opacity(0.5), radius: 18, y: 8)
             VStack(spacing: 6) {
-                Text("Plan it. Dance it.").font(.largeTitle.weight(.heavy))
-                Text("Keep it.").font(.largeTitle.weight(.heavy))
-                    .foregroundStyle(SnappetColor.festival)
+                Text("Plan it. Dance it.").font(.largeTitle.weight(.semibold))
+                Text("Keep it.").font(.largeTitle.weight(.semibold))
+                    .foregroundStyle(SnappetColor.brand)
             }
             .multilineTextAlignment(.center)
             Text("Your festival weekend — the lineup, your plan, and every clip — all on this iPhone.")
@@ -87,7 +86,7 @@ struct FestivalTourView: View {
                 Button { withAnimation { page = 1 } } label: {
                     Text("Take a quick tour").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.festival)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .controlSize(.large)
                 .accessibilityIdentifier("festival.tour.take")
 
@@ -102,8 +101,8 @@ struct FestivalTourView: View {
 
     private func postureChip(_ symbol: String, bold: String, _ rest: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).foregroundStyle(SnappetColor.festival).frame(width: 22)
-            (Text(bold).font(.caption.weight(.bold)).foregroundColor(SnappetColor.ink)
+            Image(systemName: symbol).foregroundStyle(SnappetColor.brand).frame(width: 22)
+            (Text(bold).font(.caption.weight(.semibold)).foregroundColor(SnappetColor.ink)
              + Text(" " + rest).font(.caption).foregroundColor(SnappetColor.textSecondary))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -115,7 +114,7 @@ struct FestivalTourView: View {
 
     // Frame 2 — get the lineup.
     private var getLineupCard: some View {
-        tourCard(kicker: "STEP ONE", title: "Get the lineup in", page: 1,
+        tourCard(kicker: "Step one", title: "Get the lineup in", page: 1,
                  blurb: "Three ways — pick whatever you've got. It installs once and lives on your phone.",
                  cta: "Next") {
             VStack(spacing: 11) {
@@ -131,7 +130,7 @@ struct FestivalTourView: View {
 
     // Frame 3 — star your plan.
     private var starPlanCard: some View {
-        tourCard(kicker: "STEP TWO", title: "Star your plan", page: 2,
+        tourCard(kicker: "Step two", title: "Star your plan", page: 2,
                  blurb: "Tap ★ on the sets you can't miss. Your stars do the rest.",
                  cta: "Next") {
             VStack(spacing: 12) {
@@ -157,7 +156,7 @@ struct FestivalTourView: View {
 
     // Frame 4 — capture the night.
     private var captureCard: some View {
-        tourCard(kicker: "STEP THREE", title: "Capture the night", page: 3,
+        tourCard(kicker: "Step three", title: "Capture the night", page: 3,
                  blurb: "Tap “I'm here” when a set grabs you — the rest is automatic.",
                  cta: "Get started") {
             VStack(spacing: 12) {
@@ -172,7 +171,7 @@ struct FestivalTourView: View {
                                 "ranks the artists by the heart rate they earned.")
                 }
                 HStack(spacing: 9) {
-                    Text("NOW").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
+                    Text("Now").font(.caption2).foregroundStyle(SnappetColor.textSecondary)
                         .frame(width: 38, alignment: .leading)
                     Text("Fred again..").font(.subheadline.weight(.semibold))
                     Spacer(minLength: 6)
@@ -192,9 +191,9 @@ struct FestivalTourView: View {
                                      cta: String, @ViewBuilder art: () -> Art) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(kicker).font(.caption2.weight(.heavy)).kerning(1.2)
-                    .foregroundStyle(SnappetColor.festival)
-                Text(title).font(.title.weight(.heavy))
+                Text(kicker).font(SnappetType.label)
+                    .foregroundStyle(SnappetColor.brand)
+                Text(title).font(.title.weight(.semibold))
                 Text(blurb).font(.subheadline).foregroundStyle(SnappetColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -204,7 +203,7 @@ struct FestivalTourView: View {
             Spacer(minLength: 12)
             dots(active: page - 1).frame(maxWidth: .infinity)
             Button { advance() } label: { Text(cta).frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.festival)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .controlSize(.large)
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 12)
                 .accessibilityIdentifier(page == lastPage ? "festival.tour.getStarted" : "festival.tour.next")
@@ -219,7 +218,7 @@ struct FestivalTourView: View {
         HStack(spacing: 7) {
             ForEach(0..<3, id: \.self) { i in
                 Capsule()
-                    .fill(i == active ? SnappetColor.festival : SnappetColor.hairline)
+                    .fill(i == active ? SnappetColor.brand : SnappetColor.hairline)
                     .frame(width: i == active ? 20 : 7, height: 7)
             }
         }
@@ -228,16 +227,16 @@ struct FestivalTourView: View {
 
     private func optionRow(_ symbol: String, _ name: String, _ detail: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.title3).foregroundStyle(SnappetColor.festival)
+            Image(systemName: symbol).font(.title3).foregroundStyle(SnappetColor.ink)
                 .frame(width: 40, height: 40)
-                .background(SnappetColor.festival.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 11))
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).font(.subheadline.weight(.semibold))
                 Text(detail).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer(minLength: 6)
-            Image(systemName: "chevron.right").font(.subheadline.weight(.bold))
-                .foregroundStyle(SnappetColor.festival)
+            Image(systemName: "chevron.right").font(.subheadline.weight(.medium))
+                .foregroundStyle(SnappetColor.brand)
         }
         .padding(13)
         .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
@@ -247,10 +246,10 @@ struct FestivalTourView: View {
 
     private func featureLine(_ symbol: String, _ bold: String, _ rest: String) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: symbol).font(.subheadline).foregroundStyle(SnappetColor.festival)
+            Image(systemName: symbol).font(.subheadline).foregroundStyle(SnappetColor.brand)
                 .frame(width: 34, height: 34)
                 .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.sm))
-            (Text(bold).font(.caption.weight(.bold)).foregroundColor(SnappetColor.ink)
+            (Text(bold).font(.caption.weight(.semibold)).foregroundColor(SnappetColor.ink)
              + Text(" " + rest).font(.caption).foregroundColor(SnappetColor.textSecondary))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -264,11 +263,11 @@ struct FestivalTourView: View {
             Text(artist).font(.subheadline.weight(.semibold))
             Spacer(minLength: 6)
             if clash {
-                Text("⚠︎ clash").font(.caption2.weight(.bold))
+                Text("⚠︎ Clash").font(.caption2)
                     .foregroundStyle(SnappetColor.perfModerate)
             }
             Image(systemName: starred ? "star.fill" : "star")
-                .foregroundStyle(starred ? SnappetColor.festival : SnappetColor.hairline)
+                .foregroundStyle(starred ? SnappetColor.brand : SnappetColor.hairline)
         }
         .padding(.vertical, 7)
     }
@@ -298,7 +297,7 @@ struct FestivalSetupChecklistView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Let's get you set up").font(.title2.bold()).padding(.top, 8)
+                Text("Let's get you set up").font(.title2).padding(.top, 8)
                     .accessibilityIdentifier("festival.gs.checklist.title")
                 Text("Three quick steps and you're ready for the weekend.")
                     .font(.subheadline).foregroundStyle(SnappetColor.textSecondary)
@@ -320,7 +319,7 @@ struct FestivalSetupChecklistView: View {
                     Button { showingAddOptions = true } label: {
                         Text("Add a lineup").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent).tint(SnappetColor.festival)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .controlSize(.large)
                     .accessibilityIdentifier("festival.gs.addLineup")
 
@@ -354,7 +353,7 @@ struct FestivalSetupChecklistView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(SnappetColor.surfaceMuted)
-                    Capsule().fill(SnappetColor.festival)
+                    Capsule().fill(SnappetColor.brand)
                         .frame(width: max(4, geo.size.width * state.progressFraction))
                 }
             }
@@ -377,13 +376,13 @@ struct FestivalSetupChecklistView: View {
                 Text(detail).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer(minLength: 6)
-            Image(systemName: "chevron.right").font(.subheadline.weight(.bold))
-                .foregroundStyle(st == .locked ? SnappetColor.hairline : SnappetColor.festival)
+            Image(systemName: "chevron.right").font(.subheadline.weight(.medium))
+                .foregroundStyle(st == .locked ? SnappetColor.hairline : SnappetColor.brand)
         }
         .padding(13)
         .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md)
-            .strokeBorder(st == .activeNext ? SnappetColor.festival : SnappetColor.hairline,
+            .strokeBorder(st == .activeNext ? SnappetColor.brand : SnappetColor.hairline,
                           lineWidth: st == .activeNext ? 1.5 : 1))
         .accessibilityIdentifier("festival.gs.step.\(step.rawValue)")
     }
@@ -397,8 +396,8 @@ struct FestivalSetupChecklistView: View {
                 Circle().fill(SnappetColor.perfFresh).frame(width: 26, height: 26)
                 Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
             } else {
-                Text("\(step.rawValue)").font(.caption.weight(.bold))
-                    .foregroundStyle(st == .activeNext ? SnappetColor.festival : SnappetColor.textSecondary)
+                Text("\(step.rawValue)").font(.caption)
+                    .foregroundStyle(st == .activeNext ? SnappetColor.brand : SnappetColor.textSecondary)
             }
         }
     }
@@ -406,7 +405,7 @@ struct FestivalSetupChecklistView: View {
     private func borderColor(_ st: FestivalGettingStarted.StepState) -> Color {
         switch st {
         case .done: return SnappetColor.perfFresh
-        case .activeNext: return SnappetColor.festival
+        case .activeNext: return SnappetColor.brand
         case .locked: return SnappetColor.hairline
         }
     }
@@ -436,7 +435,7 @@ struct FestivalGettingStartedBanner: View {
             }
             Spacer(minLength: 6)
             Button { onDismiss() } label: {
-                Image(systemName: "xmark").font(.caption.weight(.bold))
+                Image(systemName: "xmark").font(.caption.weight(.medium))
                     .foregroundStyle(SnappetColor.textSecondary)
                     .padding(6)
             }
@@ -445,9 +444,9 @@ struct FestivalGettingStartedBanner: View {
             .accessibilityIdentifier("festival.gs.banner.dismiss")
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .background(SnappetColor.festival.opacity(0.12), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md)
-            .strokeBorder(SnappetColor.festival.opacity(0.35), lineWidth: 1))
+            .strokeBorder(SnappetColor.hairline, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture { if let next = state.nextStep { onTapNudge(next) } }
         // No container id (it wraps the ✕ button) — tests assert via `festival.gs.banner.title` +
@@ -456,13 +455,13 @@ struct FestivalGettingStartedBanner: View {
 
     private var ring: some View {
         ZStack {
-            Circle().stroke(SnappetColor.festival.opacity(0.2), lineWidth: 4)
+            Circle().stroke(SnappetColor.brand.opacity(0.2), lineWidth: 4)
             Circle().trim(from: 0, to: max(0.02, state.progressFraction))
-                .stroke(SnappetColor.festival, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .stroke(SnappetColor.brand, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text("\(state.completedCount)/\(FestivalGettingStarted.Step.allCases.count)")
-                .font(.system(size: 10, weight: .heavy))
-                .foregroundStyle(SnappetColor.festival)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(SnappetColor.brand)
         }
         .frame(width: 38, height: 38)
     }

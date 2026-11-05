@@ -147,10 +147,10 @@ import XCTest
 
         // 2 — day schedule: stage-grouped rows, the anchor set glowing NOW.
         let nowBadge = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH 'NOW'")).firstMatch
+            NSPredicate(format: "label BEGINSWITH 'Now'")).firstMatch
         XCTAssertTrue(nowBadge.waitForExistence(timeout: 6), "the live set should carry a NOW pill")
         XCTAssertTrue(app.staticTexts["Fred Midnight"].exists)
-        XCTAssertTrue(app.staticTexts["PYRAMID STAGE"].exists, "rows group by stage")
+        XCTAssertTrue(app.staticTexts["Pyramid Stage"].exists, "rows group by stage")
         snap("festival-schedule")
 
         // 3 — star the overlapping pair → both rows flag the clash; unstar clears it.

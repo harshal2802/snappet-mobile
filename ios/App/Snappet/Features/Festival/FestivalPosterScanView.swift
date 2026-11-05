@@ -88,8 +88,7 @@ struct FestivalPosterScanView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SnappetColor.festival)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .disabled(!canBuild)
                     .accessibilityIdentifier("festival.poster.build")
                 } footer: {
@@ -121,7 +120,7 @@ struct FestivalPosterScanView: View {
                  ? "Apple Intelligence structures the text on this iPhone — nothing about the poster leaves it."
                  : "The lineup is parsed on this iPhone — nothing about the poster leaves it."))
         } icon: {
-            Image(systemName: "lock.fill").foregroundStyle(SnappetColor.festival)
+            Image(systemName: "lock.fill").foregroundStyle(SnappetColor.brand)
         }
         .font(.footnote)
     }

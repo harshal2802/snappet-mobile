@@ -115,13 +115,11 @@ struct FestivalRecapView: View {
 
     private func heroCard(_ hero: FestivalRecap.Hero) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(lineup.name.uppercased()) · YOUR WEEKEND")
-                .font(.caption2.weight(.bold))
-                .kerning(1)
-                .foregroundStyle(.white.opacity(0.85))
+            Text("\(lineup.name) · your weekend")
+                .snappetLabel()
             Text(hero.nightsLine)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
+                .font(.title2)
+                .foregroundStyle(SnappetColor.ink)
                 .accessibilityIdentifier("festival.recap.nights")
             HStack(spacing: 0) {
                 heroStat("\(hero.setsSeen)", "sets seen")
@@ -132,18 +130,17 @@ struct FestivalRecapView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(
-            LinearGradient(colors: [SnappetColor.festival, SnappetColor.festival.opacity(0.65)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: SnappetRadius.lg))
+        // Restyle (prompt 233): a neutral card with light numbers — was a solid orchid gradient.
+        .snappetPanel()
         // No identifier on the card CONTAINER — it would flatten the child texts out of the
         // XCUITest tree (the highlights-P5 gotcha); `festival.recap.nights` id rides the text.
     }
 
     private func heroStat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 1) {
-            Text(value).font(.headline.monospacedDigit()).foregroundStyle(.white)
-            Text(label).font(.caption2).foregroundStyle(.white.opacity(0.85))
+            Text(value).font(.system(size: 22, weight: .light).monospacedDigit())
+                .foregroundStyle(label == "peak ♥" ? SnappetColor.perfHard : SnappetColor.ink)
+            Text(label).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -151,20 +148,15 @@ struct FestivalRecapView: View {
     private var reelCTA: some View {
         NavigationLink(value: FestivalReelRoute()) {
             Label("Make my festival reel", systemImage: "sparkles")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(SnappetColor.festival)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .disabled(clipsBySession.values.allSatisfy(\.isEmpty))
         .accessibilityIdentifier("festival.recap.reel")
     }
 
     @ViewBuilder private func artistSection(_ artists: [FestivalRecap.ArtistRow]) -> some View {
-        Text("BY ARTIST")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(SnappetColor.textSecondary)
-            .kerning(1)
+        Text("By artist")
+            .snappetLabel()
         ForEach(artists) { row in
             NavigationLink(value: pack.setsByID[row.setID]) {
                 artistRow(row)
@@ -181,11 +173,11 @@ struct FestivalRecapView: View {
         HStack(spacing: 10) {
             Image(systemName: "music.mic")
                 .font(.subheadline)
-                .foregroundStyle(SnappetColor.festival)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 36, height: 36)
                 .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.artist).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(row.artist).font(.subheadline).lineLimit(1)
                 Text(meta(for: row))
                     .font(.caption)
                     .foregroundStyle(SnappetColor.textSecondary)
@@ -193,7 +185,7 @@ struct FestivalRecapView: View {
             Spacer(minLength: 6)
             if let peak = row.peakBpm {
                 Text("♥ \(peak)")
-                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .font(.subheadline.monospacedDigit())
                     .foregroundStyle(SnappetColor.perfHard)
             }
         }

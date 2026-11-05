@@ -10559,3 +10559,10 @@ stripes, and the panel read as an opaque slab.
   day.
 - **A stage is entered as a running order.** You never enter one set at a time: "Add another artist" chains back to
   back with the same length, so a stage's night is typed artist after artist and only the exceptions need a picker.
+
+## 2026-11-04 — Design-system reset: Festival (prompt 233)
+
+- **Festival uses the user's accent**, not its own orchid, the same call as Kilter in #406: one accent across the app.
+  Orchid survives only as Festival's identity colour in the App Library and in Clips' activity chips, where every
+  activity keeps its own colour.
+- **Meaning colours stay:** clash amber, needs-you amber, HR red, done green.

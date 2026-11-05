@@ -29,7 +29,7 @@ struct FestivalImportSheet: View {
                         HStack(spacing: 10) {
                             Image(systemName: "music.mic")
                                 .font(.title3)
-                                .foregroundStyle(SnappetColor.festival)
+                                .foregroundStyle(SnappetColor.brand)
                                 .frame(width: 40, height: 40)
                                 .background(SnappetColor.surfaceMuted,
                                             in: RoundedRectangle(cornerRadius: 10))
@@ -54,10 +54,8 @@ struct FestivalImportSheet: View {
                     dismiss()
                 } label: {
                     Label(ctaLabel, systemImage: "plus.circle.fill")
-                        .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.festival)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .padding()
                 .background(.bar)
                 .accessibilityIdentifier("festival.import.confirm")

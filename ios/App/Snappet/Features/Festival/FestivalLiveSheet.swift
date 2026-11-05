@@ -96,12 +96,11 @@ struct FestivalLiveSheet: View {
 
     private func nowHero(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("ON THE FLOOR · \(attendance.stage.uppercased())")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(SnappetColor.festival)
-                .kerning(1)
+            Text("On the floor · \(attendance.stage)")
+                .font(SnappetType.label)
+                .foregroundStyle(SnappetColor.brand)
             Text(attendance.artist)
-                .font(.title2.bold())
+                .font(.title2.weight(.semibold))
                 .accessibilityIdentifier("festival.live.artist")
             if let set = currentSet {
                 let range = "\(FestivalSchedule.timeLabel(set.start, offsetSeconds: pack.utcOffsetSeconds))"
@@ -109,16 +108,13 @@ struct FestivalLiveSheet: View {
                 Text(now < set.end
                      ? "\(range) · \(FestivalSchedule.remainingLabel(set.end.timeIntervalSince(now)))"
                      : "\(range) · running late? Switch or end this set")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption)
                     .foregroundStyle(SnappetColor.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(SnappetColor.festival.opacity(0.12),
-                    in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md)
-            .strokeBorder(SnappetColor.festival.opacity(0.4)))
+        .snappetPanel()
     }
 
     private func hrRow(now: Date) -> some View {
@@ -127,7 +123,7 @@ struct FestivalLiveSheet: View {
             Spacer()
             if let session {
                 Text("Dancing \(FestivalSchedule.elapsedLabel(since: session.startedAt, now: now))")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline)
                     .monospacedDigit()
                     .foregroundStyle(SnappetColor.textSecondary)
             }
@@ -141,7 +137,7 @@ struct FestivalLiveSheet: View {
             // Interpolated, not concatenated: `+` makes a String and drops the markdown (prompt 232).
             Text("Anything you film — here or straight from the Camera app — tags to **\(attendance.artist)** while this set plays.")
         } icon: {
-            Image(systemName: "sparkles").foregroundStyle(SnappetColor.festival)
+            Image(systemName: "sparkles").foregroundStyle(SnappetColor.brand)
         }
         .font(.caption)
         .foregroundStyle(SnappetColor.textSecondary)
@@ -159,8 +155,8 @@ struct FestivalLiveSheet: View {
                 onSwitch()
                 dismiss()
             }
-            .font(.caption.weight(.bold))
-            .tint(SnappetColor.festival)
+            .font(.caption.weight(.medium))
+            .tint(SnappetColor.brand)
             .accessibilityIdentifier("festival.live.switch")
         }
     }

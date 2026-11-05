@@ -111,8 +111,8 @@ struct FestivalTagReviewView: View {
                                 FestivalTagSync.keepAll(mediaIDs: autos.map(\.mediaID),
                                                         packID: lineup.packID, context: context)
                             }
-                            .font(.caption.weight(.bold))
-                            .tint(SnappetColor.festival)
+                            .font(.caption.weight(.medium))
+                            .tint(SnappetColor.brand)
                             .accessibilityIdentifier("festival.review.keepAll")
                         }
                     }
@@ -138,12 +138,8 @@ struct FestivalTagReviewView: View {
                             selectedDay = date
                         } label: {
                             Text(dayName(date))
-                                .font(.caption.weight(.bold))
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(on ? AnyShapeStyle(SnappetColor.festival)
-                                               : AnyShapeStyle(SnappetColor.surfaceMuted),
-                                            in: Capsule())
-                                .foregroundStyle(on ? .white : SnappetColor.ink)
+                                .font(.caption)
+                                .snappetPill(selected: on)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("festival.review.day.\(date)")
@@ -179,18 +175,18 @@ struct FestivalTagReviewView: View {
                         Text(block.artist)
                             .font(.system(size: 9, weight: .semibold))
                             .lineLimit(1)
-                            .foregroundStyle(SnappetColor.festival)
+                            .foregroundStyle(SnappetColor.brand)
                             .padding(.horizontal, 3)
                             .frame(width: max(10, geo.size.width * block.width - 2),
                                    height: laneHeight - 3, alignment: .leading)
-                            .background(SnappetColor.festival.opacity(0.16),
+                            .background(SnappetColor.brand.opacity(0.16),
                                         in: RoundedRectangle(cornerRadius: 5))
                             .offset(x: geo.size.width * block.x,
                                     y: 6 + CGFloat(block.lane) * laneHeight)
                     }
                     ForEach(layout.ticks) { tick in
                         Capsule()
-                            .fill(tick.needsYou ? SnappetColor.perfModerate : SnappetColor.festival)
+                            .fill(tick.needsYou ? SnappetColor.perfModerate : SnappetColor.brand)
                             .frame(width: 3, height: CGFloat(layout.laneCount) * laneHeight)
                             .offset(x: geo.size.width * tick.x, y: 4)
                     }
@@ -205,10 +201,8 @@ struct FestivalTagReviewView: View {
     private func sectionHeader(_ title: String,
                                @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
         HStack {
-            Text(title.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(SnappetColor.textSecondary)
-                .kerning(1)
+            Text(title)
+                .snappetLabel()
             Spacer()
             trailing()
         }
@@ -227,12 +221,12 @@ struct FestivalTagReviewView: View {
                 if let stamp, let assignment {
                     Text("\(FestivalSchedule.timeLabel(stamp.captureDate, offsetSeconds: pack.utcOffsetSeconds))"
                          + " · \(FestivalTagging.caption(for: assignment.reason))")
-                        .font(.caption2.weight(.bold))
+                        .font(.caption2)
                         .foregroundStyle(SnappetColor.textSecondary)
                 }
                 HStack(spacing: 6) {
                     Text(assignment?.set?.artist ?? "—")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.subheadline)
                     if let assignment {
                         Text("\(FestivalTagging.percentLabel(assignment.confidence))"
                              + (FestivalTagging.alternativeLabel(for: assignment).map { " · \($0)" } ?? ""))
@@ -258,14 +252,14 @@ struct FestivalTagReviewView: View {
                 if let stamp = snap.stamps[tag.mediaID] {
                     Text("\(FestivalSchedule.timeLabel(stamp.captureDate, offsetSeconds: pack.utcOffsetSeconds))"
                          + " · \(tag.reason)")
-                        .font(.caption2.weight(.bold))
+                        .font(.caption2)
                         .foregroundStyle(SnappetColor.textSecondary)
                 }
                 HStack(spacing: 6) {
-                    Text(tag.artist).font(.subheadline.weight(.semibold))
+                    Text(tag.artist).font(.subheadline)
                     Text("✦ \(FestivalTagging.percentLabel(tag.confidence))")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(SnappetColor.festival)
+                        .foregroundStyle(SnappetColor.brand)
                 }
             }
             Spacer(minLength: 6)
@@ -281,8 +275,8 @@ struct FestivalTagReviewView: View {
     /// the assignment's own candidates, plus the "Not from a set" resolution.
     private func changeButton(_ mediaID: UUID, artist: String?) -> some View {
         Button("Change ›") { changing = mediaID }
-            .font(.caption.weight(.bold))
-            .tint(SnappetColor.festival)
+            .font(.caption.weight(.medium))
+            .tint(SnappetColor.brand)
             .accessibilityIdentifier("festival.review.change.\(artist ?? "clip")")
             .confirmationDialog("Which set is this clip from?",
                                 isPresented: Binding(get: { changing == mediaID },
@@ -312,16 +306,16 @@ struct FestivalTagReviewView: View {
     private func focusCard(_ ids: [UUID], snap: FestivalTagSync.Snapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "play.square.stack").font(.caption2.weight(.bold))
-                Text(ids.count == 1 ? "THE CLIP YOU TAPPED" : "FROM CLIPS · \(ids.count) CLIPS")
-                    .font(.caption2.weight(.bold)).kerning(1)
+                Image(systemName: "play.square.stack").font(.caption2)
+                Text(ids.count == 1 ? "The clip you tapped" : "From Clips · \(ids.count) clips")
+                    .font(SnappetType.label)
             }
-            .foregroundStyle(SnappetColor.festival)
+            .foregroundStyle(SnappetColor.brand)
             ForEach(ids, id: \.self) { focusRow($0, snap: snap) }
         }
         .padding(12)
-        .background(SnappetColor.festival.opacity(0.08), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md).strokeBorder(SnappetColor.festival, lineWidth: 2))
+        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md).strokeBorder(SnappetColor.brand, lineWidth: 1))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("festival.review.focus")
     }
@@ -343,14 +337,14 @@ struct FestivalTagReviewView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let stamp = snap.stamps[mediaID] {
                     Text(FestivalSchedule.timeLabel(stamp.captureDate, offsetSeconds: pack.utcOffsetSeconds))
-                        .font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
+                        .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
                 }
-                Text(state).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text(state).font(.subheadline).lineLimit(2)
             }
             Spacer(minLength: 6)
             Button("Change ›") { changing = mediaID }
-                .font(.caption.weight(.bold))
-                .tint(SnappetColor.festival)
+                .font(.caption.weight(.medium))
+                .tint(SnappetColor.brand)
                 .accessibilityIdentifier("festival.review.focus.change")
                 .confirmationDialog("Which set is this clip from?",
                                     isPresented: Binding(get: { changing == mediaID },
@@ -393,14 +387,14 @@ struct FestivalTagReviewView: View {
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(set.artist).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
+                            Text(set.artist).font(.subheadline).foregroundStyle(SnappetColor.ink)
                             Text("\(set.stage) · \(FestivalSchedule.timeLabel(set.start, offsetSeconds: pack.utcOffsetSeconds))–"
                                  + FestivalSchedule.timeLabel(set.end, offsetSeconds: pack.utcOffsetSeconds))
                                 .font(.caption).foregroundStyle(SnappetColor.textSecondary)
                         }
                         Spacer()
                         if set.start <= capture && capture <= set.end {
-                            Text("PLAYING THEN").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.festival)
+                            Text("Playing then").font(.caption2).foregroundStyle(SnappetColor.brand)
                         }
                     }
                 }

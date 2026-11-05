@@ -25,11 +25,11 @@ struct FestivalEmptyStateView: View {
             VStack(spacing: 20) {
                 Image(systemName: "music.mic")
                     .font(.system(size: 52))
-                    .foregroundStyle(SnappetColor.festival)
+                    .foregroundStyle(SnappetColor.brand)
                     .padding(.top, 24)
 
                 Text("Get festival lineups")
-                    .font(.title2.bold())
+                    .font(.title2)
 
                 Text("Snappet doesn't ship lineup data. Bring a festival onto this device once — "
                      + "then the whole weekend works offline.")
@@ -42,41 +42,56 @@ struct FestivalEmptyStateView: View {
                 VStack(spacing: 12) {
                     Button { onBrowse() } label: {
                         Label("Download from Snappet Lineups", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.catalog.browse")
 
                     Button { showingImporter = true } label: {
                         Label("Import pack file…", systemImage: "folder")
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.catalog.import")
 
                     Button { onScanPoster() } label: {
                         Label("Scan a lineup poster", systemImage: "camera.viewfinder")
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.poster.scan")
 
                     Button { onScan() } label: {
                         Label("Scan a friend's QR", systemImage: "qrcode.viewfinder")
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.scan")
 
                     Button { onCreate() } label: {
                         Label("Create a lineup", systemImage: "square.and.pencil")
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.create")
                 }
@@ -118,13 +133,13 @@ struct FestivalEmptyStateView: View {
             Label {
                 Text("**Community packs, kept on-device.** Lineups are public schedule data; installing is one GET, and nothing is ever uploaded.")
             } icon: {
-                Image(systemName: "lock.fill").foregroundStyle(SnappetColor.festival)
+                Image(systemName: "lock.fill").foregroundStyle(SnappetColor.brand)
             }
             Label {
                 Text("**Offline after install** — built for fields with no signal.")
             } icon: {
                 Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                    .foregroundStyle(SnappetColor.festival)
+                    .foregroundStyle(SnappetColor.brand)
             }
         }
         .font(.footnote)
@@ -230,13 +245,8 @@ struct FestivalCatalogBrowseView: View {
                         year = (year == y) ? nil : y
                     } label: {
                         Text(y)
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(year == y ? AnyShapeStyle(SnappetColor.festival)
-                                                  : AnyShapeStyle(SnappetColor.surfaceMuted),
-                                        in: Capsule())
-                            .foregroundStyle(year == y ? .white : SnappetColor.ink)
+                            .font(.caption)
+                            .snappetPill(selected: year == y)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("festival.browse.year.\(y)")
@@ -250,11 +260,11 @@ struct FestivalCatalogBrowseView: View {
         HStack(spacing: 12) {
             Image(systemName: "music.mic")
                 .font(.title3)
-                .foregroundStyle(SnappetColor.festival)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 40, height: 40)
                 .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(entry.name).font(.subheadline).lineLimit(1)
                 Text(FestivalBrowse.metaLine(startDate: entry.startDate, endDate: entry.endDate,
                                              stages: entry.stages, sets: entry.sets))
                     .font(.caption)
@@ -262,7 +272,7 @@ struct FestivalCatalogBrowseView: View {
                 if case .installing(let fraction) = rowState(entry) {
                     ProgressView(value: fraction)
                         .progressViewStyle(.linear)
-                        .tint(SnappetColor.festival)
+                        .tint(SnappetColor.brand)
                 }
             }
             Spacer(minLength: 8)
@@ -276,14 +286,14 @@ struct FestivalCatalogBrowseView: View {
             EmptyView()   // the inline bar under the meta line carries progress
         case .installed:
             Label("Installed", systemImage: "checkmark")
-                .font(.caption.weight(.bold))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(SnappetColor.perfFresh)
                 .labelStyle(.titleAndIcon)
         case .get:
-            Button("GET") { install(entry) }
-                .font(.caption.weight(.bold))
+            Button("Get") { install(entry) }
+                .font(.caption.weight(.medium))
                 .buttonStyle(.bordered)
-                .tint(SnappetColor.festival)
+                .tint(SnappetColor.brand)
                 .disabled(installer.isWorking)
                 .accessibilityIdentifier("festival.browse.get.\(entry.id)")
         }

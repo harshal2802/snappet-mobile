@@ -213,11 +213,11 @@ struct FestivalRootView: View {
         HStack(spacing: 12) {
             Image(systemName: "music.mic")
                 .font(.title3)
-                .foregroundStyle(SnappetColor.festival)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 40, height: 40)
                 .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(lineup.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(lineup.name).font(.subheadline).lineLimit(1)
                 Text(FestivalBrowse.metaLine(startDate: lineup.startDate, endDate: lineup.endDate,
                                              stages: lineup.stageCount, sets: lineup.setCount))
                     .font(.caption)
@@ -334,7 +334,7 @@ struct FestivalScanView: View {
                     .padding(.top, 8)
                     .accessibilityIdentifier("festival.scanner")
                 // A screenshot of a lineup code works too (prompt 201).
-                PhotoCodePickerRow(idPrefix: "festival.scanner", tint: SnappetColor.festival,
+                PhotoCodePickerRow(idPrefix: "festival.scanner", tint: SnappetColor.brand,
                                    decode: { SharedLineup(decoding: $0) },
                                    onFound: { decoded in onScan(decoded); dismiss() })
             }

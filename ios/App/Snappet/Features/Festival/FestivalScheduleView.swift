@@ -99,7 +99,7 @@ struct FestivalScheduleView: View {
                     showingForYou = true
                 } label: {
                     Image(systemName: "sparkles")
-                        .foregroundStyle(SnappetColor.festival)
+                        .foregroundStyle(SnappetColor.brand)
                 }
                 .accessibilityLabel("For you")
                 .accessibilityIdentifier("festival.forYou")
@@ -299,17 +299,19 @@ struct FestivalScheduleView: View {
                 Button {
                     selectedDay = tab.date
                 } label: {
+                    // Restyle (prompt 233): outline tabs, the selected one an accent outline — was an
+                    // orchid fill with white text.
                     VStack(spacing: 1) {
-                        Text(tab.weekday).font(.caption2.weight(.bold))
-                            .foregroundStyle(on ? .white : SnappetColor.textSecondary)
-                        Text(tab.dayNumber).font(.headline)
-                            .foregroundStyle(on ? .white : SnappetColor.ink)
+                        Text(tab.weekday.capitalized).font(.caption2)
+                            .foregroundStyle(on ? SnappetColor.brand : SnappetColor.textSecondary)
+                        Text(tab.dayNumber).font(.headline.weight(.regular))
+                            .foregroundStyle(on ? SnappetColor.brand : SnappetColor.ink)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(on ? AnyShapeStyle(SnappetColor.festival)
-                                   : AnyShapeStyle(SnappetColor.surfaceMuted),
-                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    .overlay(RoundedRectangle(cornerRadius: SnappetRadius.md)
+                        .strokeBorder(on ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("festival.day.\(tab.date)")
@@ -321,10 +323,8 @@ struct FestivalScheduleView: View {
 
     private func stageSection(_ group: FestivalSchedule.StageGroup, pack: FestivalPack) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(group.stage.uppercased())
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(SnappetColor.textSecondary)
-                .kerning(1)
+            Text(group.stage)
+                .snappetLabel()
             ForEach(group.rows) { row in
                 setRow(row, pack: pack)
             }
@@ -345,12 +345,12 @@ struct FestivalScheduleView: View {
                         Text(FestivalSchedule.timeLabel(row.set.start, offsetSeconds: pack.utcOffsetSeconds))
                         Text(FestivalSchedule.timeLabel(row.set.end, offsetSeconds: pack.utcOffsetSeconds))
                     }
-                    .font(.caption2.weight(.bold))
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(SnappetColor.textSecondary)
                     .frame(width: 44, alignment: .leading)
 
                     Text(row.set.artist)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.subheadline)
                         .lineLimit(1)
                         .foregroundStyle(row.state == .past ? SnappetColor.textSecondary : SnappetColor.ink)
 
@@ -367,24 +367,22 @@ struct FestivalScheduleView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: SnappetRadius.md)
-                .fill(row.isNow ? SnappetColor.festival.opacity(0.14) : Color.clear)
-                .background(SnappetColor.surface,
-                            in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+                .fill(SnappetColor.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: SnappetRadius.md)
-                .strokeBorder(row.isNow ? SnappetColor.festival : SnappetColor.hairline,
-                              lineWidth: row.isNow ? 1.5 : 1)
+                .strokeBorder(row.isNow ? SnappetColor.brand : SnappetColor.hairline,
+                              lineWidth: 1)
         )
     }
 
     @ViewBuilder private func badges(for row: FestivalSchedule.Row) -> some View {
         if case .now(let remaining) = row.state {
-            Text("NOW · \(FestivalSchedule.remainingLabel(remaining))")
-                .font(.caption2.weight(.bold))
+            Text("Now · \(FestivalSchedule.remainingLabel(remaining))")
+                .font(.caption2)
                 .padding(.horizontal, 7).padding(.vertical, 2)
-                .background(SnappetColor.festival, in: Capsule())
-                .foregroundStyle(.white)
+                .overlay(Capsule().strokeBorder(SnappetColor.brand, lineWidth: 1))
+                .foregroundStyle(SnappetColor.brand)
         } else if case .upcoming(let startsIn) = row.state,
                   let label = FestivalSchedule.startsInLabel(startsIn) {
             Text(label)
@@ -392,8 +390,8 @@ struct FestivalScheduleView: View {
                 .foregroundStyle(SnappetColor.textSecondary)
         }
         if row.clashing {
-            Text("⚠︎ clash")
-                .font(.caption2.weight(.bold))
+            Text("⚠︎ Clash")
+                .font(.caption2)
                 .foregroundStyle(SnappetColor.perfModerate)
                 .accessibilityIdentifier("festival.clash.\(row.set.artist)")
         }
@@ -402,7 +400,7 @@ struct FestivalScheduleView: View {
         } label: {
             Image(systemName: row.starred ? "star.fill" : "star")
                 .font(.subheadline)
-                .foregroundStyle(row.starred ? SnappetColor.festival : SnappetColor.textSecondary)
+                .foregroundStyle(row.starred ? SnappetColor.brand : SnappetColor.textSecondary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(row.starred ? "Unstar \(row.set.artist)" : "Star \(row.set.artist)")
