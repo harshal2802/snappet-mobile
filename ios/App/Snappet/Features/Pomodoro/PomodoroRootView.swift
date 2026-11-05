@@ -98,33 +98,29 @@ struct PomodoroRootView: View {
         HStack(spacing: 16) {
             Button(action: timer.reset) {
                 Label("Reset", systemImage: "arrow.counterclockwise")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(PomodoroOutlineStyle())
             .accessibilityIdentifier("pomodoro.reset")
 
             if timer.isRunning {
                 Button(action: timer.pause) {
                     Label("Pause", systemImage: "pause.fill")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("pomodoro.pause")
             } else {
                 Button(action: timer.start) {
                     Label("Start", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .accessibilityIdentifier("pomodoro.start")
             }
         }
-        .controlSize(.large)
     }
 
-    /// Pulse accent for a phase: tomato while focusing, leaf-green on a break.
-    private static func tint(for phase: PomodoroPhase) -> Color {
-        phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits
+    /// A phase's colour: the user's accent while focusing, green (rest) on a break (prompt 238; was tomato / leaf).
+    static func tint(for phase: PomodoroPhase) -> Color {
+        phase == .focus ? SnappetColor.brand : SnappetColor.perfFresh
     }
 
     // MARK: Derived stats
@@ -170,13 +166,13 @@ enum PomodoroRoute: Hashable {
 
 private struct PhaseLabel: View {
     let phase: PomodoroPhase
-    private var tint: Color { phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits }
+    private var tint: Color { PomodoroRootView.tint(for: phase) }
     var body: some View {
         Label(phase.title, systemImage: phase == .focus ? "brain.head.profile" : "cup.and.saucer.fill")
-            .font(.title3.weight(.semibold))
+            .font(.system(size: 15, weight: .medium))
             .foregroundStyle(tint)
             .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, SnappetSpacing.sm)
-            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
     }
 }
 
@@ -192,15 +188,15 @@ private struct TimerRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(tint.opacity(0.15), lineWidth: 18)
+                .stroke(SnappetColor.hairline, lineWidth: 10)
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(tint, style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .stroke(tint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 // Smooth, continuous ring progress; instant under Reduce Motion.
                 .animation(reduceMotion ? nil : .linear(duration: 0.3), value: progress)
             Text(timeText)
-                .font(.system(size: countdownSize, weight: .semibold, design: .rounded))
+                .font(.system(size: countdownSize, weight: .light))
                 .monospacedDigit()
                 .contentTransition(.numericText())
         }
@@ -213,35 +209,43 @@ private struct TodayStats: View {
 
     var body: some View {
         if count == 0 {
-            ContentUnavailableView("No focus sessions yet",
-                systemImage: "checkmark.circle",
-                description: Text("Complete a focus block to see your daily progress."))
-                .frame(maxWidth: .infinity)
-        } else {
-            HStack(spacing: 12) {
-                StatCard(value: "\(count)", label: count == 1 ? "Session" : "Sessions",
-                         systemImage: "checkmark.circle.fill")
-                StatCard(value: "\(minutes)", label: "Minutes",
-                         systemImage: "clock.fill")
+            VStack(spacing: 4) {
+                Text("No focus sessions yet").snappetTitle()
+                Text("Complete a focus block to see your daily progress.").snappetDetail()
+                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: .infinity)
+            .snappetPanel()
+        } else {
+            // Both numbers in one panel, light (prompt 238; were two tiles with red icons).
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(count == 1 ? "Session today" : "Sessions today").snappetLabel()
+                    SnappetMetric(value: "\(count)")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Minutes").snappetLabel()
+                    SnappetMetric(value: "\(minutes)", unit: "min")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .snappetPanel()
+            .animation(.snappy, value: minutes)
         }
     }
 }
 
-private struct StatCard: View {
-    let value: String
-    let label: String
-    let systemImage: String
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage).font(.title2).foregroundStyle(SnappetColor.pomodoro)
-            Text(value).font(.title.weight(.bold)).monospacedDigit()
-                .contentTransition(.numericText())
-            Text(label).font(.caption).foregroundStyle(SnappetColor.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .snappetTile()
-        .animation(.snappy, value: value)
+/// Reset: a neutral hairline outline, as wide as the primary beside it.
+private struct PomodoroOutlineStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(SnappetColor.ink)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity)
+            .overlay(Capsule().strokeBorder(SnappetColor.hairline, lineWidth: 1))
+            .contentShape(Capsule())
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

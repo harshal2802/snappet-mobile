@@ -24,10 +24,11 @@ struct PomodoroLiveChip: View {
                     .opacity(0.6)
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white)
+            // Dark text on the phase colour (accent / green); white on the light accents was ~2:1 (prompt 238).
+            .foregroundStyle(SnappetColor.onBrand)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(isFocus ? SnappetColor.pomodoro : SnappetColor.habits, in: Capsule())
+            .background(PomodoroRootView.tint(for: timer.phase), in: Capsule())
             .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
         }
         .buttonStyle(.plain)
