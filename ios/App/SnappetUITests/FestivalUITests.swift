@@ -517,11 +517,11 @@ import XCTest
         XCTAssertTrue(name.waitForExistence(timeout: 6), "Create opens a blank lineup form")
         XCTAssertTrue(app.navigationBars["New lineup"].exists)
         name.tap(); name.typeText("Backyard Fest")
-        let artist = app.textFields["Artist"].firstMatch
+        let artist = app.textFields["festival.row.artist"].firstMatch
         artist.tap(); artist.typeText("DJ Me")
-        let times = app.textFields.matching(NSPredicate(format: "placeholderValue == 'HH:mm'"))
-        times.element(boundBy: 0).tap(); times.element(boundBy: 0).typeText("22:00")
-        times.element(boundBy: 1).tap(); times.element(boundBy: 1).typeText("23:30")
+        // "Add another artist" chains the next set on (19:00–20:00) and focuses its artist field.
+        app.buttons["festival.draft.addRow"].tap()
+        app.typeText("Headliner")
         snap("festival-create")
         app.buttons["festival.poster.install"].tap()
 
@@ -530,6 +530,7 @@ import XCTest
         row.tap()
         XCTAssertTrue(app.buttons["festival.set.DJ Me"].waitForExistence(timeout: 6),
                       "the created set is on the schedule")
+        XCTAssertTrue(app.buttons["festival.set.Headliner"].exists, "and the chained second artist")
 
         // Grow it: Edit lineup → Add a day.
         app.buttons["festival.share.menu"].tap()
@@ -552,12 +553,17 @@ import XCTest
         XCTAssertTrue(stageName.waitForExistence(timeout: 6), "Add a stage opens the stage form")
         XCTAssertTrue(app.navigationBars["Add a stage"].exists)
         stageName.tap(); stageName.typeText("The Tent")
-        let first = app.textFields["festival.setEdit.artist"]
+        let first = app.textFields["festival.row.artist"].firstMatch
         first.tap(); first.typeText("Opener")
+        app.buttons["festival.stageAdd.addRow"].tap()
+        app.typeText("Closer")
         snap("festival-add-stage")
-        app.buttons["festival.setEdit.save"].tap()
+        let save = app.buttons["festival.stageAdd.save"]
+        XCTAssertEqual(save.label, "Add 2", "the whole running order saves at once")
+        save.tap()
         XCTAssertTrue(app.buttons["festival.edit.set.Opener"].waitForExistence(timeout: 6),
-                      "the new stage appears with its first set")
+                      "the new stage appears with its sets")
+        XCTAssertTrue(app.buttons["festival.edit.set.Closer"].exists)
         app.buttons["festival.edit.done"].tap()
     }
 }

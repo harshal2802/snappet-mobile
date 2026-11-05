@@ -17,6 +17,8 @@ struct FestivalLineupEditView: View {
     @State private var pack: FestivalPack?
     @State private var delay: FestivalDelaySheet.Request?
     @State private var editing: FestivalSetEditSheet.Request?
+    /// Add a stage / add sets to a stage (the running-order editor).
+    @State private var addingSets: FestivalStageSetsSheet.Request?
     @State private var renaming = false
     @State private var newName = ""
     @State private var newLocation = ""
@@ -54,9 +56,9 @@ struct FestivalLineupEditView: View {
                         .accessibilityIdentifier("festival.edit.addDay")
                         if let pack {
                             Button {
-                                editing = .init(setID: nil, stage: "",
-                                                day: pack.day(containing: .now)?.date
-                                                    ?? pack.days.first?.date ?? "")
+                                addingSets = .init(stage: nil,
+                                                   day: pack.day(containing: .now)?.date
+                                                       ?? pack.days.first?.date ?? "")
                             } label: { Label("Add a stage", systemImage: "plus.rectangle") }
                             .accessibilityIdentifier("festival.edit.addStage")
                         }
@@ -112,8 +114,22 @@ struct FestivalLineupEditView: View {
             }
             .sheet(item: $editing) { request in
                 if let pack {
-                    FestivalSetEditSheet(lineup: lineup, pack: pack, request: request) { change in
+                    FestivalSetEditSheet(pack: pack, request: request) { change in
                         mutate(change)
+                    }
+                }
+            }
+            .sheet(item: $addingSets) { request in
+                if let pack {
+                    FestivalStageSetsSheet(pack: pack, request: request) { rows, stage in
+                        let festivalID = pack.id
+                        mutate { edits, _ in
+                            for row in rows {
+                                edits.add(artist: row.artist.trimmingCharacters(in: .whitespacesAndNewlines),
+                                          stage: stage, start: row.start, end: row.end,
+                                          festivalID: festivalID)
+                            }
+                        }
                     }
                 }
             }
@@ -152,9 +168,9 @@ struct FestivalLineupEditView: View {
                             setRow(set, pack: pack, day: day.date)
                         }
                         Button {
-                            editing = .init(setID: nil, stage: stage.name, day: day.date)
+                            addingSets = .init(stage: stage.name, day: day.date)
                         } label: {
-                            Label("Add a set", systemImage: "plus")
+                            Label("Add sets", systemImage: "plus")
                         }
                         .tint(SnappetColor.brand)
                         .accessibilityIdentifier("festival.edit.add.\(day.date).\(stage.name)")
@@ -176,8 +192,7 @@ struct FestivalLineupEditView: View {
                     Section("\(label)") {
                         Text("No sets this day yet").foregroundStyle(SnappetColor.textSecondary)
                         Button {
-                            editing = .init(setID: nil, stage: pack.days.flatMap { $0.stages.map(\.name) }.first ?? "",
-                                            day: day.date)
+                            addingSets = .init(stage: nil, day: day.date)
                         } label: {
                             Label("Add a set", systemImage: "plus")
                         }
@@ -207,7 +222,7 @@ struct FestivalLineupEditView: View {
         let was = original.flatMap { lineup.edits.originalTimes(of: set.id, in: $0) }
         let isAdded = lineup.edits.added.contains { $0.id == set.id }
         return Button {
-            editing = .init(setID: set.id, stage: set.stage, day: day)
+            editing = .init(setID: set.id)
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -456,86 +471,312 @@ private struct FestivalWrapLayout: Layout {
     }
 }
 
-// MARK: - One set: edit / add
+// MARK: - Set time rows (shared by every set editor)
 
-/// Change a set's artist, stage and time, or remove it — or add a new one (`setID == nil`).
-struct FestivalSetEditSheet: View {
-    struct Request: Identifiable {
-        var setID: UUID?
-        var stage: String
-        var day: String
-        var id: String { setID?.uuidString ?? "new|\(day)|\(stage)" }
+/// One set as an editor row: the artist on top, then start → end as hour:minute pickers with the
+/// set's length — times are festival-local and night-aware (before 06:00 = after midnight).
+struct FestivalSetRowEditor: View {
+    @Binding var row: FestivalSetRow
+    let day: String
+    let offsetSeconds: Int
+    var clashes = false
+    var focus: FocusState<UUID?>.Binding
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Artist", text: $row.artist)
+                .font(.body.weight(.medium))
+                .textInputAutocapitalization(.words)
+                .focused(focus, equals: row.id)
+                .accessibilityIdentifier("festival.row.artist")
+            HStack(spacing: 6) {
+                DatePicker("Starts", selection: startBinding, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .accessibilityIdentifier("festival.row.start")
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.textTertiary)
+                DatePicker("Ends", selection: endBinding, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .accessibilityIdentifier("festival.row.end")
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(FestivalClock.durationLabel(row.end.timeIntervalSince(row.start)))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(SnappetColor.textSecondary)
+                    if afterMidnight {
+                        Text("after midnight")
+                            .font(.caption2)
+                            .foregroundStyle(SnappetColor.textTertiary)
+                    }
+                }
+            }
+            .environment(\.timeZone, TimeZone(secondsFromGMT: offsetSeconds) ?? .current)
+            if clashes {
+                Label("Overlaps another set on this stage", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.perfModerate)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
-    let lineup: FestivalLineup
+    private var afterMidnight: Bool {
+        FestivalClock.hourMinute(row.end, offsetSeconds: offsetSeconds).hour < FestivalDay.rolloverHour
+            || FestivalClock.hourMinute(row.start, offsetSeconds: offsetSeconds).hour < FestivalDay.rolloverHour
+    }
+
+    /// Moving the start keeps the set's length (the usual fix: "it started 20 min late").
+    private var startBinding: Binding<Date> {
+        Binding(get: { row.start }, set: { picked in
+            guard let start = FestivalClock.onDay(picked, day: day, offsetSeconds: offsetSeconds) else { return }
+            let length = row.end.timeIntervalSince(row.start)
+            row.start = start
+            row.end = start.addingTimeInterval(length)
+        })
+    }
+
+    private var endBinding: Binding<Date> {
+        Binding(get: { row.end }, set: { picked in
+            if let end = FestivalClock.end(picked, after: row.start, day: day, offsetSeconds: offsetSeconds) {
+                row.end = end
+            }
+        })
+    }
+}
+
+/// A day picker over the lineup's poster days ("Fri 31").
+struct FestivalDayPicker: View {
+    let pack: FestivalPack
+    @Binding var day: String
+
+    var body: some View {
+        Picker("Day", selection: $day) {
+            ForEach(FestivalSchedule.dayTabs(for: pack)) { tab in
+                Text("\(tab.weekday.capitalized) \(tab.dayNumber)").tag(tab.date)
+            }
+        }
+        .accessibilityIdentifier("festival.dayPicker")
+    }
+}
+
+// MARK: - Add a stage / add sets to a stage
+
+/// The stage editor (prompt 232): name a new stage — or pick an existing one — choose the day, and
+/// enter its whole running order at once. "Add another artist" starts the next set when the last one
+/// ends (same length) and puts the cursor in it, so typing a stage's night is artist, artist, artist.
+/// Overlaps on the stage are flagged before saving. Reached from Edit lineup ⋯ → Add a stage, a
+/// stage's "Add a set", and an empty day's "Add a set".
+struct FestivalStageSetsSheet: View {
+    struct Request: Identifiable {
+        /// `nil` = a new stage (name it); otherwise add to this stage.
+        var stage: String?
+        var day: String
+        var id: String { "\(day)|\(stage ?? "+")" }
+    }
+
     let pack: FestivalPack
     let request: Request
-    var onSave: ((inout FestivalLineupEdits, FestivalPack) -> Void) -> Void
+    var onSave: ([FestivalSetRow], _ stage: String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var artist = ""
-    @State private var stage = ""
-    @State private var start = Date()
-    @State private var end = Date()
-    @State private var confirmingRemove = false
-    /// The day a new stage goes on (Add a stage only).
+    @State private var stageName = ""
     @State private var day = ""
+    @State private var rows: [FestivalSetRow] = []
+    @FocusState private var focused: UUID?
 
-    private var existing: FestivalSet? { request.setID.flatMap { pack.setsByID[$0] } }
-    /// ⋯ → Add a stage: a stage exists only through its sets, so this asks for the stage's name
-    /// first, which day it plays, then its first set — not the generic "Add a set" form.
-    private var isNewStage: Bool { request.setID == nil && request.stage.isEmpty }
-    private var tz: TimeZone { TimeZone(secondsFromGMT: pack.utcOffsetSeconds) ?? .current }
+    private var isNewStage: Bool { request.stage == nil }
+    private var stage: String { (request.stage ?? stageName).trimmingCharacters(in: .whitespaces) }
     private var allStages: [String] {
         var names: [String] = []
-        for name in pack.days.flatMap({ $0.stages.map(\.name) }) where !names.contains(name) {
-            names.append(name)
-        }
+        for name in pack.days.flatMap({ $0.stages.map(\.name) }) where !names.contains(name) { names.append(name) }
         return names
     }
+    /// The sets already on this stage that day — new rows must not overlap them either.
+    private var existing: [FestivalSet] {
+        pack.days.first { $0.date == day }?.allSets.filter { $0.stage == stage } ?? []
+    }
+    private var filled: [FestivalSetRow] { rows.filter(\.isFilled) }
+    private var clashes: Set<UUID> { FestivalSetRow.clashing(rows, existing: existing) }
 
     var body: some View {
         NavigationStack {
             Form {
                 if isNewStage {
-                    newStageSections
-                } else {
-                    Section("Artist") {
-                        TextField("Artist", text: $artist)
-                            .accessibilityIdentifier("festival.setEdit.artist")
-                    }
-                    stageSection
-                }
-                Section(isNewStage ? "First set's time" : "Time") {
-                    DatePicker("Starts", selection: $start)
-                        .accessibilityIdentifier("festival.setEdit.start")
-                    DatePicker("Ends", selection: $end, in: start...)
-                        .accessibilityIdentifier("festival.setEdit.end")
-                }
-                .environment(\.timeZone, tz)
-                if existing != nil {
                     Section {
-                        Button("Remove this set", role: .destructive) { confirmingRemove = true }
-                            .accessibilityIdentifier("festival.setEdit.remove")
+                        TextField("Stage name", text: $stageName)
+                            .font(.body.weight(.medium))
+                            .textInputAutocapitalization(.words)
+                            .accessibilityIdentifier("festival.stageAdd.name")
+                        if !allStages.isEmpty {
+                            FestivalFlowChips(items: allStages, label: { $0 },
+                                              selected: { $0.caseInsensitiveCompare(stage) == .orderedSame },
+                                              onTap: { stageName = $0 })
+                        }
+                    } header: {
+                        Text("Stage")
+                    } footer: {
+                        if allStages.contains(where: { $0.caseInsensitiveCompare(stage) == .orderedSame }) {
+                            Text("\(stage) is already in the lineup — these sets join it.")
+                        } else {
+                            Text("Type a new stage, or tap one you already have.")
+                        }
                     }
+                }
+                if pack.days.count > 1 {
+                    Section {
+                        FestivalDayPicker(pack: pack, day: $day)
+                            .onChange(of: day) { old, new in moveRows(from: old, to: new) }
+                    }
+                }
+                Section {
+                    ForEach($rows) { $row in
+                        FestivalSetRowEditor(row: $row, day: day, offsetSeconds: pack.utcOffsetSeconds,
+                                             clashes: clashes.contains(row.id), focus: $focused)
+                    }
+                    .onDelete { rows.remove(atOffsets: $0) }
+                    Button {
+                        addRow()
+                    } label: {
+                        Label("Add another artist", systemImage: "plus.circle.fill")
+                    }
+                    .tint(SnappetColor.brand)
+                    .accessibilityIdentifier("festival.stageAdd.addRow")
+                } header: {
+                    Text(existing.isEmpty ? "Running order" : "New sets · \(existing.count) already on this stage")
+                } footer: {
+                    Text("Each new artist starts when the last one ends — adjust any time. Times before "
+                         + "06:00 are after midnight. Swipe a row to remove it.")
                 }
             }
-            .navigationTitle(isNewStage ? "Add a stage" : existing == nil ? "Add a set" : "Edit set")
+            .navigationTitle(isNewStage ? "Add a stage" : "Add to \(request.stage ?? "")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isNewStage ? "Add" : "Save") { save() }
-                        .disabled(artist.trimmingCharacters(in: .whitespaces).isEmpty
-                                  || stage.trimmingCharacters(in: .whitespaces).isEmpty
-                                  || end <= start)
+                    Button(filled.count > 1 ? "Add \(filled.count)" : "Add") {
+                        onSave(filled.sorted { $0.start < $1.start }, stage)
+                        dismiss()
+                    }
+                    .disabled(stage.isEmpty || filled.isEmpty
+                              || !clashes.intersection(filled.map(\.id)).isEmpty)
+                    .accessibilityIdentifier("festival.stageAdd.save")
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .onAppear(perform: seed)
+    }
+
+    private func seed() {
+        guard rows.isEmpty else { return }
+        day = request.day
+        rows = [FestivalSetRow.next(after: [], fallback: firstStart())]
+        // A new stage asks for its name first; adding to a stage goes straight to the artist.
+        if !isNewStage { focused = rows.first?.id }
+    }
+
+    /// Where a stage's first new set starts: after its last set that day, else 18:00.
+    private func firstStart() -> Date {
+        if let last = existing.map(\.end).max() { return last }
+        return FestivalClock.date(day: day, hour: 18, minute: 0, offsetSeconds: pack.utcOffsetSeconds) ?? .now
+    }
+
+    private func addRow() {
+        let row = FestivalSetRow.next(after: rows, fallback: firstStart())
+        rows.append(row)
+        focused = row.id
+    }
+
+    /// Changing the day keeps every row at the same time of night.
+    private func moveRows(from old: String, to new: String) {
+        guard let a = FestivalClock.date(day: old, hour: 12, minute: 0, offsetSeconds: pack.utcOffsetSeconds),
+              let b = FestivalClock.date(day: new, hour: 12, minute: 0, offsetSeconds: pack.utcOffsetSeconds)
+        else { return }
+        let delta = b.timeIntervalSince(a)
+        for i in rows.indices {
+            rows[i].start.addTimeInterval(delta)
+            rows[i].end.addTimeInterval(delta)
+        }
+    }
+}
+
+// MARK: - One set: edit
+
+/// Change an existing set's artist, stage, day and times, or remove it.
+struct FestivalSetEditSheet: View {
+    struct Request: Identifiable {
+        var setID: UUID
+        var id: UUID { setID }
+    }
+
+    let pack: FestivalPack
+    let request: Request
+    var onSave: ((inout FestivalLineupEdits, FestivalPack) -> Void) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var row = FestivalSetRow(artist: "", start: .now, end: .now)
+    @State private var stage = ""
+    @State private var day = ""
+    @State private var confirmingRemove = false
+    @FocusState private var focused: UUID?
+
+    private var existing: FestivalSet? { pack.setsByID[request.setID] }
+    private var allStages: [String] {
+        var names: [String] = []
+        for name in pack.days.flatMap({ $0.stages.map(\.name) }) where !names.contains(name) { names.append(name) }
+        return names
+    }
+    private var clashes: Bool {
+        let others = pack.days.first { $0.date == day }?.allSets
+            .filter { $0.stage == stage.trimmingCharacters(in: .whitespaces) && $0.id != request.setID } ?? []
+        return !FestivalSetRow.clashing([row], existing: others).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Set") {
+                    FestivalSetRowEditor(row: $row, day: day, offsetSeconds: pack.utcOffsetSeconds,
+                                         clashes: clashes, focus: $focused)
+                }
+                Section("Stage") {
+                    TextField("Stage", text: $stage)
+                        .accessibilityIdentifier("festival.setEdit.stage")
+                    FestivalFlowChips(items: allStages, label: { $0 }, selected: { $0 == stage },
+                                      onTap: { stage = $0 })
+                }
+                if pack.days.count > 1 {
+                    Section {
+                        FestivalDayPicker(pack: pack, day: $day)
+                            .onChange(of: day) { old, new in
+                                guard let a = FestivalClock.date(day: old, hour: 12, minute: 0, offsetSeconds: pack.utcOffsetSeconds),
+                                      let b = FestivalClock.date(day: new, hour: 12, minute: 0, offsetSeconds: pack.utcOffsetSeconds)
+                                else { return }
+                                row.start.addTimeInterval(b.timeIntervalSince(a))
+                                row.end.addTimeInterval(b.timeIntervalSince(a))
+                            }
+                    }
+                }
+                Section {
+                    Button("Remove this set", role: .destructive) { confirmingRemove = true }
+                        .accessibilityIdentifier("festival.setEdit.remove")
+                }
+            }
+            .navigationTitle("Edit set")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(!row.isFilled || stage.trimmingCharacters(in: .whitespaces).isEmpty || clashes)
                         .accessibilityIdentifier("festival.setEdit.save")
                 }
             }
             .confirmationDialog("Remove \(existing?.artist ?? "this set")?",
                                 isPresented: $confirmingRemove, titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
-                    guard let id = request.setID else { return }
+                    let id = request.setID
                     onSave { edits, _ in edits.remove(id) }
                     dismiss()
                 }
@@ -543,95 +784,21 @@ struct FestivalSetEditSheet: View {
                 Text("It leaves your schedule and plan. Reset all edits brings it back.")
             }
         }
-        .onAppear(perform: seed)
-    }
-
-    @ViewBuilder private var newStageSections: some View {
-        let trimmed = stage.trimmingCharacters(in: .whitespaces)
-        Section {
-            TextField("Stage name", text: $stage)
-                .accessibilityIdentifier("festival.stageAdd.name")
-        } header: {
-            Text("New stage")
-        } footer: {
-            if allStages.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-                Text("\(trimmed) is already in the lineup — this adds a set to it.")
-            } else {
-                Text("A stage shows on the schedule once it has a set — add its first one below.")
-            }
-        }
-        if pack.days.count > 1 {
-            Section("Day") {
-                Picker("Day", selection: $day) {
-                    ForEach(FestivalSchedule.dayTabs(for: pack)) { tab in
-                        Text("\(tab.weekday.capitalized) \(tab.dayNumber)").tag(tab.date)
-                    }
-                }
-                .accessibilityIdentifier("festival.stageAdd.day")
-                .onChange(of: day) { old, new in moveTimes(from: old, to: new) }
-            }
-        }
-        Section("First set") {
-            TextField("Artist", text: $artist)
-                .accessibilityIdentifier("festival.setEdit.artist")
-        }
-    }
-
-    private var stageSection: some View {
-        Section {
-            TextField("Stage", text: $stage)
-                .accessibilityIdentifier("festival.setEdit.stage")
-            if !allStages.isEmpty {
-                FestivalFlowChips(items: allStages, label: { $0 }, selected: { $0 == stage },
-                                  onTap: { stage = $0 })
-            }
-        } header: {
-            Text("Stage")
-        }
-    }
-
-    /// Keep the new stage's first set at the same time of night when its day changes.
-    private func moveTimes(from old: String, to new: String) {
-        guard let a = pack.days.first(where: { $0.date == old })?.window(utcOffsetSeconds: pack.utcOffsetSeconds),
-              let b = pack.days.first(where: { $0.date == new })?.window(utcOffsetSeconds: pack.utcOffsetSeconds)
-        else { return }
-        let delta = b.start.timeIntervalSince(a.start)
-        start.addTimeInterval(delta)
-        end.addTimeInterval(delta)
-    }
-
-    private func seed() {
-        day = request.day
-        if let set = existing {
-            artist = set.artist
+        .onAppear {
+            guard let set = existing else { return }
+            row = FestivalSetRow(artist: set.artist, start: set.start, end: set.end)
             stage = set.stage
-            start = set.start
-            end = set.end
-            return
+            day = pack.day(containing: set.start)?.date ?? pack.days.first?.date ?? ""
         }
-        stage = request.stage
-        // A new set starts where the stage's last set ends that day, else 18:00 festival-local.
-        let day = pack.days.first { $0.date == request.day }
-        let last = day?.allSets.filter { $0.stage == request.stage }.map(\.end).max()
-        let evening = day?.window(utcOffsetSeconds: pack.utcOffsetSeconds)?.start
-            .addingTimeInterval(12 * 3600)
-        start = last ?? evening ?? Date()
-        end = start.addingTimeInterval(3600)
     }
 
     private func save() {
-        let artist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = request.setID
+        let artist = row.artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let stage = stage.trimmingCharacters(in: .whitespacesAndNewlines)
-        let (start, end) = (start, end)
-        if let id = request.setID {
-            onSave { edits, original in
-                edits.update(id, artist: artist, stage: stage, start: start, end: end, original: original)
-            }
-        } else {
-            let festivalID = pack.id
-            onSave { edits, _ in
-                edits.add(artist: artist, stage: stage, start: start, end: end, festivalID: festivalID)
-            }
+        let (start, end) = (row.start, row.end)
+        onSave { edits, original in
+            edits.update(id, artist: artist, stage: stage, start: start, end: end, original: original)
         }
         dismiss()
     }

@@ -121,6 +121,21 @@ the night and wouldn't let them say they'd moved. Their asks, in their words:
   A stage exists only through its sets, so the first set is required. Before this, the menu opened the generic Add a set
   form.
 
+- **Running-order editor** (user, on the one-artist stage form: "why do we have just one artist on stage page … add
+  more artists with their timing along with time picker … think smartly with user experience in mind").
+  - `FestivalStageSetsSheet` covers Add a stage, a stage's Add sets, and an empty day's Add a set:
+    - the stage name, with chips for existing stages
+    - the day
+    - a list of artist rows, each with **hour:minute pickers** and the set's length
+    - **Add another artist**, which starts the next set when the last ends (same length) and focuses its artist field
+    - swipe to remove a row
+    - overlaps flagged on the row; saving is blocked while any remain
+    - one **Add N** saves the whole running order
+  - The same `FestivalSetRowEditor` replaces the typed HH:mm fields in the create / poster form (a section per stage)
+    and the date+time pickers in Edit set.
+  - **Night-aware times** (`FestivalClock`, pure): before 06:00 = after midnight of that poster day.
+  - **Fixed:** the poster/create parser put a 01:00 start *before* its day, so the lineup failed validation.
+
 ## Acceptance
 
 - [x] Unit: `FestivalLineupEditsTests` (apply / ids kept / reset / remove / add / re-file / delay targets / later

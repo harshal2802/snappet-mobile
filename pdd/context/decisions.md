@@ -10553,3 +10553,9 @@ stripes, and the panel read as an opaque slab.
   form means one validator gate and one set of fixes (date pickers, time zone, the duplicate-day "Add a day" bug).
   Hand-made lineups get a minted `mine-` id, not a content-derived one, so two lineups with the same name never
   replace each other.
+- **Set times are edited as times of night, not dates.** A festival night is typed as "23:30 → 01:00". The editors use
+  hour:minute pickers on a known poster day, and `FestivalClock` maps a time before the 06:00 rollover to the next
+  morning. That matches the schedule's day model. It also fixes the poster parser, which put 01:00 sets before their
+  day.
+- **A stage is entered as a running order.** You never enter one set at a time: "Add another artist" chains back to
+  back with the same length, so a stage's night is typed artist after artist and only the exceptions need a picker.

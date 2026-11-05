@@ -62,7 +62,7 @@ struct FestivalDraft: Identifiable, Hashable {
             name: "", location: "", startDate: today, endDate: today,
             utcOffsetSeconds: timeZone.secondsFromGMT(for: now),
             days: [DraftDay(date: today, stages: [
-                DraftStage(name: "Main Stage", sets: [DraftSet(artist: "", start: "", end: "")]),
+                DraftStage(name: "Main Stage", sets: [DraftSet(artist: "", start: "18:00", end: "19:00")]),
             ])])
         draft.source = .manual
         draft.fixedPackID = "mine-" + hex.prefix(12)
@@ -357,7 +357,11 @@ enum FestivalPosterParser {
         }
         let eMin = minutesOfDay(normalizedTime(end) ?? end) ?? sMin
         let span = (eMin <= sMin ? eMin + 24 * 60 : eMin) - sMin
-        return (startDate, startDate.addingTimeInterval(Double(span) * 60))
+        // A start before the 06:00 rollover is the NEXT morning of this poster day ("Jayda G 01:00"
+        // on Saturday plays early Sunday) — the day model the schedule + validator use (prompt 232;
+        // it used to land before the day began and fail validation).
+        let start = sMin < FestivalDay.rolloverHour * 60 ? startDate.addingTimeInterval(24 * 3600) : startDate
+        return (start, start.addingTimeInterval(Double(span) * 60))
     }
 
     private static func isoDate(date: String, hhmm: String, offsetSeconds: Int) -> Date? {
