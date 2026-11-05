@@ -54,8 +54,8 @@ struct WardrobePhotoCarousel: View {
     }
 
     private var roleCaption: some View {
-        Text(currentRole.title.uppercased())
-            .font(.system(size: 9, weight: .heavy))
+        Text(currentRole.title)
+            .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(.black.opacity(0.7), in: Capsule())
@@ -66,7 +66,7 @@ struct WardrobePhotoCarousel: View {
         HStack(spacing: 5) {
             ForEach(0..<(extras.count + 1), id: \.self) { index in
                 Capsule()
-                    .fill(index == page ? SnappetColor.wardrobe : SnappetColor.hairline)
+                    .fill(index == page ? SnappetColor.brand : SnappetColor.hairline)
                     .frame(width: index == page ? 16 : 6, height: 6)
             }
         }
@@ -170,7 +170,7 @@ struct WardrobePhotosView: View {
                                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                                 .overlay(Image(systemName: "plus")
                                     .font(.system(size: 22, weight: .medium))
-                                    .foregroundStyle(SnappetColor.wardrobe))
+                                    .foregroundStyle(SnappetColor.brand))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("wardrobe.photos.add")
@@ -239,8 +239,8 @@ struct WardrobePhotosView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                Text(entry.role.title.uppercased())
-                    .font(.system(size: 8, weight: .heavy))
+                Text(entry.role.title)
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 3)
@@ -248,17 +248,17 @@ struct WardrobePhotosView: View {
             }
             .overlay(alignment: .topLeading) {
                 if entry.isCover {
-                    Text("COVER")
-                        .font(.system(size: 7, weight: .black))
-                        .foregroundStyle(.white)
+                    Text("Cover")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(SnappetColor.onBrand)
                         .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(SnappetColor.wardrobe, in: RoundedRectangle(cornerRadius: 5))
+                        .background(SnappetColor.brand, in: RoundedRectangle(cornerRadius: 5))
                         .padding(5)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(entry.isCover ? SnappetColor.wardrobe : .clear, lineWidth: 2))
+                .strokeBorder(entry.isCover ? SnappetColor.brand : .clear, lineWidth: 2))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("wardrobe.photos.cell")

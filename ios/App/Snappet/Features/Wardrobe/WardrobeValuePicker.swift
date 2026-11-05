@@ -47,7 +47,7 @@ struct WardrobeValuePicker: View {
                                 Spacer()
                                 if isSelected(choice) {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(SnappetColor.wardrobe)
+                                        .foregroundStyle(SnappetColor.brand)
                                 }
                             }
                         }
@@ -62,7 +62,7 @@ struct WardrobeValuePicker: View {
                         showAddNew = true
                     } label: {
                         Label("Add a new \(field.title.lowercased())…", systemImage: "plus")
-                            .foregroundStyle(SnappetColor.wardrobe)
+                            .foregroundStyle(SnappetColor.brand)
                     }
                     .accessibilityIdentifier("wardrobe.picker.addNew")
                 } footer: {
@@ -160,10 +160,8 @@ struct WardrobeAddValueSheet: View {
                         onAdd(WardrobeVocabularyRules.normalize(text), mapsToRaw)
                     } label: {
                         Text("Add \(field.title.lowercased())")
-                            .font(.headline).frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SnappetColor.brand)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .disabled(!canAdd)
                     .listRowBackground(Color.clear)
                     .accessibilityIdentifier("wardrobe.addValue.confirm")
@@ -186,14 +184,9 @@ struct WardrobeAddValueSheet: View {
                     mapsToRaw = option.raw
                 } label: {
                     Text(option.title)
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 11).padding(.vertical, 7)
+                        .font(.caption)
                         .frame(maxWidth: .infinity)
-                        .background(mapsToRaw == option.raw ? SnappetColor.wardrobe
-                                                            : SnappetColor.surfaceMuted,
-                                    in: Capsule())
-                        .foregroundStyle(mapsToRaw == option.raw ? .white
-                                                                 : SnappetColor.textSecondary)
+                        .snappetPill(selected: mapsToRaw == option.raw)
                 }
                 .buttonStyle(.plain)
             }
@@ -219,9 +212,10 @@ struct WardrobeValueRow: View {
             HStack {
                 Text(field.title).foregroundStyle(SnappetColor.ink)
                 Spacer()
+                // Picked values read grey like iOS Settings (prompt 234 — were the accent).
                 Text(shown.isEmpty ? "Add" : shown)
-                    .foregroundStyle(shown.isEmpty ? SnappetColor.textSecondary
-                                                   : SnappetColor.wardrobe)
+                    .foregroundStyle(shown.isEmpty ? SnappetColor.textTertiary
+                                                   : SnappetColor.textSecondary)
                 Image(systemName: "chevron.right")
                     .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
             }

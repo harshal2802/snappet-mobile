@@ -8,7 +8,7 @@ enum WardrobeSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .closet: return "Closet"
-        case .forYou: return "For You"
+        case .forYou: return "For you"
         case .outfits: return "Outfits"
         }
     }
@@ -121,12 +121,12 @@ struct WardrobeRootView: View {
 
                 // ✨ For You — the differentiator leads.
                 HStack(alignment: .firstTextBaseline) {
-                    Label("For You", systemImage: "sparkles")
-                        .font(.headline)
+                    Label("For you", systemImage: "sparkles")
+                        .font(.headline.weight(.medium))
                     Spacer()
                     Button("Style me ›") { showGenerator = true }
-                        .font(.caption.weight(.bold))
-                        .tint(SnappetColor.wardrobe)
+                        .font(.caption.weight(.medium))
+                        .tint(SnappetColor.brand)
                         .accessibilityIdentifier("wardrobe.home.styleMe")
                 }
                 .padding(.top, 8)
@@ -185,11 +185,11 @@ struct WardrobeRootView: View {
                 showCapture = true
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(SnappetColor.onBrand)
                     .frame(width: 54, height: 54)
                     .background(SnappetColor.brand, in: Circle())
-                    .shadow(color: SnappetColor.brand.opacity(0.4), radius: 12, y: 6)
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
             }
             .padding(.trailing, 18)
             .padding(.bottom, 14)
@@ -199,12 +199,12 @@ struct WardrobeRootView: View {
 
     private func sectionHeader(_ title: String, section: WardrobeSection, identifier: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.headline)
+            Text(title).font(.headline.weight(.medium))
             Spacer()
             NavigationLink(value: section) {
                 Text("See all ›")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SnappetColor.wardrobe)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.brand)
             }
             .accessibilityIdentifier(identifier)
         }
@@ -215,7 +215,7 @@ struct WardrobeRootView: View {
         HStack(spacing: 8) {
             Text(tempBand.emoji)
             Text("\(Date.now.formatted(.dateTime.weekday(.wide))) · \(season.title) · \(tempBand.title)")
-                .font(.subheadline.weight(.semibold))
+                .font(.subheadline)
             Spacer()
             Menu {
                 Picker("Season", selection: $season) {
@@ -226,8 +226,8 @@ struct WardrobeRootView: View {
                 }
             } label: {
                 Text("Adjust")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SnappetColor.wardrobe)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.brand)
             }
         }
         .padding(.horizontal, 14)
@@ -252,24 +252,30 @@ private struct HomeSuggestionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(suggestion.title)
-                .font(.subheadline.weight(.bold))
-                .lineLimit(1)
+            // The action rides the title row (prompt 234) — beside the thumbnails it got the
+            // leftover ~16 pt and wrapped letter by letter.
+            HStack(alignment: .firstTextBaseline) {
+                Text(suggestion.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text("Wear ›")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.brand)
+                    .fixedSize()
+            }
             Text(suggestion.reason)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11))
                 .foregroundStyle(SnappetColor.textSecondary)
                 .lineLimit(1)
+            // Every piece — it used to show prefix(4), hiding a 5-piece outfit's accessory.
             HStack(spacing: 6) {
-                ForEach(suggestion.outfit.slots.prefix(4), id: \.itemID) { slot in
+                ForEach(suggestion.outfit.slots, id: \.itemID) { slot in
                     if let item = items.first(where: { $0.id == slot.itemID }) {
-                        WardrobeItemTile(item: item, height: 44)
-                            .frame(width: 44)
+                        WardrobeItemTile(item: item, height: 38)
+                            .frame(width: 38)
                     }
                 }
-                Spacer(minLength: 4)
-                Text("Wear ›")
-                    .font(.caption2.weight(.heavy))
-                    .foregroundStyle(SnappetColor.wardrobe)
             }
         }
         .padding(11)
@@ -295,10 +301,10 @@ private struct HomeOutfitRow: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(outfit.title.isEmpty ? outfit.occasion.title : outfit.title)
-                        .font(.caption.weight(.bold))
+                        .font(.caption.weight(.medium))
                         .lineLimit(1)
                     Text((outfit.lastWornAt ?? outfit.createdAt).formatted(.dateTime.month(.abbreviated).day()))
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 10))
                         .foregroundStyle(SnappetColor.textSecondary)
                 }
                 .padding(.leading, 2)
@@ -360,7 +366,7 @@ private struct WardrobeEmptyState: View {
             VStack(spacing: 14) {
                 Text("👕👖👟").font(.system(size: 56)).padding(.top, 40)
                 Text("Build your closet")
-                    .font(.title2.weight(.bold))
+                    .font(.title2)
                 Text("Snap each piece once. Snappet tags it automatically — all on this iPhone.")
                     .font(.subheadline)
                     .foregroundStyle(SnappetColor.textSecondary)
@@ -369,17 +375,14 @@ private struct WardrobeEmptyState: View {
 
                 Button(action: onAdd) {
                     Label("Add your first item", systemImage: "camera")
-                        .font(.headline)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.brand)
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .padding(.horizontal, 40)
                 .accessibilityIdentifier("wardrobe.empty.add")
 
                 Button("Try a sample closet", action: onSample)
                     .font(.subheadline.weight(.semibold))
-                    .tint(SnappetColor.wardrobe)
+                    .tint(SnappetColor.brand)
                     .accessibilityIdentifier("wardrobe.empty.sample")
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -405,7 +408,7 @@ private struct WardrobeEmptyState: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 14))
-                .foregroundStyle(SnappetColor.wardrobe)
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 20)
             Text("\(Text(bold).bold()) \(rest)")
                 .font(.caption)

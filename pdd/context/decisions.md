@@ -10566,3 +10566,13 @@ stripes, and the panel read as an opaque slab.
   Orchid survives only as Festival's identity colour in the App Library and in Clips' activity chips, where every
   activity keeps its own colour.
 - **Meaning colours stay:** clash amber, needs-you amber, HR red, done green.
+
+## 2026-11-04 — Design-system reset: Wardrobe (prompt 234)
+
+- **A restyled module must join `AppLibraryView.suiteAccentModules`.** The App Library tints a pushed mini-app with
+  its own colour unless it is on that list, so swapping a module's explicit colours isn't enough: Cancel, back and
+  toolbar icons stay in the old colour. Festival (#426) missed this. It is fixed here along with Wardrobe. Every
+  later restyle (Household, small apps) adds its id.
+- **Don't put an action label beside a row of thumbnails.** On the For you, home and outfit cards, "Open ›", "Wear ›"
+  and "Wear again ›" got the leftover width and wrapped letter by letter. Actions go in the title row, or become a
+  full-width button.

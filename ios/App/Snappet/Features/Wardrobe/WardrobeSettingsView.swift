@@ -32,9 +32,8 @@ struct WardrobeSettingsView: View {
                     Text("Everything stays in **your** Apple ecosystem — no Snappet servers.")
                         .font(.caption)
                 } icon: {
-                    Image(systemName: "lock.fill").foregroundStyle(SnappetColor.wardrobe)
+                    Image(systemName: "lock.fill").foregroundStyle(SnappetColor.textSecondary)
                 }
-                .listRowBackground(SnappetColor.wardrobe.opacity(0.07))
             }
 
             Section {
@@ -61,8 +60,8 @@ struct WardrobeSettingsView: View {
                                 item.isArchived = false
                                 try? modelContext.save()
                             }
-                            .font(.caption.weight(.bold))
-                            .tint(SnappetColor.wardrobe)
+                            .font(.caption.weight(.medium))
+                            .tint(SnappetColor.brand)
                         }
                     }
                     .onDelete { offsets in
@@ -81,10 +80,11 @@ struct WardrobeSettingsView: View {
                     Button {
                         showTidy = true
                     } label: {
-                        settingRow(symbol: "wand.and.sparkles", tint: SnappetColor.wardrobe,
+                        settingRow(symbol: "wand.and.sparkles", tint: SnappetColor.brand,
                                    title: "Tidy up details",
-                                   subtitle: "\(tidyChangeCount) values look like they're in the "
-                                           + "wrong field — review the moves")
+                                   subtitle: tidyChangeCount == 1
+                                       ? "1 value looks like it's in the wrong field — review the move"
+                                       : "\(tidyChangeCount) values look like they're in the wrong field — review the moves")
                     }
                     .accessibilityIdentifier("wardrobe.settings.tidy")
                 }
@@ -95,7 +95,7 @@ struct WardrobeSettingsView: View {
                     Button {
                         WardrobeSampleCloset.seed(into: modelContext)
                     } label: {
-                        settingRow(symbol: "sparkles.rectangle.stack", tint: SnappetColor.wardrobe,
+                        settingRow(symbol: "sparkles.rectangle.stack", tint: SnappetColor.brand,
                                    title: "Try a sample closet",
                                    subtitle: "13 demo pieces — delete any time")
                     }
@@ -107,13 +107,14 @@ struct WardrobeSettingsView: View {
                     confirmDeleteAll = true
                 } label: {
                     Label("Delete all wardrobe data", systemImage: "trash")
+                        .foregroundStyle(SnappetColor.perfHard)
                 }
                 .accessibilityIdentifier("wardrobe.settings.deleteAll")
             } footer: {
                 Text("AI tagging & styling run on-device with Apple Intelligence. Nothing is ever uploaded.")
             }
         }
-        .navigationTitle("Wardrobe Settings")
+        .navigationTitle("Wardrobe settings")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showTidy) {
             WardrobeTidyView()
@@ -130,12 +131,13 @@ struct WardrobeSettingsView: View {
     private func settingRow(symbol: String, tint: Color, title: String, subtitle: String) -> some View {
         HStack(spacing: 11) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: 13))
+                // Neutral icon tiles (prompt 234 — were white glyphs on pink / blue fills).
+                .foregroundStyle(SnappetColor.textSecondary)
                 .frame(width: 28, height: 28)
-                .background(tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
+                Text(title).font(.subheadline).foregroundStyle(SnappetColor.ink)
                 Text(subtitle).font(.caption2).foregroundStyle(SnappetColor.textSecondary)
             }
         }

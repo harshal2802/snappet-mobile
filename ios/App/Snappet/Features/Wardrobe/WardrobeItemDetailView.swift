@@ -44,15 +44,15 @@ struct WardrobeItemDetailView: View {
                             try? modelContext.save()
                         } label: {
                             Image(systemName: item.isFavorite ? "heart.fill" : "heart")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(SnappetColor.wardrobe)
+                                .font(.system(size: 18))
+                                .foregroundStyle(SnappetColor.brand)
                                 .padding(12)
                         }
                         .accessibilityIdentifier("wardrobe.item.favorite")
                     }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name).font(.title3.weight(.bold))
+                    Text(item.name).font(.title3.weight(.semibold))
                     Text(addedLine)
                         .font(.caption)
                         .foregroundStyle(SnappetColor.textSecondary)
@@ -64,36 +64,37 @@ struct WardrobeItemDetailView: View {
                     WardrobePurchaseSection(item: item)
                 }
 
-                HStack(spacing: 8) {
+                // One stat panel, light numbers (prompt 234 — were three boxes with caps labels).
+                HStack(spacing: 0) {
                     statTile(value: "\(stats.wearCount)×", label: "Worn")
                     statTile(value: stats.lastWornAt.map { $0.formatted(.dateTime.month(.abbreviated).day()) } ?? "—",
                              label: "Last worn")
                     statTile(value: WearStats.costPerWearLabel(cost: item.cost, wears: stats.wearCount) ?? "—",
                              label: "Cost / wear")
                 }
+                .padding(.vertical, 12)
+                .snappetPanel()
 
                 HStack(spacing: 8) {
                     Button {
                         showGenerator = true
                     } label: {
                         Label("Style this", systemImage: "sparkles")
-                            .font(.subheadline.weight(.bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SnappetColor.wardrobe)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .accessibilityIdentifier("wardrobe.item.style")
 
                     NavigationLink {
                         StyleCoachView(item: item)
                     } label: {
                         Label("Ask coach", systemImage: "bubble.left.and.text.bubble.right")
-                            .font(.subheadline.weight(.bold))
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("wardrobe.item.coach")
                 }
             }
@@ -195,15 +196,12 @@ struct WardrobeItemDetailView: View {
 
     private func statTile(value: String, label: String) -> some View {
         VStack(spacing: 2) {
-            Text(value).font(.subheadline.weight(.bold))
-            Text(label.uppercased())
-                .font(.system(size: 8.5, weight: .bold))
+            Text(value).font(.system(size: 21, weight: .light).monospacedDigit())
+            Text(label)
+                .font(.caption2)
                 .foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.hairline))
     }
 
     private func logWear() {
@@ -221,11 +219,11 @@ struct FlowChips: View {
         FlexibleHStack(spacing: 6) {
             ForEach(labels, id: \.self) { label in
                 Text(label)
-                    .font(.caption.weight(.bold))
+                    .font(.caption)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 5)
-                    .background(SnappetColor.wardrobe.opacity(0.1), in: Capsule())
-                    .foregroundStyle(SnappetColor.wardrobe)
+                    .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                    .foregroundStyle(SnappetColor.ink)
             }
         }
     }
@@ -335,11 +333,8 @@ struct WardrobeItemEditSheet: View {
                                 if on { seasons.remove(season) } else { seasons.insert(season) }
                             } label: {
                                 Text(season.title)
-                                    .font(.caption.weight(.bold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(on ? SnappetColor.wardrobe : SnappetColor.surfaceMuted, in: Capsule())
-                                    .foregroundStyle(on ? .white : SnappetColor.textSecondary)
+                                    .font(.caption)
+                                    .snappetPill(selected: on)
                             }
                             .buttonStyle(.plain)
                         }

@@ -31,12 +31,13 @@ struct WardrobePurchaseSection: View {
                             Text(item.currentPrice == nil ? "Check price" : "Check again")
                         }
                     }
-                    .font(.subheadline.weight(.bold))
+                    .font(.subheadline)
+                    .foregroundStyle(SnappetColor.ink)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
+                    .pagerOutline()
                 }
-                .buttonStyle(.bordered)
-                .tint(SnappetColor.wardrobe)
+                .buttonStyle(.plain)
                 .disabled(isChecking)
                 .accessibilityIdentifier("wardrobe.price.check")
 
@@ -103,8 +104,8 @@ struct WardrobePurchaseSection: View {
            let fraction = item.priceDeltaFraction, abs(fraction) >= 0.01 {
             let down = fraction < 0
             Text("\(down ? "↓" : "↑") \(Int(abs(fraction) * 100))%")
-                .font(.caption.weight(.heavy))
-                .foregroundStyle(down ? SnappetColor.perfFresh : Color.red)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(down ? SnappetColor.perfFresh : SnappetColor.perfHard)
         }
     }
 

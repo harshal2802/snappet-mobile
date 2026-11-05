@@ -96,11 +96,11 @@ struct ClosetView: View {
                 showCapture = true
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(SnappetColor.onBrand)
                     .frame(width: 54, height: 54)
                     .background(SnappetColor.brand, in: Circle())
-                    .shadow(color: SnappetColor.brand.opacity(0.4), radius: 12, y: 6)
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
             }
             .padding(.trailing, 18)
             .padding(.bottom, 14)
@@ -133,12 +133,8 @@ struct ClosetView: View {
     private func chip(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isOn ? SnappetColor.wardrobe : SnappetColor.surface, in: Capsule())
-                .foregroundStyle(isOn ? .white : SnappetColor.textSecondary)
-                .overlay(Capsule().strokeBorder(isOn ? .clear : SnappetColor.hairline))
+                .font(.caption)
+                .snappetPill(selected: isOn)
         }
         .buttonStyle(.plain)
     }
@@ -159,24 +155,25 @@ struct ClosetItemCard: View {
                 .overlay(alignment: .topLeading) {
                     Text(WearStats.pillLabel(wearCount: stats.wearCount, lastWornAt: stats.lastWornAt,
                                              addedAt: item.createdAt, now: .now))
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 9.5, weight: .medium))
+                        // The unworn badge stays amber (meaning), as an outline; the count is neutral.
+                        .foregroundStyle(rarelyWorn ? SnappetColor.perfModerate : .white)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(rarelyWorn ? SnappetColor.perfModerate.opacity(0.9) : Color.black.opacity(0.7),
-                                    in: Capsule())
+                        .background(Color.black.opacity(rarelyWorn ? 0.45 : 0.6), in: Capsule())
+                        .overlay(Capsule().strokeBorder(rarelyWorn ? SnappetColor.perfModerate : .clear, lineWidth: 1))
                         .padding(6)
                 }
                 .overlay(alignment: .topTrailing) {
                     if item.isFavorite {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 11))
-                            .foregroundStyle(SnappetColor.wardrobe)
+                            .foregroundStyle(SnappetColor.brand)
                             .padding(8)
                     }
                 }
             Text(item.name)
-                .font(.caption.weight(.bold))
+                .font(.caption.weight(.medium))
                 .lineLimit(1)
                 .padding(.top, 6)
             // Brand · size · style. Brand leads because it's the fact you scan a closet for, and
@@ -184,7 +181,7 @@ struct ClosetItemCard: View {
             // rather than the built-in it happens to score as.
             Text([item.brand, item.sizeLabel, item.styleDisplay]
                     .filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10.5))
                 .foregroundStyle(SnappetColor.textSecondary)
                 .lineLimit(1)
         }

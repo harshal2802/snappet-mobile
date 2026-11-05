@@ -128,7 +128,7 @@ struct WardrobeMigrationBanner: View {
                     ProgressView().controlSize(.small)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Optimizing closet photos…")
-                            .font(.caption.weight(.bold))
+                            .font(.caption.weight(.medium))
                         Text("\(done) of \(total)")
                             .font(.caption2)
                             .foregroundStyle(SnappetColor.textSecondary)
@@ -141,14 +141,14 @@ struct WardrobeMigrationBanner: View {
                 banner {
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(SnappetColor.wardrobe)
+                            .foregroundStyle(SnappetColor.brand)
                         Text("Freed \(reclaimed.formatted(.byteCount(style: .file))) of storage")
-                            .font(.caption.weight(.bold))
+                            .font(.caption.weight(.medium))
                         Spacer()
                         Button("Done", action: onDismiss)
-                            .font(.caption.weight(.bold))
+                            .font(.caption.weight(.medium))
                             .buttonStyle(.plain)
-                            .foregroundStyle(SnappetColor.wardrobe)
+                            .foregroundStyle(SnappetColor.brand)
                     }
                 }
                 .accessibilityIdentifier("wardrobe.migration.done")

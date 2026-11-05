@@ -68,12 +68,8 @@ struct ForYouView: View {
                     showGenerator = true
                 } label: {
                     Label("Style me — custom occasion", systemImage: "sparkles")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(SnappetColor.wardrobe)
+                .buttonStyle(SnappetWidePrimaryStyle())
                 .padding(.top, 8)
                 .accessibilityIdentifier("wardrobe.forYou.styleMe")
             }
@@ -89,7 +85,7 @@ struct ForYouView: View {
         HStack(spacing: 8) {
             Text(tempBand.emoji)
             Text("\(season.title) · \(tempBand.title)")
-                .font(.subheadline.weight(.semibold))
+                .font(.subheadline)
             Spacer()
             Menu {
                 Picker("Season", selection: $season) {
@@ -100,8 +96,8 @@ struct ForYouView: View {
                 }
             } label: {
                 Text("Adjust")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SnappetColor.wardrobe)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.brand)
             }
         }
         .padding(.horizontal, 14)
@@ -117,17 +113,23 @@ private struct SuggestionCard: View {
     let items: [WardrobeItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            // "Open ›" rides the title row (prompt 234) — beside five thumbnails it got the
+            // leftover width and wrapped to "Ope / n ›".
+            HStack(alignment: .firstTextBaseline) {
                 Label(suggestion.title, systemImage: "sparkles")
-                    .font(.subheadline.weight(.bold))
-                Spacer()
-                Text(suggestion.reason)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(SnappetColor.textSecondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.trailing)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text("Open ›")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(SnappetColor.brand)
+                    .fixedSize()
             }
+            Text(suggestion.reason)
+                .font(.caption)
+                .foregroundStyle(SnappetColor.textSecondary)
+                .lineLimit(2)
             HStack(spacing: 8) {
                 ForEach(suggestion.outfit.slots, id: \.itemID) { slot in
                     if let item = items.first(where: { $0.id == slot.itemID }) {
@@ -135,10 +137,6 @@ private struct SuggestionCard: View {
                             .frame(width: 52)
                     }
                 }
-                Spacer()
-                Text("Open ›")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SnappetColor.wardrobe)
             }
         }
         .padding(12)
@@ -180,12 +178,8 @@ struct OutfitGeneratorView: View {
                                 occasion = o
                             } label: {
                                 Text(o.title)
-                                    .font(.caption.weight(.bold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 7)
-                                    .background(occasion == o ? SnappetColor.wardrobe : SnappetColor.surfaceMuted,
-                                                in: Capsule())
-                                    .foregroundStyle(occasion == o ? .white : SnappetColor.textSecondary)
+                                    .font(.caption)
+                                    .snappetPill(selected: occasion == o)
                             }
                             .buttonStyle(.plain)
                         }
@@ -207,7 +201,7 @@ struct OutfitGeneratorView: View {
                     Section("Built around") {
                         HStack(spacing: 10) {
                             WardrobeItemTile(item: buildAround, height: 44).frame(width: 44)
-                            Text(buildAround.name).font(.subheadline.weight(.semibold))
+                            Text(buildAround.name).font(.subheadline)
                         }
                     }
                 }
@@ -218,11 +212,8 @@ struct OutfitGeneratorView: View {
                         noOutfit = composed == nil
                     } label: {
                         Label("Generate outfit", systemImage: "sparkles")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SnappetColor.brand)
+                    .buttonStyle(SnappetWidePrimaryStyle())
                     .listRowBackground(Color.clear)
                     .accessibilityIdentifier("wardrobe.generator.generate")
                     Text("Uses only items you own · composed on-device")
@@ -283,16 +274,14 @@ struct OutfitBoardView: View {
 
                 if !current.rationale.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Why this works").font(.caption.weight(.heavy)).foregroundStyle(SnappetColor.wardrobe)
+                        Text("Why this works").snappetLabel()
                         ForEach(current.rationale, id: \.self) { line in
                             Text("· \(line)").font(.caption)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .background(SnappetColor.wardrobe.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(SnappetColor.wardrobe.opacity(0.16)))
+                    .snappetPanel()
                 }
 
                 HStack(spacing: 8) {
@@ -303,38 +292,38 @@ struct OutfitBoardView: View {
                         if let next = OutfitComposer.compose(items: profiles, request: req) { outfit = next }
                     } label: {
                         Label("Shuffle", systemImage: "shuffle")
-                            .font(.caption.weight(.bold))
+                            .font(.system(size: 15))
+                            .foregroundStyle(SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("wardrobe.board.shuffle")
 
                     Button {
                         saveOutfit(markWorn: false)
                     } label: {
                         Label(saved ? "Saved" : "Save", systemImage: saved ? "checkmark" : "square.and.arrow.down")
-                            .font(.caption.weight(.bold))
+                            .font(.system(size: 15))
+                            .foregroundStyle(saved ? SnappetColor.textSecondary : SnappetColor.ink)
+                            .padding(.vertical, 11)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                            .pagerOutline()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(saved)
                     .accessibilityIdentifier("wardrobe.board.save")
-
-                    Button {
-                        saveOutfit(markWorn: true)
-                        dismiss()
-                    } label: {
-                        Label("Wear today", systemImage: "tshirt")
-                            .font(.caption.weight(.bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(SnappetColor.brand)
-                    .accessibilityIdentifier("wardrobe.board.wear")
                 }
+
+                Button {
+                    saveOutfit(markWorn: true)
+                    dismiss()
+                } label: {
+                    Label("Wear today", systemImage: "tshirt")
+                }
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .accessibilityIdentifier("wardrobe.board.wear")
             }
             .padding(16)
         }
@@ -353,8 +342,8 @@ struct OutfitBoardView: View {
                             swap(slot)
                         } label: {
                             Image(systemName: "arrow.left.arrow.right")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(SnappetColor.wardrobe)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(SnappetColor.textSecondary)
                                 .frame(width: 24, height: 24)
                                 .background(SnappetColor.surface, in: Circle())
                                 .overlay(Circle().strokeBorder(SnappetColor.hairline))
@@ -362,11 +351,11 @@ struct OutfitBoardView: View {
                         .padding(6)
                         .accessibilityIdentifier("wardrobe.board.swap")
                     }
-                Text(slot.role.title.uppercased())
-                    .font(.system(size: 8, weight: .heavy))
+                Text(slot.role.title)
+                    .font(.caption2)
                     .foregroundStyle(SnappetColor.textSecondary)
                 Text(item.name)
-                    .font(.caption.weight(.bold))
+                    .font(.caption.weight(.medium))
                     .lineLimit(1)
             }
             .padding(10)
