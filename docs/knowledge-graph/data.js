@@ -395,7 +395,7 @@ const nodes = [
 
   // ═════════════════ MODULE: Habits ═════════════════
   { id: "m-habit", label: "Habits", type: "module", group: "habit", category: "productivity", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Habit/HabitModule.swift", desc: "Daily streaks with a 7-day backfill strip and a 30-day completion rate.", tags: ["streaks"] },
+    file: "ios/App/Snappet/Features/Habit/HabitModule.swift", desc: "Restyled to the design system in prompt 237 (user accent instead of green, one card per habit, neutral icon tiles, ink-on-accent done days / Start). Daily streaks with a 7-day backfill strip and a 30-day completion rate.", tags: ["streaks"] },
   { id: "habit-root", label: "HabitRootView", type: "screen", group: "habit", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Features/Habit/HabitRootView.swift", desc: "List of habits with the 7-day strip + 30-day rate. Presents Add; presents Edit per habit.", tags: ["root","list"], shot: "../screenshots/05-habits.png" },
   { id: "habit-add", label: "Add Habit", type: "sheet", group: "habit", category: "productivity", platform: "ios",
