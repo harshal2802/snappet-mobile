@@ -61,14 +61,13 @@ struct BudgetCategoryTransactionsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(transaction.note.isEmpty ? category.name : transaction.note)
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .medium))
                 Text(transaction.date.formatted(.dateTime.month().day().year()))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .snappetDetail()
             }
             Spacer()
             Text(transaction.amount.asCurrency)
-                .font(.subheadline.bold())
+                .font(.subheadline).monospacedDigit()
         }
         .contentShape(Rectangle())
     }

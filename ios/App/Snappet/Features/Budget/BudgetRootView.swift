@@ -115,8 +115,9 @@ struct BudgetRootView: View {
         } description: {
             Text("Add a budget category to start tracking your spending.")
         } actions: {
-            Button("Add Category") { showingAddCategory = true }
-                .buttonStyle(.borderedProminent)
+            Button("Add category") { showingAddCategory = true }
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .frame(width: 220)   // the empty view gives actions no width of their own
                 .accessibilityIdentifier("budget.addCategory")
         }
     }
@@ -139,7 +140,13 @@ struct BudgetRootView: View {
 
             Section {
                 NavigationLink(value: BudgetTrendsRoute()) {
-                    Label("6-month trends", systemImage: "chart.bar.xaxis")
+                    HStack(spacing: 12) {
+                        Image(systemName: "chart.bar.xaxis").font(.system(size: 14))
+                            .foregroundStyle(SnappetColor.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        Text("6-month trends").font(SnappetType.body).foregroundStyle(SnappetColor.ink)
+                    }
                 }
                 .accessibilityIdentifier("budget.trends")
             }
@@ -165,7 +172,7 @@ struct BudgetRootView: View {
                         } label: {
                             Label("Edit", systemImage: "pencil")
                         }
-                        .tint(SnappetColor.budget)
+                        .tint(SnappetColor.brand)
                     }
                 }
                 .onDelete(perform: deleteCategories)
@@ -193,7 +200,7 @@ struct BudgetRootView: View {
             Spacer()
 
             Text(month.label)
-                .font(.headline)
+                .font(.system(size: 16, weight: .semibold))
                 .accessibilityIdentifier("budget.monthLabel")
 
             Spacer()

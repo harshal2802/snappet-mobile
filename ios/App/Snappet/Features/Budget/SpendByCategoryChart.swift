@@ -42,7 +42,7 @@ struct SpendByCategoryChart: View {
                     let rect = geo[frame]
                     VStack(spacing: 2) {
                         Text(total.asCurrency)
-                            .font(.headline.bold())
+                            .font(.system(size: 20, weight: .light))
                         Text(periodLabel)
                             .font(.caption)
                             .foregroundStyle(.secondary)

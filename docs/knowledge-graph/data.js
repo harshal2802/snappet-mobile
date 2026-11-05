@@ -630,7 +630,7 @@ const nodes = [
 
   // ═════════════════ MODULE: Budget ═════════════════
   { id: "m-budget", label: "Budget", type: "module", group: "budget", category: "finance", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Budget/BudgetModule.swift", desc: "Track monthly spending: categories, transactions, a month switcher and 6-month trends.", tags: ["budget","spending"] },
+    file: "ios/App/Snappet/Features/Budget/BudgetModule.swift", desc: "Restyled to the design system in prompt 241 (user accent instead of blue, one summary panel with light numbers, thin accent / amber / red bars, thin trend bars). Track monthly spending: categories, transactions, a month switcher and 6-month trends.", tags: ["budget","spending"] },
   { id: "budget-root", label: "BudgetRootView", type: "screen", group: "budget", category: "finance", platform: "ios",
     file: "ios/App/Snappet/Features/Budget/BudgetRootView.swift", desc: "Month summary + spend-by-category. Pushes a category and Trends; presents add/edit category and add transaction.", tags: ["root","charts"], shot: "../screenshots/09-budget.png" },
   { id: "budget-cat-tx", label: "BudgetCategoryTransactionsView", type: "screen", group: "budget", category: "finance", platform: "ios+android",

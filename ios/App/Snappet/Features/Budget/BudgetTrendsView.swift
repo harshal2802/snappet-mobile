@@ -68,7 +68,7 @@ struct BudgetTrendsView: View {
     private var chart: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Spending — last 6 months")
-                .font(.headline)
+                .snappetLabel()
                 .padding(.horizontal)
 
             Chart(totals) { month in
@@ -76,8 +76,8 @@ struct BudgetTrendsView: View {
                     x: .value("Month", month.shortLabel),
                     y: .value("Spent", month.total)
                 )
-                .foregroundStyle(Color.blue.gradient)
-                .cornerRadius(6)
+                .foregroundStyle(SnappetColor.brand)   // thin accent bars (prompt 241; was a blue gradient)
+                .cornerRadius(3)
             }
             .chartYAxis {
                 AxisMarks(format: .currency(code: Locale.current.currency?.identifier ?? "USD")
