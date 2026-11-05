@@ -586,7 +586,7 @@ const nodes = [
   { id: "household-watch", label: "Watch Chores page", type: "watch", group: "household", category: "lifestyle", platform: "watchos",
     file: "ios/App/SnappetWatch/WatchWorkoutView.swift", desc: "Household prompt 04: when no workout is running, the watch leads with your chores today (vertical page above the workout hint). Taps are optimistic and go to the phone via transferUserInfo (HouseholdWatchMessage.toggle), which applies them through the same outbox.", tags: ["watch","chores","wcsession"] },
   { id: "m-journal", label: "Journal", type: "module", group: "journal", category: "productivity", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Journal/JournalModule.swift", desc: "Quick notes & entries with tags and .searchable filtering.", tags: ["notes","tags","search"] },
+    file: "ios/App/Snappet/Features/Journal/JournalModule.swift", desc: "Restyled to the design system in prompt 239 (user accent instead of purple, medium titles, accent outline tag pills). Quick notes & entries with tags and .searchable filtering.", tags: ["notes","tags","search"] },
   { id: "journal-root", label: "JournalRootView", type: "screen", group: "journal", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Features/Journal/JournalRootView.swift", desc: "Searchable list of entries (tag chips). Pushes an entry to its editor; presents a new entry.", tags: ["root","search"], shot: "../screenshots/06-journal.png" },
   { id: "journal-editor", label: "JournalEditorView", type: "screen", group: "journal", category: "productivity", platform: "ios+android",

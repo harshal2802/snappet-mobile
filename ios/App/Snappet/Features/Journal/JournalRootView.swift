@@ -169,15 +169,14 @@ private struct JournalRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(displayTitle)
-                .font(.headline)
+                .font(.system(size: 15, weight: .medium))
                 .lineLimit(1)
             Text(entry.createdAt, format: .dateTime.month().day().year().hour().minute())
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .snappetDetail()
             if !entry.tags.isEmpty {
                 Text(entry.tags.map { "#\($0)" }.joined(separator: " "))
-                    .font(.caption)
-                    .foregroundStyle(.tint)
+                    .font(.system(size: 12))
+                    .foregroundStyle(SnappetColor.brand)
                     .lineLimit(1)
             }
         }
