@@ -18,7 +18,7 @@ struct JournalEditorView: View {
         Form {
             Section {
                 TextField("Title (optional)", text: $entry.title)
-                    .font(.headline)
+                    .font(.system(size: 17, weight: .medium))
                     .accessibilityIdentifier("journal.titleField")
             }
             Section("Entry") {
@@ -119,10 +119,9 @@ private struct TagChips: View {
                         Image(systemName: "xmark.circle.fill")
                             .imageScale(.small)
                     }
-                    .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.tint.opacity(0.15), in: Capsule())
+                    .font(.system(size: 12.5))
+                    // An accent outline pill (prompt 239; was a tinted fill).
+                    .snappetPill(selected: false, tint: SnappetColor.brand)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Remove tag \(tag)")
