@@ -10588,3 +10588,9 @@ stripes, and the panel read as an opaque slab.
 - **A big-number-plus-unit that a UI test reads stays one `Text`.** The recap total and goal progress interpolate
   two styled `Text`s into one. An HStack would turn `staticTexts["household.recap.total"]` into an "other" element and
   break `HouseholdUITests`.
+
+## 2026-11-05 — Budget donut: no total-change animation (prompt 236)
+
+- **Don't animate a Charts `SectorMark` donut between totals.** When a slice was added, Charts interpolated the
+  sectors through a NaN angle and trapped (NaN → Int), crashing Budget. The donut only sweeps in on appear, and the
+  sweep starts at a sliver of each slice, never 0.

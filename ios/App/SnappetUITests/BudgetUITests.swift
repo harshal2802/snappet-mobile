@@ -139,4 +139,42 @@ final class BudgetUITests: XCTestCase {
             snap("07-trends")
         }
     }
+
+    /// Regression (prompt 236): spending in a second category re-animated the donut's total and Charts trapped
+    /// (NaN → Int), killing the app as soon as the month had spend in two categories.
+    func testSpendingInTwoCategoriesDoesNotCrash() {
+        openBudget()
+        addCategory(named: "Groceries", limit: "400")
+        app.buttons["Add"].tap()
+        app.buttons["budget.addCategory"].firstMatch.tap()
+        let nameField = app.textFields["Name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 4))
+        nameField.tap(); nameField.typeText("Eating out")
+        app.textFields["Amount"].tap(); app.textFields["Amount"].typeText("100")
+        app.buttons["Save"].tap()
+
+        func addTransaction(_ value: String, category: String?) {
+            app.buttons["Add"].tap()
+            app.buttons["budget.addTxn"].tap()
+            if let category {
+                app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Category")).firstMatch.tap()
+                let option = app.buttons[category].firstMatch
+                XCTAssertTrue(option.waitForExistence(timeout: 4))
+                option.tap()
+            }
+            let amount = app.textFields["budget.txnAmount"]
+            XCTAssertTrue(amount.waitForExistence(timeout: 4))
+            amount.tap(); amount.typeText(value)
+            app.buttons["budget.txnSave"].tap()
+        }
+        addTransaction("120", category: nil)
+        addTransaction("95", category: "Eating out")
+
+        let trends = app.buttons["budget.trends"].firstMatch
+        XCTAssertTrue(trends.waitForExistence(timeout: 6), "Budget is still on screen with spend in two categories")
+        trends.tap()
+        XCTAssertTrue(app.navigationBars["Trends"].waitForExistence(timeout: 4))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["budget.monthLabel"].waitForExistence(timeout: 4), "back on Budget, still running")
+    }
 }
