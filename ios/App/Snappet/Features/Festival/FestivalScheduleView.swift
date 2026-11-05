@@ -16,6 +16,8 @@ struct FestivalScheduleView: View {
 
     @Query private var stars: [FestivalStar]
     @Query private var attendance: [FestivalAttendance]
+    /// Break / walking / arriving stretches (prompt 232) — observed so the bar follows them.
+    @Query private var stretches: [FestivalNightStretch]
     /// Unfiltered — the getting-started banner counts lineups/stars across the whole module (prompt 07).
     @Query private var allLineups: [FestivalLineup]
     @Query private var allStars: [FestivalStar]
@@ -32,6 +34,14 @@ struct FestivalScheduleView: View {
     @State private var showingForYou = false
     /// The dance session the open attendance rides — resolved when the sheet opens/claims.
     @State private var liveSession: WorkoutSession?
+    /// "Where are you now?" / "What's next?" (prompt 232) + its copy.
+    @State private var showingWhere = false
+    @State private var whereTitle = "Where are you now?"
+    @State private var whereSubtitle: String?
+    /// Set by the live sheet's End this set / Switch, presented once that sheet has gone (the
+    /// one-mutation two-sheet race — stash + promote in `onDismiss`).
+    @State private var pendingWhere = false
+    @State private var showingEditLineup = false
     /// Tag review sheet (festival prompt 03). The recap is a value-typed push (`FestivalRecapRoute`)
     /// — the `WeeklyReelRoute` pattern; an `isPresented` destination on this often-invalidated
     /// view (30 s TimelineView + @Query writes) failed to push under XCUITest.
@@ -49,6 +59,11 @@ struct FestivalScheduleView: View {
         let packID = lineup.packID
         _stars = Query(filter: #Predicate<FestivalStar> { $0.packID == packID })
         _attendance = Query(filter: #Predicate<FestivalAttendance> { $0.packID == packID })
+        _stretches = Query(filter: #Predicate<FestivalNightStretch> { $0.packID == packID })
+    }
+
+    private func night(_ pack: FestivalPack) -> FestivalNightController {
+        FestivalNightController(lineup: lineup, pack: pack, context: context, app: app, core: core)
     }
 
     private var starredIDs: Set<UUID> { Set(stars.map(\.setID)) }
@@ -107,6 +122,11 @@ struct FestivalScheduleView: View {
             // Prompt 05's share/scan entry (wireframe frame 12's ⋯ menu).
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    // Prompt 232: fix times, add / remove sets, delay a stage or the whole day.
+                    Button {
+                        showingEditLineup = true
+                    } label: { Label("Edit lineup", systemImage: "pencil") }
+                    .accessibilityIdentifier("festival.editLineup")
                     Button {
                         shareStart = .plan; showingShare = true
                     } label: { Label("Share my plan", systemImage: "star") }
@@ -127,6 +147,7 @@ struct FestivalScheduleView: View {
             remindersEnabled = await notifications.authorizationGranted()
             guard pack == nil else { return }
             pack = lineup.pack()
+            if let pack { reconcileNight(pack) }
             if let pack, selectedDay == nil {
                 selectedDay = FestivalSchedule.defaultDayDate(in: pack, now: .now)
             }
@@ -162,15 +183,46 @@ struct FestivalScheduleView: View {
                     .presentationDetents([.large])
             }
         }
-        .sheet(isPresented: $showingLive) {
+        // Edits change set times — re-read the pack and re-plan reminders (prompt 232).
+        .onChange(of: lineup.editsData) { _, _ in
+            pack = lineup.pack()
+            if let pack { rescheduleReminders(pack: pack) }
+        }
+        .sheet(isPresented: $showingLive, onDismiss: {
+            if pendingWhere { pendingWhere = false; showingWhere = true }
+        }) {
             if let pack, let open = openAttendance {
                 FestivalLiveSheet(pack: pack,
                                   attendance: open,
                                   session: liveSession,
-                                  onSwitch: { set in claim(set, in: pack) },
+                                  onSwitch: {
+                                      whereTitle = "Where are you now?"
+                                      whereSubtitle = nil
+                                      pendingWhere = true
+                                  },
+                                  onEndSet: {
+                                      let artist = open.artist
+                                      night(pack).endSet()
+                                      whereTitle = "What's next?"
+                                      whereSubtitle = "You left \(artist)"
+                                      pendingWhere = true
+                                  },
                                   onEnd: { endNight(in: pack) })
                     .presentationDetents([.medium, .large])
             }
+        }
+        .sheet(isPresented: $showingWhere) {
+            if let pack {
+                FestivalWhereSheet(pack: pack, starred: starredIDs,
+                                   currentSetID: openAttendance?.setID,
+                                   title: whereTitle, subtitle: whereSubtitle,
+                                   nightOn: night(pack).status().isOn,
+                                   onPick: { pick($0, in: pack) })
+                    .presentationDetents([.large])
+            }
+        }
+        .sheet(isPresented: $showingEditLineup) {
+            FestivalLineupEditView(lineup: lineup)
         }
         .sheet(isPresented: $showingForYou) {
             if let pack {
@@ -179,7 +231,8 @@ struct FestivalScheduleView: View {
         }
         .sheet(isPresented: $showingShare) {
             if let pack {
-                FestivalShareView(pack: pack, lineupName: lineup.name, starredSetIDs: starredIDs,
+                FestivalShareView(pack: lineup.originalPack() ?? pack, edits: lineup.edits,
+                                  lineupName: lineup.name, starredSetIDs: starredIDs,
                                   start: shareStart,
                                   // An in-app scan routes through the shell one-shot: pop to the
                                   // Festival root, which owns the import-confirm + installer.
@@ -219,7 +272,24 @@ struct FestivalScheduleView: View {
                 .padding(.bottom, 8)
             }
         }
-        .safeAreaInset(edge: .bottom) { imHereBar(pack: pack, now: now) }
+        .safeAreaInset(edge: .bottom) {
+            FestivalNightBar(status: nightStatus(pack),
+                             pack: pack,
+                             liveSet: FestivalSchedule.liveSet(in: pack, starred: starredIDs, now: now),
+                             openAttendance: openAttendance,
+                             now: now,
+                             onOpenLive: { if let open = openAttendance { reopenLive(open, in: pack) } },
+                             onClaim: { set in
+                                 let controller = night(pack)
+                                 controller.claim(set)
+                                 if let open = controller.openAttendance { reopenLive(open, in: pack) }
+                             },
+                             onStartNight: { night(pack).startNight() },
+                             onWhere: { askWhere(subtitle: nil) },
+                             onConfirmAutoMove: { night(pack).confirmAutoMove() })
+        }
+        // The Halloween fix: every tick, a claim whose set has ended moves on or asks.
+        .onChange(of: now) { _, _ in reconcileNight(pack) }
     }
 
     private func dayTabs(pack: FestivalPack) -> some View {
@@ -339,37 +409,6 @@ struct FestivalScheduleView: View {
         .accessibilityIdentifier("festival.star.\(row.set.artist)")
     }
 
-    /// The one CTA (frame 4): **I'm here — <artist>** while a set plays; **On the floor** re-opens
-    /// the live sheet once claimed. Hidden between sets — there's nothing to claim.
-    @ViewBuilder private func imHereBar(pack: FestivalPack, now: Date) -> some View {
-        if let open = openAttendance {
-            Button {
-                reopenLive(open)
-            } label: {
-                Label("On the floor — \(open.artist)", systemImage: "waveform")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.festival)
-            .padding(.horizontal).padding(.bottom, 6)
-            .accessibilityIdentifier("festival.imHere")
-        } else if let live = FestivalSchedule.liveSet(in: pack, starred: starredIDs, now: now) {
-            Button {
-                claim(live, in: pack)
-                showingLive = true
-            } label: {
-                Label("I'm here — \(live.artist)", systemImage: "smallcircle.filled.circle")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.festival)
-            .padding(.horizontal).padding(.bottom, 6)
-            .accessibilityIdentifier("festival.imHere")
-        }
-    }
-
     // MARK: - Stars
 
     private func toggleStar(_ set: FestivalSet) {
@@ -402,143 +441,56 @@ struct FestivalScheduleView: View {
                                  pack: pack, leadMinutes: leadMinutes)
     }
 
-    // MARK: - The dance-session spine ("I'm here")
+    // MARK: - The night (prompt 232 — all through `FestivalNightController`)
 
-    /// Claim `set`: close any other open claim, ride the active `WorkoutSession` if one is live
-    /// (never stack a second), else start a dance session + live HR + the Live Activity — then
-    /// record the attendance stretch (the matcher's future hint).
-    private func claim(_ set: FestivalSet, in pack: FestivalPack) {
-        let now = Date()
-        if let open = openAttendance {
-            guard open.setID != set.id else {
-                reopenLive(open)
-                return
-            }
-            closeAttendance(open, at: now)
+    /// Re-derived on every render; the `@Query`s above make it follow claims and stretches.
+    private func nightStatus(_ pack: FestivalPack) -> FestivalNight.Status {
+        _ = attendance.count + stretches.count
+        return night(pack).status()
+    }
+
+    /// Bring the claim up to date with the clock; when the night is now asking, open the picker
+    /// (only if nothing else is presented — the bar's "Where are you now?" covers the rest).
+    private func reconcileNight(_ pack: FestivalPack) {
+        let wasAsking: Bool = { if case .between = night(pack).status() { return true }; return false }()
+        let ended = openAttendance.flatMap { pack.setsByID[$0.setID] }
+        let asking = night(pack).reconcile()
+        if asking, !wasAsking, !showingLive, !showingWhere, !showingReview, !showingShare,
+           !showingForYou, !showingEditLineup {
+            askWhere(subtitle: ended.map {
+                "\($0.artist) ended at \(FestivalSchedule.timeLabel($0.end, offsetSeconds: pack.utcOffsetSeconds))"
+            })
         }
+    }
 
-        let session = activeSession() ?? startDanceSession(now: now)
-        appendDanceExercise(for: set, to: session)
-        context.insert(FestivalAttendance(packID: lineup.packID, setID: set.id,
-                                          artist: set.artist, stage: set.stage,
-                                          sessionID: session.id, startedAt: now))
-        try? context.save()
-        liveSession = session
-        resumeLiveServicesIfNeeded(for: session, artist: set.artist)
-        app.liveActivity.update(hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
-                                exerciseName: set.artist, setProgress: "")
-        core.log(module: FestivalModule.id, action: "attend",
-                 summary: "On the floor: \(set.artist) · \(set.stage)")
+    private func askWhere(subtitle: String?) {
+        whereTitle = "Where are you now?"
+        whereSubtitle = subtitle
+        showingWhere = true
+    }
+
+    private func pick(_ choice: FestivalWhereSheet.Choice, in pack: FestivalPack) {
+        switch choice {
+        case .set(let set): night(pack).claim(set)
+        case .stretch(let kind): night(pack).startStretch(kind)
+        case .endNight: endNight(in: pack)
+        }
     }
 
     /// Re-open the live sheet for an existing claim (including after a relaunch: re-resolve the
     /// session and restart HR/Live Activity if nothing is streaming — the `resume` precedent).
-    private func reopenLive(_ open: FestivalAttendance) {
-        liveSession = session(id: open.sessionID)
-        if let session = liveSession, session.isActive {
-            resumeLiveServicesIfNeeded(for: session, artist: open.artist)
+    private func reopenLive(_ open: FestivalAttendance, in pack: FestivalPack) {
+        let controller = night(pack)
+        liveSession = controller.session(id: open.sessionID)
+        if let session = liveSession {
+            controller.resumeLiveServicesIfNeeded(for: session, label: open.artist)
         }
         showingLive = true
     }
 
-    /// End the night: close the open claim and — only when the session is festival-owned — finish
-    /// the dance `WorkoutSession` exactly like the tracker does (flush HR, stop sources, end the
-    /// Live Activity, stamp `completedAt`, feed the Recap log). A gym session we merely annotated
-    /// stays live; its own player owns its lifecycle.
     private func endNight(in pack: FestivalPack) {
-        let now = Date()
-        if let open = openAttendance { closeAttendance(open, at: now) }
         showingLive = false
-        guard let session = liveSession ?? activeSession(),
-              session.isActive, isFestivalOwned(session) else {
-            liveSession = nil
-            return
-        }
-        // Flush HR → stamp bounds/kcal → stop services → complete → feed the Recap log — the
-        // same shared path the gym tracker's finish uses (this block used to be its duplicate).
-        WorkoutSessionFinisher.finish(session, app: app, context: context, at: now)
-        let mins = Int(session.duration / 60)
-        core.log(module: FestivalModule.id, action: "session",
-                 summary: "Danced at \(lineup.name)", metric: Double(mins))
+        night(pack).endNight()
         liveSession = nil
-        // The night is over — run one tagging pass now (festival prompt 03) so the review sheet
-        // and Clips payoff are ready before the user even looks. Silent; discovery only when
-        // Photos is already authorized.
-        Task {
-            await FestivalTagSync.refresh(pack: pack, packID: lineup.packID, context: context,
-                                          mediaService: app.sessionMedia)
-        }
-    }
-
-    // MARK: Session helpers (thin SwiftData edges)
-
-    private func activeSession() -> WorkoutSession? {
-        let all = (try? context.fetch(FetchDescriptor<WorkoutSession>(
-            predicate: #Predicate { $0.completedAt == nil }))) ?? []
-        return all.min { $0.startedAt > $1.startedAt }
-    }
-
-    private func session(id: UUID) -> WorkoutSession? {
-        (try? context.fetch(FetchDescriptor<WorkoutSession>(
-            predicate: #Predicate { $0.id == id })))?.first
-    }
-
-    private func startDanceSession(now: Date) -> WorkoutSession {
-        let session = WorkoutSession(routineID: nil, routineName: lineup.name,
-                                     startedAt: now, exercises: [])
-        context.insert(session)
-        app.liveWorkout.start(for: session, disciplines: [.dance], sport: nil, category: nil,
-                              maxHR: app.userProfile.profile.resolvedMaxHR,
-                              restHR: app.userProfile.profile.restingBound)
-        app.liveActivity.start(routineName: lineup.name, startedAt: now,
-                               exerciseName: "Dancing", setProgress: "",
-                               maxHR: app.userProfile.profile.resolvedMaxHR)
-        return session
-    }
-
-    /// After a cold relaunch nothing is streaming — restart live metrics + the Live Activity for
-    /// the still-open session. Guarded exactly like the tracker's `resume` (never steal a running
-    /// source, never re-create a live activity that's already up).
-    private func resumeLiveServicesIfNeeded(for session: WorkoutSession, artist: String) {
-        if !app.liveWorkout.isSessionActive {
-            app.liveWorkout.start(for: session, disciplines: [.dance], sport: nil, category: nil,
-                                  maxHR: app.userProfile.profile.resolvedMaxHR,
-                                  restHR: app.userProfile.profile.restingBound)
-        }
-        if !app.liveActivity.isRunning {
-            app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
-                                   exerciseName: artist, setProgress: "",
-                                   maxHR: app.userProfile.profile.resolvedMaxHR)
-        }
-    }
-
-    /// One dance-discipline entity per claimed set ("Fred again.. · Pyramid Stage") — the freeform
-    /// `addOpenEffort` shape, so the session detail reads like the night.
-    private func appendDanceExercise(for set: FestivalSet, to session: WorkoutSession) {
-        var entity = SessionExercise(
-            exerciseId: "festival-set", targetSets: 0, targetReps: "", targetRestSeconds: 0,
-            sets: [], displayName: "\(set.artist) · \(set.stage)",
-            kindRaw: SetKind.duration.rawValue)
-        entity.disciplineRaw = WorkoutDiscipline.dance.rawValue
-        session.exercises.append(entity)
-    }
-
-    /// Close an attendance stretch and log its duration onto the matching dance entity, so the
-    /// session detail shows a real effort per set (`SetLog.durationSec`, the `.duration` kind).
-    private func closeAttendance(_ open: FestivalAttendance, at now: Date) {
-        open.endedAt = now
-        guard let session = session(id: open.sessionID) else { return }
-        let name = "\(open.artist) · \(open.stage)"
-        if let index = session.exercises.lastIndex(where: { $0.displayName == name && $0.sets.isEmpty }) {
-            session.exercises[index].sets.append(
-                SetLog(completedAt: now, durationSec: max(0, now.timeIntervalSince(open.startedAt))))
-        }
-    }
-
-    /// A session festival started (vs a gym session it annotated): routineless, and every entity is
-    /// a festival set. Content-derived, so it survives relaunches with no stored flag.
-    private func isFestivalOwned(_ session: WorkoutSession) -> Bool {
-        session.routineID == nil && !session.exercises.isEmpty
-            && session.exercises.allSatisfy { $0.exerciseId == "festival-set" }
     }
 }

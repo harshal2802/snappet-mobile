@@ -8,11 +8,21 @@ import SwiftData
 /// Pushed from a schedule row; NO stack of its own.
 struct FestivalSetDetailView: View {
     let lineup: FestivalLineup
-    let pack: FestivalPack
-    let set: FestivalSet
+    /// The pack/set as pushed; `pack`/`set` below follow lineup edits made from this page.
+    let initialPack: FestivalPack
+    let initialSet: FestivalSet
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(SnappetCore.self) private var core
+
+    @State private var edited: FestivalPack?
+    @State private var showingEditTime = false
+    /// The open claim anywhere in this festival — "I'm here" reads "You're here" when it's this set.
+    @Query private var openClaims: [FestivalAttendance]
+
+    private var pack: FestivalPack { edited ?? initialPack }
+    private var set: FestivalSet { pack.setsByID[initialSet.id] ?? initialSet }
 
     @Query private var attendance: [FestivalAttendance]
     @Query private var tags: [FestivalClipTag]
@@ -46,9 +56,12 @@ struct FestivalSetDetailView: View {
 
     init(lineup: FestivalLineup, pack: FestivalPack, set: FestivalSet) {
         self.lineup = lineup
-        self.pack = pack
-        self.set = set
+        self.initialPack = pack
+        self.initialSet = set
         let packID = lineup.packID
+        _openClaims = Query(filter: #Predicate<FestivalAttendance> {
+            $0.packID == packID && $0.endedAt == nil
+        })
         let setID = set.id
         _attendance = Query(filter: #Predicate<FestivalAttendance> {
             $0.packID == packID && $0.setID == setID
@@ -62,6 +75,7 @@ struct FestivalSetDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                nightActions
                 statsRow
                 hrCard
                 clipsSection
@@ -74,6 +88,10 @@ struct FestivalSetDetailView: View {
         .navigationTitle("Set")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .onChange(of: lineup.editsData) { _, _ in edited = lineup.pack() }
+        .sheet(isPresented: $showingEditTime) {
+            FestivalEditTimeSheet(lineup: lineup, setID: set.id)
+        }
         .onChange(of: tags.count) { _, _ in Task { await load(refreshTags: false) } }
         .sheet(isPresented: $showingReview) {
             FestivalTagReviewView(lineup: lineup, pack: pack,
@@ -108,6 +126,44 @@ struct FestivalSetDetailView: View {
                  + " · \(lineup.name)")
                 .font(.subheadline)
                 .foregroundStyle(SnappetColor.textSecondary)
+            if let original = lineup.originalPack(),
+               let was = lineup.edits.originalTimes(of: set.id, in: original) {
+                Text("Edited (was \(FestivalSchedule.timeLabel(was.start, offsetSeconds: pack.utcOffsetSeconds))"
+                     + "–\(FestivalSchedule.timeLabel(was.end, offsetSeconds: pack.utcOffsetSeconds)))")
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.brand)
+                    .accessibilityIdentifier("festival.set.edited")
+            }
+        }
+    }
+
+    /// "I'm here" for THIS set — works whatever the printed clock says (a late start is exactly
+    /// when you need it) — and "Edit time" for when the stage runs late (prompt 232).
+    private var nightActions: some View {
+        let here = openClaims.contains { $0.setID == set.id }
+        return HStack(spacing: 8) {
+            Button {
+                FestivalNightController(lineup: lineup, pack: pack, context: context, app: app, core: core)
+                    .claim(set)
+            } label: {
+                Label(here ? "You're here" : "I'm here",
+                      systemImage: here ? "checkmark" : "smallcircle.filled.circle")
+            }
+            .buttonStyle(SnappetWidePrimaryStyle())
+            .disabled(here)
+            .accessibilityIdentifier("festival.set.imHere")
+            Button {
+                showingEditTime = true
+            } label: {
+                Label("Edit time", systemImage: "clock")
+                    .font(.system(size: 15))
+                    .foregroundStyle(SnappetColor.ink)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity)
+                    .pagerOutline()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("festival.set.editTime")
         }
     }
 

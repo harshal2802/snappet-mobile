@@ -173,28 +173,103 @@ import XCTest
         XCTAssertTrue(app.buttons["festival.live.record"].exists, "the record-clip control rides along")
         snap("festival-live")
 
-        // 5 — switch to the up-next set via the dialog; the sheet re-anchors in place.
+        // 5 — switch opens "Where are you now?" (prompt 232) with up next; picking claims it.
         app.buttons["festival.live.switch"].tap()
-        let overtone = app.buttons["Overtone · West Holts (up next)"]
-        XCTAssertTrue(overtone.waitForExistence(timeout: 4), "the switcher should offer up next")
+        let overtone = app.buttons["festival.where.set.Overtone"]
+        XCTAssertTrue(overtone.waitForExistence(timeout: 6), "the picker should offer up next")
+        snap("festival-where")
         overtone.tap()
-        let reanchored = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == 'Overtone'"),
-            object: app.staticTexts["festival.live.artist"])
-        XCTAssertEqual(XCTWaiter().wait(for: [reanchored], timeout: 6), .completed,
-                       "switching should re-anchor the sheet on Overtone")
+        XCTAssertTrue(imHere.waitForExistence(timeout: 6))
+        let onOvertone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS 'Overtone'"), object: imHere)
+        XCTAssertEqual(XCTWaiter().wait(for: [onOvertone], timeout: 6), .completed,
+                       "switching should move the claim to Overtone")
+        imHere.tap()
+        XCTAssertTrue(app.staticTexts["festival.live.artist"].waitForExistence(timeout: 6))
+        XCTAssertEqual(app.staticTexts["festival.live.artist"].label, "Overtone")
         snap("festival-switched")
 
-        // 6 — end the night: the sheet closes and the CTA returns to I'm here for the live set.
-        let end = app.buttons["festival.live.end"]
-        if !end.isHittable {
-            // Below the medium-detent fold — scrolling up expands the sheet to .large first.
-            app.swipeUp()
-        }
-        end.tap()
+        // 6 — End this set → "What's next?" → Taking a break: the bar follows.
+        let endSet = app.buttons["festival.live.endSet"]
+        if !endSet.isHittable { app.swipeUp() }
+        endSet.tap()
+        let rest = app.buttons["festival.where.break"]
+        XCTAssertTrue(rest.waitForExistence(timeout: 6), "ending a set should ask what's next")
+        XCTAssertTrue(app.buttons["festival.where.walking"].exists)
+        rest.tap()
+        let whereNow = app.buttons["festival.whereNow"]
+        XCTAssertTrue(whereNow.waitForExistence(timeout: 6), "a break shows the break bar")
+        XCTAssertTrue(whereNow.label.contains("On a break"))
+        snap("festival-break")
+
+        // 7 — from the break: End the night — heading home. The CTA returns to I'm here.
+        whereNow.tap()
+        // The last row of a List — off-screen rows aren't in the tree until scrolled to.
+        XCTAssertTrue(app.buttons["festival.where.break"].waitForExistence(timeout: 6))
+        let endNight = app.buttons["festival.where.endNight"]
+        var swipes = 0
+        while !(endNight.exists && endNight.isHittable) && swipes < 5 { app.swipeUp(); swipes += 1 }
+        XCTAssertTrue(endNight.exists, "What's next should offer End the night — heading home")
+        endNight.tap()
         XCTAssertTrue(imHere.waitForExistence(timeout: 6), "ending should surface the CTA again")
         XCTAssertTrue(imHere.label.contains("I'm here"),
                       "after ending, the claim CTA should reset from On the floor")
+    }
+
+    // MARK: - Flow H · edit times (prompt 232)
+
+    func testSetPageEditTimeMovesLaterSetsAndImHereClaims() {
+        let app = launch([FestivalSeed.argument])
+        openFestival(app)
+        let lineup = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'festival.lineup.'")).firstMatch
+        XCTAssertTrue(lineup.waitForExistence(timeout: 6))
+        // The Festival home's "where am I" card: the seeded festival is on today.
+        let start = app.buttons["festival.home.startNight"]
+        XCTAssertTrue(start.waitForExistence(timeout: 6), "a festival on today offers Start the night")
+        snap("festival-home")
+        start.tap()
+        XCTAssertTrue(app.buttons["festival.home.where"].waitForExistence(timeout: 6),
+                      "a started night offers What's next from home")
+        snap("festival-home-night")
+        lineup.tap()
+
+        // A set's page: I'm here + Edit time.
+        let row = app.buttons["festival.set.Overtone"]
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        XCTAssertTrue(app.buttons["festival.set.imHere"].waitForExistence(timeout: 6))
+        app.buttons["festival.set.editTime"].tap()
+        let plus15 = app.buttons["festival.editTime.plus15"]
+        XCTAssertTrue(plus15.waitForExistence(timeout: 6))
+        plus15.tap()
+        snap("festival-edit-time")
+        app.buttons["festival.editTime.save"].tap()
+        XCTAssertTrue(app.staticTexts["festival.set.edited"].waitForExistence(timeout: 6),
+                      "an edited set says what the lineup's time was")
+        snap("festival-set-edited")
+
+        // I'm here from the set page, whatever the clock says.
+        app.buttons["festival.set.imHere"].tap()
+        let here = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS \"You're here\""),
+                                             object: app.buttons["festival.set.imHere"])
+        XCTAssertEqual(XCTWaiter().wait(for: [here], timeout: 6), .completed)
+
+        // Edit lineup → Delay the schedule shows a preview and applies.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["festival.share.menu"].tap()
+        let edit = app.buttons["festival.editLineup"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 4))
+        edit.tap()
+        let delay = app.buttons["festival.edit.delay"]
+        XCTAssertTrue(delay.waitForExistence(timeout: 6))
+        snap("festival-edit-lineup")
+        delay.tap()
+        XCTAssertTrue(app.staticTexts["festival.delay.summary"].waitForExistence(timeout: 6))
+        snap("festival-delay")
+        app.buttons["festival.delay.apply"].tap()
+        XCTAssertTrue(app.buttons["festival.edit.done"].waitForExistence(timeout: 6))
+        app.buttons["festival.edit.done"].tap()
     }
 
     // MARK: - Flow C · plan & smart nudges (frames 7–8)
@@ -426,6 +501,70 @@ import XCTest
         app.buttons["festival.poster.install"].tap()
         XCTAssertTrue(app.staticTexts["Sunset Sounds 2026"].waitForExistence(timeout: 6),
                       "a valid poster draft installs as a lineup")
+    }
+
+    // MARK: - Flow I · create a lineup by hand (prompt 232)
+
+    func testCreateALineupFromScratchThenAddADay() {
+        let app = launch(["-uiTestFreshStore"])
+        openFestival(app)
+
+        let create = app.buttons["festival.create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 6), "the empty state should offer Create a lineup")
+        create.tap()
+
+        let name = app.textFields["festival.poster.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 6), "Create opens a blank lineup form")
+        XCTAssertTrue(app.navigationBars["New lineup"].exists)
+        name.tap(); name.typeText("Backyard Fest")
+        let artist = app.textFields["festival.row.artist"].firstMatch
+        artist.tap(); artist.typeText("DJ Me")
+        // "Add another artist" chains the next set on (19:00–20:00) and focuses its artist field.
+        app.buttons["festival.draft.addRow"].tap()
+        app.typeText("Headliner")
+        snap("festival-create")
+        app.buttons["festival.poster.install"].tap()
+
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Backyard Fest'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "a filled-in lineup installs")
+        row.tap()
+        XCTAssertTrue(app.buttons["festival.set.DJ Me"].waitForExistence(timeout: 6),
+                      "the created set is on the schedule")
+        XCTAssertTrue(app.buttons["festival.set.Headliner"].exists, "and the chained second artist")
+
+        // Grow it: Edit lineup → Add a day.
+        app.buttons["festival.share.menu"].tap()
+        app.buttons["festival.editLineup"].tap()
+        let menu = app.buttons["festival.edit.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 6))
+        menu.tap()
+        app.buttons["festival.edit.addDay"].tap()
+        let add = app.buttons["festival.addDay.save"]
+        XCTAssertTrue(add.waitForExistence(timeout: 6))
+        add.tap()
+        XCTAssertTrue(app.staticTexts["No sets this day yet"].waitForExistence(timeout: 6),
+                      "the new day appears, ready for sets")
+        snap("festival-create-add-day")
+
+        // ⋯ → Add a stage asks for the stage first, then its first set (not the bare set form).
+        menu.tap()
+        app.buttons["festival.edit.addStage"].tap()
+        let stageName = app.textFields["festival.stageAdd.name"]
+        XCTAssertTrue(stageName.waitForExistence(timeout: 6), "Add a stage opens the stage form")
+        XCTAssertTrue(app.navigationBars["Add a stage"].exists)
+        stageName.tap(); stageName.typeText("The Tent")
+        let first = app.textFields["festival.row.artist"].firstMatch
+        first.tap(); first.typeText("Opener")
+        app.buttons["festival.stageAdd.addRow"].tap()
+        app.typeText("Closer")
+        snap("festival-add-stage")
+        let save = app.buttons["festival.stageAdd.save"]
+        XCTAssertEqual(save.label, "Add 2", "the whole running order saves at once")
+        save.tap()
+        XCTAssertTrue(app.buttons["festival.edit.set.Opener"].waitForExistence(timeout: 6),
+                      "the new stage appears with its sets")
+        XCTAssertTrue(app.buttons["festival.edit.set.Closer"].exists)
+        app.buttons["festival.edit.done"].tap()
     }
 }
 

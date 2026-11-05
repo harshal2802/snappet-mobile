@@ -116,6 +116,60 @@ final class FestivalNotifications {
         #endif
     }
 
+    // MARK: - The night (prompt 232)
+
+    nonisolated static func setEndID(packID: String) -> String { "snappet.festival.setEnd.\(packID)" }
+    nonisolated static func stillOutID(packID: String) -> String { "snappet.festival.stillOut.\(packID)" }
+
+    /// At the claimed set's end: tell the user we moved them on to their next starred set, or ask
+    /// where they are. One slot per lineup — every claim replaces it. Silent where unauthorized.
+    func scheduleSetEnd(_ set: FestivalSet, next: FestivalSet?, pack: FestivalPack, now: Date = .now) {
+        let (title, body) = Self.setEndContent(ended: set, next: next)
+        add(id: Self.setEndID(packID: pack.id), title: title, body: body,
+            after: set.end.timeIntervalSince(now))
+    }
+
+    /// "Still out?" once the night has gone quiet for `FestivalNight.stillOutAfter`.
+    func scheduleStillOut(since: Date, pack: FestivalPack, now: Date = .now) {
+        add(id: Self.stillOutID(packID: pack.id), title: "Still out?",
+            body: "Tap to say where you are, or end the night if you're heading home.",
+            after: since.addingTimeInterval(FestivalNight.stillOutAfter).timeIntervalSince(now))
+    }
+
+    func cancelNight(packID: String, setEnd: Bool = true, stillOut: Bool = true) {
+        #if canImport(UserNotifications)
+        var ids: [String] = []
+        if setEnd { ids.append(Self.setEndID(packID: packID)) }
+        if stillOut { ids.append(Self.stillOutID(packID: packID)) }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        #endif
+    }
+
+    private func add(id: String, title: String, body: String, after seconds: TimeInterval) {
+        #if canImport(UserNotifications)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard seconds > 0 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        #endif
+    }
+
+    /// "Fred again.. ended" / "Moved you to ★ Overmono · West Holts. Not there? Tap to change." —
+    /// or, with nothing starred next, "Where are you now? Tap to pick a set or take a break."
+    nonisolated static func setEndContent(ended: FestivalSet, next: FestivalSet?) -> (title: String, body: String) {
+        let title = "\(ended.artist) ended"
+        guard let next else {
+            return (title, "Where are you now? Tap to pick a set or take a break.")
+        }
+        return (title, "Moved you to ★ \(next.artist) · \(next.stage). Not there? Tap to change.")
+    }
+
     // MARK: - Pure planning + copy (no `UserNotifications` — unit-tested without a device)
 
     /// One reminder to actually schedule: its identifier, when it fires, and its copy.

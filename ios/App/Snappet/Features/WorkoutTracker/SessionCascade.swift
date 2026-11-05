@@ -47,7 +47,7 @@ enum WatchImportTombstones {
 enum SessionCascade {
 
     /// Delete a gym/dance `WorkoutSession` and everything hanging off its id: `SessionMedia`,
-    /// `StudioProject`, `FestivalAttendance`, `FestivalClipTag`. A watch-imported anchor also
+    /// `StudioProject`, `FestivalAttendance`, `FestivalClipTag`, `FestivalNightStretch`. A watch-imported anchor also
     /// records a tombstone so the reconciler never re-mints it. Does NOT save — callers batch
     /// deletes (clear-all) and save once.
     ///
@@ -63,6 +63,8 @@ enum SessionCascade {
         for row in fetch(FetchDescriptor<FestivalAttendance>(
             predicate: #Predicate { $0.sessionID == sid }), in: context) { context.delete(row) }
         for row in fetch(FetchDescriptor<FestivalClipTag>(
+            predicate: #Predicate { $0.sessionID == sid }), in: context) { context.delete(row) }
+        for row in fetch(FetchDescriptor<FestivalNightStretch>(
             predicate: #Predicate { $0.sessionID == sid }), in: context) { context.delete(row) }
         context.delete(session)
     }

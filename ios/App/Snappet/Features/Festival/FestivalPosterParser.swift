@@ -28,6 +28,8 @@ struct FestivalDraft: Identifiable, Hashable {
         case heuristic
         /// Sharpened by the on-device Foundation Models pass (`FestivalPosterIntelligence`).
         case appleIntelligence
+        /// Created by hand from a blank lineup (prompt 232) — no poster.
+        case manual
     }
 
     var id = UUID()
@@ -43,6 +45,42 @@ struct FestivalDraft: Identifiable, Hashable {
     /// The raw OCR text this draft was parsed from, kept so the review form can show "from your photo"
     /// provenance and the FM refiner has the same source the floor saw. Not part of the built pack.
     var ocrText: String = ""
+
+    /// A hand-made lineup's id, minted once (`mine-<12 hex>`), so two lineups you create — even with
+    /// the same name — never replace each other. `nil` for poster drafts (content-derived id).
+    var fixedPackID: String? = nil
+
+    /// A blank lineup to fill by hand: today, the phone's current offset, one day with one stage and
+    /// an empty set row ready to type into.
+    static func blank(now: Date = .now, timeZone: TimeZone = .current) -> FestivalDraft {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let c = cal.dateComponents([.year, .month, .day], from: now)
+        let today = String(format: "%04d-%02d-%02d", c.year ?? 2026, c.month ?? 1, c.day ?? 1)
+        let hex = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        var draft = FestivalDraft(
+            name: "", location: "", startDate: today, endDate: today,
+            utcOffsetSeconds: timeZone.secondsFromGMT(for: now),
+            days: [DraftDay(date: today, stages: [
+                DraftStage(name: "Main Stage", sets: [DraftSet(artist: "", start: "18:00", end: "19:00")]),
+            ])])
+        draft.source = .manual
+        draft.fixedPackID = "mine-" + hex.prefix(12)
+        return draft
+    }
+
+    /// The date after this draft's last day (`yyyy-MM-dd`), for "Add a day" — never a duplicate.
+    var nextDayDate: String {
+        let last = days.map(\.date).filter { !$0.isEmpty }.max() ?? (endDate.isEmpty ? startDate : endDate)
+        let parts = last.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return "" }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let d = cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              let next = cal.date(byAdding: .day, value: 1, to: d) else { return "" }
+        let c = cal.dateComponents([.year, .month, .day], from: next)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
 
     struct DraftDay: Identifiable, Hashable {
         var id = UUID()
@@ -77,6 +115,7 @@ struct FestivalDraft: Identifiable, Hashable {
     /// because set content-ids derive from the pack id (prompt 01), the same set ids. Poster scans
     /// aren't hosted, so this is a deterministic local slug, not a curated author slug.
     var localPackID: String {
+        if let fixedPackID { return fixedPackID }
         let content = FestivalPosterParser.normalizedContent(of: self)
         let hex = KilterClimbIdentity.uuidV5(namespace: Self.localPackNamespace, name: content)
             .replacingOccurrences(of: "-", with: "")
@@ -318,7 +357,11 @@ enum FestivalPosterParser {
         }
         let eMin = minutesOfDay(normalizedTime(end) ?? end) ?? sMin
         let span = (eMin <= sMin ? eMin + 24 * 60 : eMin) - sMin
-        return (startDate, startDate.addingTimeInterval(Double(span) * 60))
+        // A start before the 06:00 rollover is the NEXT morning of this poster day ("Jayda G 01:00"
+        // on Saturday plays early Sunday) — the day model the schedule + validator use (prompt 232;
+        // it used to land before the day began and fail validation).
+        let start = sMin < FestivalDay.rolloverHour * 60 ? startDate.addingTimeInterval(24 * 3600) : startDate
+        return (start, start.addingTimeInterval(Double(span) * 60))
     }
 
     private static func isoDate(date: String, hhmm: String, offsetSeconds: Int) -> Date? {

@@ -14,6 +14,8 @@ struct FestivalEmptyStateView: View {
     var onScan: () -> Void = {}
     /// Presents the poster-scan capture (festival prompt 06) — build a lineup from a photo / pasted text.
     var onScanPoster: () -> Void = {}
+    /// Build a lineup by hand (prompt 232).
+    var onCreate: () -> Void = {}
 
     @Environment(\.modelContext) private var context
     @State private var showingImporter = false
@@ -69,6 +71,14 @@ struct FestivalEmptyStateView: View {
                     .buttonStyle(.bordered)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.scan")
+
+                    Button { onCreate() } label: {
+                        Label("Create a lineup", systemImage: "square.and.pencil")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(installer.isWorking)
+                    .accessibilityIdentifier("festival.create")
                 }
 
                 privacyCard
@@ -106,8 +116,7 @@ struct FestivalEmptyStateView: View {
     private var privacyCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label {
-                Text("**Community packs, kept on-device.** Lineups are public schedule data; "
-                     + "installing is one GET, and nothing is ever uploaded.")
+                Text("**Community packs, kept on-device.** Lineups are public schedule data; installing is one GET, and nothing is ever uploaded.")
             } icon: {
                 Image(systemName: "lock.fill").foregroundStyle(SnappetColor.festival)
             }

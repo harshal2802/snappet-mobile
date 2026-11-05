@@ -38,6 +38,8 @@ struct FestivalRootView: View {
     /// can't dismiss the scanner and present the import-confirm in one state mutation, so the confirm is
     /// presented only AFTER the scanner sheet is gone.
     @State private var pendingIncoming: SharedLineup?
+    /// The lineup open in Edit lineup (prompt 232) — from a row's swipe / long-press.
+    @State private var editingLineup: FestivalLineup?
 
     /// The pure onboarding decision — derived from the two flags + the live counts (prompt 07).
     private var onboarding: FestivalGettingStarted {
@@ -58,11 +60,13 @@ struct FestivalRootView: View {
                                                onBrowse: { showingBrowse = true },
                                                onScanPoster: { showingPosterScan = true },
                                                onScan: { showingScan = true },
+                                               onCreate: { posterDraft = .blank() },
                                                onDismiss: { checklistDismissed = true })
                 } else {
                     FestivalEmptyStateView(installer: installer, onBrowse: { showingBrowse = true },
                                            onScan: { showingScan = true },
-                                           onScanPoster: { showingPosterScan = true })
+                                           onScanPoster: { showingPosterScan = true },
+                                           onCreate: { posterDraft = .blank() })
                 }
             } else {
                 lineupList
@@ -102,8 +106,11 @@ struct FestivalRootView: View {
         .sheet(item: $posterDraft) { draft in
             FestivalPosterDraftView(draft: draft, installer: installer,
                                     onInstalled: { pack in
-                                        core.log(module: FestivalModule.id, action: "installPoster",
-                                                 summary: "Built lineup from a poster: \(pack.name)",
+                                        let created = draft.source == .manual
+                                        core.log(module: FestivalModule.id,
+                                                 action: created ? "createLineup" : "installPoster",
+                                                 summary: created ? "Created a lineup: \(pack.name)"
+                                                                  : "Built lineup from a poster: \(pack.name)",
                                                  metric: Double(pack.allSets.count))
                                     })
         }
@@ -118,6 +125,9 @@ struct FestivalRootView: View {
         .onChange(of: router.pendingFestivalImport, initial: true) { _, pending in
             if let pending { incoming = pending; router.pendingFestivalImport = nil }
         }
+        .sheet(item: $editingLineup) { lineup in
+            FestivalLineupEditView(lineup: lineup)
+        }
         .navigationDestination(for: FestivalLineup.self) { lineup in
             FestivalScheduleView(lineup: lineup)
         }
@@ -125,19 +135,41 @@ struct FestivalRootView: View {
 
     private var lineupList: some View {
         List {
+            // Where am I (prompt 232): a card per festival with a night on, or on today.
+            Section {
+                ForEach(lineups) { lineup in
+                    FestivalNightCard(lineup: lineup)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
+            .listSectionSpacing(.compact)
             Section {
                 ForEach(lineups) { lineup in
                     NavigationLink(value: lineup) {
                         lineupRow(lineup)
                     }
                     .accessibilityIdentifier("festival.lineup.\(lineup.packID)")
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingLineup = lineup
+                        } label: { Label("Edit", systemImage: "pencil") }
+                        .tint(SnappetColor.brand)
+                    }
+                    .contextMenu {
+                        Button {
+                            editingLineup = lineup
+                        } label: { Label("Edit lineup", systemImage: "pencil") }
+                    }
                 }
                 .onDelete(perform: deleteLineups)
             } header: {
                 Text("Your festivals")
             } footer: {
-                Text("Lineups live on this device and work offline. Reinstalling a festival "
-                     + "picks up lineup revisions — your stars survive.")
+                Text("Lineups live on this device and work offline. Running late or a set changed? "
+                     + "Swipe right on a festival (or open it → ⋯ → Edit lineup) to fix times or delay a stage. "
+                     + "Reinstalling picks up lineup revisions — your stars and edits survive.")
             }
 
             Section {
@@ -159,6 +191,12 @@ struct FestivalRootView: View {
                     Label("Scan a friend's QR", systemImage: "qrcode.viewfinder")
                 }
                 .accessibilityIdentifier("festival.scan")
+                Button {
+                    posterDraft = .blank()
+                } label: {
+                    Label("Create a lineup", systemImage: "square.and.pencil")
+                }
+                .accessibilityIdentifier("festival.create")
                 if case .failed(let message) = installer.phase {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
@@ -167,6 +205,8 @@ struct FestivalRootView: View {
                 }
             }
         }
+        // A festival with no night on today renders an empty card row — let it collapse to 0.
+        .environment(\.defaultMinListRowHeight, 0)
     }
 
     private func lineupRow(_ lineup: FestivalLineup) -> some View {
@@ -203,13 +243,13 @@ struct FestivalRootView: View {
         switch shared.receiveAction(installedPackIDs: Set(lineups.map(\.packID))) {
         case .installLineup:
             if let pack = shared.carriedPack {
-                installer.install(pack: pack, sourceLabel: "Shared code", into: context)
+                installer.install(pack: pack, sourceLabel: "Shared code", into: context, edits: shared.edits)
                 logInstall(pack)
             }
         case .installPlan(let packID):
             // Install the carried subset as a lineup, then star every set it carried.
             if let pack = shared.carriedPack {
-                installer.install(pack: pack, sourceLabel: "Shared plan", into: context)
+                installer.install(pack: pack, sourceLabel: "Shared plan", into: context, edits: shared.edits)
                 star(setIDs: pack.allSets.map(\.id), packID: packID)
                 logInstall(pack)
             }
@@ -265,6 +305,9 @@ struct FestivalRootView: View {
             let tags = (try? context.fetch(FetchDescriptor<FestivalClipTag>(
                 predicate: #Predicate { $0.packID == packID }))) ?? []
             tags.forEach { context.delete($0) }
+            let stretches = (try? context.fetch(FetchDescriptor<FestivalNightStretch>(
+                predicate: #Predicate { $0.packID == packID }))) ?? []
+            stretches.forEach { context.delete($0) }
             context.delete(lineup)
             core.log(module: FestivalModule.id, action: "remove",
                      summary: "Removed lineup: \(lineup.name)")

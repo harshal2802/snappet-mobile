@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 44, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 45, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -578,13 +578,18 @@ final class SnappetBackupTests: XCTestCase {
         // trip), a starred set, and a closed "I'm here" stretch pointing at a session.
         let festivalPack = FestivalFixtures.glastonbury()
         let festivalSet = FestivalFixtures.set(named: "Fred again..", in: festivalPack)
-        context.insert(FestivalLineup(
+        let festivalLineup = FestivalLineup(
             packID: festivalPack.id, name: festivalPack.name, location: festivalPack.location,
             startDate: festivalPack.startDate, endDate: festivalPack.endDate,
             utcOffsetSeconds: festivalPack.utcOffsetSeconds, stageCount: 6, setCount: 8,
             sourceLabel: "Snappet Lineups",
             installedAt: Date(timeIntervalSince1970: 1_700_011_000),
-            fpackData: (try? festivalPack.fpackData()) ?? Data([0x46, 0x50, 0x41, 0x4B])))
+            fpackData: (try? festivalPack.fpackData()) ?? Data([0x46, 0x50, 0x41, 0x4B]))
+        // Lineup edits (prompt 232) ride the lineup row's blob.
+        var festivalEdits = FestivalLineupEdits()
+        festivalEdits.name = "Glasto (edited)"
+        festivalLineup.editsData = festivalEdits.encoded()
+        context.insert(festivalLineup)
         context.insert(FestivalStar(packID: festivalPack.id, setID: festivalSet.id,
                                     createdAt: Date(timeIntervalSince1970: 1_700_011_100)))
         context.insert(FestivalAttendance(
@@ -598,6 +603,11 @@ final class SnappetBackupTests: XCTestCase {
             mediaID: UUID(), sessionID: UUID(),
             confidence: 0.97, reason: "mid-set", source: .auto,
             createdAt: Date(timeIntervalSince1970: 1_700_011_400)))
+        // A night stretch (prompt 232) — a closed break.
+        context.insert(FestivalNightStretch(
+            packID: festivalPack.id, sessionID: UUID(), kind: .rest,
+            startedAt: Date(timeIntervalSince1970: 1_700_011_420),
+            endedAt: Date(timeIntervalSince1970: 1_700_011_440)))
         let household = Household(name: "Flat 4B", createdAt: Date(timeIntervalSince1970: 1_700_011_500),
                                   key: Data(repeating: 9, count: 32), leftAt: Date(timeIntervalSince1970: 1_700_011_550))
         context.insert(household)

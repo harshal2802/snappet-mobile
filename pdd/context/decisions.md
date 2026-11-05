@@ -10524,3 +10524,38 @@ stripes, and the panel read as an opaque slab.
 - **Recap leaked catalog ids.** `SessionExercise.displayName` is nil for catalog picks. The feed bridge now resolves
   the catalog name (main-actor converters).
 - **Missed scope:** the earlier remaining-work estimate folded the Recap tab into "Clips". Found while scoping Clips.
+
+## 2026-11-04 — Festival: your night + lineup edits (prompt 232)
+
+- **A claim ends with its set.** The Halloween bug was a claim that never closed, so the bar stayed stuck on one
+  artist all night. At a set's (edited) end, the night moves on by itself to the next starred set playing then or
+  starting within 30 min. The bar then reads "Moved you … Not there? Change". Otherwise the night asks "Where are
+  you now?". A claim made after the scheduled end is treated as a running-late set and left alone. The rule is the
+  pure `FestivalNight`; `FestivalNightController.reconcile` applies it on every tick and loops.
+- **Break / walking / arriving get their own table (`FestivalNightStretch`), not attendance rows.** Attendance is the
+  matcher's evidence, the danced total, the recap's "sets seen" and the CSV. A break row there would tag clips to
+  nothing and count as dancing. Separate rows keep every existing consumer correct untouched.
+- **"End this set" vs "End the night".** Per the user, ending the night means going home. End this set keeps the
+  session running and asks what's next: a set, a break, walking, or heading home.
+- **Lineup edits are an overlay, never a rewrite.** Set ids are UUIDv5 over artist / stage / times. Rewriting the
+  `.fpack` with new times would re-key the set and orphan its stars, claims and tags. `FestivalLineupEdits`
+  (JSON on `FestivalLineup.editsData`) is applied in `pack()`, the single decode entry point, so the edits reach
+  every surface, including the matcher, recap, reminders and CSV. The original bytes stay intact for Reset, and
+  edits ride a reinstall.
+- **A delay touches one festival day.** Without that limit, a Friday weather hold would also move all of Saturday.
+  A set already playing at the delay time keeps its start and ends later.
+- **A forgotten night ends itself.** A night left between sets for 6 h is finished, back-dated to when it went quiet.
+  A night like the Halloween one, never ended, can't run for days. A break the user chose is never auto-ended.
+- **Shares send the original pack plus the edits, never an edited pack.** An edited pack re-stamps to new set ids, so a
+  shared plan would star nothing on a friend's copy. The receiver merges the edits, with theirs winning per set.
+  Lineups made on a phone (`poster-` / `mine-` ids) are never shared as an install link, because nothing is hosted at it.
+- **Create a lineup reuses the poster review form** in a `.manual` draft mode rather than adding a second editor. One
+  form means one validator gate and one set of fixes (date pickers, time zone, the duplicate-day "Add a day" bug).
+  Hand-made lineups get a minted `mine-` id, not a content-derived one, so two lineups with the same name never
+  replace each other.
+- **Set times are edited as times of night, not dates.** A festival night is typed as "23:30 → 01:00". The editors use
+  hour:minute pickers on a known poster day, and `FestivalClock` maps a time before the 06:00 rollover to the next
+  morning. That matches the schedule's day model. It also fixes the poster parser, which put 01:00 sets before their
+  day.
+- **A stage is entered as a running order.** You never enter one set at a time: "Add another artist" chains back to
+  back with the same length, so a stage's night is typed artist after artist and only the exceptions need a picker.

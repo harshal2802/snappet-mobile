@@ -151,6 +151,8 @@ struct FestivalPosterDraftView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var draft: FestivalDraft
+    /// The artist field to type into next ("Add another artist" moves it to the new row).
+    @FocusState private var focusedRow: UUID?
 
     init(draft: FestivalDraft, installer: FestivalLineupInstaller,
          onInstalled: @escaping (FestivalPack) -> Void) {
@@ -180,7 +182,7 @@ struct FestivalPosterDraftView: View {
                 }
             }
             .accessibilityIdentifier("festival.poster.draft")
-            .navigationTitle("Review lineup")
+            .navigationTitle(isCreating ? "New lineup" : "Review lineup")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) { installBar }
             .toolbar {
@@ -189,6 +191,9 @@ struct FestivalPosterDraftView: View {
         }
     }
 
+    /// A lineup built by hand (prompt 232) vs a poster's draft under review.
+    private var isCreating: Bool { draft.source == .manual }
+
     // MARK: - Sections
 
     private var festivalSection: some View {
@@ -196,14 +201,25 @@ struct FestivalPosterDraftView: View {
             TextField("Festival name", text: $draft.name)
                 .accessibilityIdentifier("festival.poster.name")
             TextField("Location", text: $draft.location)
-            TextField("First day (yyyy-MM-dd)", text: $draft.startDate)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Last day (yyyy-MM-dd)", text: $draft.endDate)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            DatePicker("First day", selection: Self.dayBinding($draft.startDate),
+                       displayedComponents: .date)
+                .accessibilityIdentifier("festival.poster.startDate")
+            DatePicker("Last day", selection: Self.dayBinding($draft.endDate),
+                       displayedComponents: .date)
+                .accessibilityIdentifier("festival.poster.endDate")
+            Picker("Time zone", selection: $draft.utcOffsetSeconds) {
+                ForEach(Self.offsetChoices(including: draft.utcOffsetSeconds), id: \.self) { offset in
+                    Text(Self.offsetLabel(offset)).tag(offset)
+                }
+            }
+            .accessibilityIdentifier("festival.poster.timeZone")
         } header: {
             Text("Festival")
         } footer: {
-            if draft.source == .appleIntelligence {
+            if isCreating {
+                Text("Set times are the festival's local time. Add days, stages and sets below — you can "
+                     + "edit or delay anything later from Edit lineup.")
+            } else if draft.source == .appleIntelligence {
                 Label("Structured on this device by Apple Intelligence — please check it.",
                       systemImage: "sparkles")
             } else {
@@ -212,57 +228,119 @@ struct FestivalPosterDraftView: View {
         }
     }
 
+    /// One poster day: its date (+ add a stage / remove the day), then a section per stage.
+    @ViewBuilder
     private func daySection(_ day: Binding<FestivalDraft.DraftDay>) -> some View {
+        let dayIndex = draft.days.firstIndex { $0.id == day.wrappedValue.id } ?? 0
         Section {
-            TextField("Day (yyyy-MM-dd)", text: day.date)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .font(.subheadline.weight(.semibold))
-            ForEach(day.stages) { $stage in
-                stageRows($stage)
-            }
-            .onDelete { day.wrappedValue.stages.remove(atOffsets: $0) }
+            DatePicker("Date", selection: Self.dayBinding(day.date), displayedComponents: .date)
             Button {
-                day.wrappedValue.stages.append(.init(name: "Stage", sets: []))
+                day.wrappedValue.stages.append(.init(name: "", sets: [Self.firstSet(on: day.wrappedValue.date,
+                                                                                  offset: draft.utcOffsetSeconds)]))
             } label: {
-                Label("Add a stage", systemImage: "plus.circle")
+                Label("Add a stage", systemImage: "plus.rectangle")
             }
-            .font(.footnote)
+            .tint(SnappetColor.brand)
+            .accessibilityIdentifier("festival.draft.addStage.\(dayIndex)")
+            if draft.days.count > 1 {
+                Button("Remove this day", role: .destructive) {
+                    draft.days.removeAll { $0.id == day.wrappedValue.id }
+                }
+            }
         } header: {
-            Text(day.date.wrappedValue.isEmpty ? "Day" : day.date.wrappedValue)
+            Text("Day \(dayIndex + 1)")
+        }
+        ForEach(day.stages) { $stage in
+            stageSection($stage, day: day)
         }
     }
 
-    private func stageRows(_ stage: Binding<FestivalDraft.DraftStage>) -> some View {
-        Group {
+    /// A stage's running order: its name, then every set as artist + night-aware time pickers, and
+    /// "Add another artist" chaining the next set onto the last one (prompt 232).
+    private func stageSection(_ stage: Binding<FestivalDraft.DraftStage>,
+                              day: Binding<FestivalDraft.DraftDay>) -> some View {
+        let date = day.wrappedValue.date
+        let offset = draft.utcOffsetSeconds
+        return Section {
             TextField("Stage name", text: stage.name)
-                .font(.subheadline.weight(.medium))
+                .font(.body.weight(.semibold))
+                .textInputAutocapitalization(.words)
+                .accessibilityIdentifier("festival.draft.stageName")
             ForEach(stage.sets) { $set in
-                HStack(spacing: 8) {
-                    TextField("Artist", text: $set.artist)
-                    Spacer(minLength: 4)
-                    TextField("HH:mm", text: $set.start)
-                        .frame(width: 52).multilineTextAlignment(.trailing)
-                        .font(.callout.monospaced())
-                    Text("–").foregroundStyle(.secondary)
-                    TextField("HH:mm", text: $set.end)
-                        .frame(width: 52).multilineTextAlignment(.trailing)
-                        .font(.callout.monospaced())
-                }
+                FestivalSetRowEditor(row: Self.rowBinding($set, day: date, offset: offset),
+                                     day: date, offsetSeconds: offset,
+                                     clashes: Self.clashing(stage.wrappedValue, day: date, offset: offset)
+                                        .contains(set.id),
+                                     focus: $focusedRow)
             }
             .onDelete { stage.wrappedValue.sets.remove(atOffsets: $0) }
             Button {
-                stage.wrappedValue.sets.append(.init(artist: "", start: "", end: ""))
+                let rows = stage.wrappedValue.sets.map { Self.row($0, day: date, offset: offset) }
+                let fallback = FestivalClock.date(day: date, hour: 18, minute: 0, offsetSeconds: offset) ?? .now
+                let next = FestivalSetRow.next(after: rows, fallback: fallback)
+                let set = FestivalDraft.DraftSet(artist: "",
+                                                 start: FestivalClock.hhmm(next.start, offsetSeconds: offset),
+                                                 end: FestivalClock.hhmm(next.end, offsetSeconds: offset))
+                stage.wrappedValue.sets.append(set)
+                focusedRow = set.id
             } label: {
-                Label("Add a set", systemImage: "plus.circle")
+                Label("Add another artist", systemImage: "plus.circle.fill")
             }
-            .font(.caption)
+            .tint(SnappetColor.brand)
+            .accessibilityIdentifier("festival.draft.addRow")
+            if day.wrappedValue.stages.count > 1 {
+                Button("Remove this stage", role: .destructive) {
+                    day.wrappedValue.stages.removeAll { $0.id == stage.wrappedValue.id }
+                }
+            }
+        } header: {
+            Text(stage.wrappedValue.name.isEmpty ? "New stage" : stage.wrappedValue.name)
+        } footer: {
+            Text("Each new artist starts when the last one ends. Times before 06:00 are after midnight.")
         }
+    }
+
+    // MARK: - Draft set ⇄ time row
+
+    /// A draft set ("HH:mm" strings) as an editable row of real instants on its poster day.
+    static func row(_ set: FestivalDraft.DraftSet, day: String, offset: Int) -> FestivalSetRow {
+        let (start, end) = FestivalPosterParser.dates(date: day,
+                                                      start: set.start.isEmpty ? "18:00" : set.start,
+                                                      end: set.end.isEmpty ? (set.start.isEmpty ? "19:00" : set.start) : set.end,
+                                                      offsetSeconds: offset)
+        return FestivalSetRow(id: set.id, artist: set.artist, start: start, end: end)
+    }
+
+    static func rowBinding(_ set: Binding<FestivalDraft.DraftSet>, day: String,
+                           offset: Int) -> Binding<FestivalSetRow> {
+        Binding(get: { row(set.wrappedValue, day: day, offset: offset) },
+                set: { r in
+                    set.wrappedValue.artist = r.artist
+                    set.wrappedValue.start = FestivalClock.hhmm(r.start, offsetSeconds: offset)
+                    set.wrappedValue.end = FestivalClock.hhmm(r.end, offsetSeconds: offset)
+                })
+    }
+
+    static func clashing(_ stage: FestivalDraft.DraftStage, day: String, offset: Int) -> Set<UUID> {
+        FestivalSetRow.clashing(stage.sets.map { row($0, day: day, offset: offset) })
+    }
+
+    /// A new stage's first (empty) set: 18:00–19:00 that day.
+    static func firstSet(on day: String, offset: Int) -> FestivalDraft.DraftSet {
+        FestivalDraft.DraftSet(artist: "", start: "18:00", end: "19:00")
     }
 
     private var addDaySection: some View {
         Section {
             Button {
-                draft.days.append(.init(date: draft.endDate, stages: [.init(name: "Stage", sets: [])]))
+                // The day after the last one (it used to repeat the last date — a duplicate day the
+                // validator rejects), widening the festival's range to cover it.
+                let date = draft.nextDayDate
+                draft.days.append(.init(date: date, stages: [
+                    .init(name: draft.days.last?.stages.first?.name ?? "Main Stage",
+                          sets: [Self.firstSet(on: date, offset: draft.utcOffsetSeconds)]),
+                ]))
+                if date > draft.endDate { draft.endDate = date }
             } label: {
                 Label("Add a day", systemImage: "plus.circle")
             }
@@ -277,12 +355,48 @@ struct FestivalPosterDraftView: View {
             Label("Add to my festivals", systemImage: "plus.circle.fill")
                 .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(SnappetColor.festival)
+        .buttonStyle(SnappetWidePrimaryStyle())
         .disabled(installer.isWorking)
         .padding()
         .background(.bar)
         .accessibilityIdentifier("festival.poster.install")
+    }
+
+    // MARK: - Date / time-zone helpers
+
+    /// A `yyyy-MM-dd` string as a date-picker value (a blank or garbled string shows today; picking
+    /// writes the string back). UTC on both sides, so the label date never shifts with the phone.
+    static func dayBinding(_ text: Binding<String>) -> Binding<Date> {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return Binding(
+            get: {
+                let p = text.wrappedValue.split(separator: "-").compactMap { Int($0) }
+                if p.count == 3, let d = cal.date(from: DateComponents(year: p[0], month: p[1], day: p[2])) {
+                    return d
+                }
+                let today = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+                return cal.date(from: today) ?? .now
+            },
+            set: { date in
+                let c = cal.dateComponents([.year, .month, .day], from: date)
+                text.wrappedValue = String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+            })
+    }
+
+    /// UTC−12:00 … UTC+14:00 in 30-minute steps, plus the current value if it's an odd one (+05:45).
+    static func offsetChoices(including current: Int) -> [Int] {
+        var all = Array(stride(from: -12 * 3600, through: 14 * 3600, by: 1800))
+        if !all.contains(current) { all.append(current); all.sort() }
+        return all
+    }
+
+    static func offsetLabel(_ seconds: Int) -> String {
+        let sign = seconds < 0 ? "−" : "+"
+        let a = abs(seconds)
+        var label = String(format: "UTC%@%02d:%02d", sign, a / 3600, (a % 3600) / 60)
+        if seconds == TimeZone.current.secondsFromGMT() { label += " (this phone)" }
+        return label
     }
 
     // MARK: - Install (validate-before-install gate — reuses the shared installer)
@@ -291,7 +405,8 @@ struct FestivalPosterDraftView: View {
         let pack = draft.toPack()
         // The installer validates (FestivalPackValidator) before it writes; on failure it sets
         // phase == .failed(message) and installs nothing (the never-a-hallucination gate).
-        if installer.install(pack: pack, sourceLabel: "Poster scan", into: context) != nil {
+        if installer.install(pack: pack, sourceLabel: isCreating ? "Created by you" : "Poster scan",
+                             into: context) != nil {
             onInstalled(pack)
             dismiss()
         }
