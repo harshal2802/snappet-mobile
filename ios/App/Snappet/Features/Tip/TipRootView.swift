@@ -173,28 +173,35 @@ struct TipRootView: View {
     }
 
     private var resultsSection: some View {
+        // Per person is the light big number; tip and total sit grey beneath it (prompt 240; were three rows).
         Section("Results") {
-            resultRow("Tip", amount: tipAmount)
-            resultRow("Total", amount: total)
-                .accessibilityIdentifier("tip.total")
-            resultRow("Per person", amount: perPerson, emphasized: true)
-                .accessibilityIdentifier("tip.perPerson")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Per person").snappetLabel()
+                Text(perPerson.formatted(.currency(code: currencyCode)))
+                    .font(.system(size: 36, weight: .light))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: perPerson)
+                    .accessibilityLabel("Per person \(perPerson.formatted(.currency(code: currencyCode)))")
+                    .accessibilityIdentifier("tip.perPerson")
+                HStack(spacing: 16) {
+                    resultLine("Tip", amount: tipAmount)
+                    resultLine("Total", amount: total)
+                        .accessibilityIdentifier("tip.total")
+                }
+            }
+            .padding(.vertical, 4)
         }
     }
 
-    private func resultRow(_ label: String, amount: Double, emphasized: Bool = false) -> some View {
-        HStack {
-            Text(label)
-                .fontWeight(emphasized ? .semibold : .regular)
-            Spacer()
-            Text(amount.formatted(.currency(code: currencyCode)))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .fontWeight(emphasized ? .bold : .regular)
-                .foregroundStyle(emphasized ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                // Totals move toward their new value as the bill/tip/split change (issue #30 §5.8).
-                .animation(.snappy, value: amount)
-        }
+    private func resultLine(_ label: String, amount: Double) -> some View {
+        Text("\(label) \(amount.formatted(.currency(code: currencyCode)))")
+            .font(SnappetType.detail)
+            .foregroundStyle(SnappetColor.textSecondary)
+            .monospacedDigit()
+            .contentTransition(.numericText())
+            // Totals move toward their new value as the bill/tip/split change (issue #30 §5.8).
+            .animation(.snappy, value: amount)
     }
 
     // MARK: - Helpers

@@ -594,7 +594,7 @@ const nodes = [
 
   // ═════════════════ MODULE: Tip Calculator ═════════════════
   { id: "m-tip", label: "Tip Calculator", type: "module", group: "tip", category: "finance", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Tip/TipModule.swift", desc: "Split the bill: calculation history, editable presets and round-up.", tags: ["tip","split"] },
+    file: "ios/App/Snappet/Features/Tip/TipModule.swift", desc: "Restyled to the design system in prompt 240 (user accent instead of teal; per person is a light big number with tip / total beneath). Split the bill: calculation history, editable presets and round-up.", tags: ["tip","split"] },
   { id: "tip-root", label: "TipRootView", type: "screen", group: "tip", category: "finance", platform: "ios",
     file: "ios/App/Snappet/Features/Tip/TipRootView.swift", desc: "Bill + tip% + party size with round-up. Pushes History; presents the preset editor.", tags: ["root","calculator"], shot: "../screenshots/07-tip.png" },
   { id: "tip-history", label: "TipHistoryView", type: "screen", group: "tip", category: "finance", platform: "ios",
