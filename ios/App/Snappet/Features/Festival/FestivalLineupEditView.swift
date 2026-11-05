@@ -55,8 +55,10 @@ struct FestivalLineupEditView: View {
                         if let pack {
                             Button {
                                 editing = .init(setID: nil, stage: "",
-                                                day: pack.days.first?.date ?? "")
+                                                day: pack.day(containing: .now)?.date
+                                                    ?? pack.days.first?.date ?? "")
                             } label: { Label("Add a stage", systemImage: "plus.rectangle") }
+                            .accessibilityIdentifier("festival.edit.addStage")
                         }
                         Button(role: .destructive) {
                             confirmingReset = true
@@ -476,8 +478,13 @@ struct FestivalSetEditSheet: View {
     @State private var start = Date()
     @State private var end = Date()
     @State private var confirmingRemove = false
+    /// The day a new stage goes on (Add a stage only).
+    @State private var day = ""
 
     private var existing: FestivalSet? { request.setID.flatMap { pack.setsByID[$0] } }
+    /// ⋯ → Add a stage: a stage exists only through its sets, so this asks for the stage's name
+    /// first, which day it plays, then its first set — not the generic "Add a set" form.
+    private var isNewStage: Bool { request.setID == nil && request.stage.isEmpty }
     private var tz: TimeZone { TimeZone(secondsFromGMT: pack.utcOffsetSeconds) ?? .current }
     private var allStages: [String] {
         var names: [String] = []
@@ -490,25 +497,16 @@ struct FestivalSetEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Artist") {
-                    TextField("Artist", text: $artist)
-                        .accessibilityIdentifier("festival.setEdit.artist")
-                }
-                Section {
-                    TextField("Stage", text: $stage)
-                        .accessibilityIdentifier("festival.setEdit.stage")
-                    if !allStages.isEmpty {
-                        FestivalFlowChips(items: allStages, label: { $0 }, selected: { $0 == stage },
-                                  onTap: { stage = $0 })
+                if isNewStage {
+                    newStageSections
+                } else {
+                    Section("Artist") {
+                        TextField("Artist", text: $artist)
+                            .accessibilityIdentifier("festival.setEdit.artist")
                     }
-                } header: {
-                    Text("Stage")
-                } footer: {
-                    if request.setID == nil && request.stage.isEmpty {
-                        Text("Type a new stage name to add a stage.")
-                    }
+                    stageSection
                 }
-                Section("Time") {
+                Section(isNewStage ? "First set's time" : "Time") {
                     DatePicker("Starts", selection: $start)
                         .accessibilityIdentifier("festival.setEdit.start")
                     DatePicker("Ends", selection: $end, in: start...)
@@ -522,12 +520,12 @@ struct FestivalSetEditSheet: View {
                     }
                 }
             }
-            .navigationTitle(existing == nil ? "Add a set" : "Edit set")
+            .navigationTitle(isNewStage ? "Add a stage" : existing == nil ? "Add a set" : "Edit set")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button(isNewStage ? "Add" : "Save") { save() }
                         .disabled(artist.trimmingCharacters(in: .whitespaces).isEmpty
                                   || stage.trimmingCharacters(in: .whitespaces).isEmpty
                                   || end <= start)
@@ -548,7 +546,62 @@ struct FestivalSetEditSheet: View {
         .onAppear(perform: seed)
     }
 
+    @ViewBuilder private var newStageSections: some View {
+        let trimmed = stage.trimmingCharacters(in: .whitespaces)
+        Section {
+            TextField("Stage name", text: $stage)
+                .accessibilityIdentifier("festival.stageAdd.name")
+        } header: {
+            Text("New stage")
+        } footer: {
+            if allStages.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                Text("\(trimmed) is already in the lineup — this adds a set to it.")
+            } else {
+                Text("A stage shows on the schedule once it has a set — add its first one below.")
+            }
+        }
+        if pack.days.count > 1 {
+            Section("Day") {
+                Picker("Day", selection: $day) {
+                    ForEach(FestivalSchedule.dayTabs(for: pack)) { tab in
+                        Text("\(tab.weekday.capitalized) \(tab.dayNumber)").tag(tab.date)
+                    }
+                }
+                .accessibilityIdentifier("festival.stageAdd.day")
+                .onChange(of: day) { old, new in moveTimes(from: old, to: new) }
+            }
+        }
+        Section("First set") {
+            TextField("Artist", text: $artist)
+                .accessibilityIdentifier("festival.setEdit.artist")
+        }
+    }
+
+    private var stageSection: some View {
+        Section {
+            TextField("Stage", text: $stage)
+                .accessibilityIdentifier("festival.setEdit.stage")
+            if !allStages.isEmpty {
+                FestivalFlowChips(items: allStages, label: { $0 }, selected: { $0 == stage },
+                                  onTap: { stage = $0 })
+            }
+        } header: {
+            Text("Stage")
+        }
+    }
+
+    /// Keep the new stage's first set at the same time of night when its day changes.
+    private func moveTimes(from old: String, to new: String) {
+        guard let a = pack.days.first(where: { $0.date == old })?.window(utcOffsetSeconds: pack.utcOffsetSeconds),
+              let b = pack.days.first(where: { $0.date == new })?.window(utcOffsetSeconds: pack.utcOffsetSeconds)
+        else { return }
+        let delta = b.start.timeIntervalSince(a.start)
+        start.addTimeInterval(delta)
+        end.addTimeInterval(delta)
+    }
+
     private func seed() {
+        day = request.day
         if let set = existing {
             artist = set.artist
             stage = set.stage

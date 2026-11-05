@@ -544,6 +544,20 @@ import XCTest
         XCTAssertTrue(app.staticTexts["No sets this day yet"].waitForExistence(timeout: 6),
                       "the new day appears, ready for sets")
         snap("festival-create-add-day")
+
+        // ⋯ → Add a stage asks for the stage first, then its first set (not the bare set form).
+        menu.tap()
+        app.buttons["festival.edit.addStage"].tap()
+        let stageName = app.textFields["festival.stageAdd.name"]
+        XCTAssertTrue(stageName.waitForExistence(timeout: 6), "Add a stage opens the stage form")
+        XCTAssertTrue(app.navigationBars["Add a stage"].exists)
+        stageName.tap(); stageName.typeText("The Tent")
+        let first = app.textFields["festival.setEdit.artist"]
+        first.tap(); first.typeText("Opener")
+        snap("festival-add-stage")
+        app.buttons["festival.setEdit.save"].tap()
+        XCTAssertTrue(app.buttons["festival.edit.set.Opener"].waitForExistence(timeout: 6),
+                      "the new stage appears with its first set")
         app.buttons["festival.edit.done"].tap()
     }
 }

@@ -111,6 +111,16 @@ the night and wouldn't let them say they'd moved. Their asks, in their words:
   - A phone-made lineup (`poster-` / `mine-`) never falls back to an install link, which would point at nothing.
     The Share link carries it whole, and the sheet says so when it's too big for one code.
 
+- **Add a stage** (user: "add a stage → it shows me add a set section") has its own form, titled "Add a stage", in this
+  order:
+  - New stage name. If the name already exists, a note says the set will join that stage.
+  - Day (defaults to today during the festival, else the first day).
+  - First set.
+  - First set's time.
+
+  A stage exists only through its sets, so the first set is required. Before this, the menu opened the generic Add a set
+  form.
+
 ## Acceptance
 
 - [x] Unit: `FestivalLineupEditsTests` (apply / ids kept / reset / remove / add / re-file / delay targets / later
