@@ -166,10 +166,10 @@ struct ExpenseGroupView: View {
     @ViewBuilder
     private var settleUpSection: some View {
         let transfers = SettleUp.transfers(from: balances)
-        Section("Settle Up") {
+        Section("Settle up") {
             if transfers.isEmpty {
                 Label("All settled up", systemImage: "checkmark.circle")
-                    .foregroundStyle(SnappetColor.habits)
+                    .foregroundStyle(SnappetColor.perfFresh)
             } else {
                 ForEach(transfers) { transfer in
                     // Tapping a computed transfer records it with the exact amount
@@ -184,7 +184,6 @@ struct ExpenseGroupView: View {
                                 .foregroundStyle(.primary)
                             Spacer()
                             Text(currency(transfer.amount))
-                                .fontWeight(.semibold)
                                 .monospacedDigit()
                                 .foregroundStyle(.primary)
                             Image(systemName: "chevron.right")
@@ -214,7 +213,7 @@ struct ExpenseGroupView: View {
                                 Label(expense.isReceipt ? "View" : "Edit",
                                       systemImage: expense.isReceipt ? "list.bullet.rectangle" : "pencil")
                             }
-                            .tint(SnappetColor.expenses)
+                            .tint(SnappetColor.brand)
                             .accessibilityIdentifier("expense.editExpense")
                         }
                     }
@@ -236,8 +235,9 @@ struct ExpenseGroupView: View {
     // MARK: - Helpers
 
     private func color(for net: Double) -> Color {
-        if net > 0.005 { return SnappetColor.habits }
-        if net < -0.005 { return SnappetColor.pomodoro }
+        // Meaning colours: owed green, owe red (prompt 242; were the Habits / Pomodoro module colours).
+        if net > 0.005 { return SnappetColor.perfFresh }
+        if net < -0.005 { return SnappetColor.perfHard }
         return Color.secondary
     }
 
@@ -260,20 +260,19 @@ private struct ExpenseRow: View {
                 if let glyph {
                     Image(systemName: glyph)
                         .font(.subheadline)
-                        .foregroundStyle(expense.isSettlement ? .green : .secondary)
+                        .foregroundStyle(expense.isSettlement ? SnappetColor.perfFresh : SnappetColor.textSecondary)
                 }
                 Text(expense.title)
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .medium))
                     .lineLimit(1)
                 Spacer()
                 Text(currency(expense.amount))
-                    .font(.headline)
+                    .font(.system(size: 15))
                     .monospacedDigit()
-                    .foregroundStyle(expense.isSettlement ? .green : .primary)
+                    .foregroundStyle(expense.isSettlement ? SnappetColor.perfFresh : SnappetColor.ink)
             }
             Text(detail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .snappetDetail()
                 .lineLimit(1)
         }
     }

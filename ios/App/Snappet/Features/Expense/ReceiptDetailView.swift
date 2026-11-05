@@ -39,7 +39,7 @@ struct ReceiptDetailView: View {
                         }
                         Text(AssigneeSummary.label(item.assignees, in: group.participants))
                             .font(.caption)
-                            .foregroundStyle(item.assignees.isEmpty ? SnappetColor.pomodoro : .secondary)
+                            .foregroundStyle(item.assignees.isEmpty ? SnappetColor.perfHard : .secondary)
                     }
                 }
             }

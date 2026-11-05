@@ -125,6 +125,7 @@ struct NewReceiptSheet: View {
                 ForEach(group.participants, id: \.self) { Text($0).tag($0) }
             }
             .pickerStyle(.menu)
+            .tint(SnappetColor.textSecondary)   // picked values grey, like Settings
             .accessibilityIdentifier("expense.receipt.payer")
         }
     }
@@ -137,6 +138,7 @@ struct NewReceiptSheet: View {
                 }
             }
             .pickerStyle(.menu)
+            .tint(SnappetColor.textSecondary)
             .accessibilityIdentifier("expense.receipt.type")
 
             if ReceiptDocumentScanner.isSupported {
@@ -323,7 +325,7 @@ private struct ItemRow: View {
                         .foregroundStyle(.secondary)
                     Text(AssigneeSummary.label(item.assignees, in: participants))
                         .font(.caption)
-                        .foregroundStyle(item.assignees.isEmpty ? SnappetColor.pomodoro : .secondary)
+                        .foregroundStyle(item.assignees.isEmpty ? SnappetColor.perfHard : .secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

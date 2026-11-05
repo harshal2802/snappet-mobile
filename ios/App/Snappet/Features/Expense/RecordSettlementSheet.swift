@@ -41,6 +41,7 @@ struct RecordSettlementSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .tint(SnappetColor.textSecondary)
                     .accessibilityIdentifier("expense.settle.payer")
                 }
 
@@ -51,6 +52,7 @@ struct RecordSettlementSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .tint(SnappetColor.textSecondary)
                     .accessibilityIdentifier("expense.settle.recipient")
                 }
 

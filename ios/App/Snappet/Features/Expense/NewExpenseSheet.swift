@@ -54,6 +54,7 @@ struct NewExpenseSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .tint(SnappetColor.textSecondary)
                     .accessibilityIdentifier("expense.expense.payer")
                 }
 
