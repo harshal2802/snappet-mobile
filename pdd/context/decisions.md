@@ -10617,3 +10617,51 @@ stripes, and the panel read as an opaque slab.
   updates on its next push.
 - **Dark surfaces use the accent's dark value.** Live Activities sit on a translucent black tint, and the Buddy /
   Household widgets on a fixed dark ground. The light-mode accent would be too dark there.
+
+## 2026-11-06 — Racket recording core (prompt 244, issue #438 step 1)
+
+- **"Rallies only / everything / tracking off" maps to `byUnit / everything / off`.** `byUnit` is prompt 203's
+  game-by-game (block-by-block) filming and stays the default; `nil` on old entities means `byUnit`. "Off" means
+  "don't film" (the wireframes' third chip). Live tracking is a separate switch for step 6, not a recording mode.
+- **The drill option is "Everything, rests included"** (review5 M1); only the match option says "split later".
+- **One recording = runs + parts + marks, all as seconds from its start.** A run is a capture between a start /
+  resume and a stop / interruption; Photos parts are cut every 10 minutes (`maxRecordedDuration`) and at every
+  interruption; block / rest / moment / new-game marks are time ranges. An interruption is a gap between runs. Split
+  (step 3) reads only these ranges; originals are never changed.
+- **Part rollover has a small gap.** iOS's movie output can't switch files seamlessly, so the next part starts from
+  the finished-file callback (well under a second lost per 10 minutes). Device-test item.
+- **Recording starts with block 1, not with the countdown.** "Recording and the block timer start at zero." Before
+  block 1, Wait goes back to the camera (`.ready`), never to a rest timer (review5 M3); before a later block it
+  returns to a paused rest timer at 0:00 (DrillCountdown; +30 s / +1 min add time) and the rest mark reopens.
+- **Drill blocks are logged from the timers** with their length and the last block's counts (like a filmed block in
+  prompt 203); the player corrects counts on the drill page. A drill recording everything doesn't start the pager's
+  own rest timer — the recording screen owns rest.
+- **Recording parts are never claimed by one block / game.** `claimFilmedClips` skips the recording's own asset ids;
+  parts sit on the entity's shelf with no set index.
+- **End is routed by mode** (review5 H1): drill → review; whole-match recording → split prompt (a "recording saved"
+  placeholder until step 3); game by game → confirm the score. "Keep scoring without video" is match-only.
+- **"Still playing?" counts taps only for now** (marks, blocks, rest controls, resume, keep). Camera / Watch
+  movement is step 5–6. The threshold is per mode (by unit 30, everything 60 by default) and every screen quotes the
+  configured value (review5 M4). With no answer, recording ends 2 minutes later through the normal End route.
+- **A drill never offers to delete its original** (review5 M2): the review says "1 recording · N block parts".
+- **Storage: the best estimate, then the measured rate** (user, 2026-11-06 — replaces a fixed conservative GB/h). Up
+  front, bytes/s come from the capture config the recorder actually set: resolution, fps and codec (HEVC wherever
+  offered, else H.264), using Apple's published Camera sizes (1080p30 HEVC 60 MB/min, 4K30 HEVC 170, H.264 about
+  twice) + 1 MB/min audio, interpolated for other frame rates. Margin: 500 MB or 2 % of free space. While recording,
+  bytes written (`recordedFileSize` + finished parts) are sampled every 5 s and smoothed (EWMA 0.3); after 20 s the
+  measured rate drives "Space left", with live free space. 41 GB ⇒ about 10 h 50 min at 1080p, 3 h 50 min at 4K.
+  Continue is disabled under 15 minutes of room; amber under 2 h.
+- **The recording screen keeps the screen awake itself** and restores the previous idle-timer value on close.
+- **A changed closure arity in a SwiftUI body can show up as "unable to type-check in reasonable time".**
+  `SessionDetailView` also builds `RacketSetupSheet`; the 3→4-argument `onDrill` mismatch surfaced only as that error.
+- **One-tap drill start: the plan is remembered per drill from history** (user, 2026-11-06). The plan step opens on
+  the plan of the most recent drill with the same sport and name that has one ("Same as last time"), else Settings
+  ("Suggested plan"). Saved routines can't hold racket drills (prompt 203 keeps routines racket-free; adding them
+  would touch the routine model, builder and editor), so history is the memory — no new store.
+- **"Score unconfirmed" is one stored flag, read one way** (user, 2026-11-06; review5 M5). After Stop and split the
+  recorded games are listed (New game marks + 1, capped by what the format has left, adjustable); Later, or Done with
+  games left, logs a `SetLog` with `scoreUnconfirmed = true` and no score. It counts for neither side
+  (`racketUnits` skip it), every surface labels it via `RacketScoreState`, chips are indexed by set (not by scored
+  unit) so tapping one opens its own score sheet, and saving a score clears the flag.
+- **Setup → Storage directly when recording everything** (boards: PracticeSetup "Set up camera", Warmup
+  "Everything, split later" → Storage). The page's "Record everything" button stays for a second recording.

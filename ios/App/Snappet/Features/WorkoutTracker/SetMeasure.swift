@@ -57,6 +57,7 @@ enum SetMeasure {
         if discipline == .run { return runSummary(set, unit: distanceUnit) }
         if discipline == .racket {
             if let s = set.racketScore { return s.superTiebreak ? "Super tiebreak \(s.label)" : s.label }
+            if set.racketScoreState == .unconfirmed { return RacketScoreState.unconfirmedLabel }
             let measure: RacketDrillMeasure = set.drillTried != nil ? .madeTried : set.longestRally != nil ? .longestRally : .time
             return RacketStats.blockLine(set, measure: measure)
         }

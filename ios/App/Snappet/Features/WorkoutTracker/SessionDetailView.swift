@@ -212,7 +212,7 @@ struct SessionDetailView: View {
                              recentEvents: RacketStats.recentEvents(history: history),
                              recentDrills: { _ in [] },
                              onMatch: { params in updateMatch(target.editingExerciseID, params) },
-                             onDrill: { _, _, _ in })
+                             onDrill: { _, _, _, _ in })
         }
         // A wearable that synced since the session (Fitbit / Google Health …) fills in its HR (prompt 203).
         .task { await app.backfillWorkoutHR(sessionID: session.id) }
