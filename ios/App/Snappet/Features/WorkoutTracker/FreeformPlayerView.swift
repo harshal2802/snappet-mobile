@@ -64,6 +64,8 @@ struct FreeformPlayerView: View {
     @State private var racketStorageFor: RacketStorageTarget?
     @State private var racketRecordingFor: RacketRecordingTarget?
     private var racketRecordingDefaults: RacketRecordingDefaults { RacketRecordingDefaults.load(from: racketRecordingDefaultsData) }
+    /// The game-by-game match on the current page, scored from the Apple Watch (prompt 245); nil with no Watch.
+    @State private var racketWatch: RacketWatchMatch?
     // MARK: Pager state (prompt 109)
     /// The current pager page — overview · one page per exercise (added order) · the add page.
     /// Simple value state; the pages themselves are light (no players), so the Clips-feed
@@ -275,6 +277,11 @@ struct FreeformPlayerView: View {
                         var pending = SetLog()
                         pending.scoreUnconfirmed = true   // "Score unconfirmed" until confirmed (review5 M5)
                         appendLog(pending, toExerciseID: target.exerciseID)
+                    },
+                    onWatchUnit: { log in
+                        // A game tallied on the Watch (prompt 245): logged "from Watch", confirmed later.
+                        let index = session.exercises.first { $0.id == target.exerciseID }?.sets.count ?? 0
+                        saveRacketUnit(log, target: RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: index, durationSec: nil))
                     },
                     onClose: { racketRecordingFor = nil })
             }
@@ -544,6 +551,9 @@ struct FreeformPlayerView: View {
         // At-logging milestone banner (Phase 3 §3), unchanged: a brief glass headline for a genuine
         // new best; the burst + haptic fire via the screen-level `.celebrates(on:)`.
         .overlay(alignment: .top) { milestoneBanner }
+        .modifier(RacketWatchHosting(matchID: racketWatchMatchID, unitCount: racketWatchUnitCount,
+                                     state: racketWatchState, sync: syncRacketWatch, logged: racketWatchUnitsChanged,
+                                     tick: tickRacketWatch))
     }
 
     /// The paged content. Pages are light (forms — no players), so plain selection state is safe
@@ -1554,7 +1564,11 @@ struct FreeformPlayerView: View {
                 headToHead: RacketStats.headToHead(opponent: ex.opponent, sport: ex.racketSport,
                                                    history: history, including: [ex]),
                 clipUnits: Set(mediaRows(assignedTo: ex.id).compactMap(\.assignedSetIndex)),
-                onStartUnit: { racketTimers[ex.id] = .now; Haptics.tap() },
+                onStartUnit: {
+                    racketTimers[ex.id] = .now
+                    if racketWatch?.exerciseID == ex.id { racketWatch?.startedOnPhone(at: .now) }
+                    Haptics.tap()
+                },
                 onEndUnit: {
                     let duration = racketTimers[ex.id].map { Date.now.timeIntervalSince($0) }
                     racketScoring = RacketScoreTarget(exerciseID: ex.id, unitIndex: ex.sets.count, durationSec: duration)
@@ -1668,6 +1682,80 @@ struct FreeformPlayerView: View {
         }
     }
 
+    // MARK: - Racket on the Watch, game by game (prompt 245)
+
+    /// The match the Watch scores: the current page's game-by-game (or unfilmed) match, while no recording screen is up.
+    private var racketWatchMatchID: UUID? {
+        guard case .exercise(let id) = page, racketRecordingFor == nil,
+              let ex = session.exercises.first(where: { $0.id == id }),
+              ex.isRacketMatch, ex.racketRecording != .everything else { return nil }
+        return id
+    }
+
+    private var racketWatchUnitCount: Int {
+        racketWatch.flatMap { w in session.exercises.first { $0.id == w.exerciseID }?.sets.count } ?? 0
+    }
+
+    private var racketWatchState: RacketWatchState? {
+        guard let w = racketWatch, let ex = session.exercises.first(where: { $0.id == w.exerciseID }) else { return nil }
+        return w.state(context: RacketWatchContext(ex))
+    }
+
+    /// The page changed: hand the Watch to the new match (or give it back its usual face).
+    private func syncRacketWatch(from old: UUID?, to new: UUID?) {
+        if let old, old != new { RacketWatchRelay.shared.detach(old) }
+        guard let new, RacketWatchRelay.shared.isAvailable,
+              let ex = session.exercises.first(where: { $0.id == new }) else { racketWatch = nil; return }
+        if racketWatch?.exerciseID == new { return }
+        let relay = RacketWatchRelay.shared
+        relay.attach(new) { command, now in handleRacketWatch(command, now: now) }
+        racketWatch = RacketWatchMatch(
+            exerciseID: new, unitIndex: ex.sets.count,
+            rules: RacketLiveRules(format: ex.racketFormat, unitIndex: ex.sets.count),
+            breakSec: RacketWatchMatch.defaultBreakSec(ex.racketSport ?? .tableTennis),
+            startedAt: racketTimers[new])
+    }
+
+    private func handleRacketWatch(_ command: RacketWatchCommand, now: Date) {
+        guard var w = racketWatch else { return }
+        let effects = w.apply(command, now: now)
+        racketWatch = w
+        performRacketWatch(effects, exerciseID: w.exerciseID)
+    }
+
+    private func tickRacketWatch() {
+        guard var w = racketWatch else { return }
+        let effects = w.tick(now: .now)
+        guard !effects.isEmpty else { return }
+        racketWatch = w
+        performRacketWatch(effects, exerciseID: w.exerciseID)
+    }
+
+    private func performRacketWatch(_ effects: [RacketWatchMatch.Effect], exerciseID id: UUID) {
+        for e in effects {
+            switch e {
+            case .startUnitTimer(let at):
+                racketTimers[id] = at
+            case .logUnit(let result, let duration):
+                let index = session.exercises.first { $0.id == id }?.sets.count ?? 0
+                saveRacketUnit(SetLog(watchResult: result, durationSec: duration),
+                               target: RacketScoreTarget(exerciseID: id, unitIndex: index, durationSec: duration))
+                racketWatchUnitsChanged(fromWatch: true)
+            case .endMatch:
+                racketTimers[id] = nil
+            }
+        }
+    }
+
+    /// A unit was logged (on the Watch or with the phone's score sheet): the Watch moves to the next one.
+    private func racketWatchUnitsChanged(fromWatch: Bool) {
+        guard let w = racketWatch, let ex = session.exercises.first(where: { $0.id == w.exerciseID }) else { return }
+        let count = ex.sets.count
+        racketWatch?.logged(unitCount: count, rules: RacketLiveRules(format: ex.racketFormat, unitIndex: count),
+                            lastLabel: ex.sets.last?.racketScore.map(\.label), decided: ex.racketState.isDecided,
+                            fromWatch: fromWatch, now: .now)
+    }
+
     // MARK: - Racket recording (prompt 244)
 
     /// The page's recording control for a match / drill that records everything or isn't filmed. "Game / block by
@@ -1741,6 +1829,7 @@ struct FreeformPlayerView: View {
             set.tiebreakAgainst = log.tiebreakAgainst
             set.superTiebreak = log.superTiebreak
             set.scoreUnconfirmed = nil   // confirmed now (prompt 244)
+            set.scoreFromWatch = nil     // a Watch tally is confirmed by saving it here (prompt 245)
             session.exercises[idx].sets[target.unitIndex] = set
             persist()
             pushLiveActivity()
@@ -2828,5 +2917,31 @@ private struct LogSetSheet: View {
                           climbGradeLabel: g.isEmpty ? nil : g,
                           climbStatusRaw: status.rawValue, climbAttempts: tries)
         }
+    }
+}
+
+/// Hosts the game-by-game Watch match on the pager (prompt 245): follows the current page, publishes each new state,
+/// follows units logged on the phone, and ticks the break timer. A modifier so the pager's long body type-checks.
+private struct RacketWatchHosting: ViewModifier {
+    let matchID: UUID?
+    let unitCount: Int
+    let state: RacketWatchState?
+    let sync: (UUID?, UUID?) -> Void
+    let logged: (Bool) -> Void
+    let tick: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: matchID, initial: true) { old, new in sync(old, new) }
+            .onChange(of: unitCount) { _, _ in logged(false) }
+            .onChange(of: state) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
+            .onDisappear { sync(matchID, nil) }
+            .task(id: matchID) {
+                guard matchID != nil else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    tick()
+                }
+            }
     }
 }

@@ -238,15 +238,28 @@ extension SetLog {
 /// session detail, the game heart-rate sheet — review5 M5).
 enum RacketScoreState: Equatable, Sendable {
     case confirmed(RacketUnitScore)
+    /// Tallied on the Apple Watch, not confirmed yet (prompt 245): it counts, and reads "from Watch" until a score is
+    /// saved on the phone.
+    case fromWatch(RacketUnitScore)
     /// Recorded, score left for later (prompt 244).
     case unconfirmed
 
     static let unconfirmedLabel = "Score unconfirmed"
+    static let fromWatchSuffix = "from Watch"
 
     var label: String {
         switch self {
         case .confirmed(let s): return s.superTiebreak ? "STB \(s.label)" : s.label
+        case .fromWatch(let s): return "\(s.superTiebreak ? "STB \(s.label)" : s.label) \(Self.fromWatchSuffix)"
         case .unconfirmed: return Self.unconfirmedLabel
+        }
+    }
+
+    /// Still waiting for the player to confirm it on the phone (no score, or a Watch tally).
+    var needsConfirming: Bool {
+        switch self {
+        case .confirmed: return false
+        case .fromWatch, .unconfirmed: return true
         }
     }
 }
@@ -254,7 +267,7 @@ enum RacketScoreState: Equatable, Sendable {
 extension SetLog {
     /// `nil` when this effort isn't a match unit at all.
     var racketScoreState: RacketScoreState? {
-        if let s = racketScore { return .confirmed(s) }
+        if let s = racketScore { return scoreFromWatch == true ? .fromWatch(s) : .confirmed(s) }
         return scoreUnconfirmed == true ? .unconfirmed : nil
     }
 }

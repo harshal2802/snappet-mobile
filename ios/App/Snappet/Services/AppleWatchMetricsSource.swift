@@ -241,7 +241,11 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let reachable = session.isReachable
-        Task { @MainActor [weak self] in self?.isReachable = reachable }
+        Task { @MainActor [weak self] in
+            self?.isReachable = reachable
+            // The Watch came back: bring its racket face up to date (prompt 245).
+            if reachable { RacketWatchRelay.shared.republish() }
+        }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
@@ -266,6 +270,8 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
         case .start?, .stop?, .retype?:
             break   // start/stop flow phone → watch only
         case .none:
+            // A racket tap on the Watch (prompt 245): to whichever racket screen is attached.
+            if RacketWatchRelay.receive(payload: payload) { return }
             // A chore ticked on the watch (household prompt 04): into the outbox, applied on the main actor.
             if case .toggle(let toggle)? = HouseholdWatchMessage(payload: payload) {
                 ChoreOutbox.append(toggle)

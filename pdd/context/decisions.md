@@ -10665,3 +10665,49 @@ stripes, and the panel read as an opaque slab.
   unit) so tapping one opens its own score sheet, and saving a score clears the flag.
 - **Setup → Storage directly when recording everything** (boards: PracticeSetup "Set up camera", Warmup
   "Everything, split later" → Storage). The page's "Record everything" button stays for a second recording.
+
+## 2026-11-06 — Racket Watch scoring (prompt 245, issue #438 step 2)
+
+- **The phone is the one place a match or a drill lives; the Watch mirrors it.** The phone sends a full
+  `RacketWatchState` snapshot (board, clocks as absolute end times / bases the Watch runs itself, Still playing?,
+  stopped notice) whenever it changes; the Watch sends taps (`RacketWatchCommand`). No state is decided on the
+  wrist. Snapshots carry a rising revision (seeded from the clock so it keeps rising across relaunches); the Watch
+  ignores an older one, so a late `transferUserInfo` copy is harmless. Taps carry a unique id and the phone applies
+  each once (a 64-id ledger), because `sendMessage` can report failure after delivering and the fallback re-sends.
+- **Score taps show at once on the wrist.** The Watch applies +1 / Undo with the same shared tally
+  (`RacketLiveScore`, in `Shared/`), keeping the snapshot's revision, so the phone's next snapshot wins.
+- **No application context for racket.** Household already owns `updateApplicationContext` (one dictionary per
+  app); racket messages ride `sendMessage` (reachable) with a `transferUserInfo` fallback, under their own key
+  `racketKind`. The phone's only `WCSessionDelegate` stays `AppleWatchMetricsSource`; it forwards racket payloads to
+  `RacketWatchRelay` and republishes when the Watch becomes reachable.
+- **One attached racket screen at a time.** The recording cover attaches while it's up; otherwise the pager's current
+  page attaches if it's a game-by-game (or unfilmed) match and a paired Watch with Snappet is present. Leaving sends
+  `clear` and the Watch returns to its usual face. The racket board leads the Watch app; live-workout pages follow.
+- **The tally is the list of points won.** Every number is derived from it, so Undo is "drop the last point" and
+  can't reach an impossible state. Rally games: to N, win by 2, badminton's cap 30. Tennis / padel: 0-15-30-40-Ad,
+  a 7-point tiebreak at N–N, a deciding super tiebreak to 10 when the format has one. **Not modelled (yet):**
+  pickleball side-out scoring and server number (the boards' "4–2–1" / "We won"), tennis no-ad, serve tracking.
+  Pickleball scores every rally until its scoring option exists on the phone.
+- **A game scored on the Watch counts and reads "from Watch" until confirmed** (`SetLog.scoreFromWatch`,
+  `RacketScoreState.fromWatch`; boards: "Score unconfirmed · from your Watch", "Filled in from your Watch taps").
+  Unlike step 1's "Score unconfirmed" (no score, counts for neither side), a Watch tally has a real score, so it
+  counts toward the match; chips show it in amber; saving a score on the phone (score sheet, Edit sets) clears it.
+- **End game is a tap, not automatic.** When the tally decides a game, the Watch shows the final score and waits for
+  End game (Undo still works). Ending early logs where the tally stands (points, or games for a set); the phone's
+  score check warns, as for any entered score. Hold to end match logs the game in progress first.
+- **Match breaks live on the Watch only.** The phone has no game-break screen yet (`GameBreak`); after End game the
+  Watch runs a break ring (1:00 table tennis, 1:30 squash, 2:00 otherwise — the boards' defaults; no setting yet),
+  and when it ends the next game's scoring and clock start (the Watch taps you). Skip break does the same at once.
+- **Record everything, match:** a game finished by Watch taps is logged "from Watch" and adds a New game mark (the
+  split in step 3 uses it); "New game" from the Watch restarts the tally without logging. "Break starts" is a new
+  recording mark kind (`breakStart`) and counts as a user mark.
+- **Every Watch tap counts as activity for "Still playing?"** (step 1 counted phone taps only). The Watch quotes
+  the configured threshold ("No taps or marks for N min", review5 M4) — not "No movement", since movement isn't
+  sensed. The machine remembers when it ended for lack of an answer (`endedByStillPlaying`) so the Watch can say so.
+- **The stopped notice covers every interruption.** Storage full, too hot and the Still-playing timeout say
+  "Recording stopped"; a call / leaving the app / camera busy say "Recording paused · Resume on the phone". Resuming
+  is phone-only (the camera needs the phone's screen).
+- **Pause during a drill block is still out** (step 1 deferred it), so the Watch block board has End block and Stop
+  drill but not the board's Pause.
+- **Ring types are shared.** `RacketTimerTone` / `RacketTimerDisplay` / `RacketClock` moved to
+  `Shared/RacketTimerDisplay.swift`; the Watch draws the same tones from `Surface.ring(now:)`.
