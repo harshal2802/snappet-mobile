@@ -68,8 +68,14 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var lastShotBy: String?
     /// "Not a rally" (picking up the ball, knocking): kept so it isn't marked again, never counted.
     var notRally: Bool?
-    /// Who marked it: nil / "you". A model's rallies (step 5) will say which model — your tags always win.
+    /// Who marked it: nil / "you"; `"ai:<app>"` when it came from another AI app's reply (prompt 247,
+    /// `RacketAISource`). A model's rallies (step 5) will say which model — your tags always win.
     var sourceRaw: String?
+    /// Who set its winner / ending: nil = you; `"ai:<app>"` when you accepted another app's answer on Compare. Tagging it
+    /// yourself clears it (prompt 247).
+    var tagSourceRaw: String?
+    /// Shots the other app counted (its "shots" list), shown on Compare ("Yes, 5 shots"). Not used for stats.
+    var aiShots: Int?
 
     init(id: UUID = UUID(), startSec: Double, endSec: Double, winner: RacketRallyWinner? = nil,
          ending: RacketRallyEnding? = nil, lastShotBy: String? = nil, notRally: Bool? = nil) {
@@ -94,6 +100,10 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var isRally: Bool { notRally != true }
     /// Tagged = a winner picked (or a replay — no winner to pick).
     var isTagged: Bool { isRally && (winner != nil || ending?.isReplay == true) }
+    /// It, or its tags, came from another AI app (accepted by you on Compare).
+    var isFromAI: Bool { RacketAISource.isAI(sourceRaw) || RacketAISource.isAI(tagSourceRaw) }
+    /// The app's name when it came from one.
+    var aiName: String? { RacketAISource.name(tagSourceRaw) ?? RacketAISource.name(sourceRaw) }
 }
 
 // MARK: - Marking (TtNoModelTimeline: Mark start / Mark end · FixRally)
@@ -191,6 +201,8 @@ enum RacketRallyMarking {
             q.winner = notRally ? nil : winner
             q.ending = notRally ? nil : ending
             q.lastShotBy = notRally ? nil : lastShotBy
+            // Tagged by you now, whoever tagged it before (prompt 247).
+            q.tagSourceRaw = nil
             return q
         }
     }
@@ -214,11 +226,20 @@ struct RacketTagSummary: Equatable, Sendable {
     var wonThem: Int
     /// Most common first; ties in the sport's order.
     var endings: [EndingCount]
+    /// Rallies (or their tags) accepted from another AI app on Compare (prompt 247). They count like your tags — you
+    /// chose them — and the summary says where they came from.
+    var fromAI: Int = 0
+    /// The apps they came from, in first-seen order.
+    var aiNames: [String] = []
 
     var untagged: Int { max(0, marked - tagged) }
 
-    /// "From your tags, 3 of 5".
-    var sourceLine: String { "From your tags, \(tagged) of \(marked)" }
+    /// "From your tags, 3 of 5"; "From your tags, 5 of 7 · 2 accepted from ChatGPT".
+    var sourceLine: String {
+        let base = "From your tags, \(tagged) of \(marked)"
+        guard fromAI > 0 else { return base }
+        return base + " · \(fromAI) accepted from \(aiNames.count == 1 ? aiNames[0] : "other apps")"
+    }
 
     static func make(_ rallies: [RacketRally], sport: RacketSport) -> RacketTagSummary {
         let rs = rallies.filter(\.isRally)
@@ -237,7 +258,9 @@ struct RacketTagSummary: Equatable, Sendable {
             averageSec: durations.isEmpty ? nil : durations.reduce(0, +) / Double(durations.count),
             wonUs: rs.filter { $0.winner == .us }.count,
             wonThem: rs.filter { $0.winner == .them }.count,
-            endings: endings)
+            endings: endings,
+            fromAI: rs.filter(\.isFromAI).count,
+            aiNames: rs.compactMap(\.aiName).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } })
     }
 
     /// "9.4 s".
@@ -297,6 +320,8 @@ struct RacketTagTotals: Equatable, Sendable {
     var wonUs = 0
     var wonThem = 0
     var longestSec: Double?
+    /// Of `marked`, how many came (or were tagged) from another AI app and were accepted by you (prompt 247).
+    var fromAI = 0
 
     var pointsWonShare: Double? {
         let n = wonUs + wonThem
@@ -311,6 +336,7 @@ struct RacketTagTotals: Equatable, Sendable {
             t.tagged += rs.filter(\.isTagged).count
             t.wonUs += rs.filter { $0.winner == .us }.count
             t.wonThem += rs.filter { $0.winner == .them }.count
+            t.fromAI += rs.filter(\.isFromAI).count
             if let m = rs.map(\.durationSec).max() { t.longestSec = max(t.longestSec ?? 0, m) }
         }
         return t

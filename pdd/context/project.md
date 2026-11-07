@@ -691,6 +691,19 @@ Rallies are marked by hand (Mark start / end, Fix) and tagged (winner, per-sport
 `-uiTestSeedRacketVideos`). **Device-pending:** Photos playback / export / delete, iCloud, long recordings. Next (#438):
 the AI round trip (step 4).
 
+🟡 **Racket round trip with another AI app (2026-11-07, prompt 247 — issue #438 step 4).** iOS. Each part / drill block
+in Your videos offers "Another AI app": AISend (privacy note, rallies only / whole part smaller / original, the prompt →
+AIPrompt, ChatGPT / Gemini / Claude frames only / Other apps, a permission switch every time) exports the part (or up to
+40 stills), copies the prompt and opens the system share sheet — Snappet makes no network call and holds no key.
+"Bring results back" (AIImport) reads a pasted reply or a chosen file tolerantly (JSON in fences / prose / JSON5, key
+aliases, mm:ss, or a pasted table), says what it read and skipped and why, maps unknown endings ("Count it as Out" /
+"Leave them out") and your side; then either "Add as suggestions" (dashed on the Analyzed timeline, labelled, not
+counted) or AICompare against your tags (per item, "Use <app> for all" never touching your own tags) → Analyzed.
+Accepted items carry "from <app>" provenance and count in history ("From your tags, 5 of 7 · 2 accepted from ChatGPT").
+Pure: `RacketAIRoundTrip.swift` (`RacketAIRoundTripTests`); screens: `RacketAIViews.swift`; UI: `RacketAIUITests`.
+**Device-pending:** sharing to real AI apps, their replies, Claude stills, share-in (no share extension yet). Next
+(#438): model hooks (step 5).
+
 ## License
 
 TBD.

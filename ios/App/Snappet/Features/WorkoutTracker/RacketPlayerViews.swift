@@ -72,6 +72,8 @@ struct RacketTimelineBar: View {
     let position: Double
     let rallies: [RacketRally]
     var pendingStart: Double? = nil
+    /// Another AI app's rallies not compared yet: drawn dashed (AIImport "Shown dashed and labelled", prompt 247).
+    var suggestions: [RacketRally] = []
     let onSeek: (Double) -> Void
 
     var body: some View {
@@ -81,6 +83,12 @@ struct RacketTimelineBar: View {
             let x: (Double) -> Double = { t in (t - start) / span * w }
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 4).fill(SnappetColor.hairline.opacity(0.6)).frame(height: 28)
+                ForEach(suggestions) { r in
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(SnappetColor.brand, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        .frame(width: max(3, x(r.endSec) - x(r.startSec)), height: 26)
+                        .offset(x: x(r.startSec))
+                }
                 ForEach(rallies.filter(\.isRally)) { r in
                     RoundedRectangle(cornerRadius: 2)
                         .fill(r.isTagged ? SnappetColor.brand : SnappetColor.brand.opacity(0.45))
@@ -100,7 +108,8 @@ struct RacketTimelineBar: View {
         }
         .frame(height: 36)
         .accessibilityElement()
-        .accessibilityLabel("Timeline, \(rallies.filter(\.isRally).count) rallies")
+        .accessibilityLabel("Timeline, \(rallies.filter(\.isRally).count) rallies"
+                            + (suggestions.isEmpty ? "" : ", \(suggestions.count) suggested"))
         .accessibilityIdentifier("racket.timeline.bar")
     }
 }
@@ -111,6 +120,10 @@ struct RacketPlayerScreen: View {
     let store: RacketVideoStore
     let ref: RacketPartRef
     let ralliesOnly: Bool
+    /// Open on Analyzed (after Add as suggestions / Compare → Done, prompt 247).
+    var startAnalyzed = false
+    /// Compare a waiting reply from another AI app.
+    var onCompare: ((UUID) -> Void)? = nil
 
     @State private var playback: RacketPlayback?
     @State private var analyzed = false
@@ -127,6 +140,12 @@ struct RacketPlayerScreen: View {
     private var sides: (us: String, them: String) {
         RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
     }
+    private var pendingImports: [RacketAIImport] {
+        ex?.racketRecordingLog?.pendingAIImports(partStart: ref.startSec, partEnd: ref.endSec) ?? []
+    }
+    private var suggestions: [RacketRally] {
+        ex?.racketRecordingLog?.aiSuggestions(partStart: ref.startSec, partEnd: ref.endSec) ?? []
+    }
 
     var body: some View {
         ScrollView {
@@ -140,7 +159,8 @@ struct RacketPlayerScreen: View {
                     }
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("racket.player.mode")
-                    RacketTimelineBar(start: ref.startSec, end: ref.endSec, position: pb.position, rallies: rallies) { pb.seek(to: $0) }
+                    RacketTimelineBar(start: ref.startSec, end: ref.endSec, position: pb.position, rallies: rallies,
+                                      suggestions: analyzed ? suggestions : []) { pb.seek(to: $0) }
                     HStack {
                         Text(RacketVideoTime.clock(pb.position - ref.startSec)).monospacedDigit()
                             .accessibilityIdentifier("racket.player.clock")
@@ -187,6 +207,7 @@ struct RacketPlayerScreen: View {
         .task {
             guard !configured else { return }
             configured = true
+            analyzed = startAnalyzed
             let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
             playback = pb
             onlyRallies = ralliesOnly && !rallies.isEmpty
@@ -217,7 +238,14 @@ struct RacketPlayerScreen: View {
     }
 
     private func overlayLine(_ t: Double) -> String? {
-        guard let r = RacketPlaybackPolicy.rally(at: t, in: rallies) else { return nil }
+        guard let r = RacketPlaybackPolicy.rally(at: t, in: rallies) else {
+            // Another app's suggestion, labelled with its name (your rallies always show first).
+            guard let s = suggestions.first(where: { t >= $0.startSec && t < $0.endSec }) else { return nil }
+            var parts = ["\(s.aiName ?? "Other app") suggests a rally"]
+            if let w = s.winner { parts.append(w == .us ? "\(sides.us) won" : "\(sides.them) won") }
+            if let e = s.ending { parts.append(e.label) }
+            return parts.joined(separator: " · ")
+        }
         var parts: [String] = []
         if showNumber { parts.append(RacketPlaybackPolicy.overlayLine(number: r.number, rally: r.rally, sides: sides)) }
         if showScore {
@@ -237,6 +265,25 @@ struct RacketPlayerScreen: View {
             }
             Text("No model for \((ex?.racketSport ?? .tableTennis).label.lowercased()) yet, so there are no Snappet guesses to compare.")
                 .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(pendingImports) { imp in
+                let n = RacketRallyMarking.inRange(imp.rallies, ref.startSec, ref.endSec).count
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(imp.appName) suggestions").font(SnappetType.body)
+                        Text("\(n) \(n == 1 ? "rally" : "rallies"), dashed on the timeline. They don’t count until you compare.")
+                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("racket.player.aiSuggestions")
+                    Spacer(minLength: 6)
+                    if let onCompare {
+                        Button("Compare") { onCompare(imp.id) }
+                            .font(SnappetType.detail.weight(.semibold))
+                            .accessibilityIdentifier("racket.player.aiCompare")
+                    }
+                }
+            }
             Text("Show on video").snappetLabel().padding(.top, 4)
             Toggle("Rally number", isOn: $showNumber).accessibilityIdentifier("racket.player.showNumber")
             Toggle("Score", isOn: $showScore).accessibilityIdentifier("racket.player.showScore")
@@ -539,7 +586,8 @@ struct RacketTimelineScreen: View {
                         Button { playback?.seek(to: r.startSec); tagging = r } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Rally \(k + 1)").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
-                                Text("\(RacketVideoTime.clock(r.startSec - ref.startSec)) · \(RacketTagSummary.seconds(r.durationSec))")
+                                Text("\(RacketVideoTime.clock(r.startSec - ref.startSec)) · \(RacketTagSummary.seconds(r.durationSec))"
+                                     + (r.aiName.map { " · from \($0)" } ?? ""))
                                     .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                             }
                             Spacer()

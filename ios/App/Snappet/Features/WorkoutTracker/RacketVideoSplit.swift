@@ -832,6 +832,12 @@ enum RacketVideoRows {
         let rallies = log.allRallies
         func tagLine(_ a: Double, _ b: Double) -> (String, Int) {
             let inPart = rallies.filter { $0.isRally && $0.startSec >= a - 0.01 && $0.startSec < b }
+            // Prompt 247: say what came from another AI app (accepted on Compare).
+            let ai = inPart.filter(\.isFromAI)
+            if !ai.isEmpty {
+                let names = ai.compactMap(\.aiName).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+                return ("\(inPart.count) marked · \(ai.count) from \(names.count == 1 ? names[0] : "other apps")", inPart.count)
+            }
             return (inPart.isEmpty ? "Not marked yet" : "\(inPart.count) marked by you", inPart.count)
         }
         let parts: [RacketVideoPart]
