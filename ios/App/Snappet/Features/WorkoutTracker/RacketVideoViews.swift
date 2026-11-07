@@ -1,0 +1,1166 @@
+import SwiftUI
+import SwiftData
+
+// MARK: - Racket videos, split and tagging screens (prompt 246, issue #438 step 3)
+//
+// One full-screen stack, opened from the match / drill page ("Your videos"), the session recap, and the end of a
+// whole-match recording (the split prompt). Thin renderers over the pure `RacketVideoSplit.swift` /
+// `RacketRallyTags.swift`; Photos + AVFoundation go through `Services/RacketVideoLibrary.swift`. The screens edit the
+// session directly (`RacketVideoStore`) so they work the same live and from a finished session's detail.
+//
+// Boards: TtSplitPrompt → TtSplitReview → TtSplitEdit / TtSplitAssign → TtSplitDone → TtDeleteOriginal; TtKeepRallies;
+// TtOriginalMissing; FindRallies / TtNoModelVideos (Your videos); TtDrillVideos; TtPlayerOriginal / TtPlayerAnalyzed /
+// TtPlayerExport; TtNoModelTimeline / Timeline / FixRally; TtNoModelTag / DoublesTag; TtTagDone; TtManualSummary.
+
+/// Where the stack opens.
+enum RacketVideosStart: Hashable, Sendable {
+    /// Your videos for the session.
+    case videos
+    /// The split prompt for one whole-match recording (after Stop and split).
+    case splitPrompt(UUID)
+    /// Your videos with "Keep rallies only" open (TtSessionRecap → TtKeepRallies).
+    case keepRallies
+}
+
+struct RacketVideosTarget: Identifiable {
+    let id = UUID()
+    let start: RacketVideosStart
+}
+
+/// A part to play / mark: one row of Your videos.
+struct RacketPartRef: Hashable, Sendable {
+    var exerciseID: UUID
+    var title: String
+    var startSec: Double
+    var endSec: Double
+    var setIndex: Int?
+}
+
+enum RacketVideoRoute: Hashable {
+    case review(UUID)
+    case assign(UUID)
+    case done(UUID)
+    case drill(UUID)
+    case player(RacketPartRef, ralliesOnly: Bool)
+    case timeline(RacketPartRef)
+    case tagDone(RacketPartRef)
+    case summary(RacketPartRef)
+    case missing(RacketPartRef)
+    case videos
+}
+
+/// Reads and writes the session's racket entities (a SwiftData model): mutate, then save.
+@MainActor
+struct RacketVideoStore {
+    let session: WorkoutSession
+    let context: ModelContext
+
+    func ex(_ id: UUID) -> SessionExercise? { session.exercises.first { $0.id == id } }
+
+    func update(_ id: UUID, _ body: (inout SessionExercise) -> Void) {
+        guard let i = session.exercises.firstIndex(where: { $0.id == id }) else { return }
+        var e = session.exercises[i]
+        body(&e)
+        session.exercises[i] = e
+        try? context.save()
+    }
+
+    func updateLog(_ id: UUID, _ body: (inout RacketRecordingLog) -> Void) {
+        update(id) { e in
+            guard var l = e.racketRecordingLog else { return }
+            body(&l)
+            e.racketRecordingLog = l
+        }
+    }
+
+    /// Link the proposed games to the logged ones and log the missing ones "Score unconfirmed" (without applying the
+    /// split): Later / Keep as one video still leave the match with its games, as step 1 did.
+    func logGames(_ id: UUID, parts: [RacketVideoPart]) {
+        update(id) { e in
+            guard let l = e.racketRecordingLog else { return }
+            let out = RacketSplitAssign.apply(parts: parts, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt)
+            e.sets = out.sets
+        }
+    }
+
+    func saveScore(_ id: UUID, unit: Int, _ log: SetLog) {
+        update(id) { e in
+            if unit < e.sets.count { RacketScoreEdit.apply(log, to: &e.sets[unit]) } else { e.sets.append(log) }
+        }
+    }
+}
+
+// MARK: - The stack
+
+struct RacketVideosCover: View {
+    let session: WorkoutSession
+    let start: RacketVideosStart
+    let onClose: () -> Void
+
+    @Environment(\.modelContext) private var context
+    @State private var path: [RacketVideoRoute] = []
+    /// The split being reviewed (TtSplitReview / TtSplitEdit), before Apply.
+    @State private var draft: [RacketVideoPart] = []
+    @State private var draftFor: UUID?
+    @State private var editing: RacketVideoPart?
+    @State private var scoring: RacketScoreTarget?
+    @State private var deleting: UUID?
+    @State private var keeping = false
+    @State private var openedKeep = false
+    @State private var found: Set<String> = []
+
+    private var store: RacketVideoStore { RacketVideoStore(session: session, context: context) }
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            root
+                .navigationDestination(for: RacketVideoRoute.self) { destination($0) }
+        }
+        .preferredColorScheme(.dark)
+        .tint(SnappetColor.brand)
+        .onAppear(perform: refreshFound)
+        .sheet(item: $editing) { p in
+            RacketSplitEditSheet(part: p, parts: draft, duration: draftDuration, unit: unit(draftFor)) { draft = $0 }
+        }
+        .sheet(item: $scoring) { t in
+            if let ex = store.ex(t.exerciseID) {
+                RacketScoreSheet(ex: ex, unitIndex: t.unitIndex, durationSec: nil) { log in
+                    store.saveScore(t.exerciseID, unit: t.unitIndex, log)
+                }
+            }
+        }
+        .sheet(item: Binding(get: { deleting.map(IDBox.init) }, set: { deleting = $0?.id })) { box in
+            RacketDeleteOriginalSheet(store: store, exerciseID: box.id) {
+                refreshFound()
+                path = [.videos]
+            }
+        }
+        .sheet(isPresented: $keeping) {
+            RacketKeepRalliesSheet(store: store) { refreshFound() }
+        }
+    }
+
+    private struct IDBox: Identifiable { let id: UUID }
+
+    private var draftDuration: Double { draftFor.flatMap { store.ex($0)?.racketRecordingLog?.timelineSec } ?? 0 }
+    private func unit(_ id: UUID?) -> RacketUnit { id.flatMap { store.ex($0)?.racketFormat.sport.unit } ?? .game }
+
+    private func refreshFound() {
+        let ids = session.exercises.flatMap { $0.racketRecordingLog.map(RacketVideoMap.neededIdentifiers) ?? [] }
+        found = RacketVideoLibrary.shared.found(ids)
+    }
+
+    @ViewBuilder private var root: some View {
+        switch start {
+        case .videos: videosList
+        case .keepRallies: videosList.onAppear { if !openedKeep { openedKeep = true; keeping = true } }
+        case .splitPrompt(let id): splitPrompt(id)
+        }
+    }
+
+    @ViewBuilder private func destination(_ r: RacketVideoRoute) -> some View {
+        switch r {
+        case .review(let id): splitReview(id)
+        case .assign(let id): splitAssign(id)
+        case .done(let id): splitDone(id)
+        case .drill(let id): drillVideos(id)
+        case .player(let ref, let only): RacketPlayerScreen(store: store, ref: ref, ralliesOnly: only)
+        case .timeline(let ref): RacketTimelineScreen(store: store, ref: ref) { path.append(.tagDone(ref)) }
+            onSummary: { path.append(.summary(ref)) }
+        case .tagDone(let ref): tagDone(ref)
+        case .summary(let ref): manualSummary(ref)
+        case .missing(let ref): originalMissing(ref)
+        case .videos: videosList
+        }
+    }
+
+    // MARK: Small pieces
+
+    private func closeButton(_ label: String = "Close") -> some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button(label) { onClose() }.accessibilityIdentifier("racket.videos.close")
+        }
+    }
+
+    private func panel<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) { c() }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pagerGlass(cornerRadius: 18)
+    }
+
+    private func note(_ s: String) -> some View {
+        Text(s).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func primary(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Text(label).frame(maxWidth: .infinity, minHeight: 30) }
+            .buttonStyle(SnappetWidePrimaryStyle())
+            .accessibilityIdentifier(id)
+    }
+
+    private func secondary(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                .frame(maxWidth: .infinity, minHeight: 44).multilineTextAlignment(.center)
+        }
+        .buttonStyle(.plain)
+        .pagerOutline()
+        .accessibilityIdentifier(id)
+    }
+
+    private func chipButton(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.brand)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    /// The recording as a strip of parts (TtSplitPrompt / TtSplitReview).
+    private func partStrip(_ parts: [RacketVideoPart], total: Double) -> some View {
+        GeometryReader { geo in
+            HStack(spacing: 2) {
+                ForEach(parts) { p in
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(stripColor(p))
+                        .frame(width: max(2, geo.size.width * p.durationSec / max(1, total) - 2))
+                }
+            }
+        }
+        .frame(height: 30)
+        .accessibilityElement()
+        .accessibilityLabel("Recording split into \(parts.count) parts")
+    }
+
+    private func stripColor(_ p: RacketVideoPart) -> Color {
+        switch RacketSplitReview.status(p) {
+        case .matched: return SnappetColor.brand
+        case .unsure: return SnappetColor.perfModerate
+        case .notCounted: return SnappetColor.textSecondary.opacity(0.35)
+        }
+    }
+
+    private func ensureDraft(_ id: UUID) {
+        guard draftFor != id, let ex = store.ex(id), let log = ex.racketRecordingLog else { return }
+        draftFor = id
+        if let s = log.split, !s.parts.isEmpty {
+            draft = s.parts
+        } else {
+            draft = RacketSplitProposal.propose(log: log, format: ex.racketFormat)
+        }
+        // Show the scores already logged (the Watch's) on the proposed games.
+        let out = RacketSplitAssign.apply(parts: draft, sets: ex.sets, base: log.baseIndex, startedAt: log.startedAt)
+        let known = ex.sets.count
+        draft = out.parts.map { p in var q = p; if let i = q.setIndex, i >= known { q.setIndex = nil }; return q }
+    }
+
+    // MARK: TtSplitPrompt
+
+    @ViewBuilder private func splitPrompt(_ id: UUID) -> some View {
+        let ex = store.ex(id)
+        let log = ex?.racketRecordingLog
+        let u = ex?.racketFormat.sport.unit ?? .game
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("\(RacketVideoTime.clock(log?.timelineSec ?? 0)) recorded")
+                    .font(.system(size: 28, weight: .light)).monospacedDigit()
+                    .accessibilityIdentifier("racket.split.recorded")
+                note(RacketSplitProposal.promptLine(draft, unit: u)).accessibilityIdentifier("racket.split.line")
+                partStrip(draft, total: log?.timelineSec ?? 1)
+                HStack(spacing: 14) {
+                    legend(SnappetColor.textSecondary.opacity(0.35), "Warmup and breaks")
+                    legend(SnappetColor.brand, "\(u.noun.capitalized)s")
+                    legend(SnappetColor.perfModerate, "Unsure")
+                }
+                primary("Review the split", id: "racket.split.review") { path.append(.review(id)) }
+                secondary("Keep as one video", id: "racket.split.keepOne") {
+                    store.logGames(id, parts: draft)
+                    store.updateLog(id) { $0.keptAsOne = true }
+                    path.append(.videos)
+                }
+                note("You can split it any time from Your videos. The original is never changed.")
+            }
+            .padding(20)
+        }
+        .navigationTitle("Recording saved")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Later") { store.logGames(id, parts: draft); path.append(.videos) }
+                    .accessibilityIdentifier("racket.split.later")
+            }
+        }
+        .navigationBarBackButtonHidden()
+        .onAppear { ensureDraft(id) }
+    }
+
+    private func legend(_ c: Color, _ s: String) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 12, height: 12)
+            Text(s).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize()
+        }
+    }
+
+    // MARK: TtSplitReview
+
+    @ViewBuilder private func splitReview(_ id: UUID) -> some View {
+        let ex = store.ex(id)
+        let u = ex?.racketFormat.sport.unit ?? .game
+        let ords = RacketSplitReview.ordinals(draft)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                partStrip(draft, total: draftDuration)
+                note("Found from your Watch taps and new-\(u.noun) marks, and breaks you marked. Rally activity needs a model, so tap a part to fix it.")
+                ForEach(Array(draft.enumerated()), id: \.element.id) { k, p in
+                    Button { editing = p } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(RacketSplitReview.name(p, ordinal: ords[p.id], unit: u))
+                                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                                Text(RacketSplitReview.detail(p, sets: ex?.sets ?? [], unit: u, isLast: k == draft.count - 1))
+                                    .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer(minLength: 6)
+                            let st = RacketSplitReview.status(p)
+                            Text(st.rawValue).font(.caption.weight(.semibold))
+                                .foregroundStyle(st == .matched ? SnappetColor.brand : st == .unsure ? SnappetColor.perfModerate : SnappetColor.textSecondary)
+                                .fixedSize()
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .pagerGlass(cornerRadius: 14)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("racket.split.part.\(k)")
+                }
+                primary("Looks right, apply", id: "racket.split.apply") { apply(id) }
+            }
+            .padding(20)
+        }
+        .navigationTitle("Split recording")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Apply") { apply(id) }.accessibilityIdentifier("racket.split.applyTop")
+            }
+        }
+        .onAppear { ensureDraft(id) }
+    }
+
+    private func apply(_ id: UUID) {
+        store.update(id) { e in
+            guard var l = e.racketRecordingLog else { return }
+            let parts = RacketSplitEditor.normalized(draft, duration: l.timelineSec)
+            let out = RacketSplitAssign.apply(parts: parts, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt)
+            e.sets = out.sets
+            l.split = RacketSplit(parts: out.parts, appliedAt: .now)
+            l.keptAsOne = nil
+            e.racketRecordingLog = l
+        }
+        draft = store.ex(id)?.racketRecordingLog?.split?.parts ?? draft
+        Haptics.success()
+        path.append(.assign(id))
+    }
+
+    // MARK: TtSplitAssign
+
+    @ViewBuilder private func splitAssign(_ id: UUID) -> some View {
+        let ex = store.ex(id)
+        let u = ex?.racketFormat.sport.unit ?? .game
+        let parts = ex?.racketRecordingLog?.split?.parts.filter { $0.kind == .game } ?? []
+        let sets = ex?.sets ?? []
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Match video to your \(u.noun)s").font(.system(size: 22, weight: .semibold))
+                note("Each part links to that \(u.noun). It stays inside the original video.")
+                ForEach(Array(parts.enumerated()), id: \.element.id) { k, p in
+                    HStack(spacing: 8) {
+                        Text(RacketSplitAssign.title(p, ordinal: k + 1, sets: sets, unit: u))
+                            .font(.system(size: 15, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        Text("→").foregroundStyle(SnappetColor.textSecondary)
+                        Text(RacketVideoTime.range(p.startSec, p.endSec))
+                            .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                    .padding(12).pagerGlass(cornerRadius: 14)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("racket.assign.row.\(k)")
+                }
+                if let missing = RacketSplitAssign.missingScore(parts: parts, sets: sets, unit: u) {
+                    panel {
+                        Text(missing.line).font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(SnappetColor.perfModerate)
+                            .accessibilityIdentifier("racket.assign.missing")
+                        note("It shows as “Score unconfirmed” and counts for neither side until you enter it.")
+                        chipButton("Enter the score", id: "racket.assign.enterScore") {
+                            if let i = missing.part.setIndex {
+                                scoring = RacketScoreTarget(exerciseID: id, unitIndex: i, durationSec: nil)
+                            }
+                        }
+                    }
+                }
+                primary("Save", id: "racket.assign.save") { path.append(.done(id)) }
+            }
+            .padding(20)
+        }
+        .navigationTitle(ex.map { "Match \($0.racketMatchTitle)" } ?? "Match")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { path.append(.done(id)) }.accessibilityIdentifier("racket.assign.done")
+            }
+        }
+    }
+
+    // MARK: TtSplitDone
+
+    @ViewBuilder private func splitDone(_ id: UUID) -> some View {
+        let ex = store.ex(id)
+        let u = ex?.racketFormat.sport.unit ?? .game
+        let parts = ex?.racketRecordingLog?.split?.countedParts ?? []
+        let ords = RacketSplitReview.ordinals(parts)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("\(parts.count) \(parts.count == 1 ? "part" : "parts") saved")
+                    .font(.system(size: 28, weight: .light))
+                    .accessibilityIdentifier("racket.splitDone.count")
+                note("Each \(u.noun) is now its own part of the original video, ready for rallies. No extra space used.")
+                ForEach(parts) { p in
+                    HStack {
+                        Text(RacketSplitReview.name(p, ordinal: ords[p.id], unit: u)).font(SnappetType.body)
+                        Spacer()
+                        Text(RacketVideoTime.clock(p.durationSec)).font(SnappetType.body.monospacedDigit())
+                            .foregroundStyle(SnappetColor.textSecondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                if ex?.racketRecordingLog?.originalDeleted != true {
+                    secondary("Delete the long original…", id: "racket.splitDone.delete") { deleting = id }
+                }
+                note(RacketRallyFinding.notYetLine(ex?.racketFormat.sport ?? .tableTennis)
+                     + " Mark and tag rallies from Your videos.")
+                primary("Done", id: "racket.splitDone.done") { path.append(.videos) }
+            }
+            .padding(20)
+        }
+        .navigationTitle("Split saved")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+    }
+
+    // MARK: Your videos (FindRallies / TtNoModelVideos)
+
+    private var racketEntities: [SessionExercise] {
+        session.exercises.filter { $0.discipline == .racket && $0.racketRecordingLog != nil }
+    }
+
+    @ViewBuilder private var videosList: some View {
+        let sport = racketEntities.first?.racketSport ?? session.exercises.first { $0.discipline == .racket }?.racketSport ?? .tableTennis
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if RacketRallyFinding.availability(for: sport) == .notYet {
+                    panel {
+                        Text(RacketRallyFinding.notYetLine(sport)).font(.system(size: 15, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("racket.videos.notYet")
+                        note("You can still watch, mark rallies and tag them yourself.")
+                    }
+                }
+                if racketEntities.isEmpty {
+                    note("No recordings yet. Choose “Everything” when you set up a match or a drill.")
+                        .accessibilityIdentifier("racket.videos.empty")
+                }
+                ForEach(racketEntities) { ex in entitySection(ex) }
+                let keep = RacketKeepRallies.plan(session.exercises)
+                if keep.canKeep {
+                    secondary("Keep rallies only…", id: "racket.videos.keepRallies") { keeping = true }
+                }
+                note("When a model passes its test for \(sport.label.lowercased()), Find rallies appears here.")
+            }
+            .padding(20)
+        }
+        .navigationTitle("Your videos")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+        .toolbar { closeButton() }
+        .onAppear(perform: refreshFound)
+    }
+
+    @ViewBuilder private func entitySection(_ ex: SessionExercise) -> some View {
+        let log = ex.racketRecordingLog
+        let state = log.map { RacketOriginalCheck.state(needed: RacketVideoMap.neededIdentifiers($0), found: found) } ?? .noVideo
+        VStack(alignment: .leading, spacing: 10) {
+            Text(ex.isRacketDrill ? (ex.displayName ?? "Drill") : "Match \(ex.racketMatchTitle)").snappetLabel()
+            if case .missing = state {
+                Text("Original video not found").font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                    .accessibilityIdentifier("racket.videos.missing")
+            }
+            if ex.isRacketDrill {
+                panel {
+                    Text(RacketVideoRows.drillHeader(ex)).font(SnappetType.body)
+                    chipButton("Drill videos", id: "racket.videos.drill") { path.append(.drill(ex.id)) }
+                }
+            } else {
+                ForEach(Array(RacketVideoRows.rows(for: ex).enumerated()), id: \.element.id) { k, row in
+                    videoRow(ex, row, index: k, state: state)
+                }
+            }
+        }
+    }
+
+    private func ref(_ ex: SessionExercise, _ row: RacketVideoRow) -> RacketPartRef {
+        RacketPartRef(exerciseID: ex.id, title: ex.isRacketDrill ? row.title : "\(row.title) video",
+                      startSec: row.startSec, endSec: row.endSec, setIndex: row.setIndex)
+    }
+
+    @ViewBuilder private func videoRow(_ ex: SessionExercise, _ row: RacketVideoRow, index k: Int,
+                                       state: RacketOriginalCheck.State) -> some View {
+        let r = ref(ex, row)
+        panel {
+            HStack(alignment: .firstTextBaseline) {
+                Text(row.title).font(.system(size: 17, weight: .semibold))
+                Spacer()
+                if let chip = row.scoreChip {
+                    Text(chip).font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.perfModerate)
+                        .accessibilityIdentifier("racket.videos.chip.\(k)")
+                }
+            }
+            Text(row.line).font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.videos.line.\(k)")
+            Text(row.tagLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.videos.tags.\(k)")
+            FlowRow {
+                chipButton("Play", id: "racket.videos.play.\(k)") {
+                    if case .missing = state { path.append(.missing(r)) } else { path.append(.player(r, ralliesOnly: false)) }
+                }
+                chipButton("Mark rallies", id: "racket.videos.mark.\(k)") { path.append(.timeline(r)) }
+                if row.rallies > 0 {
+                    chipButton("See your tags", id: "racket.videos.seeTags.\(k)") { path.append(.summary(r)) }
+                }
+                if let i = row.setIndex, ex.isRacketMatch {
+                    chipButton("Edit score", id: "racket.videos.score.\(k)") {
+                        scoring = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil)
+                    }
+                }
+                if row.kind == .whole {
+                    chipButton("Split recording", id: "racket.videos.split") { path.append(.review(ex.id)) }
+                }
+            }
+        }
+    }
+
+    // MARK: TtDrillVideos
+
+    @ViewBuilder private func drillVideos(_ id: UUID) -> some View {
+        let ex = store.ex(id)
+        let rows = ex.map(RacketVideoRows.rows(for:)) ?? []
+        let rallies = ex?.racketRecordingLog?.allRallies ?? []
+        let longest = rallies.filter(\.isRally).max { $0.durationSec < $1.durationSec }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your drill videos").font(.system(size: 22, weight: .semibold))
+                note(ex.map(RacketVideoRows.drillHeader) ?? "")
+                ForEach(Array(rows.enumerated()), id: \.element.id) { k, row in
+                    let r = RacketPartRef(exerciseID: id, title: row.title, startSec: row.startSec, endSec: row.endSec,
+                                          setIndex: row.setIndex)
+                    let s = RacketTagSummary.make(RacketRallyMarking.inRange(rallies, row.startSec, row.endSec),
+                                                  sport: ex?.racketSport ?? .tableTennis)
+                    panel {
+                        Text(row.title).font(.system(size: 17, weight: .semibold))
+                        Text(s.marked > 0 ? "\(s.marked) rallies · \(RacketVideoTime.clock(row.endSec - row.startSec))"
+                                          : "\(RacketVideoTime.clock(row.endSec - row.startSec)) · not marked")
+                            .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                            .accessibilityIdentifier("racket.drill.line.\(k)")
+                        if let l = s.longestSec { note("Longest \(RacketTagSummary.seconds(l))") }
+                        FlowRow {
+                            if s.marked > 0 {
+                                chipButton("Play rallies only", id: "racket.drill.rallies.\(k)") { path.append(.player(r, ralliesOnly: true)) }
+                            }
+                            chipButton(s.marked > 0 ? "Full block" : "Play block", id: "racket.drill.play.\(k)") {
+                                path.append(.player(r, ralliesOnly: false))
+                            }
+                            chipButton("Mark rallies", id: "racket.drill.mark.\(k)") { path.append(.timeline(r)) }
+                        }
+                    }
+                }
+                if let longest, let row = rows.first(where: { longest.startSec >= $0.startSec && longest.startSec < $0.endSec }) {
+                    secondary("Watch the longest rally", id: "racket.drill.longest") {
+                        path.append(.player(RacketPartRef(exerciseID: id, title: row.title, startSec: longest.startSec,
+                                                          endSec: longest.endSec, setIndex: row.setIndex), ralliesOnly: false))
+                    }
+                }
+                note("Blocks and rests come from your timers. A drill keeps its one recording; it never offers to delete the original.")
+            }
+            .padding(20)
+        }
+        .navigationTitle(ex?.displayName ?? "Drill videos")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: TtTagDone
+
+    @ViewBuilder private func tagDone(_ ref: RacketPartRef) -> some View {
+        let ex = store.ex(ref.exerciseID)
+        let rallies = RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        let s = RacketTagSummary.make(rallies, sport: ex?.racketSport ?? .tableTennis)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(s.checkedLine).font(.system(size: 28, weight: .light)).accessibilityIdentifier("racket.tagDone.checked")
+                note("Your tags are what Snappet uses everywhere: stats, timeline, player and reels.")
+                panel {
+                    statLine("Tagged by you", "\(s.tagged) \(s.tagged == 1 ? "rally" : "rallies")")
+                    statLine("Snappet’s guesses", "None, no model yet")
+                    statLine("Left to tag", "\(s.untagged)")
+                }
+                if s.untagged > 0 {
+                    // Review5: this button was unwired on the board.
+                    primary("Tag winners for the rest", id: "racket.tagDone.rest") {
+                        path.removeLast()
+                        path.append(.timeline(ref))
+                    }
+                }
+                secondary("Open timeline", id: "racket.tagDone.timeline") { path.removeLast() }
+                secondary("See your tags", id: "racket.tagDone.summary") { path.append(.summary(ref)) }
+            }
+            .padding(20)
+        }
+        .navigationTitle(ref.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { path = [.videos] }.accessibilityIdentifier("racket.tagDone.done")
+            }
+        }
+    }
+
+    private func statLine(_ k: String, _ v: String) -> some View {
+        HStack {
+            Text(k).font(SnappetType.body)
+            Spacer()
+            Text(v).font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+        }
+    }
+
+    // MARK: TtManualSummary ("From your tags")
+
+    @ViewBuilder private func manualSummary(_ ref: RacketPartRef) -> some View {
+        let ex = store.ex(ref.exerciseID)
+        let sport = ex?.racketSport ?? .tableTennis
+        let rallies = RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        let s = RacketTagSummary.make(rallies, sport: sport)
+        let sides = RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
+        let scoreState = ref.setIndex.flatMap { i in ex.flatMap { i < $0.sets.count ? $0.sets[i].racketScoreState : nil } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let st = scoreState {
+                    HStack {
+                        Text(scoreHeadline(st)).font(.system(size: 28, weight: .light)).monospacedDigit()
+                            .accessibilityIdentifier("racket.summary.score")
+                        Spacer()
+                        if let i = ref.setIndex {
+                            chipButton("Edit score", id: "racket.summary.editScore") {
+                                scoring = RacketScoreTarget(exerciseID: ref.exerciseID, unitIndex: i, durationSec: nil)
+                            }
+                        }
+                    }
+                }
+                Text("Source: your tags · No model for \(sport.label.lowercased())").snappetLabel()
+                HStack(spacing: 10) {
+                    bigStat("\(s.marked)", "rallies marked", id: "racket.summary.marked")
+                    bigStat("\(s.tagged)", "tagged", id: "racket.summary.tagged")
+                    bigStat(s.longestSec.map(RacketTagSummary.seconds) ?? "—", "longest rally", id: "racket.summary.longest")
+                }
+                panel {
+                    Text("Who won your tagged rallies").snappetLabel()
+                    bar(sides.us, s.wonUs, of: max(1, s.wonUs + s.wonThem), id: "racket.summary.won.us")
+                    bar(sides.them, s.wonThem, of: max(1, s.wonUs + s.wonThem), id: "racket.summary.won.them")
+                }
+                if !s.endings.isEmpty {
+                    panel {
+                        Text("How rallies ended").snappetLabel()
+                        ForEach(s.endings, id: \.ending) { e in
+                            bar(e.ending.label, e.count, of: max(1, s.endings.first?.count ?? 1), id: "racket.summary.ending.\(e.ending.rawValue)")
+                        }
+                    }
+                }
+                Text(s.sourceLine).font(.system(size: 15, weight: .semibold)).accessibilityIdentifier("racket.summary.source")
+                note("Rally times come from your marks. Shot counts and ball path need a model, so they aren’t shown. These count in your history and trends like any other numbers.")
+                if s.marked > 0 {
+                    primary("Play your rallies", id: "racket.summary.play") { path.append(.player(ref, ralliesOnly: true)) }
+                }
+                secondary("Keep marking", id: "racket.summary.keepMarking") {
+                    if path.count >= 2, case .timeline = path[path.count - 2] { path.removeLast() } else { path.append(.timeline(ref)) }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle(ref.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { path = [.videos] }.accessibilityIdentifier("racket.summary.done")
+            }
+        }
+    }
+
+    private func scoreHeadline(_ st: RacketScoreState) -> String {
+        switch st {
+        case .confirmed(let s): return "\(s.scoreFor > s.scoreAgainst ? "Won" : "Lost") \(s.label)"
+        case .fromWatch(let s): return "\(s.scoreFor > s.scoreAgainst ? "Won" : "Lost") \(s.label) · from Watch"
+        case .unconfirmed: return RacketScoreState.unconfirmedLabel
+        }
+    }
+
+    private func bigStat(_ v: String, _ k: String, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(v).font(.system(size: 26, weight: .light)).monospacedDigit().accessibilityIdentifier(id)
+            Text(k).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12).pagerGlass(cornerRadius: 14)
+    }
+
+    private func bar(_ label: String, _ n: Int, of total: Int, id: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(SnappetType.body).frame(width: 110, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            GeometryReader { g in
+                Capsule().fill(SnappetColor.brand).frame(width: max(4, g.size.width * Double(n) / Double(total)))
+            }
+            .frame(height: 8)
+            Text("\(n)").font(SnappetType.body.monospacedDigit()).frame(width: 30, alignment: .trailing)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(id)
+    }
+
+    // MARK: TtOriginalMissing
+
+    @ViewBuilder private func originalMissing(_ ref: RacketPartRef) -> some View {
+        let ids = store.ex(ref.exerciseID)?.racketRecordingLog.map(RacketVideoMap.neededIdentifiers) ?? []
+        VStack(alignment: .leading, spacing: 14) {
+            Text("This video isn’t on your phone").font(.system(size: 22, weight: .semibold))
+                .accessibilityIdentifier("racket.missing.title")
+            Text("Deleted, edited or stored only in iCloud").snappetLabel()
+            note("The parts and timeline point into Photos videos, and Snappet can’t find them right now.")
+            primary("Download from iCloud", id: "racket.missing.download") {
+                Task {
+                    _ = await RacketVideoLibrary.shared.download(ids)
+                    refreshFound()
+                    if case .available = RacketOriginalCheck.state(needed: ids, found: found) {
+                        path.removeLast()
+                        path.append(.player(ref, ralliesOnly: false))
+                    }
+                }
+            }
+            secondary("Find it in Photos", id: "racket.missing.photos") { RacketVideoLibrary.shared.openPhotos() }
+            secondary("Keep tags and stats only", id: "racket.missing.keep") { path.removeLast() }
+            note("Your scores, tags and stats are safe either way. Only playback needs the video.")
+            Spacer()
+        }
+        .padding(20)
+        .navigationTitle(ref.title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - TtSplitEdit ("Fix one part")
+
+struct RacketSplitEditSheet: View {
+    let part: RacketVideoPart
+    let parts: [RacketVideoPart]
+    let duration: Double
+    let unit: RacketUnit
+    let onSave: ([RacketVideoPart]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var work: [RacketVideoPart] = []
+    @State private var configured = false
+
+    private var current: RacketVideoPart? { work.first { $0.id == part.id } }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let p = current {
+                        Text(RacketVideoTime.range(p.startSec, p.endSec)).font(.system(size: 28, weight: .light)).monospacedDigit()
+                            .accessibilityIdentifier("racket.split.edit.range")
+                        Text("Drag to where it starts and ends").snappetLabel()
+                        RacketRangeStrip(start: p.startSec, end: p.endSec,
+                                         window: windowRange(p)) { s, e in
+                            work = RacketSplitEditor.setBounds(work, id: p.id, start: s, end: e, duration: duration)
+                        }
+                        edgeRow("Starts", value: p.startSec, id: "start") { d in
+                            work = RacketSplitEditor.setBounds(work, id: p.id, start: p.startSec + d, end: p.endSec, duration: duration)
+                        }
+                        edgeRow("Ends", value: p.endSec, id: "end") { d in
+                            work = RacketSplitEditor.setBounds(work, id: p.id, start: p.startSec, end: p.endSec + d, duration: duration)
+                        }
+                        Text("What is this part?").snappetLabel()
+                        FlowRow {
+                            ForEach(RacketPartKind.editChoices, id: \.self) { k in
+                                choice(k.label(unit: unit), selected: p.kind == k, id: "racket.split.edit.kind.\(k.rawValue)") {
+                                    work = RacketSplitEditor.setKind(work, id: p.id, kind: k)
+                                }
+                            }
+                        }
+                        if p.kind == .unsure || p.kind == .game {
+                            Text("Belongs to").snappetLabel()
+                            FlowRow {
+                                ForEach(RacketPartBelongs.allCases, id: \.self) { b in
+                                    choice(b.label(unit: unit), selected: p.belongs == b, id: "racket.split.edit.belongs.\(b.rawValue)") {
+                                        work = RacketSplitEditor.setBelongs(work, id: p.id, belongs: b)
+                                    }
+                                }
+                            }
+                        }
+                        HStack(spacing: 10) {
+                            outline("Split here", id: "racket.split.edit.splitHere") {
+                                work = RacketSplitEditor.split(work, id: p.id, at: (p.startSec + p.endSec) / 2)
+                            }
+                            outline("Merge with next", id: "racket.split.edit.merge") {
+                                work = RacketSplitEditor.mergeWithNext(work, id: p.id)
+                            }
+                        }
+                        Text("Split here cuts this part in the middle; adjust each half after.")
+                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("Fix one part")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(work); dismiss() }.accessibilityIdentifier("racket.split.edit.save")
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear { if !configured { configured = true; work = parts } }
+    }
+
+    private func windowRange(_ p: RacketVideoPart) -> ClosedRange<Double> {
+        let i = work.firstIndex { $0.id == p.id } ?? 0
+        let lo = i > 0 ? work[i - 1].startSec : 0
+        let hi = i < work.count - 1 ? work[i + 1].endSec : duration
+        return lo...max(lo + 1, hi)
+    }
+
+    private func edgeRow(_ label: String, value: Double, id: String, nudge: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(SnappetType.body)
+            Text(RacketVideoTime.clock(value)).font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+            Spacer()
+            ForEach([(-10.0, "−10 s"), (-1.0, "−1 s"), (1.0, "+1 s"), (10.0, "+10 s")], id: \.0) { d, t in
+                Button(t) { nudge(d) }
+                    .font(.system(size: 13, weight: .semibold))
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("racket.split.edit.\(id).\(Int(d))")
+            }
+        }
+    }
+
+    private func choice(_ label: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: { action(); Haptics.tap() }) {
+            Text(label).font(.system(size: 14, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.black : SnappetColor.ink)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(selected ? SnappetColor.brand : Color.clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(SnappetColor.hairline))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func outline(_ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain).pagerOutline()
+        .accessibilityIdentifier(id)
+    }
+}
+
+/// A strip with draggable start / end handles over `window` (FixRally / SplitEdit "film strip").
+struct RacketRangeStrip: View {
+    let start: Double
+    let end: Double
+    let window: ClosedRange<Double>
+    let onChange: (Double, Double) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width
+            let span = max(0.001, window.upperBound - window.lowerBound)
+            let x0 = (start - window.lowerBound) / span * w
+            let x1 = (end - window.lowerBound) / span * w
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 6).fill(SnappetColor.hairline.opacity(0.6))
+                RoundedRectangle(cornerRadius: 6).fill(SnappetColor.brand.opacity(0.35))
+                    .frame(width: max(2, x1 - x0)).offset(x: x0)
+                handle.offset(x: x0 - 8)
+                    .gesture(DragGesture().onChanged { v in
+                        onChange(window.lowerBound + min(max(0, v.location.x), w) / w * span, end)
+                    })
+                handle.offset(x: x1 - 8)
+                    .gesture(DragGesture().onChanged { v in
+                        onChange(start, window.lowerBound + min(max(0, v.location.x), w) / w * span)
+                    })
+            }
+        }
+        .frame(height: 48)
+        .accessibilityElement()
+        .accessibilityLabel("From \(RacketVideoTime.clock(start)) to \(RacketVideoTime.clock(end))")
+    }
+
+    private var handle: some View {
+        RoundedRectangle(cornerRadius: 4).fill(SnappetColor.brand).frame(width: 16, height: 48)
+    }
+}
+
+// MARK: - TtDeleteOriginal
+
+struct RacketDeleteOriginalSheet: View {
+    let store: RacketVideoStore
+    let exerciseID: UUID
+    let onDone: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirming = false
+    @State private var working: String?
+    @State private var failure: String?
+
+    var body: some View {
+        let log = store.ex(exerciseID)?.racketRecordingLog
+        let plan = log.map(RacketVideoSpace.deletePlan) ?? RacketVideoSpace.DeletePlan(parts: [], keepSec: 0, neededBytes: 0, originals: 0)
+        let free = RacketRecorder.storage()?.free
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Save parts, then delete").font(.system(size: 22, weight: .semibold))
+                    Text("Snappet first saves each part as its own video in Photos. Only then is the original deleted.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 10) {
+                        row("Parts to save", RacketVideoSpace.partsLine(plan), id: "racket.delete.parts")
+                        row("Space needed", RacketVideoSpace.size(plan.neededBytes), id: "racket.delete.needed")
+                        if let free { row("Space free", RacketStorageCheck.gigabytes(free), id: "racket.delete.free") }
+                        row("Not kept", "Warmup, breaks and parts you marked “not play”", id: "racket.delete.notKept")
+                    }
+                    .padding(14).pagerGlass(cornerRadius: 18)
+                    if let working {
+                        ProgressView(working).accessibilityIdentifier("racket.delete.progress")
+                    }
+                    if let failure {
+                        Text(failure).font(SnappetType.detail).foregroundStyle(SnappetColor.perfHard)
+                            .accessibilityIdentifier("racket.delete.failure")
+                    }
+                    Button { confirming = true } label: {
+                        Text("Save parts, then delete").font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(SnappetColor.perfHard)
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .overlay(Capsule().strokeBorder(SnappetColor.perfHard, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!plan.canDelete || !plan.fits(freeBytes: free) || working != nil)
+                    .accessibilityIdentifier("racket.delete.start")
+                    Text(plan.fits(freeBytes: free) ? "iOS asks you to confirm the deletion. Your tags and stats stay."
+                                                    : "Not enough space to save the parts first. Free some space, then try again.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(20)
+            }
+            .navigationTitle("Delete original")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .confirmationDialog("Delete the long original?", isPresented: $confirming, titleVisibility: .visible) {
+                Button("Save \(plan.parts.count) parts, then delete", role: .destructive) { run(plan) }
+                    .accessibilityIdentifier("racket.delete.confirm")
+            } message: {
+                Text("Each part is saved to Photos first. Then iOS asks you to confirm deleting the original.")
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func row(_ k: String, _ v: String, id: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(k).font(SnappetType.body)
+            Spacer(minLength: 10)
+            Text(v).font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(id)
+    }
+
+    /// Save every kept part as a new Photos video; only when all are saved, delete the originals (iOS confirms).
+    private func run(_ plan: RacketVideoSpace.DeletePlan) {
+        guard let log = store.ex(exerciseID)?.racketRecordingLog else { return }
+        Task {
+            var made: [RacketDerivedVideo] = []
+            do {
+                for (k, p) in plan.parts.enumerated() {
+                    working = "Saving part \(k + 1) of \(plan.parts.count)…"
+                    let segs = RacketVideoMap.segments(start: p.startSec, end: p.endSec, log: log)
+                    let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, p.startSec, p.endSec)])
+                    made.append(RacketDerivedVideo(localIdentifier: id, startSec: p.startSec, endSec: p.endSec))
+                }
+                store.updateLog(exerciseID) { $0.derived = ($0.derived ?? []) + made }
+                working = "Deleting the original…"
+                try await RacketVideoLibrary.shared.delete(log.assets.map(\.localIdentifier))
+                store.updateLog(exerciseID) { $0.originalDeleted = true }
+                working = nil
+                Haptics.success()
+                dismiss()
+                onDone()
+            } catch {
+                // The parts already saved stay in Photos and on the log; the original is kept.
+                if !made.isEmpty { store.updateLog(exerciseID) { $0.derived = ($0.derived ?? []) + made } }
+                working = nil
+                failure = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - TtKeepRallies
+
+struct RacketKeepRalliesSheet: View {
+    let store: RacketVideoStore
+    let onDone: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirming = false
+    @State private var working: String?
+    @State private var failure: String?
+
+    var body: some View {
+        let plan = RacketKeepRallies.plan(store.session.exercises)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Keep the rallies, free up space").font(.system(size: 22, weight: .semibold))
+                    Text("Snappet saves each rally as its own video in Photos. Only then does it offer to delete today’s full videos.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 10) {
+                        line("Full videos today", "\(plan.fullVideos)", id: "racket.keep.full")
+                        line("Rallies to keep", RacketKeepRallies.ralliesLine(plan), id: "racket.keep.count")
+                        if let src = RacketKeepRallies.sourceLine(plan) { line("From", src, id: "racket.keep.source") }
+                        line("Space freed", RacketVideoSpace.size(plan.freedBytes), id: "racket.keep.freed")
+                        line("Not kept", "Time between rallies, warmup and breaks", id: "racket.keep.notKept")
+                    }
+                    .padding(14).pagerGlass(cornerRadius: 18)
+                    if let working { ProgressView(working) }
+                    if let failure {
+                        Text(failure).font(SnappetType.detail).foregroundStyle(SnappetColor.perfHard)
+                    }
+                    Button { confirming = true } label: {
+                        Text("Save rallies, then delete").font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(SnappetColor.perfHard)
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .overlay(Capsule().strokeBorder(SnappetColor.perfHard, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!plan.canKeep || working != nil)
+                    .accessibilityIdentifier("racket.keep.save")
+                    Text("iOS asks you to confirm the deletion. Your scores, tags and stats stay.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                }
+                .padding(20)
+            }
+            .navigationTitle("Keep rallies only")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .confirmationDialog("Keep rallies only?", isPresented: $confirming, titleVisibility: .visible) {
+                Button("Save \(plan.rallies) rallies, then delete", role: .destructive) { run() }
+                    .accessibilityIdentifier("racket.keep.confirm")
+            } message: {
+                Text("Rallies are saved to Photos first. Then iOS asks you to confirm deleting today’s full videos.")
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func line(_ k: String, _ v: String, id: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(k).font(SnappetType.body)
+            Spacer(minLength: 10)
+            Text(v).font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(id)
+    }
+
+    private func run() {
+        Task {
+            do {
+                for ex in store.session.exercises where ex.discipline == .racket {
+                    guard let log = ex.racketRecordingLog, log.originalDeleted != true, !log.assets.isEmpty else { continue }
+                    let ranges = RacketKeepRallies.ranges(log.allRallies, duration: log.timelineSec)
+                    guard !ranges.isEmpty else { continue }
+                    var made: [RacketDerivedVideo] = []
+                    for (k, r) in ranges.enumerated() {
+                        working = "Saving rally video \(k + 1) of \(ranges.count)…"
+                        let segs = RacketVideoMap.segments(start: r.lowerBound, end: r.upperBound, log: log)
+                        let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, r.lowerBound, r.upperBound)])
+                        made.append(RacketDerivedVideo(localIdentifier: id, startSec: r.lowerBound, endSec: r.upperBound))
+                    }
+                    store.updateLog(ex.id) { $0.derived = made }
+                    working = "Deleting the full videos…"
+                    try await RacketVideoLibrary.shared.delete(log.assets.map(\.localIdentifier))
+                    store.updateLog(ex.id) { $0.originalDeleted = true }
+                }
+                working = nil
+                Haptics.success()
+                dismiss()
+                onDone()
+            } catch {
+                working = nil
+                failure = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Layout helper
+
+/// Wraps its children onto as many lines as they need (chips never truncate).
+struct FlowRow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, widest: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.init(width: maxW, height: nil))
+            if x > 0, x + size.width > maxW { y += rowH + spacing; x = 0; rowH = 0 }
+            x += size.width + spacing
+            rowH = max(rowH, size.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: proposal.width ?? widest, height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.init(width: bounds.width, height: nil))
+            if x > bounds.minX, x + size.width > bounds.maxX { y += rowH + spacing; x = bounds.minX; rowH = 0 }
+            s.place(at: CGPoint(x: x, y: y), proposal: .init(size))
+            x += size.width + spacing
+            rowH = max(rowH, size.height)
+        }
+    }
+}

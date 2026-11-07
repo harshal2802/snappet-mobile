@@ -218,7 +218,10 @@ enum RacketWatchBridge {
         case .notYet, .endUnit:
             break
         case .pointUs, .pointThem:
+            let firstOfGame = score.isEmpty
             guard m.phase == .recordingMatch, score.point(command == .pointUs ? .us : .them) else { break }
+            // Play has started: the split tells a warmup / break from the game after it (prompt 246).
+            if firstOfGame { m.mark(.firstPoint, now: now) }
             if let r = score.result {
                 // A finished game is a new game on the recording, for the split (step 3).
                 m.mark(.newGame, now: now)

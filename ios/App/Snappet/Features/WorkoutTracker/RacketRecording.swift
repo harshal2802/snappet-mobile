@@ -379,7 +379,9 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
         var endReasonRaw: String?
     }
     /// `breakStart`: "Break starts" from the Watch (XxWatchMark, prompt 245) — a break between games, for the split.
-    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart }
+    /// `firstPoint`: the first point of a game tapped on the Watch (prompt 246) — play has started, so the split can
+    /// tell a warmup or a break from the game after it. Not a user mark.
+    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart, firstPoint }
     struct Mark: Codable, Hashable, Sendable {
         var kindRaw: String
         /// The block's / rest's 0-based block index; nil for a moment.
@@ -394,6 +396,24 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var assets: [Asset] = []
     var marks: [Mark] = []
     var endedAt: Date?
+
+    // Step 3 (prompt 246) — additive Optionals: old logs decode with nil.
+    /// How many units / blocks the entity had logged when this recording began; the recording's own games / blocks
+    /// are `sets[baseSetIndex...]`. `nil` ⇒ 0.
+    var baseSetIndex: Int?
+    /// `RacketRecordingQuality.rawValue` it was recorded at (the space estimates).
+    var qualityRaw: String?
+    /// The split into games, breaks and so on: time ranges on this recording (`RacketVideoSplit.swift`).
+    var split: RacketSplit?
+    /// "Keep as one video" on the split prompt: don't offer the split again (it stays in Your videos).
+    var keptAsOne: Bool?
+    /// Rallies marked and tagged on this recording, as time ranges on it (`RacketRallyTags.swift`).
+    var rallies: [RacketRally]?
+    /// New Photos videos made from this recording: one per part when the original was deleted, or one per kept
+    /// rally stretch ("Keep rallies only"). Times are on this recording's timeline.
+    var derived: [RacketDerivedVideo]?
+    /// The original parts were deleted from Photos (only after the derived videos were saved).
+    var originalDeleted: Bool?
 
     init(startedAt: Date) { self.startedAt = startedAt }
 
@@ -526,7 +546,7 @@ enum RacketRecordingEndRoute: Equatable, Sendable {
     case score
     /// A drill (any mode): the drill review.
     case drillReview
-    /// A whole-match recording: the split prompt (a placeholder until step 3).
+    /// A whole-match recording: the split prompt (prompt 246, `RacketVideoViews.swift`).
     case splitPrompt
 }
 
@@ -625,6 +645,10 @@ struct RacketRecordingMachine: Equatable, Sendable {
     let recording: RacketRecordingMode
     /// "Still playing?" threshold in seconds; `nil` ⇒ off.
     let stillPlayingSec: TimeInterval?
+    /// Units / blocks already logged when the recording began, and the quality it records at (prompt 246: the split
+    /// reads the recording's own games from here; the space estimates use the quality). Stamped on the log.
+    var baseSetIndex: Int?
+    var quality: RacketRecordingQuality?
 
     private(set) var phase: Phase = .ready
     /// The camera is (meant to be) writing.
@@ -764,7 +788,8 @@ struct RacketRecordingMachine: Equatable, Sendable {
 
     /// "Mark this moment" / "New game starts" / "Break starts" (the Watch, prompt 245).
     mutating func mark(_ kind: RacketRecordingLog.MarkKind, now: Date) {
-        guard phase == .recordingMatch, kind == .moment || kind == .newGame || kind == .breakStart else { return }
+        guard phase == .recordingMatch,
+              kind == .moment || kind == .newGame || kind == .breakStart || kind == .firstPoint else { return }
         touch(now)
         guard var l = log else { return }
         l.marks.append(.init(kindRaw: kind.rawValue, index: nil, startSec: l.offset(now), endSec: nil))
@@ -938,7 +963,12 @@ struct RacketRecordingMachine: Equatable, Sendable {
 
     private mutating func beginRun(_ now: Date) -> [Effect] {
         guard recording == .everything else { return [] }
-        if log == nil { log = RacketRecordingLog(startedAt: now) }
+        if log == nil {
+            var l = RacketRecordingLog(startedAt: now)
+            l.baseSetIndex = baseSetIndex
+            l.qualityRaw = quality?.rawValue
+            log = l
+        }
         guard !capturing, var l = log else { return [] }
         l.runs.append(.init(startSec: l.offset(now), endSec: nil, endReasonRaw: nil))
         log = l

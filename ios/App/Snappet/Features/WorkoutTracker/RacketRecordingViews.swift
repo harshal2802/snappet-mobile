@@ -320,10 +320,8 @@ struct RacketRecordingCover: View {
     let onBlockLogged: (Int, TimeInterval) -> Void
     /// End routed to "confirm the score" (game by game).
     let onScore: () -> Void
-    /// After a whole-match recording: a game's score entered (log, set index).
-    let onSaveScore: (SetLog, Int) -> Void
-    /// …or left for later ("Score unconfirmed").
-    let onScoreLater: () -> Void
+    /// The session, for the split flow after a whole-match recording (prompt 246: it edits the match directly).
+    var session: WorkoutSession? = nil
     /// A game / set tallied point by point on the Apple Watch finished: log it "from Watch" (prompt 245).
     var onWatchUnit: (SetLog) -> Void = { _ in }
     let onClose: () -> Void
@@ -340,10 +338,8 @@ struct RacketRecordingCover: View {
     /// Measured write rate + live free space (sampled every 5 s) for "space left".
     @State private var meter = RacketWriteRateMeter()
     @State private var ticks = 0
-    /// Games already logged when the recording began; the scores step asks for the ones after.
+    /// Games already logged when the recording began; the split reads the recording's own games from here.
     @State private var baseSets = 0
-    @State private var gamesToScore: Int?
-    @State private var scoreTarget: RacketScoreTarget?
     /// The Watch's point tally for the game being played (a match recording everything, prompt 245).
     @State private var liveScore: RacketLiveScore?
     /// Units the Watch logged during this recording (the next one's rules — a super tiebreak — follow from it).
@@ -353,6 +349,15 @@ struct RacketRecordingCover: View {
     private var title: String { ex.isRacketMatch ? ex.racketMatchTitle : (ex.displayName ?? "Drill") }
 
     var body: some View {
+        if let session, let m = machine, m.phase == .ended(.splitPrompt) {
+            // TtSplitPrompt → Review → Assign → Done (prompt 246), in place of step 1's "Recording saved" placeholder.
+            RacketVideosCover(session: session, start: .splitPrompt(ex.id), onClose: onClose)
+        } else {
+            recordingBody
+        }
+    }
+
+    private var recordingBody: some View {
         ZStack {
             background
             VStack(spacing: 14) {
@@ -392,9 +397,6 @@ struct RacketRecordingCover: View {
         } message: {
             Text("Everything so far is saved in your Photos library.")
         }
-        .sheet(item: $scoreTarget) { t in
-            RacketScoreSheet(ex: ex, unitIndex: t.unitIndex, durationSec: nil) { log in onSaveScore(log, t.unitIndex) }
-        }
     }
 
     /// The config the camera writes, and "space left" from the measured rate once it has warmed up.
@@ -426,6 +428,8 @@ struct RacketRecordingCover: View {
             ? .drill(RacketDrillPlan(from: ex, defaults: defaults)) : .match
         var m = RacketRecordingMachine(kind: kind, recording: .everything,
                                        stillPlayingMinutes: defaults.stillPlayingMinutes(for: .everything), now: Date())
+        m.baseSetIndex = baseSets
+        m.quality = quality
         recorder.onPartSaved = { clip in
             onPartSaved(clip)
             act { m in
@@ -752,7 +756,8 @@ struct RacketRecordingCover: View {
         }
     }
 
-    // SplitPrompt placeholder (match) · drill Review
+    // Drill Review. A whole match ends at the split prompt instead (`body`, prompt 246); this "Recording saved" panel
+    // only shows when the host passed no session to edit — the match is split later from Your videos.
     @ViewBuilder private func endPanel(_ m: RacketRecordingMachine, _ route: RacketRecordingEndRoute) -> some View {
         let recorded = m.log?.recordedSec(now: now) ?? 0
         VStack(spacing: 14) {
@@ -762,14 +767,13 @@ struct RacketRecordingCover: View {
                 Text(m.log?.drillSummaryLine ?? "1 recording")
                     .font(.system(size: 17, weight: .semibold))
                     .accessibilityIdentifier("racket.rec.summary")
-                footnote("Each block is a time range on the one recording, so there’s nothing to split. The recording stays in your Photos library; a drill never offers to delete it.")
+                footnote("Each block is a time range on the one recording, so there’s nothing to split. The recording stays in your Photos library; a drill never offers to delete it. Mark rallies from Drill videos.")
             } else {
                 header("Recording saved", title)
                 Text(RacketClock.elapsed(recorded))
                     .font(.system(size: 56, weight: .light)).monospacedDigit()
                     .accessibilityIdentifier("racket.rec.recorded")
                 Text("recorded · \(m.log?.userMarkCount ?? 0) marks").snappetLabel()
-                scoresStep(m)
                 footnote("You can split it any time from Your videos. The original is never changed.")
             }
             if recorder.savingParts > 0 {
@@ -777,64 +781,7 @@ struct RacketRecordingCover: View {
                     .foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer(minLength: 0)
-            primary("Done", id: "racket.rec.done") {
-                // Games not scored yet are kept for later, as "Score unconfirmed".
-                if route == .splitPrompt { for _ in 0..<pendingGames(m) { onScoreLater() } }
-                onClose()
-            }
-        }
-    }
-
-    // MARK: Scores after a whole-match recording (Skip = later → "Score unconfirmed", review5 M5)
-
-    private func gameCount(_ m: RacketRecordingMachine) -> Int {
-        gamesToScore ?? m.log?.suggestedGameCount(
-            maxRemaining: RacketRecordedGames.maxRemaining(format: ex.racketFormat, loggedUnits: baseSets)) ?? 1
-    }
-
-    /// Recorded games with no entry yet (none once the match is decided).
-    private func pendingGames(_ m: RacketRecordingMachine) -> Int {
-        ex.racketState.isDecided ? 0 : max(0, gameCount(m) - (ex.sets.count - baseSets))
-    }
-
-    @ViewBuilder private func scoresStep(_ m: RacketRecordingMachine) -> some View {
-        let count = gameCount(m)
-        VStack(alignment: .leading, spacing: 8) {
-            Stepper(value: Binding(get: { count }, set: { gamesToScore = max(1, $0) }), in: 1...30) {
-                Text("\(count) \(count == 1 ? unit.noun : "\(unit.noun)s") recorded").font(.system(size: 15, weight: .semibold))
-            }
-            .accessibilityIdentifier("racket.scores.count")
-            ForEach(0..<count, id: \.self) { k in scoreRow(setIndex: baseSets + k) }
-        }
-        .padding(14)
-        .pagerGlass(cornerRadius: 18)
-    }
-
-    @ViewBuilder private func scoreRow(setIndex i: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("\(unit.noun.capitalized) \(i + 1)").font(SnappetType.body)
-            Spacer(minLength: 4)
-            if i < ex.sets.count {
-                let state = ex.sets[i].racketScoreState
-                Text(state?.label ?? "—")
-                    .font(SnappetType.detail.monospacedDigit())
-                    .foregroundStyle(state?.needsConfirming == true ? SnappetColor.perfModerate : SnappetColor.ink)
-                    .accessibilityIdentifier("racket.scores.state.\(i)")
-                if state?.needsConfirming == true {
-                    Button("Confirm") { scoreTarget = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil) }
-                        .font(SnappetType.detail.weight(.semibold))
-                        .accessibilityIdentifier("racket.scores.confirm.\(i)")
-                }
-            } else if i == ex.sets.count && !ex.racketState.isDecided {
-                Button("Later") { onScoreLater(); Haptics.tap() }
-                    .font(SnappetType.detail.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
-                    .accessibilityIdentifier("racket.scores.later")
-                Button("Enter score") { scoreTarget = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil) }
-                    .font(SnappetType.detail.weight(.semibold))
-                    .accessibilityIdentifier("racket.scores.enter")
-            } else {
-                Text(ex.racketState.isDecided ? "Not played" : "Next").font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
-            }
+            primary("Done", id: "racket.rec.done") { onClose() }
         }
     }
 

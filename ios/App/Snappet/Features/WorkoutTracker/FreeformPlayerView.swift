@@ -63,6 +63,8 @@ struct FreeformPlayerView: View {
     @AppStorage(RacketRecordingDefaults.storageKey) private var racketRecordingDefaultsData = Data()
     @State private var racketStorageFor: RacketStorageTarget?
     @State private var racketRecordingFor: RacketRecordingTarget?
+    /// Your videos / the split flow (prompt 246).
+    @State private var racketVideos: RacketVideosTarget?
     private var racketRecordingDefaults: RacketRecordingDefaults { RacketRecordingDefaults.load(from: racketRecordingDefaultsData) }
     /// The game-by-game match on the current page, scored from the Apple Watch (prompt 245); nil with no Watch.
     @State private var racketWatch: RacketWatchMatch?
@@ -270,14 +272,9 @@ struct FreeformPlayerView: View {
                             racketScoring = RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: ex?.sets.count ?? 0, durationSec: nil)
                         }
                     },
-                    onSaveScore: { log, index in
-                        saveRacketUnit(log, target: RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: index, durationSec: nil))
-                    },
-                    onScoreLater: {
-                        var pending = SetLog()
-                        pending.scoreUnconfirmed = true   // "Score unconfirmed" until confirmed (review5 M5)
-                        appendLog(pending, toExerciseID: target.exerciseID)
-                    },
+                    // The split flow (prompt 246) edits the match on the session; unconfirmed games it logs read
+                    // "Score unconfirmed" everywhere (review5 M5).
+                    session: session,
                     onWatchUnit: { log in
                         // A game tallied on the Watch (prompt 245): logged "from Watch", confirmed later.
                         let index = session.exercises.first { $0.id == target.exerciseID }?.sets.count ?? 0
@@ -285,6 +282,9 @@ struct FreeformPlayerView: View {
                     },
                     onClose: { racketRecordingFor = nil })
             }
+        }
+        .fullScreenCover(item: $racketVideos) { target in
+            RacketVideosCover(session: session, start: target.start) { racketVideos = nil }
         }
         .sheet(item: $racketScoring) { target in
             if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
@@ -1787,6 +1787,15 @@ struct FreeformPlayerView: View {
                     .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("racket.recording.line")
+                if log != nil {
+                    // Your videos (prompt 246): split, play, mark and tag.
+                    Button { racketVideos = RacketVideosTarget(start: .videos) } label: {
+                        Label("Your videos", systemImage: "film.stack").frame(maxWidth: .infinity, minHeight: 40)
+                    }
+                    .buttonStyle(.plain)
+                    .pagerOutline()
+                    .accessibilityIdentifier("racket.yourVideos")
+                }
             }
         }
     }
@@ -1800,7 +1809,17 @@ struct FreeformPlayerView: View {
 
     private func saveRacketRecordingLog(_ log: RacketRecordingLog, exerciseID: UUID) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
-        session.exercises[idx].racketRecordingLog = log
+        // The recording screen owns runs / parts / marks; the split, rallies and derived videos are written by the
+        // videos screens (prompt 246) and must survive a late part save from the recorder.
+        var merged = log
+        if let old = session.exercises[idx].racketRecordingLog, old.startedAt == log.startedAt {
+            merged.split = log.split ?? old.split
+            merged.keptAsOne = log.keptAsOne ?? old.keptAsOne
+            merged.rallies = log.rallies ?? old.rallies
+            merged.derived = log.derived ?? old.derived
+            merged.originalDeleted = log.originalDeleted ?? old.originalDeleted
+        }
+        session.exercises[idx].racketRecordingLog = merged
         persist()
     }
 

@@ -63,6 +63,7 @@ struct SessionDetailView: View {
     @State private var pendingExerciseRemoval: SessionExercise?
     /// A finished match's details being edited (opponent / round / event / format — prompt 203).
     @State private var gameTarget: RacketGameTarget?
+    @State private var racketVideos: RacketVideosTarget?
     @State private var racketEdit: RacketSetupTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
@@ -206,6 +207,10 @@ struct SessionDetailView: View {
         .sheet(item: $gameTarget) {
             RacketGameHRSheet(session: session, target: $0, maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
         }
+        // Racket Your videos / Keep rallies only (prompt 246) — owned here for the same reason.
+        .fullScreenCover(item: $racketVideos) { t in
+            RacketVideosCover(session: session, start: t.start) { racketVideos = nil }
+        }
         .sheet(item: $racketEdit) { target in
             RacketSetupSheet(start: target.start,
                              recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history) },
@@ -276,7 +281,8 @@ struct SessionDetailView: View {
                               onOpenGame: { gameTarget = $0 })
         case .timed, .run, .other:
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 },
+                              onOpenVideos: { racketVideos = $0 })
         }
     }
 
