@@ -1809,8 +1809,8 @@ struct FreeformPlayerView: View {
 
     private func saveRacketRecordingLog(_ log: RacketRecordingLog, exerciseID: UUID) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
-        // The recording screen owns runs / parts / marks; the split, rallies and derived videos are written by the
-        // videos screens (prompt 246) and must survive a late part save from the recorder.
+        // The recording screen owns runs / parts / marks; the split, rallies, derived videos and other-AI sends /
+        // replies are written by the videos screens (prompts 246 / 247) and must survive a late part save.
         var merged = log
         if let old = session.exercises[idx].racketRecordingLog, old.startedAt == log.startedAt {
             merged.split = log.split ?? old.split
@@ -1818,6 +1818,8 @@ struct FreeformPlayerView: View {
             merged.rallies = log.rallies ?? old.rallies
             merged.derived = log.derived ?? old.derived
             merged.originalDeleted = log.originalDeleted ?? old.originalDeleted
+            merged.aiRequests = log.aiRequests ?? old.aiRequests
+            merged.aiImports = log.aiImports ?? old.aiImports
         }
         session.exercises[idx].racketRecordingLog = merged
         persist()
