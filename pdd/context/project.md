@@ -675,6 +675,22 @@ by the pure `RacketWatchBridge.swift` and sent by `Services/RacketWatchRelay.swi
 **Device-pending:** everything over a real iPhone + Apple Watch pair (delivery, latency, wake-ups, haptics). Next
 (#438): videos / tagging / split (step 3).
 
+🟡 **Racket videos, player, manual tagging and split (2026-11-07, prompt 246 — issue #438 step 3).** iOS. Stop and split
+on a whole-match recording now opens the split prompt (replacing step 1's placeholder): a proposal from New game / Break
+marks and Watch first points (warmup, games, breaks, an unsure stretch, not play) → Review → Fix one part (edges, kind,
+extra game / practice, split, merge) → Match to your games (Watch scores matched by time; missing games logged "Score
+unconfirmed", Enter the score) → Split saved. Parts are time ranges on the original; "Delete the long original" saves
+each part to Photos first, then deletes (confirmed); "Keep rallies only" does the same for marked rallies across matches
+and drills; a missing original offers iCloud download / Photos / keep stats. Your videos (match page, recap, session
+detail) lists parts with Play / Mark rallies / See your tags / Edit score; drills list their block parts. The player
+plays a part across Photos parts (Original / Analyzed with your tags, rallies only, 0.5×, export a rally or the part).
+Rallies are marked by hand (Mark start / end, Fix) and tagged (winner, per-sport ending, doubles last shot) → TagDone →
+"From your tags"; tags count in the dashboard and recap. No model yet: every screen says rally finding isn't available
+(seam `RacketRallyFinding` for step 5). Pure: `RacketVideoSplit.swift`, `RacketRallyTags.swift` (`RacketVideoSplitTests`,
+`RacketRallyTagsTests`); edge: `Services/RacketVideoLibrary.swift`; UI: `RacketVideosUITests` (seed
+`-uiTestSeedRacketVideos`). **Device-pending:** Photos playback / export / delete, iCloud, long recordings. Next (#438):
+the AI round trip (step 4).
+
 ## License
 
 TBD.

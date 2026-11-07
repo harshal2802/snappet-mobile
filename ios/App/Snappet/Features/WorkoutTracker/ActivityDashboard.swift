@@ -134,8 +134,9 @@ struct ActivityDashboard: Equatable, Sendable {
 
         let lastDone = sessions.last?.0.startedAt
         let weeks = weekCounts(dates: sessions.map(\.0.startedAt), now: now, calendar: calendar)
-        let kpis = makeKPIs(metric: metric, points: points, sessionCount: sessions.count, weeks: weeks,
+        var kpis = makeKPIs(metric: metric, points: points, sessionCount: sessions.count, weeks: weeks,
                             lastDone: lastDone, now: now, calendar: calendar)
+        if discipline == .racket { kpis += tagKPIs(sessions.flatMap(\.1)) }
         let records = makeRecords(discipline: discipline, metric: metric, sessions: sessions, points: points,
                                   unit: unit, distanceUnit: distanceUnit)
         return ActivityDashboard(key: key, discipline: discipline, metric: metric, points: points, kpis: kpis,
@@ -229,6 +230,22 @@ struct ActivityDashboard: Equatable, Sendable {
     }
 
     // MARK: - KPIs / records / frequency
+
+    /// Racket (prompt 246): your rally tags count in history — rallies tagged, points won from your tags, and the
+    /// longest rally you marked. Nothing when there are no tags.
+    static func tagKPIs(_ entities: [SessionExercise]) -> [KPI] {
+        let t = RacketTagTotals.of(entities)
+        guard t.marked > 0 else { return [] }
+        var out = [KPI(title: "Rallies tagged", value: "\(t.tagged)", detail: "\(t.marked) marked", improving: false)]
+        if let share = t.pointsWonShare {
+            out.append(KPI(title: "Points won, your tags", value: RacketStats.percent(share),
+                           detail: "\(t.wonUs)–\(t.wonThem)", improving: false))
+        }
+        if let l = t.longestSec {
+            out.append(KPI(title: "Longest rally marked", value: RacketTagSummary.seconds(l), detail: nil, improving: false))
+        }
+        return out
+    }
 
     private static func makeKPIs(metric: Metric, points: [Point], sessionCount: Int, weeks: [Int],
                                  lastDone: Date?, now: Date, calendar: Calendar) -> [KPI] {

@@ -133,6 +133,8 @@ struct SessionRecapCards: View {
     var showsPyramid: Bool = true
     /// A racket game row was tapped — the host presents the game sheet; `nil` = the racket card presents it.
     var onOpenGame: ((RacketGameTarget) -> Void)? = nil
+    /// Racket Your videos / Keep rallies only (prompt 246) — the host presents them; `nil` = the racket card does.
+    var onOpenVideos: ((RacketVideosTarget) -> Void)? = nil
 
     private var stats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
     private var dominant: FreeformSummary.Dominant { stats.dominant }
@@ -155,7 +157,7 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
-        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame)
+        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame, onOpenVideos: onOpenVideos)
         case .none:     EmptyView()
         }
     }

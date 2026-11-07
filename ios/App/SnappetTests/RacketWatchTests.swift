@@ -360,7 +360,8 @@ final class RacketWatchTests: XCTestCase {
         _ = RacketWatchBridge.apply(.breakStarts, to: &m, score: &sc, now: at(4))
         let reset = RacketWatchBridge.apply(.newUnit, to: &m, score: &sc, now: at(5))
         XCTAssertTrue(reset.resetScore)
-        XCTAssertEqual(m.log?.marks.compactMap(\.kind), [.moment, .breakStart, .newGame])
+        // The first point of a game marks that play started (prompt 246, for the split); it isn't a user mark.
+        XCTAssertEqual(m.log?.marks.compactMap(\.kind), [.firstPoint, .moment, .breakStart, .newGame])
         XCTAssertEqual(m.log?.userMarkCount, 3)
         let stop = RacketWatchBridge.apply(.stopAndSplit, to: &m, score: &sc, now: at(6))
         XCTAssertEqual(stop.effects, [.stopCapture, .ended(.splitPrompt)])
