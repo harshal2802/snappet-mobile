@@ -62,6 +62,9 @@ final class WorkoutWatchManager: NSObject {
     /// The relay back to the phone. The manager forwards each new HR/energy sample here.
     let link = WatchConnectivityLink()
 
+    /// A racket match / drill running on the phone (prompt 245): what to show and where taps go.
+    let racket = RacketWatchModel()
+
     /// Your household chores today, from the phone (household prompt 04). nil = no household.
     private(set) var household: HouseholdWidgetSnapshot?
 
@@ -94,6 +97,10 @@ final class WorkoutWatchManager: NSObject {
         }
         link.onHousehold = { [weak self] snapshot in
             Task { @MainActor [weak self] in self?.household = snapshot }
+        }
+        racket.send = { [weak self] command in self?.link.sendRacket(command) }
+        link.onRacket = { [weak self] message in
+            Task { @MainActor [weak self] in self?.racket.receive(message) }
         }
         link.activate()
     }

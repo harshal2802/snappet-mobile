@@ -18,7 +18,20 @@ struct WatchWorkoutView: View {
 
     var body: some View {
         Group {
-            if manager.isRunning {
+            if manager.racket.state != nil {
+                // A racket match / drill is up on the phone (prompt 245): its board leads; the live workout
+                // pages follow when a workout is running.
+                if manager.isRunning {
+                    TabView {
+                        RacketWatchRoot(model: manager.racket)
+                        MetricsPage(manager: manager)
+                        ControlsPage(manager: manager)
+                    }
+                    .tabViewStyle(.verticalPage)
+                } else {
+                    RacketWatchRoot(model: manager.racket)
+                }
+            } else if manager.isRunning {
                 TabView {
                     MetricsPage(manager: manager)
                     ControlsPage(manager: manager)
@@ -38,6 +51,7 @@ struct WatchWorkoutView: View {
             }
         }
         .animation(.snappy, value: manager.isRunning)
+        .animation(.snappy, value: manager.racket.state?.surface.kind)
         .animation(.snappy, value: manager.paused)
     }
 
