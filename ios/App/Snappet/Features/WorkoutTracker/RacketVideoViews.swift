@@ -11,6 +11,7 @@ import SwiftData
 // Boards: TtSplitPrompt → TtSplitReview → TtSplitEdit / TtSplitAssign → TtSplitDone → TtDeleteOriginal; TtKeepRallies;
 // TtOriginalMissing; FindRallies / TtNoModelVideos (Your videos); TtDrillVideos; TtPlayerOriginal / TtPlayerAnalyzed /
 // TtPlayerExport; TtNoModelTimeline / Timeline / FixRally; TtNoModelTag / DoublesTag; TtTagDone; TtManualSummary.
+// Step 4 (prompt 247): each part / block also offers "Another AI app" and "Bring results back" (`RacketAIViews.swift`).
 
 /// Where the stack opens.
 enum RacketVideosStart: Hashable, Sendable {
@@ -47,6 +48,13 @@ enum RacketVideoRoute: Hashable {
     case summary(RacketPartRef)
     case missing(RacketPartRef)
     case videos
+    // Round trip with another AI app (prompt 247).
+    case aiSend(RacketPartRef)
+    case aiPrompt(RacketAIPromptContext)
+    case aiImport(RacketPartRef)
+    case aiCompare(RacketPartRef, UUID)
+    /// The player opened on Analyzed (after Add as suggestions / Compare → Done).
+    case analyzed(RacketPartRef)
 }
 
 /// Reads and writes the session's racket entities (a SwiftData model): mutate, then save.
@@ -164,13 +172,46 @@ struct RacketVideosCover: View {
         case .assign(let id): splitAssign(id)
         case .done(let id): splitDone(id)
         case .drill(let id): drillVideos(id)
-        case .player(let ref, let only): RacketPlayerScreen(store: store, ref: ref, ralliesOnly: only)
+        case .player(let ref, let only):
+            RacketPlayerScreen(store: store, ref: ref, ralliesOnly: only) { path.append(.aiCompare(ref, $0)) }
+        case .analyzed(let ref):
+            RacketPlayerScreen(store: store, ref: ref, ralliesOnly: false, startAnalyzed: true) { path.append(.aiCompare(ref, $0)) }
+        case .aiSend(let ref):
+            RacketAISendScreen(store: store, ref: ref, onPrompt: { path.append(.aiPrompt($0)) },
+                               onSent: { replaceTop(with: .aiImport(ref)) }, onCancel: { path.removeLast() })
+        case .aiPrompt(let ctx): RacketAIPromptScreen(context: ctx)
+        case .aiImport(let ref):
+            RacketAIImportScreen(store: store, ref: ref, onCompare: { replaceTop(with: .aiCompare(ref, $0)) },
+                                 onSuggestions: { replaceTop(with: .analyzed(ref)) }, onCancel: { path.removeLast() })
+        case .aiCompare(let ref, let id):
+            RacketAICompareScreen(store: store, ref: ref, importID: id) { replaceTop(with: .analyzed(ref)) }
         case .timeline(let ref): RacketTimelineScreen(store: store, ref: ref) { path.append(.tagDone(ref)) }
             onSummary: { path.append(.summary(ref)) }
         case .tagDone(let ref): tagDone(ref)
         case .summary(let ref): manualSummary(ref)
         case .missing(let ref): originalMissing(ref)
         case .videos: videosList
+        }
+    }
+
+    /// AISend → AIImport → AICompare → Analyzed each replace the screen before (Back returns to Your videos).
+    private func replaceTop(with r: RacketVideoRoute) {
+        if !path.isEmpty { path.removeLast() }
+        path.append(r)
+    }
+
+    /// "21 suggested by ChatGPT, not compared yet" + Compare, for a part with a reply waiting (prompt 247).
+    @ViewBuilder private func aiPending(_ ex: SessionExercise, _ r: RacketPartRef, id: String) -> some View {
+        if let log = ex.racketRecordingLog, let imp = log.pendingAIImports(partStart: r.startSec, partEnd: r.endSec).last {
+            let n = RacketRallyMarking.inRange(imp.rallies, r.startSec, r.endSec).count
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(n) suggested by \(imp.appName), not compared yet")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("racket.\(id).aiPending")
+                Spacer(minLength: 6)
+                chipButton("Compare", id: "racket.\(id).aiCompare") { path.append(.aiCompare(r, imp.id)) }
+            }
         }
     }
 
@@ -553,7 +594,11 @@ struct RacketVideosCover: View {
                 if row.kind == .whole {
                     chipButton("Split recording", id: "racket.videos.split") { path.append(.review(ex.id)) }
                 }
+                // Step 4 (prompt 247): the round trip with another AI app.
+                chipButton("Another AI app", id: "racket.videos.ai.\(k)") { path.append(.aiSend(r)) }
+                chipButton("Bring results back", id: "racket.videos.aiImport.\(k)") { path.append(.aiImport(r)) }
             }
+            aiPending(ex, r, id: "videos.\(k)")
         }
     }
 
@@ -588,7 +633,10 @@ struct RacketVideosCover: View {
                                 path.append(.player(r, ralliesOnly: false))
                             }
                             chipButton("Mark rallies", id: "racket.drill.mark.\(k)") { path.append(.timeline(r)) }
+                            chipButton("Another AI app", id: "racket.drill.ai.\(k)") { path.append(.aiSend(r)) }
+                            chipButton("Bring results back", id: "racket.drill.aiImport.\(k)") { path.append(.aiImport(r)) }
                         }
+                        if let ex { aiPending(ex, r, id: "drill.\(k)") }
                     }
                 }
                 if let longest, let row = rows.first(where: { longest.startSec >= $0.startSec && longest.startSec < $0.endSec }) {
@@ -619,6 +667,9 @@ struct RacketVideosCover: View {
                     statLine("Tagged by you", "\(s.tagged) \(s.tagged == 1 ? "rally" : "rallies")")
                     statLine("Snappet’s guesses", "None, no model yet")
                     statLine("Left to tag", "\(s.untagged)")
+                    if s.fromAI > 0 {
+                        statLine("From other apps", "\(s.fromAI) accepted")
+                    }
                 }
                 if s.untagged > 0 {
                     // Review5: this button was unwired on the board.
@@ -672,7 +723,8 @@ struct RacketVideosCover: View {
                         }
                     }
                 }
-                Text("Source: your tags · No model for \(sport.label.lowercased())").snappetLabel()
+                Text("Source: your tags\(s.fromAI > 0 ? " and \(s.aiNames.joined(separator: ", "))" : "") · No model for \(sport.label.lowercased())")
+                    .snappetLabel()
                 HStack(spacing: 10) {
                     bigStat("\(s.marked)", "rallies marked", id: "racket.summary.marked")
                     bigStat("\(s.tagged)", "tagged", id: "racket.summary.tagged")

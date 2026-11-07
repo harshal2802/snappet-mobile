@@ -415,6 +415,12 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     /// The original parts were deleted from Photos (only after the derived videos were saved).
     var originalDeleted: Bool?
 
+    // Step 4 (prompt 247) — additive Optionals.
+    /// Parts sent to another AI app (what, to which app, and the clip's pieces for mapping the reply's times back).
+    var aiRequests: [RacketAIRequest]?
+    /// Replies brought back: suggestions until compared, then reviewed (`RacketAIRoundTrip.swift`).
+    var aiImports: [RacketAIImport]?
+
     init(startedAt: Date) { self.startedAt = startedAt }
 
     func offset(_ date: Date) -> Double { max(0, date.timeIntervalSince(startedAt)) }

@@ -160,6 +160,39 @@ final class RacketVideoLibrary {
         try await library.deleteAssets(localIdentifiers: ids.filter { !$0.hasPrefix(RecapClipSeed.bundledScheme) })
     }
 
+    // MARK: Still frames (TtAISend "Claude · frames only", prompt 247)
+
+    /// JPEG stills for an app that can't take video. Each shot is the segment holding that instant (its `assetStart`
+    /// is the moment); files are named by the clip time, as the prompt tells the app: `frame-0012.5s.jpg`. Returns the
+    /// files made (none when no video is on the phone).
+    func frames(_ shots: [(clipSec: Double, segment: RacketVideoSegment)]) async throws -> [URL] {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("racket-frames-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var out: [URL] = []
+        var assets: [String: AVAsset] = [:]
+        for shot in shots {
+            let id = shot.segment.localIdentifier
+            if assets[id] == nil { assets[id] = await avAsset(id, network: true) }
+            guard let asset = assets[id], let image = await Self.still(Box(value: asset), at: shot.segment.assetStart),
+                  let data = UIImage(cgImage: image).jpegData(compressionQuality: 0.8) else { continue }
+            let url = dir.appendingPathComponent(String(format: "frame-%06.1fs.jpg", shot.clipSec))
+            try data.write(to: url)
+            out.append(url)
+        }
+        guard !out.isEmpty else { throw VideoError.missing }
+        return out
+    }
+
+    /// One still, off the main actor (the generator never leaves this function).
+    nonisolated private static func still(_ boxed: Box<AVAsset>, at sec: Double) async -> CGImage? {
+        let g = AVAssetImageGenerator(asset: boxed.value)
+        g.appliesPreferredTrackTransform = true
+        g.maximumSize = CGSize(width: 1280, height: 1280)
+        g.requestedTimeToleranceBefore = CMTime(seconds: 0.2, preferredTimescale: 600)
+        g.requestedTimeToleranceAfter = CMTime(seconds: 0.2, preferredTimescale: 600)
+        return try? await g.image(at: CMTime(seconds: sec, preferredTimescale: 600)).image
+    }
+
     // MARK: Internals
 
     private func avAsset(_ id: String, network: Bool) async -> AVAsset? {
