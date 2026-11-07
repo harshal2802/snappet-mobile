@@ -10825,3 +10825,68 @@ stripes, and the panel read as an opaque slab.
   says your own tags change only if you pick the app's answer, instead of "aren't shown here".
 - **Deferred:** share-in (share extension / open-in), shot lists from replies (only the count is kept, for "Yes, 5
   shots"), per-shot tags, confidence shown in the UI, model-vs-app compare (step 5).
+
+## 2026-11-07 — Racket model hooks: capabilities, a rally model seam, the placeholder (prompt 248, issue #438 step 5)
+
+- **Every sport runs Snappet's placeholder model and declares every feature** (user decision, #438): Capabilities shows
+  all eight rows "✓ Available" with their "Without it" line. **What is actually built on it:** Find rallies (and so the
+  drills' longest rally, from the found rallies). Live tracking is step 6 (thermal test first); court check, shot count,
+  shot types, preselected endings and ball path have no code yet — those screens stay by hand (the Analyzed panel says
+  "Not in the placeholder yet"; AnalysisSettings shows live tracking Off). The registry is the one switch: a sport
+  without a model (or "Preview a sport with no model") gets the step-3 by-hand state, labelled "Preview" (review5 low).
+- **The `RallyModel` seam:** `RallyModelInfo` (id, version, name, sports, input requirement, placeholder flag, features),
+  an async scan over a recording range that checks cancellation between chunks and reports progress, returning
+  `RallyGuess` (times on the recording, confidence 0–1, an optional winner suggestion). `RallyFrameSource` is the
+  platform edge (Services). Guesses carry `model:<id>@<version>` so results always say which model made them.
+- **Vision only, and nothing from the spike ships.** The placeholder reads no audio track, downloads nothing, and does
+  not use or reference the evaluation-only weights of prompt 220. It borrows only the spike's rule shape (gap merge
+  1.5 s, minimum length, padding).
+- **The placeholder rule** (`RacketMotionRallyRule`, pure, tested on synthetic signals): signal = fraction of a coarse
+  luma grid (32 cells across, frames decoded small) that changed by > 10 levels between samples, 10 samples/s. Smooth
+  0.5 s; quiet baseline = 20th percentile over a 2-minute window (per 10 s block); one robust spread per part (1.48 ×
+  median |residual|, floor 0.004); start above z 3, stay above z 1.5; merge gaps ≤ 1.5 s (never across missing video);
+  drop < 1.5 s; pad 0.5 s each side. Confidence is **relative** to the part's typical stretch (0.25 + 0.5 × strength ÷
+  median strength, capped 0.85; weaker or < 2.5 s stretches lower; > 120 s capped at 0.3). Unsure = below 0.6.
+- **Score taps anchor it.** The Watch bridge now marks every point on the recording (`point` mark, index 0 you / 1 them;
+  Undo drops the last one; not a user mark, the split ignores it). A found rally ending ≤ 15 s before a tap is
+  confirmed (+0.3) and gets the tap's winner as a suggestion; a tap with nothing before it adds an unsure 6 s guess;
+  with ≥ 2 taps, an unconfirmed stretch between them turns unsure (likely fetching the ball). Older recordings anchor on
+  first-point marks only, without a winner.
+- **Honest limits of the placeholder** (to measure on device, not claimed): a fixed camera is assumed (a handheld or
+  bumped phone reads as motion); people walking near the camera, a neighbouring court or flickering lights read as
+  rallies; slow rallies (lobs, padel walls, a long tennis point at the baseline) may split or fade; a rally longer than
+  about a minute of the 2-minute window can be absorbed by the baseline; serves after a long pause can be missed by the
+  0.5 s pad; drills with continuous feeding look like one long rally (capped unsure). Without Watch taps there are no
+  winner suggestions. No accuracy number exists for it yet.
+- **Guesses vs your tags.** Guesses live in the recording's rallies as "Snappet guess" (`sourceRaw` model, `confidence`,
+  `guessWinnerRaw`). A re-scan replaces earlier unconfirmed guesses in that part only; your rallies, rallies accepted
+  from another app, and guesses you tagged, checked (tag sheet Next / Not a rally) or fixed are kept, and a new guess
+  overlapping them is dropped. A suggested winner is never a tag: the tag sheet starts on it ("You · suggested") and
+  Next confirms it. **History counts guesses only once confirmed** (`RacketTagTotals`); summaries say "Estimated from
+  video until you confirm". Keep rallies only includes guesses (keeping more video is the safe side of a delete).
+- **Scans are stored per part** (`RacketScanRecord` on the log: model, progress, status, note, results, applied). A whole
+  recording scanned before the split counts as scanned for each game (rallies live on the recording's timeline).
+  "Older results stay available": every finished scan keeps its guesses. ModelCompare pairs two scans by overlap: one
+  rally or two, found only by one side, winner differs; "Use" applies the new results, "Keep" leaves the timeline as it
+  was. With one model today, a re-scan compares "New scan" with "Earlier scan" (identical input ⇒ "No differences").
+- **The queue** (`RacketScanCenter`): one scan at a time, off the main actor; Closing Analyzing doesn't stop it; Stop
+  pauses; motion chunks (30 s) are cached in Caches so Resume picks up where it stopped (iOS may purge the cache; then it
+  just reads again). Leaving the app: a UIKit background task, then a clean pause, resumed when Snappet is active again.
+  **No BGProcessingTask yet** (long background scans, "on charger" overnight) — follow-up. Heat: wait 2 s per chunk at
+  `serious`, pause at `critical`, resume at `fair`. A relaunch finds "running" records with no job and marks them
+  paused ("Stopped when Snappet closed"). A scan never downloads from iCloud; a missing video fails with a reason.
+- **"After a session" defaults to Ask me** (a scan warms the phone and uses battery). Your videos asks once per
+  recording ("Find rallies in N videos?"); Automatically starts it, Only on charger queues it waiting for power, Never
+  leaves only the buttons. "Scan all on charger" queues every unscanned part that way.
+- **AICompare uses Snappet's guesses as the other side** where you haven't tagged ("Snappet: You won", never protected,
+  header "Snappet placeholder v1 and your tags vs ChatGPT"); rallies you marked or tagged stay "Yours: …" and protected
+  (step 4 behaviour; the board hides them).
+- **Board differences:** Summary shows longest / average rally in seconds instead of "about 14 shots" (no shot count) and
+  omits "Tag every shot" (shot tagging is deferred since step 3); Analyzing for a drill names blocks (review5 low);
+  ChooseModel lists one model (the boards' v3 / v2 / v1 are illustrative); AnalysisSettings links Still playing and
+  recording defaults to the existing Settings screen instead of repeating them, and its live-tracking row is a fixed
+  "Off". NoModelCamera isn't built: there is no camera-check screen yet (no court check exists to fall back from).
+  Your videos rows keep step 3–4's See your tags / Bring results back and add "Results" (the game summary) next to
+  Re-scan….
+- **UI tests** run the real placeholder model on a synthetic signal (`-uiTestStubRallySignal`, a burst every 20 s, every
+  fourth weak), since the simulator records no video.

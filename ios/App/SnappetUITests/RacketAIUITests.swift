@@ -41,7 +41,7 @@ final class RacketAIUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the seeded session")
         row.tap()
         tapWhenHittable(app.buttons["racket.recap.videos"])
-        XCTAssertTrue(any("racket.videos.notYet").waitForExistence(timeout: 6))
+        XCTAssertTrue(any("racket.videos.header").waitForExistence(timeout: 6))
     }
 
     private func pasteReply() {
