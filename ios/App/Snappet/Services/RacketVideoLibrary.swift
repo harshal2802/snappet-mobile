@@ -89,6 +89,14 @@ final class RacketVideoLibrary {
 
     // MARK: Export (TtPlayerExport · DeleteOriginal · KeepRallies)
 
+    /// The mutable composition is not Sendable, so it crosses the await in a box (same approach as
+    /// `ReelExporter.PlacedComposition`); it is not touched again until this returns.
+    private struct CompositionBox: @unchecked Sendable { let comp: AVMutableComposition }
+
+    private nonisolated static func propertiesComposition(_ box: CompositionBox) async -> AVMutableVideoComposition? {
+        try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: box.comp)
+    }
+
     /// Export `pieces` (each a list of segments for one recording range, joined end to end) to an .mp4. `captions`
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
     func export(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
@@ -123,7 +131,7 @@ final class RacketVideoLibrary {
         #else
         let preset = smaller ? AVAssetExportPreset1280x720 : AVAssetExportPresetHighestQuality
         var videoComposition: AVVideoComposition?
-        if !captions.isEmpty, let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp) {
+        if !captions.isEmpty, let vc = await Self.propertiesComposition(CompositionBox(comp: comp)) {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
                             position: CGPoint(x: 0.5, y: 0.1), scale: 0.9, highlightHex: "#000000")
