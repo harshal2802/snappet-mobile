@@ -234,6 +234,31 @@ extension SetLog {
     }
 }
 
+/// One score state for a match unit, read the same way everywhere (the match page chips, the ledger, the recap,
+/// session detail, the game heart-rate sheet — review5 M5).
+enum RacketScoreState: Equatable, Sendable {
+    case confirmed(RacketUnitScore)
+    /// Recorded, score left for later (prompt 244).
+    case unconfirmed
+
+    static let unconfirmedLabel = "Score unconfirmed"
+
+    var label: String {
+        switch self {
+        case .confirmed(let s): return s.superTiebreak ? "STB \(s.label)" : s.label
+        case .unconfirmed: return Self.unconfirmedLabel
+        }
+    }
+}
+
+extension SetLog {
+    /// `nil` when this effort isn't a match unit at all.
+    var racketScoreState: RacketScoreState? {
+        if let s = racketScore { return .confirmed(s) }
+        return scoreUnconfirmed == true ? .unconfirmed : nil
+    }
+}
+
 /// The verdict on an entered score. Never blocks saving.
 enum RacketScoreCheck: Equatable, Sendable {
     /// A legal score; `won` is the user's result.
@@ -413,8 +438,11 @@ extension SessionExercise {
                             superTiebreak: racketSuperTiebreak ?? false)
     }
 
-    /// The logged, scored units in order.
+    /// The logged, scored units in order (unconfirmed games count for neither side).
     var racketUnits: [RacketUnitScore] { sets.compactMap(\.racketScore) }
+
+    /// Games recorded with their score left for later (prompt 244).
+    var racketUnconfirmedCount: Int { sets.filter { $0.racketScoreState == .unconfirmed }.count }
 
     /// The derived match state (score, result, pressure inputs).
     var racketState: RacketScoring.MatchState {

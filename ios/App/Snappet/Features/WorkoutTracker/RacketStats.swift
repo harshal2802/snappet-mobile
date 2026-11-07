@@ -137,7 +137,7 @@ enum RacketStats {
 
     /// One match in a line: "11–7 9–11 12–10 11–8".
     static func unitsLine(_ ex: SessionExercise) -> String {
-        ex.racketUnits.map(\.label).joined(separator: "  ")
+        ex.sets.compactMap(\.racketScoreState?.label).joined(separator: "  ")
     }
 
     /// "R16 · vs Alex Chen" — the match's row title.
@@ -164,7 +164,7 @@ enum RacketStats {
         var parts: [String] = []
         if let e = ex.racketEvent, !e.isEmpty { parts.append(e) }
         if let sport = ex.racketSport { parts.append(sport.label) }
-        if ex.isRacketMatch, !ex.racketUnits.isEmpty { parts.append(unitsLine(ex)) }
+        if ex.isRacketMatch, !ex.sets.isEmpty { parts.append(unitsLine(ex)) }
         return parts.joined(separator: " · ")
     }
 
