@@ -37,7 +37,7 @@ final class RacketVideosUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the seeded session")
         row.tap()
         tapWhenHittable(app.buttons["racket.recap.videos"])
-        XCTAssertTrue(any("racket.videos.notYet").waitForExistence(timeout: 6), "Your videos says rally finding isn't here yet")
+        XCTAssertTrue(any("racket.videos.header").waitForExistence(timeout: 6), "Your videos (FindRallies: every sport has the placeholder model, prompt 248)")
     }
 
     func testSplitTheMatchThenMarkAndTagARally() {

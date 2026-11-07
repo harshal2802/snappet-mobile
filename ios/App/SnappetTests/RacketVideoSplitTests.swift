@@ -301,9 +301,12 @@ final class RacketVideoSplitTests: XCTestCase {
         XCTAssertEqual(RacketVideoRows.recapLine(e), "3 videos · 1 rally tagged")
     }
 
-    func testRallyFindingIsNotYetAvailable() {
-        // Step 5 fills the capability registry; until then every sport takes the by-hand path.
-        for s in RacketSport.allCases { XCTAssertEqual(RacketRallyFinding.availability(for: s), .notYet) }
+    func testRallyFindingReadsTheCapabilityRegistry() {
+        // Step 5 (prompt 248): every sport has the placeholder model; the no-model preview takes the by-hand path.
+        for s in RacketSport.allCases {
+            XCTAssertEqual(RacketRallyFinding.availability(for: s), .available(modelName: "Snappet placeholder v1"))
+            XCTAssertEqual(RacketRallyFinding.availability(for: s, noModel: true), .notYet)
+        }
         XCTAssertEqual(RacketRallyFinding.notYetLine(.tableTennis), "Rally finding isn’t available for table tennis yet.")
     }
 

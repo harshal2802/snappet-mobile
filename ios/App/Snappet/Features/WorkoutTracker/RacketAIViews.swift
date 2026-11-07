@@ -635,13 +635,19 @@ struct RacketAICompareScreen: View {
     private var result: RacketAICompareResult {
         RacketAICompare.build(ai: imp?.rallies ?? [], yours: yours, appName: imp?.appName ?? "Other app", sides: sides)
     }
+    /// The model whose guesses are on this part ("Snappet placeholder v1"), if any.
+    private var guessLabel: String? {
+        guard yours.contains(where: \.isFromModel) else { return nil }
+        return ex?.racketRecordingLog?.appliedScan(partStart: ref.startSec, partEnd: ref.endSec)?.modelLabel ?? "Snappet"
+    }
 
     var body: some View {
         let r = result
         let name = imp?.appName ?? "Other app"
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Your tags vs \(name) · \((imp?.importedAt ?? .now).formatted(.dateTime.month(.abbreviated).day()))")
+                // Prompt 248: Snappet's guesses are the other side where you haven't tagged (TtAICompare "Snappet v2 vs …").
+                Text("\(guessLabel.map { "\($0) and your tags" } ?? "Your tags") vs \(name) · \((imp?.importedAt ?? .now).formatted(.dateTime.month(.abbreviated).day()))")
                     .snappetLabel()
                     .accessibilityIdentifier("racket.ai.compare.header")
                 Text(r.disagreementLine).font(.system(size: 28, weight: .light))

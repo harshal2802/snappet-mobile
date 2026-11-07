@@ -89,10 +89,17 @@ struct RacketTimelineBar: View {
                         .frame(width: max(3, x(r.endSec) - x(r.startSec)), height: 26)
                         .offset(x: x(r.startSec))
                 }
-                ForEach(rallies.filter(\.isRally)) { r in
+                ForEach(rallies.filter { $0.isRally && !$0.isUnsure }) { r in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(r.isTagged ? SnappetColor.brand : SnappetColor.brand.opacity(0.45))
+                        .fill(r.isTagged ? SnappetColor.brand : SnappetColor.brand.opacity(r.isGuess ? 0.3 : 0.45))
                         .frame(width: max(2, x(r.endSec) - x(r.startSec)), height: 22)
+                        .offset(x: x(r.startSec))
+                }
+                // Snappet's unsure guesses (prompt 248, Timeline board "Dashed: unsure").
+                ForEach(rallies.filter(\.isUnsure)) { r in
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(SnappetColor.perfModerate, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        .frame(width: max(3, x(r.endSec) - x(r.startSec)), height: 22)
                         .offset(x: x(r.startSec))
                 }
                 if let p = pendingStart {
@@ -109,6 +116,7 @@ struct RacketTimelineBar: View {
         .frame(height: 36)
         .accessibilityElement()
         .accessibilityLabel("Timeline, \(rallies.filter(\.isRally).count) rallies"
+                            + (rallies.contains(where: \.isUnsure) ? ", \(rallies.filter(\.isUnsure).count) unsure" : "")
                             + (suggestions.isEmpty ? "" : ", \(suggestions.count) suggested"))
         .accessibilityIdentifier("racket.timeline.bar")
     }
@@ -248,6 +256,7 @@ struct RacketPlayerScreen: View {
         }
         var parts: [String] = []
         if showNumber { parts.append(RacketPlaybackPolicy.overlayLine(number: r.number, rally: r.rally, sides: sides)) }
+        if r.rally.isGuess { parts.append(r.rally.isUnsure ? "Snappet guess, unsure" : "Snappet guess") }
         if showScore {
             let s = RacketPlaybackPolicy.runningScore(through: r.number, in: rallies)
             parts.append("\(s.us)–\(s.them)")
@@ -263,8 +272,21 @@ struct RacketPlayerScreen: View {
                 Spacer()
                 Image(systemName: "checkmark").foregroundStyle(SnappetColor.brand)
             }
-            Text("No model for \((ex?.racketSport ?? .tableTennis).label.lowercased()) yet, so there are no Snappet guesses to compare.")
-                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+            if let scan = ex?.racketRecordingLog?.appliedScan(partStart: ref.startSec, partEnd: ref.endSec) {
+                let g = rallies.filter(\.isGuess).count
+                HStack {
+                    Text("\(scan.modelLabel) · used now").font(SnappetType.body)
+                    Spacer()
+                    Image(systemName: "checkmark").foregroundStyle(SnappetColor.brand)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("racket.player.model")
+                Text("\(g) of the rallies here are Snappet’s guesses. Your tags always win.")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Not scanned yet, so there are no Snappet guesses here. Find rallies on Your videos.")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(pendingImports) { imp in
                 let n = RacketRallyMarking.inRange(imp.rallies, ref.startSec, ref.endSec).count
                 HStack(alignment: .firstTextBaseline) {
@@ -291,7 +313,7 @@ struct RacketPlayerScreen: View {
                 HStack {
                     Text(name)
                     Spacer()
-                    Text("Needs a model").font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
+                    Text("Not in the placeholder yet").font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
                 }
             }
         }
@@ -460,6 +482,8 @@ struct RacketTimelineScreen: View {
     @State private var tagging: RacketRally?
     @State private var fixing: RacketRally?
     @State private var configured = false
+    /// Timeline board: All / Unsure / Untagged (prompt 248).
+    @State private var filter = 0
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var allRallies: [RacketRally] { ex?.racketRecordingLog?.allRallies ?? [] }
@@ -474,8 +498,11 @@ struct RacketTimelineScreen: View {
                     RacketTimelineBar(start: ref.startSec, end: ref.endSec, position: pb.position, rallies: rallies,
                                       pendingStart: pendingStart) { pb.seek(to: $0) }
                     let s = RacketTagSummary.make(rallies, sport: sport)
+                    let g = RacketGuessSummary.make(rallies)
                     HStack {
-                        Text("\(s.marked) \(s.marked == 1 ? "rally" : "rallies") marked · \(s.tagged) tagged")
+                        Text(rallies.contains(where: \.isFromModel)
+                             ? "\(g.found) \(g.found == 1 ? "rally" : "rallies") · \(g.unsureLeft) unsure · \(s.tagged) tagged"
+                             : "\(s.marked) \(s.marked == 1 ? "rally" : "rallies") marked · \(s.tagged) tagged")
                             .font(SnappetType.detail.weight(.semibold))
                             .accessibilityIdentifier("racket.tl.count")
                         Spacer()
@@ -577,23 +604,38 @@ struct RacketTimelineScreen: View {
     /// Timeline board rows: "Rally 3 · 2:41 · 8 s · You won", tap to tag, Fix.
     @ViewBuilder private var rallyRows: some View {
         let sides = RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
-        let rs = rallies.filter(\.isRally)
-        if !rs.isEmpty {
+        let all = rallies.filter(\.isRally)
+        let hasGuesses = all.contains(where: \.isFromModel)
+        let rs = filter == 1 ? all.filter(\.isUnsure) : filter == 2 ? all.filter { !$0.isTagged } : all
+        if !all.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("A winner on a row means you tagged it.").snappetLabel()
+                if hasGuesses {
+                    Text("Solid: rally · Dashed: unsure").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    Picker("Show", selection: $filter) {
+                        Text("All \(all.count)").tag(0)
+                        Text("Unsure \(all.filter(\.isUnsure).count)").tag(1)
+                        Text("Untagged \(all.filter { !$0.isTagged }.count)").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("racket.tl.filter")
+                }
+                Text(hasGuesses ? "A winner on a row means you tagged it. Your tags replace Snappet’s guesses everywhere."
+                                : "A winner on a row means you tagged it.").snappetLabel()
                 ForEach(Array(rs.enumerated()), id: \.element.id) { k, r in
                     HStack(spacing: 8) {
                         Button { playback?.seek(to: r.startSec); tagging = r } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Rally \(k + 1)").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
                                 Text("\(RacketVideoTime.clock(r.startSec - ref.startSec)) · \(RacketTagSummary.seconds(r.durationSec))"
-                                     + (r.aiName.map { " · from \($0)" } ?? ""))
+                                     + (r.aiName.map { " · from \($0)" } ?? "")
+                                     + (r.isGuess ? " · Snappet guess" : ""))
                                     .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                             }
                             Spacer()
-                            Text(r.winner.map { $0 == .us ? "\(sides.us) won" : "\(sides.them) won" } ?? (r.isTagged ? "Replayed" : "Untagged"))
+                            Text(r.winner.map { $0 == .us ? "\(sides.us) won" : "\(sides.them) won" }
+                                 ?? (r.isTagged ? "Replayed" : r.isUnsure ? "Unsure" : "Untagged"))
                                 .font(SnappetType.detail.weight(.semibold))
-                                .foregroundStyle(r.isTagged ? SnappetColor.ink : SnappetColor.textTertiary)
+                                .foregroundStyle(r.isTagged ? SnappetColor.ink : r.isUnsure ? SnappetColor.perfModerate : SnappetColor.textTertiary)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("racket.tl.rally.\(k)")
@@ -689,6 +731,8 @@ struct RacketTagSheet: View {
     let store: RacketVideoStore
     let ref: RacketPartRef
     let startID: UUID
+    /// "Check N unsure rallies" (prompt 248): walk only Snappet's unsure guesses.
+    var unsureOnly = false
     /// `true` when the last untagged rally was tagged (→ TtTagDone).
     let onClose: (Bool) -> Void
 
@@ -704,6 +748,9 @@ struct RacketTagSheet: View {
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var doubles: Bool { ex?.isDoubles ?? false }
     private var current: RacketRally? { rallies.first { $0.id == (currentID ?? startID) } }
+    /// Unsure guesses in the part when the sheet opened, and how many are checked since.
+    @State private var unsureTotal = 0
+    @State private var unsureDone = 0
 
     private var players: [String] {
         var names = ["You"]
@@ -721,11 +768,20 @@ struct RacketTagSheet: View {
                         Text("Marked \(RacketVideoTime.clock(r.startSec - ref.startSec))–\(RacketVideoTime.clock(r.endSec - ref.startSec))")
                             .font(.system(size: 22, weight: .light)).monospacedDigit()
                             .accessibilityIdentifier("racket.tag.marked")
-                        Text("No suggestions").snappetLabel()
+                        if unsureOnly {
+                            Text("Unsure \(unsureDone + 1) of \(unsureTotal)").snappetLabel()
+                                .accessibilityIdentifier("racket.tag.unsureCount")
+                        } else if r.isGuess {
+                            Text(r.isUnsure ? "Snappet guess · unsure" : "Snappet guess").snappetLabel()
+                        } else {
+                            Text("No suggestions").snappetLabel()
+                        }
                         Text("Who won the rally?").font(.system(size: 17, weight: .semibold))
                         HStack(spacing: 10) {
-                            pick(sides.us, winner == .us, id: "racket.tag.winner.us") { winner = .us }
-                            pick(sides.them, winner == .them, id: "racket.tag.winner.them") { winner = .them }
+                            pick(sides.us + (r.guessWinner == .us && r.isGuess ? " · suggested" : ""), winner == .us,
+                                 id: "racket.tag.winner.us") { winner = .us }
+                            pick(sides.them + (r.guessWinner == .them && r.isGuess ? " · suggested" : ""), winner == .them,
+                                 id: "racket.tag.winner.them") { winner = .them }
                         }
                         Text("How did it end? Optional").font(.system(size: 17, weight: .semibold))
                         FlowRow {
@@ -748,10 +804,11 @@ struct RacketTagSheet: View {
                         Button { save(r, notRally: false) } label: { Text("Next").frame(maxWidth: .infinity, minHeight: 30) }
                             .buttonStyle(SnappetWidePrimaryStyle())
                             .accessibilityIdentifier("racket.tag.next")
-                        Text("Nothing is picked for you. Snappet can’t suggest for \(sport.label.lowercased()) yet.")
+                        Text(r.isFromModel ? "A suggestion is only a suggestion: nothing counts until you pick it and tap Next."
+                             : "Nothing is picked for you. Snappet can’t suggest for \(sport.label.lowercased()) yet.")
                             .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Color.clear.frame(height: 0).navigationTitle("Your rally \(k + 1) of \(rallies.count)")
+                        Color.clear.frame(height: 0).navigationTitle(unsureOnly ? "Check unsure rallies" : "Your rally \(k + 1) of \(rallies.count)")
                     }
                 }
                 .padding(20)
@@ -768,13 +825,18 @@ struct RacketTagSheet: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onAppear { load(startID) }
+        .onAppear {
+            unsureTotal = rallies.filter(\.isUnsure).count
+            load(startID)
+        }
     }
 
     private func load(_ id: UUID) {
         currentID = id
         let r = rallies.first { $0.id == id }
-        winner = r?.winner
+        // A guess with a score tap behind it starts on the suggested winner (QuickTag "You · suggested"); Next confirms
+        // it as your tag (prompt 248).
+        winner = r?.winner ?? (r?.isGuess == true ? r?.guessWinner : nil)
         ending = r?.ending
         lastShot = r?.lastShotBy
     }
@@ -784,11 +846,14 @@ struct RacketTagSheet: View {
         let updated = RacketRallyMarking.tag(all, id: r.id, winner: winner, ending: ending, lastShotBy: lastShot, notRally: notRally)
         store.updateLog(ref.exerciseID) { $0.rallies = updated }
         Haptics.tap()
+        if unsureOnly { unsureDone += 1 }
         advance(after: r.id, afterSave: true)
     }
 
     private func advance(after id: UUID?, afterSave: Bool = false) {
-        if let next = RacketRallyMarking.nextUntagged(rallies, after: id) {
+        let nextOne = unsureOnly ? RacketRallyMarking.nextUnsure(rallies, after: id) : RacketRallyMarking.nextUntagged(rallies, after: id)
+        if unsureOnly, nextOne == nil, !afterSave { onClose(false); return }
+        if let next = nextOne {
             load(next.id)
         } else if afterSave {
             onClose(true)

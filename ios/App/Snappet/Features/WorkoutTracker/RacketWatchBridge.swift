@@ -222,13 +222,15 @@ enum RacketWatchBridge {
             guard m.phase == .recordingMatch, score.point(command == .pointUs ? .us : .them) else { break }
             // Play has started: the split tells a warmup / break from the game after it (prompt 246).
             if firstOfGame { m.mark(.firstPoint, now: now) }
+            // Every point, with who won it: the rally scan's anchors (prompt 248).
+            m.markPoint(us: command == .pointUs, now: now)
             if let r = score.result {
                 // A finished game is a new game on the recording, for the split (step 3).
                 m.mark(.newGame, now: now)
                 out.unitFinished = r
             }
         case .undo:
-            if m.phase == .recordingMatch { score.undo() }
+            if m.phase == .recordingMatch, score.undo() { m.dropLastPoint() }
         case .mark:
             m.mark(.moment, now: now)
         case .newUnit:

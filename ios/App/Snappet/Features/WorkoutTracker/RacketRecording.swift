@@ -381,7 +381,9 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     /// `breakStart`: "Break starts" from the Watch (XxWatchMark, prompt 245) — a break between games, for the split.
     /// `firstPoint`: the first point of a game tapped on the Watch (prompt 246) — play has started, so the split can
     /// tell a warmup or a break from the game after it. Not a user mark.
-    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart, firstPoint }
+    /// `point`: a point tapped on the Watch (prompt 248), `index` 0 = you won it, 1 = they did — the anchors a rally
+    /// scan uses. Not a user mark.
+    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart, firstPoint, point }
     struct Mark: Codable, Hashable, Sendable {
         var kindRaw: String
         /// The block's / rest's 0-based block index; nil for a moment.
@@ -420,6 +422,12 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var aiRequests: [RacketAIRequest]?
     /// Replies brought back: suggestions until compared, then reviewed (`RacketAIRoundTrip.swift`).
     var aiImports: [RacketAIImport]?
+
+    // Step 5 (prompt 248) — additive Optional.
+    /// Rally scans per part: model, progress, results (`RacketModelHooks.swift`).
+    var scans: [RacketScanRecord]?
+    /// Your videos already acted on "After a session" for this recording (started, asked, or waiting for a charger).
+    var scanOffered: Bool?
 
     init(startedAt: Date) { self.startedAt = startedAt }
 
@@ -796,9 +804,26 @@ struct RacketRecordingMachine: Equatable, Sendable {
     mutating func mark(_ kind: RacketRecordingLog.MarkKind, now: Date) {
         guard phase == .recordingMatch,
               kind == .moment || kind == .newGame || kind == .breakStart || kind == .firstPoint else { return }
+        appendMark(kind, index: nil, now: now)
+    }
+
+    /// A point tapped on the Watch (prompt 248): `us` won it or not. Anchors the rally scan; Undo drops the last one.
+    mutating func markPoint(us: Bool, now: Date) {
+        guard phase == .recordingMatch else { return }
+        appendMark(.point, index: us ? 0 : 1, now: now)
+    }
+
+    /// Undo on the Watch: the last point tapped is gone.
+    mutating func dropLastPoint() {
+        guard var l = log, let i = l.marks.lastIndex(where: { $0.kind == .point }) else { return }
+        l.marks.remove(at: i)
+        log = l
+    }
+
+    private mutating func appendMark(_ kind: RacketRecordingLog.MarkKind, index: Int?, now: Date) {
         touch(now)
         guard var l = log else { return }
-        l.marks.append(.init(kindRaw: kind.rawValue, index: nil, startSec: l.offset(now), endSec: nil))
+        l.marks.append(.init(kindRaw: kind.rawValue, index: index, startSec: l.offset(now), endSec: nil))
         log = l
     }
 
