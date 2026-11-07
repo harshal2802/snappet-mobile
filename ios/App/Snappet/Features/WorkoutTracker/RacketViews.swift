@@ -532,6 +532,11 @@ struct RacketMatchHero: View {
                 let prefix = u.superTiebreak ? "STB" : "\(unit.shortPrefix)\(i + 1)"
                 return RacketUnitChips.Item(id: "u\(i)", text: "\(prefix) \(u.label)", camera: clipUnits.contains(i),
                                             tone: u.won == true ? .won : u.won == false ? .lost : .neutral)
+            case .fromWatch(let u):
+                // Tallied on the Watch (prompt 245): counts, amber until it's confirmed here.
+                let prefix = u.superTiebreak ? "STB" : "\(unit.shortPrefix)\(i + 1)"
+                return RacketUnitChips.Item(id: "u\(i)", text: "\(prefix) \(u.label) \(RacketScoreState.fromWatchSuffix)",
+                                            camera: clipUnits.contains(i), tone: .unconfirmed)
             case .unconfirmed:
                 return RacketUnitChips.Item(id: "u\(i)", text: "\(unit.shortPrefix)\(i + 1) \(RacketScoreState.unconfirmedLabel)",
                                             camera: clipUnits.contains(i), tone: .unconfirmed)

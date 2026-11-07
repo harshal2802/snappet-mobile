@@ -22,6 +22,8 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     var onResume: (() -> Void)?
     /// The phone's latest household chores (household prompt 04), as application context.
     var onHousehold: ((HouseholdWidgetSnapshot) -> Void)?
+    /// A racket match / drill on the phone (prompt 245): a state snapshot to show, or "clear".
+    var onRacket: ((RacketWatchMessage) -> Void)?
 
     private let session: WCSession? = WCSession.isSupported() ? WCSession.default : nil
 
@@ -42,6 +44,20 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     /// Live Activity stay in sync. Uses `transferUserInfo` when unreachable so a control isn't
     /// dropped while the phone is briefly away.
     func sendControl(_ message: LiveWorkoutMessage) { send(message) }
+
+    /// A racket tap (prompt 245): `sendMessage` while the phone is reachable (it wakes the phone app), else queued
+    /// with `transferUserInfo` so a point isn't lost. The command id lets the phone apply a re-sent copy once.
+    func sendRacket(_ command: RacketWatchCommandEnvelope) {
+        guard let session, session.activationState == .activated else { return }
+        let message = RacketWatchMessage.command(command)
+        if session.isReachable {
+            session.sendMessage(message.payload, replyHandler: nil) { [weak session] _ in
+                session?.transferUserInfo(message.payload)
+            }
+        } else {
+            session.transferUserInfo(message.payload)
+        }
+    }
 
     private func send(_ message: LiveWorkoutMessage) {
         guard let session, session.activationState == .activated else { return }
@@ -98,7 +114,9 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
         case .retype(let activityType): onRetype?(activityType)
         case .pause: onPause?()
         case .resume: onResume?()
-        case .metrics, .none: break   // metrics flow watch → phone only
+        case .metrics: break   // metrics flow watch → phone only
+        case .none:
+            if let racket = RacketWatchMessage(payload: payload) { onRacket?(racket) }
         }
     }
 }

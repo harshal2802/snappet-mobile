@@ -664,6 +664,17 @@ too hot), with End routed by mode; "Still playing?" uses the configured threshol
 the fake camera. **Device-pending:** real long recordings, part boundaries in Photos, calls / backgrounding, storage-full
 and thermal stops. Next (#438): Watch scoring (step 2), then videos / tagging / split (step 3).
 
+🟡 **Racket Watch scoring (2026-11-06, prompt 245 — issue #438 step 2).** watchOS + iOS. A racket match or drill on
+the phone is mirrored on the Apple Watch: Start block 1? / Start game N?; a game-by-game match scored point by point
+(+1 per side, Undo, "Set 1 · Games 4–3", "40 – 30"), End game logs it "from Watch" (counts, confirm later) and runs a
+break ring, Hold to end match; a whole-match recording gets Mark / New game / Break starts / +1 / Stop and split; a
+drill gets the countdown, block and rest rings (pause, +30 s, +1 min, skip, finish); Still playing? with the
+configured threshold; and a notice when recording stops (storage, heat, no answer, a call). The phone owns all state
+and sends snapshots; the Watch sends taps (`Shared/RacketWatchMessage.swift`, `Shared/RacketLiveScore.swift`), mapped
+by the pure `RacketWatchBridge.swift` and sent by `Services/RacketWatchRelay.swift`. Tests: `RacketWatchTests`.
+**Device-pending:** everything over a real iPhone + Apple Watch pair (delivery, latency, wake-ups, haptics). Next
+(#438): videos / tagging / split (step 3).
+
 ## License
 
 TBD.

@@ -324,6 +324,8 @@ struct RacketRecordingCover: View {
     let onSaveScore: (SetLog, Int) -> Void
     /// …or left for later ("Score unconfirmed").
     let onScoreLater: () -> Void
+    /// A game / set tallied point by point on the Apple Watch finished: log it "from Watch" (prompt 245).
+    var onWatchUnit: (SetLog) -> Void = { _ in }
     let onClose: () -> Void
 
     private enum Show: String { case dim, camera }
@@ -342,6 +344,10 @@ struct RacketRecordingCover: View {
     @State private var baseSets = 0
     @State private var gamesToScore: Int?
     @State private var scoreTarget: RacketScoreTarget?
+    /// The Watch's point tally for the game being played (a match recording everything, prompt 245).
+    @State private var liveScore: RacketLiveScore?
+    /// Units the Watch logged during this recording (the next one's rules — a super tiebreak — follow from it).
+    @State private var watchUnitsLogged = 0
 
     private var unit: RacketUnit { ex.racketFormat.sport.unit }
     private var title: String { ex.isRacketMatch ? ex.racketMatchTitle : (ex.displayName ?? "Drill") }
@@ -367,7 +373,10 @@ struct RacketRecordingCover: View {
         .onDisappear {
             recorder.stopPreview()
             UIApplication.shared.isIdleTimerDisabled = idleTimerWas
+            RacketWatchRelay.shared.detach(ex.id)
         }
+        // The Watch mirrors this screen (prompt 245): every change of what it should show is sent.
+        .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -429,12 +438,47 @@ struct RacketRecordingCover: View {
             Haptics.warning()
         }
         recorder.startPreview(quality: quality)
+        if ex.isRacketMatch { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets)) }
+        RacketWatchRelay.shared.attach(ex.id) { command, now in handleWatch(command, now: now) }
         // "A match starts recording now"; a drill waits on the camera for "Start block 1".
         let effects = ex.isRacketMatch ? m.start(now: Date()) : []
         machine = m
         if ex.isRacketDrill { show = .camera }
         perform(effects)
         if let log = m.log { onLog(log) }
+        if let s = watchState { RacketWatchRelay.shared.publish(s) }
+    }
+
+    // MARK: The Watch (prompt 245)
+
+    private func watchRules(unitIndex: Int) -> RacketLiveRules {
+        RacketLiveRules(format: ex.racketFormat, unitIndex: unitIndex)
+    }
+
+    /// What the Watch shows for this screen, from the live entity (its unit number and match line).
+    private var watchState: RacketWatchState? {
+        guard let m = machine else { return nil }
+        let score = liveScore ?? RacketLiveScore(rules: watchRules(unitIndex: ex.sets.count))
+        return RacketWatchBridge.coverState(m, context: RacketWatchContext(ex), score: score, now: now)
+    }
+
+    /// A tap on the Watch. It counts as activity for "Still playing?" (the bridge notes it on the machine).
+    private func handleWatch(_ command: RacketWatchCommand, now: Date) {
+        guard var m = machine else { return }
+        let before = m.log
+        var score = liveScore ?? RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged))
+        let out = RacketWatchBridge.apply(command, to: &m, score: &score, now: now)
+        machine = m
+        if let result = out.unitFinished {
+            onWatchUnit(SetLog(watchResult: result, durationSec: nil))
+            watchUnitsLogged += 1
+            score = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged))
+        } else if out.resetScore {
+            score = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged))
+        }
+        if m.racketMode == .match { liveScore = score }
+        perform(out.effects)
+        if m.log != before, let log = m.log { onLog(log) }
     }
 
     /// Run one event on the machine, then its effects; persist the log when it changed.
@@ -585,6 +629,13 @@ struct RacketRecordingCover: View {
             Text("\(state.won) – \(state.lost)")
                 .font(.system(size: 64, weight: .light)).monospacedDigit()
                 .accessibilityIdentifier("racket.rec.score")
+            if let live = liveScore, !live.isEmpty {
+                // TtRecordAll: "Score from Watch" — the point tally of the game being played.
+                Text("\(live.header(unitNumber: ex.sets.count + 1)) · \(live.display) · score from Watch")
+                    .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("racket.rec.watchScore")
+            }
             HStack(spacing: 10) {
                 stat("Marks", "\(m.log?.userMarkCount ?? 0)")
                 stat("Space left, \(quality.label)", room.map(RacketStorageCheck.roughDuration) ?? "Unknown")
@@ -592,7 +643,11 @@ struct RacketRecordingCover: View {
                     .accessibilityHint(meter.isMeasured ? "Measured from what's been recorded" : "Estimated from the camera settings")
             }
             primary("Mark this moment", id: "racket.rec.mark") { act { $0.mark(.moment, now: Date()); return [] }; Haptics.tap() }
-            secondary("New \(unit.noun) starts", id: "racket.rec.newGame") { act { $0.mark(.newGame, now: Date()); return [] }; Haptics.tap() }
+            secondary("New \(unit.noun) starts", id: "racket.rec.newGame") {
+                act { $0.mark(.newGame, now: Date()); return [] }
+                if liveScore != nil { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged)) }
+                Haptics.tap()
+            }
             footnote(RacketStillPlaying.recordAllFooter(minutes: defaults.stillPlayingEverythingMin))
             Spacer(minLength: 0)
             stopButton("Stop and split")
@@ -763,9 +818,9 @@ struct RacketRecordingCover: View {
                 let state = ex.sets[i].racketScoreState
                 Text(state?.label ?? "—")
                     .font(SnappetType.detail.monospacedDigit())
-                    .foregroundStyle(state == .unconfirmed ? SnappetColor.perfModerate : SnappetColor.ink)
+                    .foregroundStyle(state?.needsConfirming == true ? SnappetColor.perfModerate : SnappetColor.ink)
                     .accessibilityIdentifier("racket.scores.state.\(i)")
-                if state == .unconfirmed {
+                if state?.needsConfirming == true {
                     Button("Confirm") { scoreTarget = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil) }
                         .font(SnappetType.detail.weight(.semibold))
                         .accessibilityIdentifier("racket.scores.confirm.\(i)")
