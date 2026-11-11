@@ -42,6 +42,8 @@ final class RacketRecorder: NSObject {
     /// The owner wants the camera writing — a part that closes at the limit rolls straight into the next one.
     private var wantsCapture = false
     private var configured = false
+    /// Keeps each part level with the horizon however the phone is propped (device feedback round 1).
+    @ObservationIgnored private var rotation: AVCaptureDevice.RotationCoordinator?
     @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     private struct Parts: @unchecked Sendable {
@@ -99,6 +101,7 @@ final class RacketRecorder: NSObject {
         configured = true
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let input = try? AVCaptureDeviceInput(device: camera) else { return }
+        rotation = AVCaptureDevice.RotationCoordinator(device: camera, previewLayer: nil)
         nonisolated(unsafe) let video = input
         nonisolated(unsafe) let mic = AVCaptureDevice.default(for: .audio).flatMap { try? AVCaptureDeviceInput(device: $0) }
         let preset: AVCaptureSession.Preset = quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
@@ -149,8 +152,14 @@ final class RacketRecorder: NSObject {
         partStartedAt = Date()
         guard !fake else { return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("snappet-racket-\(UUID().uuidString).mov")
+        let angle = rotation?.videoRotationAngleForHorizonLevelCapture
         let p = parts
-        queue.async { p.movie.startRecording(to: url, recordingDelegate: self) }
+        queue.async {
+            if let angle, let c = p.movie.connection(with: .video), c.isVideoRotationAngleSupported(angle) {
+                c.videoRotationAngle = angle
+            }
+            p.movie.startRecording(to: url, recordingDelegate: self)
+        }
     }
 
     private func partFinished(url: URL, started: Date, usable: Bool, interruption: RacketInterruption?) {

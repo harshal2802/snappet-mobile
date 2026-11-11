@@ -913,39 +913,47 @@ enum RacketAICompare {
         w.map { $0 == .us ? "\(sides.us) won" : "\(sides.them) won" }
     }
 
-    /// Your rallies (in the part) against the reply's.
+    /// Your rallies (in the part) against the reply's. Where the part has Snappet's guesses (prompt 248), a guess you
+    /// haven't tagged is Snappet's side ("Snappet: …", its suggested winner, never protected), as on TtAICompare; rallies
+    /// you marked or tagged stay "Yours: …" and protected.
     static func build(ai: [RacketRally], yours: [RacketRally], appName: String,
-                      sides: (us: String, them: String)) -> RacketAICompareResult {
+                      sides: (us: String, them: String), guessName: String = "Snappet") -> RacketAICompareResult {
         let ais = ai.sorted { $0.startSec < $1.startSec }
         let byID = Dictionary(yours.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let pairs = self.pairs(ai: ais, yours: yours)
+        let hasGuesses = yours.contains(where: \.isFromModel)
         var items: [RacketAICompareItem] = []
         var matching = 0
         for (k, a) in ais.enumerated() {
             let n = k + 1
-            func item(_ f: RacketAICompareItem.Field, _ label: String, yourID: UUID?, _ y: String, _ t: String, protected: Bool) {
+            func item(_ f: RacketAICompareItem.Field, _ label: String, yourID: UUID?, _ y: String, _ t: String,
+                      protected: Bool, guess: Bool = false) {
                 items.append(.init(aiID: a.id, yourID: yourID, field: f, number: n, title: "Rally \(n) · \(label)",
-                                   yours: "Yours: \(y)", theirs: "\(appName): \(t)", protected: protected))
+                                   yours: "\(guess ? guessName : "Yours"): \(y)", theirs: "\(appName): \(t)", protected: protected))
             }
             guard let yid = pairs[a.id], let y = byID[yid] else {
                 let shots = a.aiShots.map { ", \($0) \($0 == 1 ? "shot" : "shots")" } ?? ""
-                item(.rally, "is it a rally?", yourID: nil, "Not marked", "Yes" + shots, protected: false)
+                item(.rally, "is it a rally?", yourID: nil, hasGuesses ? "Not found" : "Not marked", "Yes" + shots,
+                     protected: false, guess: hasGuesses)
                 continue
             }
-            let byYou = !RacketAISource.isAI(y.tagSourceRaw)
+            let isGuess = y.isGuess
+            let byYou = !RacketAISource.isAI(y.tagSourceRaw) && !isGuess
             if !y.isRally {
                 item(.notRally, "is it a rally?", yourID: yid, "Not a rally", "Yes", protected: byYou)
                 continue
             }
             var disagrees = false
-            if let aw = a.winner, aw != y.winner, y.ending?.isReplay != true {
-                let mine = winnerText(y.winner, sides: sides)
-                item(.winner, "winner", yourID: yid, mine ?? "Not tagged", winnerText(aw, sides: sides)!,
-                     protected: mine != nil && byYou)
+            let yWinner = isGuess ? (y.winner ?? y.guessWinner) : y.winner
+            if let aw = a.winner, aw != yWinner, y.ending?.isReplay != true {
+                let mine = winnerText(yWinner, sides: sides)
+                item(.winner, "winner", yourID: yid, mine ?? (isGuess ? "No guess" : "Not tagged"), winnerText(aw, sides: sides)!,
+                     protected: mine != nil && byYou, guess: isGuess)
                 disagrees = true
             }
             if let ae = a.ending, ae != y.ending {
-                item(.ending, "ending", yourID: yid, y.ending?.label ?? "Not tagged", ae.label, protected: y.ending != nil && byYou)
+                item(.ending, "ending", yourID: yid, y.ending?.label ?? (isGuess ? "No guess" : "Not tagged"), ae.label,
+                     protected: y.ending != nil && byYou, guess: isGuess)
                 disagrees = true
             }
             if !disagrees { matching += 1 }

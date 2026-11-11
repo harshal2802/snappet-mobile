@@ -704,6 +704,19 @@ Pure: `RacketAIRoundTrip.swift` (`RacketAIRoundTripTests`); screens: `RacketAIVi
 **Device-pending:** sharing to real AI apps, their replies, Claude stills, share-in (no share extension yet). Next
 (#438): model hooks (step 5).
 
+🟡 **Racket model hooks (2026-11-07, prompt 248 — issue #438 step 5).** iOS. A per-sport capability registry (every sport
+on Snappet's placeholder model, every feature shown "✓ Available" with its "Without it" line; Preview a sport with no
+model) and a `RallyModel` seam (versioned model info, input requirement, async cancellable scan with progress → rallies
+with times and confidence). The placeholder is vision only: a pure rule over a per-frame motion signal read with
+AVAssetReader (`Services/RacketMotionReader.swift`), anchored by Watch point taps (now marked on the recording). Your
+videos is FindRallies: Find rallies / Re-scan… → Analyzing (progress, time left, Stop / Resume, Do it later, pauses when
+leaving the app or too hot, waits for a charger when asked) → the game summary → Check N unsure → TagDone; ChooseModel,
+ModelCompare, AnalysisSettings ("After a session", default Ask me). Guesses show as "Snappet guess" (unsure dashed),
+never replace your rallies, and count in history only once confirmed; AICompare compares the app with Snappet's guesses.
+Pure: `RacketModelHooks.swift` (`RacketModelHooksTests`); screens: `RacketModelViews.swift`; queue:
+`Services/RacketScanCenter.swift`; UI: `RacketModelUITests` (synthetic signal). **Device-pending:** scan speed, thermal
+state, accuracy on real footage, background behaviour. Next (#438): live tracking (step 6) after a thermal test.
+
 ## License
 
 TBD.

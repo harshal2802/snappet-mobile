@@ -102,6 +102,29 @@ No ML: rally finding is step 5, so this builds the manual path and a seam (`Rack
 - Keep rallies only works on record-everything recordings; game-by-game clips (prompt 203) aren't listed in Your videos yet.
 - Space numbers use the recording's quality at HEVC 30 fps (board: 8.6 GB for 1 h 3 min is a 4K figure).
 
+## Device feedback round 1 (2026-11-11, user testing on an iPhone)
+
+**Problem.** "Split recording" showed a flat bar and a list with no video, so a part couldn't be checked by eye.
+**Changes** (decisions.md, "Racket device feedback round 1"; pure pieces in `RacketVideoScrub.swift`, tested in
+`RacketVideoScrubTests`):
+
+- [x] **Review:** the original plays at the top (one `RacketPlayback` over step 3's composition across the 10-minute
+      Photos parts). The bar is a segmented timeline (`RacketSplitTimeline`: one segment per part, game accent,
+      warmup / break / rest / not play / practice grey, unsure amber) with a playhead; a tap plays that part to its end
+      (from its first moment with video), a drag scrubs. A row tap plays its part (outlined while playing); **Fix**
+      opens TtSplitEdit.
+- [x] **Fix one part:** the review's player at the top; dragging the start / end handle scrubs the video to that edge
+      (one seek in flight, ~1 pt tolerance, exact on release); a film strip of frames sits behind the range (outside
+      shaded); dragging the strip moves the playhead; Play / Pause; **Split here** cuts at the playhead (disabled, with
+      why, until ≥ 5 s inside); the range is the title, as on the board.
+- [x] **iCloud-only / missing originals:** "Downloading from iCloud… N %" with progress, Try again on failure, black
+      stretches for missing parts ("1 part of the original isn't on this phone"), and "You can still split it by time"
+      when none are there. Applies to every racket player.
+- Differences from the boards: rows play (board: rows open the edit) — editing is the per-row Fix button; the review
+  note adds "Tap a part to watch it, Fix to change it."; the playhead clock / Play row under the bar is new.
+- [ ] Device: split a > 20 min recording (two Photos parts), tap game 2 (starts in part 2), drag a handle and watch the
+      frame follow, Split here mid-rally; offload a part to iCloud and open the review.
+
 ## Test plan
 
 1. `cd ios/App && xcodegen generate`; build `Snappet` and `SnappetWatch`.

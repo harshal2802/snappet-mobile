@@ -1796,6 +1796,12 @@ struct FreeformPlayerView: View {
                     .pagerOutline()
                     .accessibilityIdentifier("racket.yourVideos")
                 }
+                // "What works for <sport>" (TtCapabilities, prompt 248).
+                Button("What works for \(ex.racketFormat.sport.label.lowercased())") {
+                    racketVideos = RacketVideosTarget(start: .capabilities(ex.racketFormat.sport))
+                }
+                .font(SnappetType.detail.weight(.semibold))
+                .accessibilityIdentifier("racket.whatWorks")
             }
         }
     }
@@ -1810,7 +1816,7 @@ struct FreeformPlayerView: View {
     private func saveRacketRecordingLog(_ log: RacketRecordingLog, exerciseID: UUID) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
         // The recording screen owns runs / parts / marks; the split, rallies, derived videos and other-AI sends /
-        // replies are written by the videos screens (prompts 246 / 247) and must survive a late part save.
+        // replies and rally scans are written by the videos screens (prompts 246–248) and must survive a late part save.
         var merged = log
         if let old = session.exercises[idx].racketRecordingLog, old.startedAt == log.startedAt {
             merged.split = log.split ?? old.split
@@ -1820,6 +1826,8 @@ struct FreeformPlayerView: View {
             merged.originalDeleted = log.originalDeleted ?? old.originalDeleted
             merged.aiRequests = log.aiRequests ?? old.aiRequests
             merged.aiImports = log.aiImports ?? old.aiImports
+            merged.scans = log.scans ?? old.scans
+            merged.scanOffered = log.scanOffered ?? old.scanOffered
         }
         session.exercises[idx].racketRecordingLog = merged
         persist()
