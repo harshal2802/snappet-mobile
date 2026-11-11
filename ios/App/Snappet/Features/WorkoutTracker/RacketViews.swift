@@ -19,6 +19,8 @@ struct RacketMatchParams: Equatable {
     var bestOf: Int?
     var pointsTo: Int
     var superTiebreak: Bool = false
+    /// Padel "At 40–40: Golden point" (PdDeuce, prompt 249); `false` ⇒ Advantage.
+    var goldenPoint: Bool = false
     var event: String = ""
     var round: String = ""
     /// How this match is filmed (prompt 244) — chosen here, defaulted from Settings → Racket recording.
@@ -41,6 +43,7 @@ struct RacketMatchParams: Equatable {
         bestOf = format.bestOf
         pointsTo = format.pointsTo
         superTiebreak = format.superTiebreak
+        goldenPoint = format.goldenPoint
         event = ex.racketEvent ?? ""
         round = ex.racketRound ?? ""
         recording = ex.racketRecording
@@ -67,11 +70,16 @@ struct RacketMatchParams: Equatable {
         ex.racketBestOf = bestOf ?? 0
         ex.racketPointsTo = pointsTo == sport.defaultPointsTo ? nil : pointsTo
         ex.racketSuperTiebreak = sport.usesSets && superTiebreak ? true : nil
+        ex.racketGoldenPoint = sport == .padel && goldenPoint ? true : nil
         ex.racketEvent = clean(event)
         ex.racketRound = clean(round)
         ex.racketRecordingRaw = recording == .byUnit ? nil : recording.rawValue
     }
 }
+
+/// How the match form starts a match (Match board): "Set up camera" → Camera → Warmup, or "Play without video" →
+/// ScoreOnly (prompt 249).
+enum RacketMatchStartAction: Equatable, Sendable { case setUpCamera, playWithoutVideo }
 
 /// Where the setup sheet opens: the sport picker for a new entity, or the match form prefilled.
 enum RacketSetupStart: Equatable {
@@ -87,14 +95,17 @@ struct RacketSetupSheet: View {
     let recentOpponents: (RacketSport) -> [String]
     let recentEvents: [String]
     let recentDrills: (RacketSport) -> [(name: String, measure: RacketDrillMeasure)]
+    /// Save (editing a match), or a start when `onStartMatch` is nil.
     let onMatch: (RacketMatchParams) -> Void
     let onDrill: (RacketSport, String, RacketDrillMeasure, RacketDrillPlan) -> Void
+    /// "Set up camera" / "Play without video" (prompt 249); nil ⇒ `onMatch`.
+    var onStartMatch: ((RacketMatchParams, RacketMatchStartAction) -> Void)? = nil
     /// Settings → Racket recording: the recording mode, drill plan and timers a new match / drill starts with.
     var recordingDefaults = RacketRecordingDefaults()
     /// The plan last used for this drill (sport, name) — the plan step opens on it so one tap starts the drill.
     var rememberedPlan: (RacketSport, String) -> RacketDrillPlan? = { _, _ in nil }
 
-    private enum Step { case sport, match, drill, newDrill, drillPlan }
+    private enum Step { case sport, padelRules, match, drill, newDrill, drillPlan }
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .sport
@@ -119,6 +130,7 @@ struct RacketSetupSheet: View {
             Group {
                 switch step {
                 case .sport: sportStep
+                case .padelRules: padelRulesStep
                 case .match: matchStep
                 case .drill: drillStep
                 case .newDrill: newDrillStep
@@ -149,6 +161,7 @@ struct RacketSetupSheet: View {
         switch step {
         case .newDrill: return .drill
         case .drillPlan: return pickedDrillIsNew ? .newDrill : .drill
+        case .match where sport == .padel && !isEditing && !isNext: return .padelRules
         default: return .sport
         }
     }
@@ -204,7 +217,8 @@ struct RacketSetupSheet: View {
                     .font(.caption).foregroundStyle(SnappetColor.textSecondary)
                 Button {
                     params = RacketMatchParams(sport: sport, recording: recordingDefaults.matchMode)
-                    withAnimation { step = mode == .match ? .match : .drill }
+                    // Padel sets its deuce rule, final set and players first (PdDeuce → Match).
+                    withAnimation { step = mode == .match ? (sport == .padel ? .padelRules : .match) : .drill }
                 } label: {
                     Text("Next").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
@@ -216,77 +230,225 @@ struct RacketSetupSheet: View {
         .navigationTitle("Racket sport")
     }
 
-    // MARK: Step 2a — match details
+    // MARK: Step 2a — match details (Match / XxMatch board, prompt 249)
 
     private var matchStep: some View {
-        Form {
-            Section("Opponent") {
-                TextField(params.doubles ? "Opponents (e.g. Jordan & Lee)" : "Opponent name", text: $params.opponent)
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("racket.opponent")
-                let recents = recentOpponents(params.sport)
-                if !recents.isEmpty {
-                    chipRow(recents) { params.opponent = $0 }
+        let format = RacketFormat(sport: params.sport, bestOf: params.bestOf, pointsTo: params.pointsTo,
+                                  superTiebreak: params.superTiebreak, goldenPoint: params.goldenPoint)
+        let head = RacketGameCopy.formatHeader(format)
+        let sides = RacketWatchCopy.sides(opponent: params.opponent, doubles: params.doubles)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // The live header: "You 0 · Best of 3 / Games to 21 · Alex 0".
+                HStack {
+                    headerSide(sides.us, alignment: .leading)
+                    Spacer()
+                    VStack(spacing: 2) {
+                        Text(head.top).font(.system(size: 14, weight: .semibold))
+                        Text(head.bottom).font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("racket.match.format")
+                    Spacer()
+                    headerSide(sides.them, alignment: .trailing)
                 }
-            }
-            Section("Play") {
-                Picker("Play", selection: $params.doubles) {
-                    Text("Singles").tag(false)
-                    Text("Doubles").tag(true)
+                .padding(14)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("racket.match.header")
+                if params.sport != .padel { formatBox }
+                if params.sport != .padel { playersBox }
+                RacketBox {
+                    Text("Film this match").font(.system(size: 15, weight: .semibold))
+                    Text(RacketGameCopy.filmHelper).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    RacketRecordingChoice(selection: $params.recording, mode: .match, unit: params.sport.unit)
+                    if RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady") {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle").foregroundStyle(SnappetColor.perfFresh)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Apple Watch ready").font(.system(size: 15, weight: .semibold))
+                                Text("Score from your wrist while you play").font(SnappetType.detail)
+                                    .foregroundStyle(SnappetColor.textSecondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("racket.match.watchReady")
+                    }
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("racket.doubles")
-                if params.doubles {
-                    TextField("Your partner", text: $params.partner)
+                // Prompt 203's Event · round (not on the board) sits under Film this match so the board's order holds.
+                RacketBox {
+                    Text("Event · round").font(.system(size: 15, weight: .semibold))
+                    TextField("Event (e.g. City Open)", text: $params.event)
                         .textInputAutocapitalization(.words)
-                        .accessibilityIdentifier("racket.partner")
+                        .accessibilityIdentifier("racket.event")
+                    if !recentEvents.isEmpty { chipRow(recentEvents) { params.event = $0 } }
+                    TextField("Round (e.g. R16, QF)", text: $params.round)
+                        .textInputAutocapitalization(.characters)
+                        .accessibilityIdentifier("racket.round")
+                    Text("Optional. Matches with the same event read as one tournament.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                 }
-            }
-            Section("Format") {
-                Picker("Format", selection: $params.bestOf) {
-                    ForEach(params.sport.bestOfOptions, id: \.self) { n in
-                        Text(RacketFormat(sport: params.sport, bestOf: n).label).tag(Int?.some(n))
-                    }
-                    Text("Open play").tag(Int?.none)
+                if isEditing {
+                    RacketWideButton("Save", id: "racket.startMatch") { onMatch(params); dismiss() }
+                } else {
+                    RacketWideButton("Set up camera", id: "racket.match.setUpCamera") { start(.setUpCamera) }
+                    Button("Play without video") { start(.playWithoutVideo) }
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .accessibilityIdentifier("racket.match.playWithoutVideo")
                 }
-                .accessibilityIdentifier("racket.format")
-                if params.sport.pointsToOptions.count > 1 {
-                    Picker("Games to", selection: $params.pointsTo) {
-                        ForEach(params.sport.pointsToOptions, id: \.self) { Text("\($0)").tag($0) }
-                    }
-                }
-                if params.sport.usesSets, (params.bestOf ?? 0) > 1 {
-                    Toggle("Super tiebreak decider (to 10)", isOn: $params.superTiebreak)
-                        .accessibilityIdentifier("racket.superTiebreak")
-                }
-            }
-            Section {
-                TextField("Event (e.g. City Open)", text: $params.event)
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("racket.event")
-                if !recentEvents.isEmpty { chipRow(recentEvents) { params.event = $0 } }
-                TextField("Round (e.g. R16, QF)", text: $params.round)
-                    .textInputAutocapitalization(.characters)
-                    .accessibilityIdentifier("racket.round")
-            } header: {
-                Text("Event · round")
-            } footer: {
-                Text("Optional. Matches with the same event read as one tournament.")
-            }
-            Section("Recording") {
-                RacketRecordingChoice(selection: $params.recording, mode: .match, unit: params.sport.unit)
-            }
-            Section {
-                Button {
-                    onMatch(params)
-                    dismiss()
+                NavigationLink {
+                    RacketCapabilitiesScreen(sport: params.sport, onPreviewNoModel: nil)
                 } label: {
-                    Text(isEditing ? "Save" : "Start match").font(.headline).frame(maxWidth: .infinity)
+                    Text("What works for \(params.sport.label.lowercased())").underline()
+                        .font(SnappetType.detail.weight(.semibold))
+                        .frame(maxWidth: .infinity)
                 }
-                .accessibilityIdentifier("racket.startMatch")
+                .accessibilityIdentifier("racket.match.whatWorks")
+            }
+            .padding(16)
+        }
+        .navigationTitle(isEditing ? "Match details" : params.sport.label)
+    }
+
+    private func start(_ action: RacketMatchStartAction) {
+        var p = params
+        switch action {
+        case .setUpCamera: if p.recording == .off { p.recording = .byUnit }
+        case .playWithoutVideo: p.recording = .off
+        }
+        if let onStartMatch { onStartMatch(p, action) } else { onMatch(p) }
+        dismiss()
+    }
+
+    private func headerSide(_ who: String, alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 0) {
+            Text(who).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+            Text("0").font(.system(size: 34, weight: .light)).monospacedDigit()
+        }
+    }
+
+    /// Format chips per sport (BdMatch "Best of 3 / One game / Games to 15", TnMatch "Sets" + "Options").
+    private var formatBox: some View {
+        let sport = params.sport
+        let bestOfs = RacketMatchFormChoices.bestOf(sport)
+        return RacketBox {
+            Text(sport == .tennis ? "Sets" : "Format").font(.system(size: 15, weight: .semibold))
+            RacketWrapLayout(spacing: 8) {
+                ForEach(bestOfs, id: \.self) { n in
+                    formChip(RacketMatchFormChoices.bestOfLabel(sport, n), on: params.bestOf == n, id: "racket.format.bestOf\(n)") {
+                        params.bestOf = n
+                    }
+                }
+                if let alt = RacketMatchFormChoices.altPointsTo(sport) {
+                    formChip("\(sport.unit.noun.capitalized)s to \(alt)", on: params.pointsTo == alt, id: "racket.format.pointsTo\(alt)") {
+                        params.pointsTo = params.pointsTo == alt ? sport.defaultPointsTo : alt
+                    }
+                }
+            }
+            if sport == .pickleball {
+                RacketWrapLayout(spacing: 8) {
+                    ForEach(sport.pointsToOptions, id: \.self) { n in
+                        formChip("Games to \(n)", on: params.pointsTo == n, id: "racket.format.pointsTo\(n)") { params.pointsTo = n }
+                    }
+                }
+            }
+            if sport == .tennis {
+                Text("Options").font(.system(size: 15, weight: .semibold))
+                formChip("Match tiebreak", on: params.superTiebreak, id: "racket.superTiebreak") {
+                    params.superTiebreak.toggle()
+                }
+                .disabled((params.bestOf ?? 0) <= 1)
             }
         }
-        .navigationTitle(isEditing ? "Match details" : "\(params.sport.label) match")
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("racket.format")
+    }
+
+    private var playersBox: some View {
+        RacketBox {
+            Text("Players").font(.system(size: 15, weight: .semibold))
+            RacketChips(options: [false, true], label: { $0 ? "Doubles" : "Singles" }, selection: $params.doubles,
+                        idPrefix: "racket.doubles", idFor: { $0 ? "doubles" : "singles" })
+            Text("Opponent").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+            TextField(params.doubles ? "Optional (e.g. Jordan & Lee)" : "Optional", text: $params.opponent)
+                .textInputAutocapitalization(.words)
+                .padding(10)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityIdentifier("racket.opponent")
+            let recents = recentOpponents(params.sport)
+            if !recents.isEmpty { chipRow(recents) { params.opponent = $0 } }
+            if params.doubles {
+                TextField("Your partner", text: $params.partner)
+                    .textInputAutocapitalization(.words)
+                    .padding(10)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityIdentifier("racket.partner")
+            }
+            Text(RacketGameCopy.doublesHelper).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Step 2a′ — padel rules (PdDeuce "Match setup")
+
+    private var padelRulesStep: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("At 40–40").font(.system(size: 20, weight: .bold))
+                optionCard("Advantage", "Keep playing until 2 points clear", on: !params.goldenPoint, id: "racket.deuce.advantage") {
+                    params.goldenPoint = false
+                }
+                optionCard("Golden point", "Next point wins the game", on: params.goldenPoint, id: "racket.deuce.golden") {
+                    params.goldenPoint = true
+                }
+                Text("Final set").font(.system(size: 20, weight: .bold)).padding(.top, 6)
+                optionCard("Full set", "Play a normal set", on: !params.superTiebreak, id: "racket.deuce.fullSet") {
+                    params.superTiebreak = false
+                }
+                optionCard("Super tiebreak", "First to 10, win by 2", on: params.superTiebreak, id: "racket.deuce.superTiebreak") {
+                    params.superTiebreak = true
+                }
+                playersBox
+                RacketWideButton("Continue", id: "racket.deuce.continue") { withAnimation { step = .match } }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Match setup")
+    }
+
+    private func optionCard(_ title: String, _ sub: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button { action(); Haptics.tap() } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                Text(sub).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(on ? SnappetColor.brand.opacity(0.14) : Color.white.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(on ? SnappetColor.brand : .clear, lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func formChip(_ label: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button { action(); Haptics.tap() } label: {
+            Text(label).font(.system(size: 14, weight: on ? .semibold : .regular))
+                .foregroundStyle(on ? SnappetColor.brand : SnappetColor.ink)
+                .padding(.horizontal, 14).frame(minHeight: 38)
+                .background(on ? SnappetColor.brand.opacity(0.14) : Color.white.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(on ? SnappetColor.brand : .clear, lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     // MARK: Step 2b — drill picker
@@ -789,7 +951,7 @@ struct RacketScoreSheet: View {
     private var title: String {
         isSTB ? "Super tiebreak score" : "\(unit.noun.capitalized) \(unitIndex + 1) score"
     }
-    private var maxValue: Int { isSTB ? 40 : format.sport.usesSets ? 13 : (format.sport.cap ?? 60) }
+    private var maxValue: Int { isSTB ? 40 : format.sport.usesSets ? 13 : (format.cap ?? 60) }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -1058,6 +1220,8 @@ struct RacketRecapCards: View {
     /// Your videos / Keep rallies only (TtSessionRecap, prompt 246): the host presents them (session detail — outside its
     /// lazy list); `nil` = this card does.
     var onOpenVideos: ((RacketVideosTarget) -> Void)? = nil
+    /// "Make a reel" (TtSessionRecap, prompt 249): the host opens the session in Studio; nil ⇒ hidden.
+    var onMakeReel: (() -> Void)? = nil
     @State private var gameTarget: RacketGameTarget?
     @State private var videos: RacketVideosTarget?
 
@@ -1072,7 +1236,7 @@ struct RacketRecapCards: View {
                 header(summary)
                 ForEach(matches) { matchRow($0) }
                 ForEach(drills) { drillRow($0) }
-                if hasRecordings { videoActions }
+                if hasRecordings || onMakeReel != nil { videoActions }
                 if showsHR { hrSection }
             }
             .snappetPanel()
@@ -1087,6 +1251,11 @@ struct RacketRecapCards: View {
         VStack(alignment: .leading, spacing: 2) {
             // Sentence label + a light record (prompt 224 — was racket-colour tracked caps + bold).
             Text([s.event, s.sport?.label].compactMap { $0 }.joined(separator: " · ")).snappetLabel()
+            // TtSessionRecap: "1:24:10 · average heart rate 132".
+            Text(RacketRecapLine.line(durationSec: (session.completedAt ?? .now).timeIntervalSince(session.startedAt),
+                                      bpms: session.hrSeries.map(\.bpm)))
+                .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.recap.timeLine")
             if s.matches > 0 {
                 Text(s.record.label).font(.system(size: 28, weight: .light).monospacedDigit())
                     .accessibilityIdentifier("racket.recap.record")
@@ -1113,9 +1282,16 @@ struct RacketRecapCards: View {
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("racket.recap.keepRallies")
             }
-            Button("Your videos") { open(.videos) }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("racket.recap.videos")
+            if let onMakeReel {
+                Button("Make a reel") { onMakeReel() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("racket.recap.reel")
+            }
+            if hasRecordings {
+                Button("Your videos") { open(.videos) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("racket.recap.videos")
+            }
         }
         .font(.system(size: 14, weight: .semibold))
     }

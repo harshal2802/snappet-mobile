@@ -62,6 +62,9 @@ enum RacketSport: String, Codable, CaseIterable, Identifiable, Sendable {
     var pointsToOptions: [Int] {
         switch self {
         case .pickleball: return [11, 15, 21]
+        // The boards' "Games to 15" chip (BdMatch, SqMatch; prompt 249).
+        case .badminton: return [21, 15]
+        case .squash: return [11, 15]
         default: return [defaultPointsTo]
         }
     }
@@ -153,13 +156,23 @@ struct RacketFormat: Equatable, Sendable {
     var pointsTo: Int
     /// Tennis / padel: the deciding set is a super tiebreak to 10.
     var superTiebreak: Bool
+    /// Padel "Golden point" at 40–40 (PdDeuce, prompt 249); `false` ⇒ Advantage.
+    var goldenPoint: Bool = false
 
     /// `bestOf: nil` is an open format; use `RacketFormat.defaults(for:)` for the sport's standard one.
-    init(sport: RacketSport, bestOf: Int?, pointsTo: Int? = nil, superTiebreak: Bool = false) {
+    init(sport: RacketSport, bestOf: Int?, pointsTo: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false) {
         self.sport = sport
         self.bestOf = bestOf.flatMap { $0 > 0 ? $0 : nil }
         self.pointsTo = pointsTo ?? sport.defaultPointsTo
         self.superTiebreak = sport.usesSets && superTiebreak
+        self.goldenPoint = sport.usesSets && goldenPoint
+    }
+
+    /// The score that wins a game outright: badminton 30 in a game to 21, 21 in a game to 15 (prompt 249); none
+    /// elsewhere.
+    var cap: Int? {
+        guard sport == .badminton else { return nil }
+        return pointsTo == 15 ? 21 : 30
     }
 
     /// The sport's standard format (table tennis: best of 5 to 11; tennis: best of 3 sets).
@@ -292,7 +305,7 @@ enum RacketScoring {
             return checkGame(score.scoreFor, score.scoreAgainst, to: 10, cap: nil, noun: "super tiebreak")
         }
         if format.sport.usesSets { return checkSet(score, gamesTo: format.pointsTo) }
-        return checkGame(score.scoreFor, score.scoreAgainst, to: format.pointsTo, cap: format.sport.cap, noun: "game")
+        return checkGame(score.scoreFor, score.scoreAgainst, to: format.pointsTo, cap: format.cap, noun: "game")
     }
 
     /// A points game: to `to`, win by 2, optionally capped (badminton: 30–29 wins).
@@ -448,7 +461,7 @@ extension SessionExercise {
         let sport = racketSport ?? .tableTennis
         let bestOf: Int? = racketBestOf.map { $0 > 0 ? $0 : nil } ?? sport.defaultBestOf
         return RacketFormat(sport: sport, bestOf: bestOf, pointsTo: racketPointsTo,
-                            superTiebreak: racketSuperTiebreak ?? false)
+                            superTiebreak: racketSuperTiebreak ?? false, goldenPoint: racketGoldenPoint ?? false)
     }
 
     /// The logged, scored units in order (unconfirmed games count for neither side).

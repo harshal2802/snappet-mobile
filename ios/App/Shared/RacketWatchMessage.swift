@@ -137,6 +137,8 @@ struct RacketWatchState: Codable, Equatable, Sendable {
         var blocks: Int
         var endsAt: Date
         var totalSec: TimeInterval
+        /// A game-by-game match's next unit ("Game 2", prompt 249); `nil` ⇒ a drill block.
+        var title: String? = nil
     }
 
     struct Block: Codable, Equatable, Sendable {
@@ -197,7 +199,7 @@ extension RacketWatchState.Surface {
         switch self {
         case .countdown(let c):
             let left = max(0, c.endsAt.timeIntervalSince(now))
-            return .init(word: "Block \(c.block + 1) starts", tone: .work, seconds: left,
+            return .init(word: "\(c.title ?? "Block \(c.block + 1)") starts", tone: .work, seconds: left,
                          progress: min(1, left / max(1, c.totalSec)))
         case .block(let b):
             let left = max(0, b.totalSec - now.timeIntervalSince(b.startedAt))

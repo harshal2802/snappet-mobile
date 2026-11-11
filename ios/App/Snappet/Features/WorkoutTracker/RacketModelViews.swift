@@ -107,7 +107,8 @@ enum RacketPartNames {
 
 struct RacketCapabilitiesScreen: View {
     let sport: RacketSport
-    let onPreviewNoModel: () -> Void
+    /// `nil` from the match form (prompt 249): the preview lives in Your videos, which needs the session.
+    let onPreviewNoModel: (() -> Void)?
 
     var body: some View {
         let caps = RacketCapabilityRegistry.capabilities(for: sport)
@@ -140,7 +141,9 @@ struct RacketCapabilitiesScreen: View {
                     mNote("\(m.label): \(m.note.lowercased()). Video only, on this phone.")
                         .accessibilityIdentifier("racket.caps.model")
                 }
-                mSecondary("Preview a sport with no model", id: "racket.caps.preview", action: onPreviewNoModel)
+                if let onPreviewNoModel {
+                    mSecondary("Preview a sport with no model", id: "racket.caps.preview", action: onPreviewNoModel)
+                }
             }
             .padding(20)
         }
