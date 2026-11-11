@@ -21,6 +21,7 @@ final class RacketWatchRelay {
     private var revision = Int(Date().timeIntervalSince1970 * 10)
     private var attachedID: UUID?
     private var handler: ((RacketWatchCommand, Date) -> Void)?
+    private var attachToken = UUID()
     private var lastSent: RacketWatchState?
     private var ledger = RacketWatchCommandLedger()
 
@@ -39,10 +40,20 @@ final class RacketWatchRelay {
 
     /// The racket screen now on the phone takes the Watch's taps for `sessionID` (one at a time: the recording
     /// screen covers the match page, so the latest attach wins).
-    func attach(_ sessionID: UUID, handler: @escaping (RacketWatchCommand, Date) -> Void) {
+    @discardableResult
+    func attach(_ sessionID: UUID, handler: @escaping (RacketWatchCommand, Date) -> Void) -> UUID {
         if attachedID != sessionID { lastSent = nil }
         attachedID = sessionID
         self.handler = handler
+        attachToken = UUID()
+        return attachToken
+    }
+
+    /// Detach only if `token`'s attach is still the current one: a screen leaving after the page re-attached the same
+    /// match (the game-by-game screen closing, prompt 249) must not take the Watch away from the page.
+    func detach(_ sessionID: UUID, token: UUID) {
+        guard token == attachToken else { return }
+        detach(sessionID)
     }
 
     /// The screen left. The Watch goes back to its usual face.

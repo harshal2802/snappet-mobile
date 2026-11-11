@@ -68,7 +68,8 @@ struct FreeformDoneSummaryView: View {
                     // Records, firsts, streaks and counts against history (prompt 146) — same as the detail.
                     SessionEarnedStrip(session: session, resolver: resolver, unit: unit)
                     SessionRecapCards(session: session, resolver: resolver, unit: unit,
-                                      maxHR: maxHR, milestones: milestones)
+                                      maxHR: maxHR, milestones: milestones,
+                                      onMakeReel: videoClipCount > 0 ? onOpenStudio : nil)
                     if videoClipCount > 0 { studioCTA }
                 }
                 .padding(.horizontal)

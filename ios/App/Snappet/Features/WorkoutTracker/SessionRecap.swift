@@ -135,6 +135,8 @@ struct SessionRecapCards: View {
     var onOpenGame: ((RacketGameTarget) -> Void)? = nil
     /// Racket Your videos / Keep rallies only (prompt 246) — the host presents them; `nil` = the racket card does.
     var onOpenVideos: ((RacketVideosTarget) -> Void)? = nil
+    /// Racket "Make a reel" (TtSessionRecap, prompt 249): open the session in Studio; nil ⇒ hidden.
+    var onMakeReel: (() -> Void)? = nil
 
     private var stats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
     private var dominant: FreeformSummary.Dominant { stats.dominant }
@@ -157,7 +159,8 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
-        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame, onOpenVideos: onOpenVideos)
+        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame, onOpenVideos: onOpenVideos,
+                                         onMakeReel: onMakeReel)
         case .none:     EmptyView()
         }
     }
