@@ -383,7 +383,9 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     /// tell a warmup or a break from the game after it. Not a user mark.
     /// `point`: a point tapped on the Watch (prompt 248), `index` 0 = you won it, 1 = they did — the anchors a rally
     /// scan uses. Not a user mark.
-    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart, firstPoint, point }
+    /// `game`: one game of a game-by-game recording, `index` its set index (prompt 249); `interval`: badminton's
+    /// interval at 11 inside a game. Both are time ranges, not user marks.
+    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart, firstPoint, point, game, interval }
     struct Mark: Codable, Hashable, Sendable {
         var kindRaw: String
         /// The block's / rest's 0-based block index; nil for a moment.
@@ -428,6 +430,10 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var scans: [RacketScanRecord]?
     /// Your videos already acted on "After a session" for this recording (started, asked, or waiting for a charger).
     var scanOffered: Bool?
+
+    // Prompt 249 — additive Optional.
+    /// `RacketRecordingMode.rawValue` this recording was made in; `nil` ⇒ everything (the only mode with a log before).
+    var modeRaw: String?
 
     init(startedAt: Date) { self.startedAt = startedAt }
 
@@ -603,6 +609,11 @@ enum RacketStillPlaying {
     /// "No score taps or marks for 30 minutes." — always the configured threshold (review5 M4).
     static func reason(minutes: Int) -> String { "No score taps or marks for \(minutes) minutes." }
     static func again(minutes: Int) -> String { "Keep recording asks again in \(minutes) minutes." }
+    /// Game by game (StillPlaying board): "Keep recording asks again in 30 minutes. When you record everything, it waits 60."
+    static func again(minutes: Int, everythingMinutes: Int?) -> String {
+        guard let everythingMinutes else { return again(minutes: minutes) }
+        return again(minutes: minutes) + " When you record everything, it waits \(everythingMinutes)."
+    }
     static let stopsLine = "Recording stops in 2:00 if there’s no answer. Everything so far stays saved."
 
     /// The line on the record-everything screen.
@@ -879,6 +890,48 @@ struct RacketRecordingMachine: Equatable, Sendable {
         return beginRun(now)
     }
 
+    // MARK: Game by game (prompt 249)
+
+    /// Continue an earlier game-by-game recording of this match (the screen was closed between games): new games
+    /// add runs and parts to the same log. Only before anything is recorded here.
+    mutating func continueLog(_ l: RacketRecordingLog) {
+        guard log == nil, recording == .byUnit else { return }
+        log = l
+    }
+
+    /// A break or an interval with "Pause recording" on, or between games: the run closes without an interruption.
+    @discardableResult
+    mutating func pauseCapture(now: Date) -> [Effect] {
+        guard capturing, !isEnded else { return [] }
+        endRun(now: now, reason: nil)
+        return [.stopCapture]
+    }
+
+    /// The next game (or a recorded break) starts: a new run, and a new Photos part.
+    @discardableResult
+    mutating func resumeCapture(now: Date) -> [Effect] {
+        guard !isEnded, interruption == nil, phase == .recordingMatch else { return [] }
+        touch(now)
+        return beginRun(now)
+    }
+
+    /// A game starts (its set index) / ends: a time range on the recording (`MarkKind.game`).
+    mutating func openGame(index: Int, now: Date) {
+        guard phase == .recordingMatch else { return }
+        closeOpenMark(.game, now: now)
+        openMark(.game, index: index, now: now)
+    }
+
+    mutating func closeGame(now: Date) { closeOpenMark(.game, now: now) }
+
+    /// Badminton's interval: a range inside the game.
+    mutating func openInterval(now: Date) {
+        guard phase == .recordingMatch, let l = log, !l.marks.contains(where: { $0.kind == .interval && $0.endSec == nil }) else { return }
+        openMark(.interval, index: nil, now: now)
+    }
+
+    mutating func closeInterval(now: Date) { closeOpenMark(.interval, now: now) }
+
     /// "Keep scoring without video" (a match only): recording is over, the match goes on without the camera.
     @discardableResult
     mutating func continueWithoutVideo(now: Date) -> [Effect] {
@@ -993,11 +1046,14 @@ struct RacketRecordingMachine: Equatable, Sendable {
     }
 
     private mutating func beginRun(_ now: Date) -> [Effect] {
-        guard recording == .everything else { return [] }
+        // Everything, and a match game by game (prompt 249: each game is its own run and part). Block by block keeps
+        // prompt 203's camera.
+        guard recording == .everything || (recording == .byUnit && racketMode == .match) else { return [] }
         if log == nil {
             var l = RacketRecordingLog(startedAt: now)
             l.baseSetIndex = baseSetIndex
             l.qualityRaw = quality?.rawValue
+            if recording == .byUnit { l.modeRaw = recording.rawValue }
             log = l
         }
         guard !capturing, var l = log else { return [] }
@@ -1015,7 +1071,7 @@ struct RacketRecordingMachine: Equatable, Sendable {
         capturing = false
     }
 
-    private mutating func openMark(_ kind: RacketRecordingLog.MarkKind, index: Int, now: Date) {
+    private mutating func openMark(_ kind: RacketRecordingLog.MarkKind, index: Int?, now: Date) {
         guard var l = log else { return }
         l.marks.append(.init(kindRaw: kind.rawValue, index: index, startSec: l.offset(now), endSec: nil))
         log = l

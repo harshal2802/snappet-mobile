@@ -464,6 +464,10 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var racketEndRaw: String?
     /// `RacketDrillMeasure.rawValue` for a drill; `nil` ⇒ time only.
     var drillMeasureRaw: String?
+    /// Padel: "Golden point" at 40–40 (PdDeuce, prompt 249); `nil` ⇒ Advantage.
+    var racketGoldenPoint: Bool?
+    /// Who served first (Warmup "Who serves first?", prompt 249): `RacketServe.Side.rawValue`; `nil` ⇒ skipped.
+    var racketFirstServerRaw: String?
 
     // Racket recording (prompt 244) — additive Optionals like the fields above.
     /// `RacketRecordingMode.rawValue` chosen for this match / drill; `nil` ⇒ game / block by block.
