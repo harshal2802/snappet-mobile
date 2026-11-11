@@ -13,21 +13,47 @@ struct RacketVideoSurface: View {
     let playback: RacketPlayback
     var overlay: String? = nil
     var sport: RacketSport = .tableTennis
+    var height: CGFloat = 220
 
     var body: some View {
         ZStack(alignment: .top) {
             if let player = playback.player {
                 RacketPlayerLayerView(player: player)
+                if let line = playback.loadState.line {
+                    // Some stretches of the original are missing: say so over the video.
+                    VStack {
+                        Spacer()
+                        Text(line).font(SnappetType.detail).foregroundStyle(SnappetColor.ink)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.black.opacity(0.6), in: Capsule())
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(8)
+                            .accessibilityIdentifier("racket.player.partial")
+                    }
+                }
             } else {
-                // No saved video (the simulator's stand-in camera), or still loading.
+                // No saved video (the simulator's stand-in camera), still loading, downloading from iCloud, or missing.
                 ZStack {
                     Color(white: 0.11)
-                    VStack(spacing: 6) {
-                        Image(systemName: sport.symbol).font(.system(size: 34)).foregroundStyle(SnappetColor.textTertiary)
-                        Text(playback.loaded ? "No video saved for this recording" : "Loading video…")
+                    VStack(spacing: 8) {
+                        Image(systemName: playback.loadState.isCloud ? "icloud.and.arrow.down" : sport.symbol)
+                            .font(.system(size: 30)).foregroundStyle(SnappetColor.textTertiary)
+                        Text(playback.loadState.line ?? (playback.loaded ? "No video saved for this recording" : "Loading video…"))
                             .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("racket.player.standIn")
+                        if case .downloading(let f) = playback.loadState {
+                            ProgressView(value: f).tint(SnappetColor.brand).frame(width: 160)
+                        }
+                        if playback.loadState.canRetry {
+                            Button("Try again") { Task { await playback.retry() } }
+                                .font(.system(size: 15, weight: .semibold))
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("racket.player.retry")
+                        }
                     }
+                    .padding(.horizontal, 16)
                 }
             }
             if let overlay {
@@ -40,7 +66,7 @@ struct RacketVideoSurface: View {
                     .accessibilityIdentifier("racket.player.overlay")
             }
         }
-        .frame(height: 220)
+        .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

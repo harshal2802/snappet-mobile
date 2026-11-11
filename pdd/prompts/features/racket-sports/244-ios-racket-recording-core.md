@@ -104,6 +104,29 @@ red outline, no truncation.
       paused rest timer; DrillRest auto-start-off copy; TtInterrupted resume copy; Settings "Still playing check" /
       "Game by game".
 
+## Device feedback round 1 (2026-11-11, user testing on an iPhone)
+
+**Problem.** Recording everything showed no camera view (the screen opened on a black numbers view), so the shot
+couldn't be framed. **Changes** (decisions.md, "Racket device feedback round 1"):
+
+- [x] The recording screen opens on **Camera**: the live `AVCaptureVideoPreviewLayer` from `RacketRecorder`'s own session
+      (no second session), letterboxed and portrait, with compact numbers and controls under it (CameraView boards).
+- [x] The boards' **Dim · Camera · Stats** row at the bottom (replaces the top Dim / Camera segmented control): Dim =
+      TtRecordAll on black (no preview layer); Stats = LiveStatsOff (Your tags, game / session time, points played,
+      how rallies ended, "From your tags, N of M", "Rally and shot stats appear after the match"). Drills: Stats adds
+      Blocks done / Recorded under the timer.
+- [x] TtRecordAll layout: top row "● Recording · Match, everything · Saved N min ago"; the big number is the current game's
+      points from the Watch ("Score from Watch"), else the match so far ("Games"); Marks / Space left as centred stats;
+      Mark this moment and New game starts side by side; switcher; Stop and split.
+- [x] The drill camera step before block 1 always shows the preview (no switcher there).
+- [x] Parts record level with the horizon (`RotationCoordinator`), so a phone propped in landscape records landscape.
+- [x] Pure + tested: `RacketRecordingShow`, `RacketRecordStats` (`RacketVideoScrub.swift`, `RacketVideoScrubTests`);
+      `RacketRecordingUITests` switch the three views on the stand-in camera ("Camera preview shows here on a device").
+- Differences from the boards: opens on Camera (boards: Dim) by user request; "Games" caption until the Watch has a
+  point; no Heart rate tile on Stats (no live HR source on this screen yet); Stop still asks "Stop recording?" first
+  (audit L6, undecided); Pause during a block stays deferred.
+- [ ] Device: frame a table in landscape on the preview, record > 10 min, check the Photos parts are upright.
+
 ## Out of scope (later steps of #438)
 
 Watch surfaces and phone ↔ watch messages (step 2), the split flow / players / tagging / "Your videos" (step 3), AI round

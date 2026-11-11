@@ -326,12 +326,11 @@ struct RacketRecordingCover: View {
     var onWatchUnit: (SetLog) -> Void = { _ in }
     let onClose: () -> Void
 
-    private enum Show: String { case dim, camera }
-
     @State private var recorder = RacketRecorder()
     @State private var machine: RacketRecordingMachine?
     @State private var now = Date()
-    @State private var show: Show = .dim
+    /// Dim · Camera · Stats (device feedback round 1: opens on the camera so the shot can be framed).
+    @State private var show: RacketRecordingShow = .initial
     @State private var confirmStop = false
     @State private var idleTimerWas = false
     @State private var storageFree: Int64?
@@ -359,12 +358,21 @@ struct RacketRecordingCover: View {
 
     private var recordingBody: some View {
         ZStack {
-            background
-            VStack(spacing: 14) {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 12) {
                 topBar
-                if let m = machine { content(m) } else { Spacer() }
+                if let m = machine {
+                    if RacketRecordingShow.showsPreview(show, phase: m.phase) {
+                        cameraView.layoutPriority(1)
+                    }
+                    content(m)
+                    if RacketRecordingShow.showsSwitcher(phase: m.phase) { switcher }
+                    bottomAction(m)
+                } else {
+                    Spacer()
+                }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.vertical, 12)
             if let m = machine, let reason = m.interruption {
                 overlayPanel { interruptedPanel(m, reason) }
@@ -512,28 +520,75 @@ struct RacketRecordingCover: View {
 
     // MARK: Chrome
 
-    @ViewBuilder private var background: some View {
-        if show == .camera {
-            RacketCameraPreview(session: recorder.session, fake: recorder.fake).ignoresSafeArea()
-            LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.15), .black.opacity(0.75)],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-        } else {
-            Color.black.ignoresSafeArea()
+    /// The live preview from the recorder's own session (no second session). The simulator / UI tests show a stand-in.
+    private var cameraView: some View {
+        RacketCameraPreview(session: recorder.session, fake: recorder.fake)
+            .overlay {
+                if recorder.fake {
+                    Text("Camera preview shows here on a device")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("racket.rec.previewStandIn")
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Camera view")
+            .accessibilityIdentifier("racket.rec.preview")
+    }
+
+    /// TtRecordAll / CameraView / Dim boards: status · what's recording · saved.
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            statusPill
+            Spacer(minLength: 4)
+            if ex.isRacketMatch, machine?.isEnded == false {
+                Text("Match, everything").font(.system(size: 15, weight: .semibold))
+                    .accessibilityIdentifier("racket.rec.header")
+                Spacer(minLength: 4)
+                Text(savedLine).font(.system(size: 13)).foregroundStyle(savedColor)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("racket.rec.saved")
+            }
         }
     }
 
-    private var topBar: some View {
-        HStack(alignment: .center, spacing: 10) {
-            statusPill
-            Spacer(minLength: 4)
-            Picker("Show", selection: $show) {
-                Text("Dim").tag(Show.dim)
-                Text("Camera").tag(Show.camera)
+    /// Dim · Camera · Stats (the boards' bottom row).
+    private var switcher: some View {
+        HStack(spacing: 8) {
+            ForEach(RacketRecordingShow.allCases, id: \.self) { v in
+                Button { show = v; Haptics.tap() } label: {
+                    Text(v.label)
+                        .font(.system(size: 14, weight: show == v ? .semibold : .medium))
+                        .foregroundStyle(show == v ? SnappetColor.brand : SnappetColor.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(show == v ? SnappetColor.brand.opacity(0.12) : Color(white: 0.08),
+                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(show == v ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1.5))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("racket.rec.show.\(v.rawValue)")
+                .accessibilityAddTraits(show == v ? .isSelected : [])
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .accessibilityIdentifier("racket.rec.show")
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("racket.rec.show")
+    }
+
+    /// The phase's main action under the switcher: Stop and split (match), End block, Finish drill (rest).
+    @ViewBuilder private func bottomAction(_ m: RacketRecordingMachine) -> some View {
+        switch m.phase {
+        case .recordingMatch: stopButton("Stop and split")
+        case .block: primary("End block", id: "racket.rec.endBlock") { act { $0.endBlock(now: Date()) } }
+        case .rest, .restPaused, .restDone: stopButton("Finish drill")
+        default: EmptyView()
+        }
+    }
+
+    private var savedColor: Color {
+        recorder.lastSavedAt != nil && recorder.savingParts == 0 ? SnappetColor.perfFresh : SnappetColor.textSecondary
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -549,6 +604,7 @@ struct RacketRecordingCover: View {
                     Circle().fill(SnappetColor.perfHard).frame(width: 8, height: 8)
                     Text("Recording \(RacketClock.elapsed(recorded))").monospacedDigit()
                 }
+                .foregroundStyle(SnappetColor.perfHard)   // the boards' "● Recording" is red
             } else {
                 Text("Not recording yet").foregroundStyle(SnappetColor.textSecondary)
             }
@@ -570,14 +626,38 @@ struct RacketRecordingCover: View {
     // MARK: Content by phase
 
     @ViewBuilder private func content(_ m: RacketRecordingMachine) -> some View {
+        let compact = RacketRecordingShow.compact(show, phase: m.phase)
         switch m.phase {
-        case .recordingMatch: matchPanel(m)
+        case .recordingMatch:
+            if show == .stats { matchStatsPanel(m) } else { matchPanel(m, compact: compact) }
         case .ready: readyPanel(m)
-        case .countdown(let b, let endsAt): countdownPanel(m, block: b, endsAt: endsAt)
-        case .block(let b, _): blockPanel(m, block: b)
-        case .rest(let a, _), .restPaused(let a, _), .restDone(let a): restPanel(m, after: a)
+        case .countdown(let b, let endsAt): countdownPanel(m, block: b, endsAt: endsAt, compact: compact)
+        case .block(let b, _):
+            blockPanel(m, block: b, compact: compact)
+            if show == .stats { drillStats(m) }
+        case .rest(let a, _), .restPaused(let a, _), .restDone(let a):
+            restPanel(m, after: a, compact: compact)
+            if show == .stats { drillStats(m) }
         case .ended(let route): endPanel(m, route)
         }
+    }
+
+    /// The phase word over light numerals, without the ring (camera / dim): same identifiers as the ring.
+    private func compactTimer(_ d: RacketTimerDisplay, caption: String? = nil) -> some View {
+        let color: Color = switch d.tone {
+        case .work: SnappetColor.brand
+        case .rest, .restPaused: SnappetColor.textSecondary
+        case .done: SnappetColor.perfFresh
+        }
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(d.word).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
+                .accessibilityIdentifier("racket.rec.phase")
+            Text(RacketClock.mmss(d.seconds)).font(.system(size: 40, weight: .light)).monospacedDigit()
+                .contentTransition(.numericText())
+                .accessibilityIdentifier("racket.rec.clock")
+            if let caption { Text(caption).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary) }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func header(_ label: String, _ title: String) -> some View {
@@ -621,58 +701,135 @@ struct RacketRecordingCover: View {
             .accessibilityIdentifier(id)
     }
 
-    // RecordAll
-    private func matchPanel(_ m: RacketRecordingMachine) -> some View {
+    // RecordAll (Stats) · CameraView (Camera) · Dim. The saved line sits in the top bar; Stop and split under the switcher.
+    private func matchPanel(_ m: RacketRecordingMachine, compact: Bool) -> some View {
         let state = ex.racketState
         let room = spaceLeftSec
-        return VStack(spacing: 14) {
-            header("Match, everything", title)
-            Text(savedLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("racket.rec.saved")
-            Text("\(state.won) – \(state.lost)")
-                .font(.system(size: 64, weight: .light)).monospacedDigit()
-                .accessibilityIdentifier("racket.rec.score")
-            if let live = liveScore, !live.isEmpty {
-                // TtRecordAll: "Score from Watch" — the point tally of the game being played.
-                Text("\(live.header(unitNumber: ex.sets.count + 1)) · \(live.display) · score from Watch")
-                    .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("racket.rec.watchScore")
-            }
+        return VStack(spacing: compact ? 10 : 22) {
+            if !compact { Spacer(minLength: 0) }
+            bigScore(state, compact: compact)
             HStack(spacing: 10) {
-                stat("Marks", "\(m.log?.userMarkCount ?? 0)")
-                stat("Space left, \(quality.label)", room.map(RacketStorageCheck.roughDuration) ?? "Unknown")
+                stat("Marks", "\(m.log?.userMarkCount ?? 0)", compact: compact)
+                stat("Space left, \(quality.label)", room.map(RacketStorageCheck.roughDuration) ?? "Unknown", compact: compact)
                     .accessibilityIdentifier("racket.rec.space")
                     .accessibilityHint(meter.isMeasured ? "Measured from what's been recorded" : "Estimated from the camera settings")
             }
-            primary("Mark this moment", id: "racket.rec.mark") { act { $0.mark(.moment, now: Date()); return [] }; Haptics.tap() }
-            secondary("New \(unit.noun) starts", id: "racket.rec.newGame") {
-                act { $0.mark(.newGame, now: Date()); return [] }
-                if liveScore != nil { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged)) }
-                Haptics.tap()
+            HStack(spacing: 8) {
+                secondary("Mark this moment", id: "racket.rec.mark") { act { $0.mark(.moment, now: Date()); return [] }; Haptics.tap() }
+                secondary("New \(unit.noun) starts", id: "racket.rec.newGame") {
+                    act { $0.mark(.newGame, now: Date()); return [] }
+                    if liveScore != nil { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged)) }
+                    Haptics.tap()
+                }
             }
-            footnote(RacketStillPlaying.recordAllFooter(minutes: defaults.stillPlayingEverythingMin))
-            Spacer(minLength: 0)
-            stopButton("Stop and split")
+            if !compact {
+                footnote(RacketStillPlaying.recordAllFooter(minutes: defaults.stillPlayingEverythingMin))
+                    .multilineTextAlignment(.center)
+                Spacer(minLength: 0)
+            }
         }
     }
 
+    /// TtRecordAll's big number: the current game's points from the Watch ("4 – 3 · Score from Watch"); before any
+    /// Watch point, the match so far ("1 – 0 · Games").
+    private func bigScore(_ state: RacketScoring.MatchState, compact: Bool) -> some View {
+        let big = RacketRecordStats.bigScore(live: liveScore, won: state.won, lost: state.lost, unit: unit)
+        return VStack(spacing: 2) {
+            Text(big.value)
+                .font(.system(size: compact ? 34 : 76, weight: .light)).monospacedDigit()
+                .accessibilityIdentifier("racket.rec.score")
+            Text(big.caption)
+                .font(.system(size: compact ? 13 : 15)).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.rec.scoreCaption")
+            if let live = liveScore, !live.isEmpty {
+                // Which game the Watch is on, and the match so far.
+                Text("\(live.header(unitNumber: ex.sets.count + 1)) · match \(state.won)–\(state.lost)")
+                    .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("racket.rec.watchScore")
+            }
+        }
+    }
+
+    // Stats (LiveStatsOff — tracking is off while recording everything; rally stats come from tags after the match).
+    private func matchStatsPanel(_ m: RacketRecordingMachine) -> some View {
+        let state = ex.racketState
+        let log = m.log
+        let sides = RacketWatchCopy.sides(opponent: ex.opponent, doubles: ex.isDoubles)
+        let tags = RacketTagSummary.make(log?.allRallies ?? [], sport: ex.racketSport ?? ex.racketFormat.sport)
+        return ScrollView {
+            VStack(spacing: 16) {
+                bigScore(state, compact: false)
+                VStack(spacing: 2) {
+                    Text("Your tags").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                    Text(RacketRecordStats.tagsLine(tags, sides: sides)).font(.system(size: 17, weight: .semibold))
+                        .accessibilityIdentifier("racket.rec.stats.tags")
+                }
+                let gameSec = log.map { RacketRecordStats.gameSec($0, now: now) } ?? 0
+                let played = RacketRecordStats.pointsPlayed(liveScore)
+                HStack(spacing: 10) {
+                    stat("\(unit.noun.capitalized) time", RacketClock.elapsed(gameSec), compact: false)
+                        .accessibilityIdentifier("racket.rec.stats.gameTime")
+                    stat("Session time", RacketClock.elapsed(log?.recordedSec(now: now) ?? 0), compact: false)
+                        .accessibilityIdentifier("racket.rec.stats.sessionTime")
+                    stat("Points played", played.map(String.init) ?? "–", compact: false)
+                        .accessibilityIdentifier("racket.rec.stats.points")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("How rallies ended").snappetLabel()
+                    if tags.endings.isEmpty {
+                        Text("No endings tagged yet").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    } else {
+                        let top = tags.endings.map(\.count).max() ?? 1
+                        ForEach(tags.endings, id: \.ending) { e in
+                            HStack(spacing: 8) {
+                                Text(e.ending.label).font(SnappetType.detail).frame(width: 90, alignment: .leading)
+                                GeometryReader { g in
+                                    Capsule().fill(SnappetColor.brand)
+                                        .frame(width: max(4, g.size.width * Double(e.count) / Double(max(1, top))))
+                                }
+                                .frame(height: 8)
+                                Text("\(e.count)").font(SnappetType.detail.monospacedDigit())
+                            }
+                        }
+                    }
+                    Text(tags.sourceLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("racket.rec.stats.source")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                footnote("Rally and shot stats appear after the match. Tag rallies from Your videos.")
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .accessibilityIdentifier("racket.rec.stats")
+    }
+
+    /// Stats for a drill recording everything: blocks done and recorded time under the timer.
+    private func drillStats(_ m: RacketRecordingMachine) -> some View {
+        let done = max(0, ex.sets.count - baseSets)
+        return HStack(spacing: 10) {
+            stat("Blocks done", "\(done) of \(m.plan?.blocks ?? 1)", compact: false)
+            stat("Recorded", RacketClock.elapsed(m.log?.recordedSec(now: now) ?? 0), compact: false)
+        }
+        .accessibilityIdentifier("racket.rec.stats")
+    }
+
     private var savedLine: String {
-        if recorder.savingParts > 0 { return "Saving a part to Photos…" }
-        guard let at = recorder.lastSavedAt else { return "Saves to Photos every 10 minutes" }
+        if recorder.savingParts > 0 { return "Saving a part…" }
+        guard let at = recorder.lastSavedAt else { return "Saves every 10 min" }
         let min = Int(now.timeIntervalSince(at) / 60)
         return min < 1 ? "Saved just now" : "Saved \(min) min ago"
     }
 
-    private func stat(_ k: String, _ v: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(k).snappetLabel().fixedSize(horizontal: false, vertical: true)
-            Text(v).font(.system(size: 20, weight: .light)).monospacedDigit()
+    /// The boards' stat: light numerals over a grey label, centred.
+    private func stat(_ k: String, _ v: String, compact: Bool) -> some View {
+        VStack(spacing: 2) {
+            Text(v).font(.system(size: compact ? 22 : 34, weight: .light)).monospacedDigit()
+            Text(k).font(.system(size: compact ? 12 : 13)).foregroundStyle(SnappetColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12).padding(.vertical, 10)
-        .pagerGlass(cornerRadius: 16)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     private func blocksLabel(_ b: Int, _ m: RacketRecordingMachine) -> String {
@@ -684,26 +841,25 @@ struct RacketRecordingCover: View {
         VStack(spacing: 14) {
             header("Drill, everything · \(blocksLabel(0, m))", title)
             footnote("Point the camera at the play. Recording and the block timer start at zero, after a \(m.plan?.countdownSec ?? 5) s countdown.")
-            Spacer()
             primary("Start block 1", id: "racket.rec.startBlock") { act { $0.startNextBlock(now: Date()) } }
             secondary("Back to the drill", id: "racket.rec.back") { onClose() }
         }
     }
 
     // BlockStart (review5 M3: block 1 has its own copy; Wait never leads to a rest timer before block 1)
-    private func countdownPanel(_ m: RacketRecordingMachine, block b: Int, endsAt: Date) -> some View {
+    private func countdownPanel(_ m: RacketRecordingMachine, block b: Int, endsAt: Date, compact: Bool) -> some View {
         let left = max(0, Int(endsAt.timeIntervalSince(now).rounded(.up)))
-        return VStack(spacing: 14) {
+        return VStack(spacing: compact ? 10 : 14) {
             header("Starting soon", blocksLabel(b, m))
-            Spacer()
+            if !compact { Spacer() }
             Text("\(left)")
-                .font(.system(size: 120, weight: .light)).monospacedDigit()
+                .font(.system(size: compact ? 64 : 120, weight: .light)).monospacedDigit()
                 .foregroundStyle(SnappetColor.brand)
                 .contentTransition(.numericText())
                 .accessibilityIdentifier("racket.rec.countdown")
             footnote(b == 0 ? "Recording and the block timer start at zero."
                             : "Still recording. The block timer starts at zero.")
-            Spacer()
+            if !compact { Spacer() }
             HStack(spacing: 10) {
                 secondary("Wait", id: "racket.rec.wait") { act { $0.wait(now: Date()); return [] } }
                 secondary("+30 s", id: "racket.rec.addCountdown") { act { $0.extendCountdown(by: 30, now: Date()); return [] } }
@@ -713,23 +869,28 @@ struct RacketRecordingCover: View {
     }
 
     // BlockAll
-    private func blockPanel(_ m: RacketRecordingMachine, block b: Int) -> some View {
-        VStack(spacing: 14) {
+    private func blockPanel(_ m: RacketRecordingMachine, block b: Int, compact: Bool) -> some View {
+        VStack(spacing: compact ? 10 : 14) {
             header("Block, recording everything", blocksLabel(b, m))
-            if let d = m.display(now: now) { RacketTimerRing(display: d, caption: "left in this block") }
-            footnote("Blocks and rests are marked from your timers, so there’s nothing to split by hand.")
-            Spacer(minLength: 0)
-            primary("End block", id: "racket.rec.endBlock") { act { $0.endBlock(now: Date()) } }
+            if let d = m.display(now: now) {
+                if compact { compactTimer(d, caption: "left in this block") } else { RacketTimerRing(display: d, caption: "left in this block") }
+            }
+            if !compact {
+                footnote("Blocks and rests are marked from your timers, so there’s nothing to split by hand.")
+                Spacer(minLength: 0)
+            }
         }
     }
 
     // RestEverything (+ paused / done)
-    @ViewBuilder private func restPanel(_ m: RacketRecordingMachine, after a: Int) -> some View {
+    @ViewBuilder private func restPanel(_ m: RacketRecordingMachine, after a: Int, compact: Bool) -> some View {
         let next = a + 2
         let autoStart = m.plan?.autoStart ?? true
-        VStack(spacing: 14) {
+        VStack(spacing: compact ? 10 : 14) {
             header("Rest, recording continues", "Block \(a + 1) done")
-            if let d = m.display(now: now) { RacketTimerRing(display: d) }
+            if let d = m.display(now: now) {
+                if compact { compactTimer(d) } else { RacketTimerRing(display: d) }
+            }
             switch m.phase {
             case .rest:
                 footnote(autoStart ? "Block \(next) starts by itself after this" : "Auto-start is off: you start the next block yourself")
@@ -750,9 +911,10 @@ struct RacketRecordingCover: View {
             default:
                 primary("Start block \(next)", id: "racket.rec.startBlock") { act { $0.startNextBlock(now: Date()) } }
             }
-            footnote("Rest stays in the recording, marked from your timer, and is left out of your stats.")
-            Spacer(minLength: 0)
-            stopButton("Finish drill")
+            if !compact {
+                footnote("Rest stays in the recording, marked from your timer, and is left out of your stats.")
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -853,10 +1015,23 @@ private struct RacketCameraPreview: UIViewRepresentable {
         v.backgroundColor = fake ? UIColor(white: 0.12, alpha: 1) : .black
         if !fake {
             v.previewLayer.session = session
-            v.previewLayer.videoGravity = .resizeAspectFill
+            // The whole recorded frame, letterboxed: framing must show what's actually filmed.
+            v.previewLayer.videoGravity = .resizeAspect
+            Self.portrait(v.previewLayer)
         }
         return v
     }
 
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
+    /// The screen is portrait, so the preview is too (it reads right however the phone is propped, like the Camera
+    /// app's viewfinder); the recording itself follows how the phone is held (`RacketRecorder`). The connection
+    /// appears once the session has its input, so this is re-applied on update.
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        if !fake { Self.portrait(uiView.previewLayer) }
+    }
+
+    private static func portrait(_ layer: AVCaptureVideoPreviewLayer) {
+        if let c = layer.connection, c.isVideoRotationAngleSupported(90), c.videoRotationAngle != 90 {
+            c.videoRotationAngle = 90
+        }
+    }
 }
