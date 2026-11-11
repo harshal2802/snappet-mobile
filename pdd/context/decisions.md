@@ -10890,3 +10890,39 @@ stripes, and the panel read as an opaque slab.
   Re-scan….
 - **UI tests** run the real placeholder model on a synthetic signal (`-uiTestStubRallySignal`, a burst every 20 s, every
   fourth weak), since the simulator records no video.
+
+## 2026-11-11 — Racket device feedback round 1 (issue #438; prompts 244 and 246)
+
+Found by the user testing the racket build on an iPhone: no camera view while recording everything, and no video
+while splitting.
+
+- **The recording screen opens on the camera** (user, round 1). The bottom row is the boards' Dim · Camera · Stats
+  switcher. Camera (the default) = the live preview from `RacketRecorder`'s own `AVCaptureSession` (never a second
+  session), letterboxed (`.resizeAspect`, so it shows exactly what is filmed) and pinned to the portrait screen, with
+  compact numbers and the controls under it (the CameraView boards put the camera above the numbers, not under them).
+  Dim = the TtRecordAll numbers view on black (the board shows Dim selected); no preview layer exists then. Stats =
+  LiveStatsOff (tracking is off while recording everything): Your tags, game / session time, points played, how rallies
+  ended, "From your tags, N of M". The boards open on Dim; the user asked for the camera first.
+- **The drill camera step before block 1 always shows the preview** (it is for framing) and has no switcher. A drill's
+  Stats adds Blocks done / Recorded under the timer (there is no drill stats board).
+- **The big number is the current game's points from the Watch** ("4 – 3 · Score from Watch", TtRecordAll). Before the
+  Watch tallies a point, or with no Watch, it is the match so far labelled "Games" / "Sets" — showing "Score from
+  Watch" over games would be wrong.
+- **Parts are recorded level with the horizon** (`AVCaptureDevice.RotationCoordinator`, as `CameraController` does),
+  set on the movie output at each part's start, so a phone propped in landscape records a landscape video.
+- **The split review plays the original.** One `RacketPlayback` on the whole recording (step 3's composition across the
+  10-minute parts, gaps empty), shared with "Fix one part" so nothing reloads. The bar is a segmented timeline (one
+  segment per part: game accent, warmup / break / rest / not play / practice grey, unsure amber; at least 3 pt wide)
+  with a playhead; a tap plays the part under it (from its first moment with video, `RacketScrub.seekTarget`, stopping
+  at its end), a drag scrubs. **A row tap now plays its part; "Fix" opens TtSplitEdit** (the board's rows open the edit;
+  the user asked that tapping a part shows its video, so editing moved to a per-row button).
+- **Scrubbing: one seek in flight, the newest position next**, with a tolerance of about one point of the strip
+  (0.04–2 s); the exact frame is sought when the drag ends. The film strip is `AVAssetImageGenerator` frames (±1 s,
+  160 px, off the main actor) across the edited part's window, redrawn only when the window or strip width changes.
+- **"Split here" splits at the playhead**, not the middle; disabled (with the reason) until the playhead is at least
+  5 s inside the part.
+- **iCloud-only and missing originals.** Before loading, Photos is asked per video with network access off; "in cloud"
+  ones download with a progress line ("Downloading from iCloud… 40 %"); a failed download offers Try again; videos
+  gone from the library leave black stretches ("2 parts of the original aren't on this phone"); none at all says the
+  split still works by time. Photos requests run in a nonisolated helper, so Photos' callbacks never run main-actor
+  closures off the main thread.

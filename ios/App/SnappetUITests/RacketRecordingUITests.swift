@@ -77,6 +77,7 @@ final class RacketRecordingUITests: XCTestCase {
         // Camera first, then block 1 (M3: Wait before block 1 goes back here, never to a rest timer).
         let startBlock = app.buttons["racket.rec.startBlock"]
         XCTAssertTrue(startBlock.waitForExistence(timeout: 8), "the recording screen should open on the camera")
+        XCTAssertTrue(any("racket.rec.preview").exists, "the camera step shows the preview for framing")
         startBlock.tap()
         XCTAssertTrue(any("racket.rec.countdown").waitForExistence(timeout: 4), "a countdown to block 1")
         app.buttons["racket.rec.wait"].tap()
@@ -124,6 +125,20 @@ final class RacketRecordingUITests: XCTestCase {
         let mark = app.buttons["racket.rec.mark"]
         XCTAssertTrue(mark.waitForExistence(timeout: 8), "the match should start recording now")
         XCTAssertTrue(any("racket.rec.status").label.hasPrefix("Recording"))
+        // Device feedback round 1: it opens on the camera (a stand-in here); Dim · Camera · Stats switch it.
+        XCTAssertTrue(any("racket.rec.preview").exists, "the camera view shows while recording")
+        XCTAssertTrue(app.buttons["racket.rec.show.camera"].isSelected)
+        XCTAssertEqual(any("racket.rec.scoreCaption").label, "Games", "no Watch points yet: the match so far")
+        app.buttons["racket.rec.show.stats"].tap()
+        XCTAssertFalse(any("racket.rec.preview").exists, "Stats has no camera")
+        XCTAssertTrue(any("racket.rec.stats.sessionTime").waitForExistence(timeout: 3), "LiveStatsOff: session time")
+        XCTAssertEqual(any("racket.rec.stats.source").label, "From your tags, 0 of 0")
+        app.buttons["racket.rec.show.dim"].tap()
+        XCTAssertFalse(any("racket.rec.preview").exists, "Dim is TtRecordAll on black, still recording")
+        XCTAssertTrue(app.buttons["racket.rec.mark"].exists, "Dim keeps Mark this moment")
+        XCTAssertTrue(any("racket.rec.status").label.hasPrefix("Recording"))
+        app.buttons["racket.rec.show.camera"].tap()
+        XCTAssertTrue(any("racket.rec.preview").waitForExistence(timeout: 3))
         mark.tap()
         app.buttons["racket.rec.newGame"].tap()
 
