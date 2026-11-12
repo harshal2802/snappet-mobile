@@ -83,7 +83,7 @@ struct RacketGameCover: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear(perform: setUp)
+        .onAppear { recorder.screenAppeared(); setUp() }
         .onDisappear(perform: tearDown)
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .task {
@@ -165,9 +165,11 @@ struct RacketGameCover: View {
     }
 
     private func tearDown() {
-        recorder.stopPreview()
-        UIApplication.shared.isIdleTimerDisabled = idleTimerWas
-        if let t = watchToken { RacketWatchRelay.shared.detach(ex.id, token: t) }
+        let was = idleTimerWas, id = ex.id, token = watchToken
+        recorder.screenDisappeared {
+            UIApplication.shared.isIdleTimerDisabled = was
+            if let token { RacketWatchRelay.shared.detach(id, token: token) }
+        }
     }
 
     // MARK: Flow plumbing
@@ -249,6 +251,7 @@ struct RacketGameCover: View {
     private func tick() {
         step { $0.tick(now: now) }
         machineAct { $0.tick(now: now) }
+        if let m = machine, m.interruption == nil, !m.isEnded { recorder.ensureCapturing(m.capturing) }
         // After a resumed interruption the flow says whether a break / interval is recording.
         if let m = machine, !m.isEnded, m.interruption == nil, m.capturing != flow.wantsCapture, m.phase == .recordingMatch {
             machineAct { flow.wantsCapture ? $0.resumeCapture(now: Date()) : $0.pauseCapture(now: Date()) }
@@ -390,55 +393,10 @@ struct RacketGameCover: View {
     // MARK: Camera check (NoModelCamera)
 
     private var cameraCheck: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Button("Cancel") { onClose() }.accessibilityIdentifier("racket.camera.cancel")
-                Spacer()
-                Text("Camera check").font(.system(size: 17, weight: .semibold))
-                Spacer()
-                Button("Cancel") {}.hidden()
-            }
-            Color.clear.racketPreviewSlot()
-                .overlay {
-                    if recorder.fake {
-                        Text("Camera preview shows here on a device")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                    }
-                }
-                .overlay { RacketCourtGuide(sport: sport) }
-                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 300)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("racket.camera.preview")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Line up the view yourself").font(.system(size: 20, weight: .semibold))
-                        .accessibilityIdentifier("racket.camera.title")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Automatic court check isn’t available for \(sport.label.lowercased()) yet.")
-                            .font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.perfModerate)
-                        Text("Live tracking stays off, so play uses the tracking-off screens.")
-                        Text("Place the phone high, side-on or behind, so the whole playing area is in frame.")
-                    }
-                    .font(SnappetType.detail)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(SnappetColor.perfModerate.opacity(0.7), lineWidth: 1))
-                    Text("People nearby may be in the video. Check they’re OK with it.")
-                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if accessDenied {
-                        Text("Snappet needs the camera and your Photos library to record. You can allow them in Settings.")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.perfHard)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            RacketWideButton("Continue to warmup", id: "racket.camera.continue") { stage = .warmup }
-                .disabled(accessDenied)
-        }
-        .padding(16)
+        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, accessDenied: accessDenied,
+                               continueTitle: "Continue to warmup", onCancel: onClose,
+                               onContinue: { stage = .warmup })
+            .padding(16)
     }
 
     // MARK: Warmup

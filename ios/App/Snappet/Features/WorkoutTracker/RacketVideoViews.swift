@@ -26,6 +26,8 @@ enum RacketVideosStart: Hashable, Sendable {
     case keepRallies
     /// "What works for <sport>" (the match page, prompt 248).
     case capabilities(RacketSport)
+    /// One drill's videos (PracticeReview "Drill videos", prompt 250).
+    case drillVideos(UUID)
 }
 
 struct RacketVideosTarget: Identifiable {
@@ -210,6 +212,8 @@ struct RacketVideosCover: View {
         case .capabilities(let sport):
             RacketCapabilitiesScreen(sport: sport) { path.append(.noModelPreview(sport)) }
                 .toolbar { closeButton() }
+        case .drillVideos(let id):
+            drillVideos(id).toolbar { closeButton() }
         }
     }
 
@@ -941,9 +945,10 @@ struct RacketVideosCover: View {
                     }
                 }
                 if let longest, let row = rows.first(where: { longest.startSec >= $0.startSec && longest.startSec < $0.endSec }) {
+                    // DrillVideos → PlayerAnalyzed (V2.1): the longest rally opens on Analyzed.
                     secondary("Watch the longest rally", id: "racket.drill.longest") {
-                        path.append(.player(RacketPartRef(exerciseID: id, title: row.title, startSec: longest.startSec,
-                                                          endSec: longest.endSec, setIndex: row.setIndex), ralliesOnly: false))
+                        path.append(.analyzed(RacketPartRef(exerciseID: id, title: row.title, startSec: longest.startSec,
+                                                            endSec: longest.endSec, setIndex: row.setIndex)))
                     }
                 }
                 note("Blocks and rests come from your timers. A drill keeps its one recording; it never offers to delete the original.")

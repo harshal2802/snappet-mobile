@@ -366,6 +366,8 @@ struct SetLog: Codable, Hashable, Sendable {
     /// A unit tallied point by point on the Apple Watch (prompt 245) and not confirmed yet: it carries its score and
     /// counts, but reads "from Watch" until a score is saved on the phone (which clears it). `nil` ⇒ entered on the phone.
     var scoreFromWatch: Bool?
+    /// How a drill block felt (Rest: Easy / About right / Hard, prompt 250): `RacketDrillFeel.rawValue`; `nil` ⇒ not rated.
+    var drillFeelRaw: String?
 }
 
 /// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.
@@ -484,6 +486,15 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var drillAutoStart: Bool?
     /// The countdown before a block; `nil` ⇒ the Settings default.
     var drillCountdownSec: Int?
+    // Drill details (DrillCustomize, prompt 250) — additive Optionals. "How are you practising?", the focus (hand +
+    // stroke), the pattern and its from / to zones on the court diagram, and the goal ("Beat 24 shots" / "Beat 76%").
+    var drillPractising: String?
+    var drillHand: String?
+    var drillStroke: String?
+    var drillPattern: String?
+    var drillFromZone: Int?
+    var drillToZone: Int?
+    var drillGoal: Int?
     /// The record-everything recording of this match / drill: its Photos parts and the block / rest / game marks
     /// as time ranges on it. `nil` ⇒ never recorded everything.
     var racketRecordingLog: RacketRecordingLog?

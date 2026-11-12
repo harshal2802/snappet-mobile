@@ -317,9 +317,15 @@ private struct RacketBlockView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
+                let paused = block.pausedRemainingSec != nil
                 HeaderRow(leading: "Block \(block.index + 1) of \(block.blocks)",
-                          trailing: block.recording ? "● Recording" : nil, trailingColor: RacketWatchStyle.recording)
-                if let d = surface.ring(now: now) { RacketRing(display: d, caption: "left in this block") }
+                          trailing: paused ? "Ⅱ Paused" : block.recording ? "● Recording" : nil,
+                          trailingColor: paused ? RacketWatchStyle.amber : RacketWatchStyle.recording)
+                if let d = surface.ring(now: now) {
+                    RacketRing(display: d, caption: paused ? "Block timer stopped" : "left in this block")
+                }
+                // WatchBlock "Pause" (prompt 250); paused, the wrist offers Resume ("Or tap Resume on your Watch").
+                WideButton(title: paused ? "Resume" : "Pause", height: 50) { tap(paused ? .resumeTimer : .pauseTimer) }
                 WideButton(title: "End block", kind: .quiet) { tap(.endBlock) }
                 StopButton(title: "Stop drill") { tap(.stopDrill) }
             }
