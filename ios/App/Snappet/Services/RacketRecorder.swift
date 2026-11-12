@@ -46,7 +46,9 @@ final class RacketRecorder: NSObject {
     private let library = MediaLibraryService()
     private let queue = DispatchQueue(label: "com.snappet.racket.recorder", qos: .userInitiated)
     /// The owner wants the camera writing — a part that closes at the limit rolls straight into the next one.
-    private var wantsCapture = false
+    private(set) var wantsCapture = false
+    /// Bumped on every appear / disappear of the screen that owns this recorder.
+    @ObservationIgnored private var lifeGeneration = 0
     private var configured = false
     /// Keeps each part level with the horizon however the phone is propped (device feedback round 1).
     @ObservationIgnored private var rotation: AVCaptureDevice.RotationCoordinator?
@@ -92,6 +94,16 @@ final class RacketRecorder: NSObject {
     /// (device feedback round 2: "the camera view is dark").
     nonisolated static let log = Logger(subsystem: "com.snappet", category: "racket.camera")
 
+    /// The part length: `RacketStorageCheck.partSec` (10 min); Debug builds take `-racketPartSeconds N` to test the
+    /// rollover on a phone without waiting ten minutes.
+    nonisolated static var partSec: TimeInterval {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-racketPartSeconds"), i + 1 < args.count, let n = Double(args[i + 1]), n >= 5 { return n }
+        #endif
+        return RacketStorageCheck.partSec
+    }
+
     nonisolated static func trace(_ message: String) {
         log.notice("\(message, privacy: .public)")
         #if DEBUG
@@ -118,7 +130,39 @@ final class RacketRecorder: NSObject {
         }
     }
 
+    // MARK: - The owning screen's life (device feedback round 3)
+
+    /// SwiftUI can send a full-screen cover a spurious onDisappear → onAppear while another cover is still dismissing
+    /// (seen on the phone: the record-everything screen, opened 0.45 s after the warmup cover closed, got onDisappear
+    /// 0.06 s after it started recording; `stopPreview` stopped the session and the part, the preview froze on its last
+    /// frame, and the screen kept saying "● Recording"). So the owner's disappear only stops the camera if the screen
+    /// hasn't come back shortly after.
+    func screenAppeared() {
+        lifeGeneration += 1
+        Self.trace("screen appeared gen=\(lifeGeneration)")
+    }
+
+    func screenDisappeared(then finish: @escaping () -> Void) {
+        lifeGeneration += 1
+        let g = lifeGeneration
+        Self.trace("screen disappeared gen=\(g)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard self.lifeGeneration == g else { Self.trace("disappear was spurious: camera kept"); return }
+            self.stopPreview()
+            finish()
+        }
+    }
+
+    /// The machine says the camera should be writing but the recorder isn't (nothing pending): start a new part.
+    /// A guard against any future desync — the screen must never say "Recording" while nothing is written.
+    func ensureCapturing(_ shouldCapture: Bool) {
+        guard shouldCapture, !fake, !isCapturing, !wantsCapture else { return }
+        Self.trace("capture desync: restarting a part")
+        startCapture()
+    }
+
     func stopPreview() {
+        Self.trace("stopPreview session=\(Unmanaged.passUnretained(self.session).toOpaque())")
         wantsCapture = false
         if isCapturing { stopCapture() }
         guard !fake else { return }
@@ -141,7 +185,7 @@ final class RacketRecorder: NSObject {
         nonisolated(unsafe) let video = input
         nonisolated(unsafe) let mic = AVCaptureDevice.default(for: .audio).flatMap { try? AVCaptureDeviceInput(device: $0) }
         let preset: AVCaptureSession.Preset = quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
-        let limit = CMTime(seconds: RacketStorageCheck.partSec, preferredTimescale: 600)
+        let limit = CMTime(seconds: Self.partSec, preferredTimescale: 600)
         let p = parts
         queue.async {
             p.session.beginConfiguration()
@@ -170,11 +214,13 @@ final class RacketRecorder: NSObject {
     // MARK: - Capture
 
     func startCapture() {
+        Self.trace("startCapture capturing=\(isCapturing) running=\(session.isRunning)")
         wantsCapture = true
         beginPart()
     }
 
     func stopCapture() {
+        Self.trace("stopCapture capturing=\(isCapturing)")
         wantsCapture = false
         guard isCapturing else { return }
         if fake { isCapturing = false; partStartedAt = nil; return }
@@ -195,7 +241,7 @@ final class RacketRecorder: NSObject {
                 c.videoRotationAngle = angle
             }
             p.movie.startRecording(to: url, recordingDelegate: self)
-            Self.trace("part started")
+            Self.trace("part started session=\(Unmanaged.passUnretained(p.session).toOpaque())")
         }
     }
 
@@ -233,7 +279,7 @@ final class RacketRecorder: NSObject {
         observers.append(nc.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session,
                                         queue: .main) { [weak self] note in
             let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber)?.intValue ?? 0
-            Self.trace("session interrupted reason=\(raw)")
+            Self.trace("session interrupted reason=\(raw) \(String(describing: (note.object as AnyObject?).map { Unmanaged.passUnretained($0).toOpaque() }))")
             MainActor.assumeIsolated { self?.report(RacketInterruption.fromCaptureInterruption(reasonRaw: raw)) }
         })
         observers.append(nc.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session,
@@ -242,10 +288,12 @@ final class RacketRecorder: NSObject {
             Self.trace("session runtime error \(err)")
             MainActor.assumeIsolated { self?.report(.cameraError) }
         })
+        observers.append(nc.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session,
+                                        queue: .main) { _ in Self.trace("session interruption ended") })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session,
-                                        queue: .main) { _ in Self.trace("session didStartRunning") })
+                                        queue: .main) { n in Self.trace("session didStartRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session,
-                                        queue: .main) { _ in Self.trace("session didStopRunning") })
+                                        queue: .main) { n in Self.trace("session didStopRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
         observers.append(nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil,
                                         queue: .main) { [weak self] _ in
             let level = RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)

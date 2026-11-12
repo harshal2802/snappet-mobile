@@ -139,6 +139,10 @@ enum RacketWatchBridge {
         case .block(let b, let startedAt):
             surface = .block(.init(index: b, blocks: blocks, startedAt: startedAt,
                                    totalSec: TimeInterval(m.plan?.blockSec ?? 300), recording: m.capturing))
+        case .blockPaused(let b, let elapsed):
+            let total = TimeInterval(m.plan?.blockSec ?? 300)
+            surface = .block(.init(index: b, blocks: blocks, startedAt: now.addingTimeInterval(-elapsed), totalSec: total,
+                                   recording: false, pausedRemainingSec: max(0, total - elapsed)))
         case .rest(let a, let endsAt):
             surface = .rest(rest(m, after: a, endsAt: endsAt, remaining: 0, paused: false, done: false))
         case .restPaused(let a, let left):
@@ -245,9 +249,10 @@ enum RacketWatchBridge {
         case .endBlock:
             out.effects = m.endBlock(now: now)
         case .pauseTimer:
-            m.pauseRest(now: now)
+            // WatchBlock "Pause" (prompt 250) pauses the block; on the rest it pauses the rest timer.
+            if m.isInBlock { out.effects = m.pauseBlock(now: now) } else { m.pauseRest(now: now) }
         case .resumeTimer:
-            m.resumeRest(now: now)
+            if m.isBlockPaused { out.effects = m.resumeBlock(now: now) } else { m.resumeRest(now: now) }
         case .add30:
             if case .countdown = m.phase { m.extendCountdown(by: 30, now: now) } else { m.addRest(30, now: now) }
         case .add60:

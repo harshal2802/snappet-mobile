@@ -58,12 +58,20 @@ final class RacketVideoLibrary {
     /// `timelineStart − partStart`, and gaps stay empty, so composition time = recording time − part start.
     func composition(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
                      progress: (@MainActor (String, Double) -> Void)? = nil) async -> AVMutableComposition? {
+        await layout(segments, partStart: partStart, partEnd: partEnd, progress: progress)?.comp
+    }
+
+    /// The composition and, when its parts were recorded in different orientations, the video composition that draws
+    /// each part with its own transform (`RacketVideoOrientation`). One track per orientation.
+    private func layout(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
+                        progress: (@MainActor (String, Double) -> Void)?) async
+        -> (comp: AVMutableComposition, video: AVMutableVideoComposition?)? {
         guard !segments.isEmpty else { return nil }
         let comp = AVMutableComposition()
-        guard let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { return nil }
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-        var inserted = false
+        var tracks: [String: (track: AVMutableCompositionTrack, transform: CGAffineTransform, natural: CGSize)] = [:]
+        var order: [String] = []
+        var placed: [RacketVideoOrientation.Placed] = []
         var loaded: [String: AVAsset] = [:]
         for s in segments {
             if loaded[s.localIdentifier] == nil {
@@ -71,27 +79,58 @@ final class RacketVideoLibrary {
             }
             guard let asset = loaded[s.localIdentifier],
                   let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+            let transform = (try? await src.load(.preferredTransform)) ?? .identity
+            let natural = (try? await src.load(.naturalSize)) ?? .zero
+            let key = RacketVideoOrientation.key(transform)
+            if tracks[key] == nil,
+               let t = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                t.preferredTransform = transform
+                tracks[key] = (t, transform, natural)
+                order.append(key)
+            }
+            guard let vTrack = tracks[key]?.track else { continue }
             let start = CMTime(seconds: s.assetStart, preferredTimescale: 600)
             let dur = CMTime(seconds: s.durationSec, preferredTimescale: 600)
-            let at = CMTime(seconds: max(0, s.timelineStart - partStart), preferredTimescale: 600)
+            let atSec = max(0, s.timelineStart - partStart)
+            let at = CMTime(seconds: atSec, preferredTimescale: 600)
             let range = CMTimeRange(start: start, duration: dur)
             do {
                 try vTrack.insertTimeRange(range, of: src, at: at)
-                if !inserted, let t = try? await src.load(.preferredTransform) { vTrack.preferredTransform = t }
-                inserted = true
+                placed.append(.init(start: atSec, duration: s.durationSec, key: key))
                 if let aSrc = try? await asset.loadTracks(withMediaType: .audio).first {
                     try? aTrack?.insertTimeRange(range, of: aSrc, at: at)
                 }
             } catch { continue }
         }
-        return inserted ? comp : nil
+        guard !placed.isEmpty else { return nil }
+        guard order.count > 1, let first = tracks[order[0]] else { return (comp, nil) }
+        // More than one orientation: draw each part upright, fitted into the first part's shown size.
+        let render = RacketVideoOrientation.orientedSize(natural: first.natural, transform: first.transform)
+        let video = AVMutableVideoComposition()
+        video.renderSize = render
+        video.frameDuration = CMTime(value: 1, timescale: 30)
+        let total = comp.duration.seconds
+        video.instructions = RacketVideoOrientation.spans(placed, total: total).map { span in
+            let ins = AVMutableVideoCompositionInstruction()
+            ins.timeRange = CMTimeRange(start: CMTime(seconds: span.start, preferredTimescale: 600),
+                                        end: CMTime(seconds: span.end, preferredTimescale: 600))
+            if let k = span.key, let t = tracks[k] {
+                let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: t.track)
+                layer.setTransform(RacketVideoOrientation.fit(natural: t.natural, transform: t.transform, render: render),
+                                   at: ins.timeRange.start)
+                ins.layerInstructions = [layer]
+            }
+            return ins
+        }
+        return (comp, video)
     }
 
     func playerItem(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
                     progress: (@MainActor (String, Double) -> Void)? = nil) async -> AVPlayerItem? {
-        guard let comp = await composition(segments, partStart: partStart, partEnd: partEnd, progress: progress)
-        else { return nil }
-        return AVPlayerItem(asset: comp)
+        guard let l = await layout(segments, partStart: partStart, partEnd: partEnd, progress: progress) else { return nil }
+        let item = AVPlayerItem(asset: l.comp)
+        if let v = l.video { item.videoComposition = v }
+        return item
     }
 
     // MARK: iCloud-only originals (device feedback round 1)
@@ -112,13 +151,17 @@ final class RacketVideoLibrary {
     /// interruption gap) gives nil. Off the main actor; the generator never leaves the helper.
     func thumbnails(_ player: AVPlayer, times: [Double], maxSide: CGFloat = 160) async -> [UIImage?] {
         guard let asset = player.currentItem?.asset, !times.isEmpty else { return times.map { _ in nil } }
-        let images = await Self.stills(Box(value: asset), times: times, maxSide: maxSide)
+        // Parts in different orientations: the strip draws them as the player does.
+        let video = player.currentItem?.videoComposition
+        let images = await Self.stills(Box(value: asset), video: video.map { Box(value: $0) }, times: times, maxSide: maxSide)
         return images.value.map { $0.map { UIImage(cgImage: $0) } }
     }
 
-    nonisolated private static func stills(_ boxed: Box<AVAsset>, times: [Double], maxSide: CGFloat) async -> Box<[CGImage?]> {
+    nonisolated private static func stills(_ boxed: Box<AVAsset>, video: Box<AVVideoComposition>?, times: [Double],
+                                           maxSide: CGFloat) async -> Box<[CGImage?]> {
         let g = AVAssetImageGenerator(asset: boxed.value)
         g.appliesPreferredTrackTransform = true
+        if let video { g.videoComposition = video.value }
         g.maximumSize = CGSize(width: maxSide, height: maxSide)
         let tol = CMTime(seconds: 1, preferredTimescale: 600)   // a film strip needs a nearby frame, not the exact one
         g.requestedTimeToleranceBefore = tol

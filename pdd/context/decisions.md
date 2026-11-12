@@ -11016,3 +11016,73 @@ The user tested PR #444's build on an iPhone 13 Pro Max.
   check (match and drill) keeps "Line up the view yourself" and draws a court guide on the live preview (corner
   brackets + the playing-area outline, labelled "Guide only"), which detects nothing. Drill, tagging, summary, timeline
   and player screens follow in their batches.
+
+## 2026-11-12 — Racket parity: drills (issue #438; prompt 250)
+
+Wireframe parity batches D1 + D2, plus the deferrals the user now wants built on the same screens: Pause during a block
+(Paused / DrillPaused, BlockAll's Pause, the Watch block Pause), RestPaused, RestEverything "More options"; and V2.1.
+
+- **One drill cover for every recording mode** (`RacketDrillCover`): camera check → BlockStart → Block ⇄ Paused → Rest ⇄
+  RestPaused → … → Review → DrillTrend / Drill videos. Record everything's old drill branch in `RacketRecordingCover`
+  is gone (that screen records a whole match only). Don't film skips the camera and goes straight to the countdown.
+- **Block by block records through the machine** (`recording: .byUnit` for a drill): each block is its own run and
+  Photos part, attached to its block; the run closes when the block ends, so nothing records during rest. A drill
+  reopened mid-way continues its block-by-block log (`continueLog`). Block indices are absolute (`startingBlock` =
+  blocks already logged), so "Continue drill" from the page starts at the next block.
+- **Pause during a block pauses recording in every mode** ("Nothing is recorded or counted while paused"): `.blockPaused`
+  stops the block timer and closes the run without an interruption; Resume (phone or Watch) starts a new part and the
+  timer carries on; End block / Stop drill from Paused log the played time. Still playing? never asks while paused.
+  The Watch block board gets Pause, and the wrist shows the paused block (grey 0.55 ring, Resume) via the additive
+  optional `RacketWatchState.Block.pausedRemainingSec`; `pauseTimer` / `resumeTimer` pause a block as well as a rest.
+- **Rest logs the block just played**: longest rally (or made / tried) stepper prefilled from the last block, "You enter
+  this" (a scan never runs during a drill, so "Suggested from video" never shows here), "Find rallies after the drill"
+  clears the block's number so the scan fills it later, Easy / About right / Hard stored per block as the additive
+  `SetLog.drillFeelRaw`. RestEverything has no logging (as its board) and gains More options: rest length, auto-start,
+  add a block, end after the next block (the drill's plan becomes mutable mid-drill).
+- **The live-tracking boards (Block, Rest) render as their tracking-off boards** with placeholders in place: "Live
+  tracking off · Not available yet" (disabled); the Stats tab keeps Shots now / Longest, block / Rallies as "–" with
+  "Live counts: not available yet"; Setup's live tracking switch is off, disabled, "Not available yet"; Review's "Tag
+  shot types" tier and DrillTrend's "Shot mix" chip stay, disabled, "Not available yet". Customize says longest rally
+  is "Suggested from video by the placeholder model" (Capabilities: Placeholder).
+- **Review's rally lengths are in seconds** ("1–4 s / 5–9 s / 10–14 s / 15 s+"): the boards bucket by shots, and shot
+  count isn't built. With no rallies found yet, the panel says so and points to Drill videos. The longest rally headline
+  stays in shots: that number is the one you enter.
+- **DrillTrend follows its board, a bar chart** (not the fixlist's "line chart"): one bar per session for the last
+  five, today in the accent and earlier sessions in a quieter accent, the value on top, dates under, no y-axis; Swift
+  Charts `BarMark` with the repo's grow-on-appear animation (reduce motion respected). Best / average, last 5 /
+  sessions; "How it felt" is the most common feel of each of the last 3 sessions.
+- **Setup keeps the start button at the top** (user, 2026-11-06); it reads "Set up camera", or "Start drill" for Don't
+  film (there's no camera to set up). The recording choice keeps the full-width rows and "Everything, rests included"
+  (review5 M1) where the board has chips and "Everything, split later". Rest and countdown are chips (+ Custom).
+- **SetupFirst** = never done in history (or a new drill): "Choose" rows, no goal, start disabled with "Choose what
+  you're practising and your focus first." until both are set. A goal defaults to last time's number.
+- **Drill details** are additive optionals on `SessionExercise`: practising, hand, stroke, pattern, from / to zones (a
+  6 × 3 court grid), goal; remembered with the plan from history. Per-sport chips copied from the boards.
+- **Squash solo**: "Solo rally" (or practising Solo) opens the SqSolo setup — no practising gate, "Longest solo rally"
+  stepper as the goal, "You enter this" / "Last time N".
+- **Split player orientation** (device round 2 audit): each part keeps its own `preferredTransform` — one composition
+  track per orientation and, when there's more than one, a video composition fitting each part upright into one render
+  size (`RacketVideoOrientation`, unit-tested); the film strip uses the same composition. Exports still use the first
+  part's transform (next batch).
+- **The camera preview keeps its portrait mapping** (the picture stays upright to the viewer however the phone is
+  propped, like the Camera app). In the board's 300-tall media area a phone held upright shows a narrow 9:16 picture;
+  propped sideways it's a landscape picture. It is letterboxed, never cropped, because framing must show what's filmed.
+
+## 2026-11-12 — Racket device feedback round 3: frozen preview on record everything (issue #438)
+
+- **Root cause (device log, `-racketCameraDebug`):** SwiftUI sends a full-screen cover a spurious onDisappear → onAppear
+  about 10–60 ms after it appears (every recording cover, every time, on the phone). The record-everything match cover
+  is presented 0.45 s after the Warmup cover closes; its onDisappear called `stopPreview()` 0.06 s after recording
+  began: `stopCapture` ended the first part after 0.2 s (hence "Saved just now" at 0:13), `stopRunning` stopped the
+  session, and the preview layer kept its last frame. The machine was never told, so the header kept counting
+  "● Recording" while nothing was written. Game by game survived only because its session started after the spurious
+  pair (inside the access request).
+- **Fix:** a cover's disappear stops the camera only if the screen hasn't reappeared 0.8 s later
+  (`RacketRecorder.screenAppeared` / `screenDisappeared`; idle timer and Watch detach ride the same delay). Each cover's
+  tick also restarts a part if the machine wants capture but the recorder isn't writing (`ensureCapturing`) — the screen
+  must never say Recording while nothing records.
+- **Verified on the phone** (probe with `-racketPartSeconds 20`, a Debug-only short part): record-everything match,
+  game by game, block-by-block drill and record-everything drill each kept the session running for 40 s+ through
+  Camera → Dim → Stats → Camera, parts rolled over every 20 s (AVError -11810, the part limit) with no other part ending;
+  screenshots 18 s apart differ pixel-wise (a frozen layer would not). "Saved …" reads "Saves every 10 min" until a part
+  has really finished.
