@@ -14,6 +14,8 @@ struct RacketMatchParams: Equatable {
     var sport: RacketSport
     var opponent: String = ""
     var doubles: Bool
+    /// Doubles (device feedback round 2): the other team's two players and its team name (auto from them until typed).
+    var opponents = RacketOpponentTeam()
     var partner: String = ""
     /// `nil` ⇒ open play.
     var bestOf: Int?
@@ -40,6 +42,12 @@ struct RacketMatchParams: Equatable {
         opponent = ex.opponent ?? ""
         partner = ex.partner ?? ""
         doubles = ex.isDoubles
+        if doubles {
+            let p1 = ex.racketOpponentPlayer1 ?? "", p2 = ex.racketOpponentPlayer2 ?? ""
+            // An older doubles match named only the team: it reads as typed by hand, so it's kept as is.
+            let hand = ex.racketOpponentTeamNameEdited == true || (p1.isEmpty && p2.isEmpty && !opponent.isEmpty)
+            opponents = RacketOpponentTeam(player1: p1, player2: p2, teamName: opponent, edited: hand)
+        }
         bestOf = format.bestOf
         pointsTo = format.pointsTo
         superTiebreak = format.superTiebreak
@@ -53,6 +61,7 @@ struct RacketMatchParams: Equatable {
     func next() -> RacketMatchParams {
         var p = self
         p.opponent = ""
+        p.opponents = RacketOpponentTeam()
         p.round = RacketRounds.next(after: round) ?? ""
         return p
     }
@@ -65,7 +74,10 @@ struct RacketMatchParams: Equatable {
         }
         ex.racketSportRaw = sport.rawValue
         ex.racketModeRaw = RacketMode.match.rawValue
-        ex.opponent = clean(opponent)
+        ex.opponent = clean(doubles ? opponents.teamName : opponent)
+        ex.racketOpponentPlayer1 = doubles ? clean(opponents.player1) : nil
+        ex.racketOpponentPlayer2 = doubles ? clean(opponents.player2) : nil
+        ex.racketOpponentTeamNameEdited = doubles && opponents.edited ? true : nil
         ex.partner = doubles ? (clean(partner) ?? "Partner") : nil
         ex.racketBestOf = bestOf ?? 0
         ex.racketPointsTo = pointsTo == sport.defaultPointsTo ? nil : pointsTo
@@ -371,24 +383,41 @@ struct RacketSetupSheet: View {
             Text("Players").font(.system(size: 15, weight: .semibold))
             RacketChips(options: [false, true], label: { $0 ? "Doubles" : "Singles" }, selection: $params.doubles,
                         idPrefix: "racket.doubles", idFor: { $0 ? "doubles" : "singles" })
-            Text("Opponent").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
-            TextField(params.doubles ? "Optional (e.g. Jordan & Lee)" : "Optional", text: $params.opponent)
-                .textInputAutocapitalization(.words)
-                .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .accessibilityIdentifier("racket.opponent")
             let recents = recentOpponents(params.sport)
-            if !recents.isEmpty { chipRow(recents) { params.opponent = $0 } }
             if params.doubles {
-                TextField("Your partner", text: $params.partner)
-                    .textInputAutocapitalization(.words)
-                    .padding(10)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityIdentifier("racket.partner")
+                // Doubles (device feedback round 2): your partner, then the other team — its name follows the two
+                // players until you type one (clear it to go back to automatic).
+                nameField("Your partner", text: $params.partner, id: "racket.partner")
+                Text("Opponents").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                nameField("Team name (e.g. Jordan & Lee)",
+                          text: Binding(get: { params.opponents.teamName }, set: { params.opponents.setTeamName($0) }),
+                          id: "racket.opponentTeam")
+                if !recents.isEmpty { chipRow(recents) { params.opponents.pickTeam($0) } }
+                nameField("Player 1", text: Binding(get: { params.opponents.player1 }, set: { params.opponents.setPlayer1($0) }),
+                          id: "racket.opponentPlayer1")
+                nameField("Player 2", text: Binding(get: { params.opponents.player2 }, set: { params.opponents.setPlayer2($0) }),
+                          id: "racket.opponentPlayer2")
+                Text(params.opponents.edited ? "Clear the team name to make it from the players’ names again."
+                                             : "The team name follows the players’ names until you type one.")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("racket.opponentTeamHint")
+            } else {
+                Text("Opponent").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                nameField("Optional", text: $params.opponent, id: "racket.opponent")
+                if !recents.isEmpty { chipRow(recents) { params.opponent = $0 } }
             }
             Text(RacketGameCopy.doublesHelper).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func nameField(_ prompt: String, text: Binding<String>, id: String) -> some View {
+        TextField(prompt, text: text)
+            .textInputAutocapitalization(.words)
+            .padding(10)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityIdentifier(id)
     }
 
     // MARK: Step 2a′ — padel rules (PdDeuce "Match setup")
