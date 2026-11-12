@@ -66,14 +66,23 @@ final class RacketVideoLibrary {
     private func layout(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
                         progress: (@MainActor (String, Double) -> Void)?) async
         -> (comp: AVMutableComposition, video: AVMutableVideoComposition?)? {
-        guard !segments.isEmpty else { return nil }
+        await assemble(segments.map { ($0, max(0, $0.timelineStart - partStart)) }, progress: progress)
+    }
+
+    /// Lay `items` (a segment and where it sits, in seconds) on one composition: a video track per orientation, and a
+    /// video composition fitting each part upright when there's more than one orientation. The split player and the
+    /// exports both build on this (device feedback round 2 / 3: a part never borrows another part's rotation).
+    private func assemble(_ items: [(segment: RacketVideoSegment, atSec: Double)],
+                          progress: (@MainActor (String, Double) -> Void)?) async
+        -> (comp: AVMutableComposition, video: AVMutableVideoComposition?)? {
+        guard !items.isEmpty else { return nil }
         let comp = AVMutableComposition()
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var tracks: [String: (track: AVMutableCompositionTrack, transform: CGAffineTransform, natural: CGSize)] = [:]
         var order: [String] = []
         var placed: [RacketVideoOrientation.Placed] = []
         var loaded: [String: AVAsset] = [:]
-        for s in segments {
+        for (s, atSec) in items {
             if loaded[s.localIdentifier] == nil {
                 loaded[s.localIdentifier] = await avAsset(s.localIdentifier, network: true, progress: progress)
             }
@@ -89,11 +98,9 @@ final class RacketVideoLibrary {
                 order.append(key)
             }
             guard let vTrack = tracks[key]?.track else { continue }
-            let start = CMTime(seconds: s.assetStart, preferredTimescale: 600)
-            let dur = CMTime(seconds: s.durationSec, preferredTimescale: 600)
-            let atSec = max(0, s.timelineStart - partStart)
+            let range = CMTimeRange(start: CMTime(seconds: s.assetStart, preferredTimescale: 600),
+                                    duration: CMTime(seconds: s.durationSec, preferredTimescale: 600))
             let at = CMTime(seconds: atSec, preferredTimescale: 600)
-            let range = CMTimeRange(start: start, duration: dur)
             do {
                 try vTrack.insertTimeRange(range, of: src, at: at)
                 placed.append(.init(start: atSec, duration: s.durationSec, key: key))
@@ -104,13 +111,11 @@ final class RacketVideoLibrary {
         }
         guard !placed.isEmpty else { return nil }
         guard order.count > 1, let first = tracks[order[0]] else { return (comp, nil) }
-        // More than one orientation: draw each part upright, fitted into the first part's shown size.
         let render = RacketVideoOrientation.orientedSize(natural: first.natural, transform: first.transform)
         let video = AVMutableVideoComposition()
         video.renderSize = render
         video.frameDuration = CMTime(value: 1, timescale: 30)
-        let total = comp.duration.seconds
-        video.instructions = RacketVideoOrientation.spans(placed, total: total).map { span in
+        video.instructions = RacketVideoOrientation.spans(placed, total: comp.duration.seconds).map { span in
             let ins = AVMutableVideoCompositionInstruction()
             ins.timeRange = CMTimeRange(start: CMTime(seconds: span.start, preferredTimescale: 600),
                                         end: CMTime(seconds: span.end, preferredTimescale: 600))
@@ -187,37 +192,31 @@ final class RacketVideoLibrary {
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
     func export(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
                 captions: [(start: Double, end: Double, text: String)] = []) async throws -> URL {
-        let comp = AVMutableComposition()
-        guard let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { throw VideoError.exportFailed("no track") }
-        let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-        var cursor = CMTime.zero
-        var any = false
+        // Pieces end to end, each part with its own orientation (round 3).
+        var items: [(segment: RacketVideoSegment, atSec: Double)] = []
+        var cursorSec = 0.0
         for piece in pieces {
-            for s in piece.segments {
-                guard let asset = await avAsset(s.localIdentifier, network: true),
-                      let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
-                let range = CMTimeRange(start: CMTime(seconds: s.assetStart, preferredTimescale: 600),
-                                        duration: CMTime(seconds: s.durationSec, preferredTimescale: 600))
-                try? vTrack.insertTimeRange(range, of: src, at: cursor)
-                if !any, let t = try? await src.load(.preferredTransform) { vTrack.preferredTransform = t }
-                if let aSrc = try? await asset.loadTracks(withMediaType: .audio).first {
-                    try? aTrack?.insertTimeRange(range, of: aSrc, at: cursor)
-                }
-                cursor = cursor + range.duration
-                any = true
+            for seg in piece.segments {
+                items.append((seg, cursorSec))
+                cursorSec += seg.durationSec
             }
         }
-        guard any else { throw VideoError.missing }
+        let built = await assemble(items, progress: nil)
+        guard let built else { throw VideoError.missing }
+        let comp = built.comp
+        let cursor = comp.duration
 
         #if targetEnvironment(simulator)
         let preset = AVAssetExportPresetPassthrough   // the simulator can't re-encode (see ReelExporter)
         let videoComposition: AVVideoComposition? = nil
         _ = captions
+        _ = cursor
         #else
         let preset = smaller ? AVAssetExportPreset1280x720 : AVAssetExportPresetHighestQuality
-        var videoComposition: AVVideoComposition?
-        if !captions.isEmpty, let vc = await Self.propertiesComposition(CompositionBox(comp: comp)) {
+        var videoComposition: AVVideoComposition? = built.video
+        let base: AVMutableVideoComposition? = built.video == nil
+            ? await Self.propertiesComposition(CompositionBox(comp: comp)) : built.video
+        if !captions.isEmpty, let vc = base {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
                             position: CGPoint(x: 0.5, y: 0.1), scale: 0.9, highlightHex: "#000000")

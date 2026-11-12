@@ -11086,3 +11086,14 @@ Wireframe parity batches D1 + D2, plus the deferrals the user now wants built on
   Camera → Dim → Stats → Camera, parts rolled over every 20 s (AVError -11810, the part limit) with no other part ending;
   screenshots 18 s apart differ pixel-wise (a frozen layer would not). "Saved …" reads "Saves every 10 min" until a part
   has really finished.
+- **The court guide frames the picture, not the box** (round 3 follow-up): the preview is letterboxed (it shows exactly
+  what's filmed), so the guide and corner brackets fit the video rect — the format's dimensions mapped portrait
+  (`RacketRecorder.previewAspect`), aspect-fitted in the media area (`RacketVideoOrientation.aspectFit`, unit-tested).
+- **"Space left" never rises while recording** (`RacketSpaceLeft`): it jumped 40 h 20 → 43 h 50 when the measured
+  rate took over from the estimate. Now the shown value only goes down, unless free space really grew by 1 GB or more
+  since it was last shown; and the write-rate meter takes over only after 60 s and 50 MB of recording (was 20 s).
+- **Exports use each part's own orientation too**: the split player and every export (Player share, Keep rallies, Delete
+  original) build on one assembler — a video track per orientation and a video composition when they differ; captions
+  are added on top of that composition.
+- **RecordAll's header never truncates**: the status and "Match, everything" keep their size; "Saves every 10 min" /
+  "Saved 2 min ago" wraps on the right.

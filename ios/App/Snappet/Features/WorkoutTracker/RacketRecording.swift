@@ -126,16 +126,21 @@ enum RacketBitrate {
 struct RacketWriteRateMeter: Equatable, Sendable {
     /// How much each new interval moves the estimate (0…1).
     var smoothing: Double
-    /// The measured rate isn't trusted until this much recording has been sampled.
+    /// The measured rate isn't trusted until this much recording has been sampled…
     var warmUpSec: TimeInterval
+    /// …and this many bytes written (a few seconds of a quiet scene says little — round 3: "space left" jumped up when
+    /// the meter took over too early).
+    var minBytes: Int64
     private(set) var rate: Double?
     private(set) var measuredSec: TimeInterval = 0
+    private(set) var measuredBytes: Int64 = 0
     private var lastAt: Date?
     private var lastBytes: Int64 = 0
 
-    init(smoothing: Double = 0.3, warmUpSec: TimeInterval = 20) {
+    init(smoothing: Double = 0.3, warmUpSec: TimeInterval = 60, minBytes: Int64 = 50_000_000) {
         self.smoothing = smoothing
         self.warmUpSec = warmUpSec
+        self.minBytes = minBytes
     }
 
     /// Feed a sample. A drop in total bytes or an interval under a second is skipped (the next one measures).
@@ -148,15 +153,36 @@ struct RacketWriteRateMeter: Equatable, Sendable {
         let r = Double(db) / dt
         rate = rate.map { $0 + smoothing * (r - $0) } ?? r
         measuredSec += dt
+        measuredBytes += db
     }
 
     /// Recording paused / interrupted: forget the last sample, keep the learned rate.
     mutating func pause() { lastAt = nil }
 
-    var isMeasured: Bool { (rate ?? 0) > 0 && measuredSec >= warmUpSec }
+    var isMeasured: Bool { (rate ?? 0) > 0 && measuredSec >= warmUpSec && measuredBytes >= minBytes }
 
     /// The rate to plan with: measured once warmed up, else the config estimate.
     func effectiveRate(estimate: Double) -> Double { isMeasured ? rate! : estimate }
+}
+
+/// "Space left" while recording, as shown (round 3): it never rises during a recording — a better rate estimate or a
+/// part moving into Photos can't make it jump up — unless free space really grew (≥ 1 GB more than when it was last
+/// shown, e.g. the user deleted something).
+struct RacketSpaceLeft: Equatable, Sendable {
+    static let genuineGainBytes: Int64 = 1_000_000_000
+    private(set) var shown: TimeInterval?
+    private var freeAtShown: Int64?
+
+    init() {}
+
+    @discardableResult
+    mutating func update(freeBytes: Int64, bytesPerSec: Double) -> TimeInterval {
+        let room = RacketStorageCheck.roomSec(freeBytes: freeBytes, bytesPerSec: bytesPerSec)
+        if let s = shown, room > s, let f = freeAtShown, freeBytes - f < Self.genuineGainBytes { return s }
+        shown = room
+        freeAtShown = freeBytes
+        return room
+    }
 }
 
 /// The storage check before recording everything (`TtStorage`), and "space left" while recording.

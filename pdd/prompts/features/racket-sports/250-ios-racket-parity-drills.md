@@ -74,28 +74,35 @@ the Watch mirroring it.
 
 ## Acceptance criteria
 
-- [ ] Drill library: "<Sport> drill", + New, search, All / Recent / sport categories, Recent and All drills rows with the
+- [x] Drill library: "<Sport> drill", + New, search, All / Recent / sport categories, Recent and All drills rows with the
       measure, "New" and "Video helps" / "Timer"; Squash "Solo rally" opens SqSolo.
-- [ ] Setup: Same as last time / Suggested plan + Change all; Practising › Focus › Pattern › Plan › Measure › Goal rows
+- [x] Setup: Same as last time / Suggested plan + Change all; Practising › Focus › Pattern › Plan › Measure › Goal rows
       open Customize; recording chips; live tracking switch (off, disabled); rest and countdown chips + Custom; the start
       button at the top (user decision) reads "Set up camera" (or "Start drill" without video).
-- [ ] SetupFirst: "First time with this drill" copy; Choose › rows; start disabled with "Choose what you're practising and
+- [x] SetupFirst: "First time with this drill" copy; Choose › rows; start disabled with "Choose what you're practising and
       your focus first." until both are set.
-- [ ] Customize: practising, focus hand + stroke chips per sport, pattern + court diagram with From / To, Blocks / Each
+- [x] Customize: practising, focus hand + stroke chips per sport, pattern + court diagram with From / To, Blocks / Each
       block steppers, measure chips, goal; Save writes the details back to the setup.
-- [ ] Set up camera → camera check → BlockStart → Block; Wait before block 1 returns to the camera, later Wait → paused rest.
-- [ ] Block by block: ● Recording · Block N of M · Phone OK; ring; recording line; goal panel; tracking row; switcher;
+- [x] Set up camera → camera check → BlockStart → Block; Wait before block 1 returns to the camera, later Wait → paused rest.
+- [x] Block by block: ● Recording · Block N of M · Phone OK; ring; recording line; goal panel; tracking row; switcher;
       Pause / End block. Each block is its own Photos part; nothing records during rest.
-- [ ] Paused (all modes): Ⅱ Recording paused; grey 0.55 ring "Paused · Block timer stopped"; Resume; Watch line; End block
+- [x] Paused (all modes): Ⅱ Recording paused; grey 0.55 ring "Paused · Block timer stopped"; Resume; Watch line; End block
       / Stop drill. Nothing is recorded or counted while paused.
-- [ ] Rest / RestOff: ring with "Block N starts by itself after this"; Pause rest / +30 s / +1 min; Skip rest; longest rally
+- [x] Rest / RestOff: ring with "Block N starts by itself after this"; Pause rest / +30 s / +1 min; Skip rest; longest rally
       (or made / tried) stepper "You enter this"; Find rallies after the drill; Easy / About right / Hard; Auto-start;
       More options; Finish drill. RestPaused and RestEverything (+ More options) match their boards.
-- [ ] Review (every mode, and from the page): tags, longest rally headline with New best and last time, per-block bars,
+- [x] Review (every mode, and from the page): tags, longest rally headline with New best and last time, per-block bars,
       rallies panel, Done for now, See progress → DrillTrend, Drill videos → DrillVideos.
-- [ ] DrillTrend: last 5 sessions as a bar chart, best / average / sessions, how it felt, metric chips.
-- [ ] Watch: block Pause → paused block with Resume; rest and countdown unchanged.
-- [ ] Pure logic in `RacketDrillFlowTests` (+ machine cases in `RacketRecordingTests`); UI in `RacketDrillUITests`.
+- [x] DrillTrend: last 5 sessions as a bar chart, best / average / sessions, how it felt, metric chips.
+- [x] Watch: block Pause → paused block with Resume; rest and countdown unchanged.
+- [x] Pure logic in `RacketDrillFlowTests` (+ machine cases in `RacketRecordingTests`); UI in `RacketDrillUITests`.
+
+- [ ] Device: parts recorded with the phone turned between them play and export upright (needs a person to turn the
+      phone; the maths is unit-tested).
+
+Also in this prompt (device feedback rounds 2–3, same branch): one persistent preview per cover, the spurious-disappear
+guard (frozen preview), the court guide fitted to the letterboxed picture, a never-rising "Space left", and per-part
+orientation in the split player and exports.
 
 ## Constraints
 
