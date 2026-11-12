@@ -10982,3 +10982,37 @@ TnTiebreak, ScoreOnly).
 - **The Watch** mirrors the game screen (`gameCoverState`): Start on the warmup ("Camera ready" now true for game by
   game), scoring, the break ring, the countdown ("Game 2 starts" via the additive `Countdown.title`), match over. The
   relay's attach now returns a token so the cover closing can't detach the page that re-attached the same match.
+
+## 2026-11-11 — Racket device feedback round 2: dark camera, doubles names, truthful capabilities (issue #438)
+
+The user tested PR #444's build on an iPhone 13 Pro Max.
+
+- **"The camera view is dark" — root cause: a preview attached mid-recording stops the recording.** Device probe
+  (`-racketCameraDebug` log pulled from the phone): the camera check preview runs (session running, 2 inputs,
+  connection active, 396×300). On the game screen, tapping Camera while recording created a new
+  `AVCaptureVideoPreviewLayer` on the running session; 0.3 s later the movie file ended with `AVFoundationErrorDomain
+  -11818 "Recording Stopped"`, which maps to "Snappet left the screen, so the recording stopped". The game screen also
+  opened on Dim, a black screen. **Fix:** every recording screen keeps ONE preview for its whole life, attached before
+  anything records, drawn behind the content at the rect a `racketPreviewSlot()` marks and invisible (still attached)
+  when no slot is shown (`racketPersistentPreview`). Re-run on the phone: Camera → Dim → Stats → Camera while recording,
+  no part ended, preview live. Game by game now opens on Camera (Warmup's "During play, show" default), as record
+  everything already does at the user's request (round 1); the boards' Dim default is overridden.
+- **Debug-only camera tools** (not in Release): `-racketCameraProbe` opens a match's camera check at launch;
+  `-racketCameraDebug` draws session running / connection / thermal on the preview and appends the `racket.camera`
+  trace to `Documents/racket-camera.log` (pull with `devicectl device copy from --domain-type appDataContainer`).
+  The trace also goes to `Logger(subsystem: "com.snappet", category: "racket.camera")` in every build.
+- **Doubles names.** The other team has a Team name, Player 1 and Player 2; your side keeps the partner field. The team
+  name is made from the two players ("Jordan & Lee") and follows them until typed by hand; clearing it goes back to
+  automatic (`RacketOpponentTeam`). Stored additively: `racketOpponentPlayer1/2`, `racketOpponentTeamNameEdited`; the
+  team name stays in `opponent`, so history, head-to-head, recents and lists keep reading one field. An older doubles
+  match with only a team name reads as typed by hand. DoublesTag's "who made the last shot" lists the two players.
+- **Capabilities reflect reality (user, 2026-11-11 — overrides "Capabilities shows every feature as ✓ Available").**
+  The registry is truthful: the placeholder motion model backs rally finding and the drills' longest rally only, shown
+  as "Placeholder" with an honest limit line; court check, live tracking, shot count, shot types, endings and ball path
+  say "Not available yet". Layout, row order and "Without it: …" lines are the board's.
+- **Placeholders, never missing elements or fake data**: where a not-built feature sits on a board, the element stays
+  in its place in a "Not available yet" state. This round: "Live tracking off · Not available yet" (disabled) on the
+  game / record-everything screens and the Warmup switch; StatsOff says "Shot stats: not available yet."; the camera
+  check (match and drill) keeps "Line up the view yourself" and draws a court guide on the live preview (corner
+  brackets + the playing-area outline, labelled "Guide only"), which detects nothing. Drill, tagging, summary, timeline
+  and player screens follow in their batches.

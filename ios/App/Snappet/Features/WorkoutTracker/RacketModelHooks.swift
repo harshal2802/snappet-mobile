@@ -63,8 +63,9 @@ struct RallyModelInfo: Codable, Hashable, Identifiable, Sendable {
     var name: String
     var sports: [RacketSport]
     var input: RallyModelInput
-    /// The features this model backs. The placeholder declares all of them (#438: "every sport assumes a placeholder
-    /// model and the UI shows every feature as available"); see decisions 2026-11-07 for which are built.
+    /// The features this model really backs. The placeholder backs only rally finding and, from it, the drills'
+    /// longest rally (user, device feedback round 2, 2026-11-11: Capabilities must reflect reality — this replaces
+    /// "show every feature as ✓ Available").
     var features: [RacketFeature]
     var isPlaceholder: Bool
     /// "Recommended for this sport" etc. (ChooseModel).
@@ -102,16 +103,48 @@ struct RacketSportCapabilities: Equatable, Sendable {
 
     func has(_ f: RacketFeature) -> Bool { model?.features.contains(f) == true }
     var hasModel: Bool { model != nil }
+
+    /// What a feature really is right now: built by a real model, backed by the placeholder, or not built.
+    func state(_ f: RacketFeature) -> RacketFeatureState {
+        guard let model, model.features.contains(f) else { return .notAvailableYet }
+        return model.isPlaceholder ? .placeholder : .available
+    }
+}
+
+/// A feature's true state on Capabilities and on every screen it appears on (device feedback round 2).
+enum RacketFeatureState: Equatable, Sendable {
+    case available, placeholder, notAvailableYet
+
+    /// The status chip: "✓ Available" / "Placeholder" / "Not available yet".
+    var label: String {
+        switch self {
+        case .available: return "✓ Available"
+        case .placeholder: return "Placeholder"
+        case .notAvailableYet: return "Not available yet"
+        }
+    }
+}
+
+extension RacketFeature {
+    /// The honest limit of the placeholder, under the row (only for placeholder-backed features).
+    var placeholderLimit: String? {
+        switch self {
+        case .findRallies: return "Basic: finds rallies from movement and your score taps. Check what it finds."
+        case .longestRallyInDrills: return "Basic: from the rallies found on video, in seconds. You confirm it."
+        default: return nil
+        }
+    }
 }
 
 /// The per-sport registry. One place says which model each sport uses and what it supports; Capabilities, the "Without
 /// it" lines, the no-model states and "Preview a sport with no model" all read it.
 enum RacketCapabilityRegistry {
-    /// Snappet's placeholder: motion energy + score taps. Every sport, every feature declared (user decision).
+    /// Snappet's placeholder: motion energy + score taps. Every sport; it backs rally finding (and the drills' longest
+    /// rally from it) only — court check, live tracking, shot count, shot types, endings and ball path have no code.
     static let placeholder = RallyModelInfo(
         id: "snappet.placeholder.motion", version: 1, name: "Snappet placeholder",
         sports: RacketSport.allCases, input: .motionEnergy(fps: 10, gridWidth: 32),
-        features: RacketFeature.allCases, isPlaceholder: true,
+        features: [.findRallies, .longestRallyInDrills], isPlaceholder: true,
         note: "Placeholder: finds rallies from movement and your score taps")
 
     /// Models per sport, newest first. Add a model here (and its `RallyModel` in `RacketRallyModels.all`) to ship it.
@@ -130,9 +163,9 @@ enum RacketCapabilityRegistry {
         return all.first { $0.id == id && (version == nil || $0.version == version) }
     }
 
-    /// TtCapabilities: "✓ Available" or "Not yet".
+    /// TtCapabilities' status chip, from the feature's true state.
     static func statusLabel(_ caps: RacketSportCapabilities, _ f: RacketFeature) -> String {
-        caps.has(f) ? "✓ Available" : "Not yet"
+        caps.state(f).label
     }
 }
 

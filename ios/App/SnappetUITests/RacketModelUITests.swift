@@ -42,7 +42,7 @@ final class RacketModelUITests: XCTestCase {
         XCTAssertTrue(any("racket.videos.header").waitForExistence(timeout: 6), "Your videos is FindRallies: a model exists")
     }
 
-    func testCapabilitiesShowEveryFeatureAndPreviewASportWithNoModel() {
+    func testCapabilitiesShowTrueStatesAndPreviewASportWithNoModel() {
         openYourVideos()
         XCTAssertFalse(any("racket.videos.notYet").exists, "rally finding is available on the placeholder")
         XCTAssertEqual(any("racket.videos.scan.0").label, "Not scanned")
@@ -55,7 +55,10 @@ final class RacketModelUITests: XCTestCase {
             let row = any("racket.caps.\(f)")
             if !row.exists { app.swipeUp(velocity: .slow) }
             XCTAssertTrue(row.waitForExistence(timeout: 3), f)
-            XCTAssertTrue(row.label.contains("✓ Available"), row.label)
+            // Device feedback round 2: the true state, never a blanket "✓ Available".
+            let backed = f == "findRallies" || f == "longestRallyInDrills"
+            XCTAssertTrue(row.label.contains(backed ? "Placeholder" : "Not available yet"), row.label)
+            XCTAssertFalse(row.label.contains("✓ Available"), row.label)
             XCTAssertTrue(row.label.contains("Without it:"), row.label)
         }
         XCTAssertTrue(any("racket.caps.findRallies").label.contains("mark rallies on the timeline"))

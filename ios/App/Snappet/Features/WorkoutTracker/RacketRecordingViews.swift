@@ -381,7 +381,6 @@ struct RacketRecordingCover: View {
 
     private var recordingBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
             VStack(spacing: 12) {
                 topBar
                 if let m = machine {
@@ -404,6 +403,8 @@ struct RacketRecordingCover: View {
                 overlayPanel { stillPlayingPanel(m) }
             }
         }
+        .racketPersistentPreview(session: recorder.session, fake: recorder.fake)
+        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear(perform: setUp)
@@ -548,7 +549,7 @@ struct RacketRecordingCover: View {
 
     /// The live preview from the recorder's own session (no second session). The simulator / UI tests show a stand-in.
     private var cameraView: some View {
-        RacketCameraPreview(session: recorder.session, fake: recorder.fake)
+        Color.clear.racketPreviewSlot()
             .overlay {
                 if recorder.fake {
                     Text("Camera preview shows here on a device")
@@ -556,6 +557,8 @@ struct RacketRecordingCover: View {
                         .accessibilityIdentifier("racket.rec.previewStandIn")
                 }
             }
+            // The drill's camera step frames the shot: the court-check placeholder guide (device feedback round 2).
+            .overlay { if machine?.phase == .ready { RacketCourtGuide(sport: ex.racketFormat.sport) } }
             .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .accessibilityElement(children: .contain)
@@ -992,6 +995,40 @@ struct RacketRecordingCover: View {
 
 // MARK: - Camera preview
 
+/// Where a screen wants the camera preview drawn (device feedback round 2). A preview layer attached to a session
+/// that is already recording makes the session reconfigure, and the movie file ends with AVError -11818 ("Recording
+/// Stopped") — on a phone, tapping Camera mid-game stopped the recording and showed "Snappet left the screen". So a
+/// recording screen keeps ONE preview for its whole life (attached before anything records), drawn behind the content
+/// at the rect a `racketPreviewSlot()` marks, and invisible (still attached) when no slot is on screen.
+struct RacketPreviewSlotKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+extension View {
+    /// Marks this view's bounds as where the camera preview shows (the view itself should be clear).
+    func racketPreviewSlot() -> some View {
+        anchorPreference(key: RacketPreviewSlotKey.self, value: .bounds) { $0 }
+    }
+
+    /// The screen's one camera preview, drawn behind the content at the marked slot. Apply at the screen's root, under
+    /// its black background.
+    func racketPersistentPreview(session: AVCaptureSession, fake: Bool) -> some View {
+        backgroundPreferenceValue(RacketPreviewSlotKey.self) { anchor in
+            GeometryReader { g in
+                let rect = anchor.map { g[$0] } ?? CGRect(x: 0, y: 0, width: 2, height: 2)
+                RacketCameraPreview(session: session, fake: fake)
+                    .frame(width: max(2, rect.width), height: max(2, rect.height))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .position(x: rect.midX, y: rect.midY)
+                    .opacity(anchor == nil ? 0 : 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
 struct RacketCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let fake: Bool
@@ -999,10 +1036,46 @@ struct RacketCameraPreview: UIViewRepresentable {
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        private var loggedSize: CGSize = .zero
+        #if DEBUG
+        private let debugLabel = UILabel()
+        private var debugTimer: Timer?
+
+        /// `-racketCameraDebug`: running / connection / thermal on the preview itself, readable in a device screenshot.
+        func startDebugLabel() {
+            debugLabel.numberOfLines = 0
+            debugLabel.font = .monospacedSystemFont(ofSize: 11, weight: .bold)
+            debugLabel.textColor = .yellow
+            debugLabel.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+            addSubview(debugLabel)
+            debugTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshDebug() }
+            }
+        }
+
+        private func refreshDebug() {
+            let c = previewLayer.connection
+            let s = previewLayer.session
+            debugLabel.text = "running=\(s?.isRunning ?? false) interrupted=\(s?.isInterrupted ?? false) inputs=\(s?.inputs.count ?? 0)\nconnection=\(c != nil) enabled=\(c?.isEnabled ?? false) active=\(c?.isActive ?? false)\nsize=\(Int(bounds.width))x\(Int(bounds.height)) window=\(window != nil) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)"
+            debugLabel.frame = CGRect(x: 4, y: 4, width: bounds.width - 8, height: 48)
+        }
+        #endif
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds.size != loggedSize else { return }
+            loggedSize = bounds.size
+            let c = previewLayer.connection
+            RacketRecorder.trace("preview layout session=\(self.previewLayer.session.map { Unmanaged.passUnretained($0).toOpaque().debugDescription } ?? "nil") \(Int(self.bounds.width))x\(Int(self.bounds.height)) session=\(self.previewLayer.session != nil) running=\(self.previewLayer.session?.isRunning ?? false) connection=\(c != nil) enabled=\(c?.isEnabled ?? false) active=\(c?.isActive ?? false) hidden=\(self.isHidden) alpha=\(self.alpha)")
+        }
     }
 
     func makeUIView(context: Context) -> PreviewView {
         let v = PreviewView()
+        RacketRecorder.trace("preview view made (layer attaches to the session)")
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-racketCameraDebug") { v.startDebugLabel() }
+        #endif
         v.backgroundColor = fake ? UIColor(white: 0.12, alpha: 1) : .black
         if !fake {
             v.previewLayer.session = session
