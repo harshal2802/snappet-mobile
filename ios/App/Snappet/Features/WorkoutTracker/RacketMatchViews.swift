@@ -393,8 +393,8 @@ struct RacketGameCover: View {
     // MARK: Camera check (NoModelCamera)
 
     private var cameraCheck: some View {
-        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, accessDenied: accessDenied,
-                               continueTitle: "Continue to warmup", onCancel: onClose,
+        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, videoAspect: recorder.previewAspect,
+                               accessDenied: accessDenied, continueTitle: "Continue to warmup", onCancel: onClose,
                                onContinue: { stage = .warmup })
             .padding(16)
     }
@@ -841,6 +841,8 @@ extension RacketRecordingShow {
 /// sport's playing-area outline over the live preview, labelled as a guide — it detects nothing.
 struct RacketCourtGuide: View {
     let sport: RacketSport
+    /// The picture's width / height: the guide and brackets frame the letterboxed video, not the whole box (round 3).
+    var videoAspect: CGFloat? = nil
 
     private var label: String {
         sport == .tableTennis ? "Guide only: fit the whole table inside" : "Guide only: fit the whole court inside"
@@ -848,7 +850,8 @@ struct RacketCourtGuide: View {
 
     var body: some View {
         GeometryReader { g in
-            let w = g.size.width, h = g.size.height
+            let r = RacketVideoOrientation.aspectFit(aspect: videoAspect, in: g.size)
+            let w = r.width, h = r.height
             ZStack {
                 // Corner brackets.
                 Path { p in
@@ -873,12 +876,15 @@ struct RacketCourtGuide: View {
                 VStack {
                     Spacer()
                     Text(label).font(.system(size: 12, weight: .semibold))
+                        .multilineTextAlignment(.center)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.black.opacity(0.6), in: Capsule())
                         .padding(.bottom, 4)
                         .accessibilityIdentifier("racket.camera.guide")
                 }
             }
+            .frame(width: w, height: h)
+            .position(x: r.midX, y: r.midY)
         }
         .allowsHitTesting(false)
     }

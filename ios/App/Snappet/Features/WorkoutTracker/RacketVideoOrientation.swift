@@ -27,6 +27,18 @@ enum RacketVideoOrientation {
             .concatenating(CGAffineTransform(translationX: dx, y: dy))
     }
 
+    /// Where a picture of `aspect` (width / height) sits when aspect-fitted, centred, in `box` — the letterboxed video
+    /// rect the court guide frames (round 3). nil aspect ⇒ the whole box.
+    static func aspectFit(aspect: CGFloat?, in box: CGSize) -> CGRect {
+        guard let aspect, aspect > 0, box.width > 0, box.height > 0 else { return CGRect(origin: .zero, size: box) }
+        if box.width / box.height > aspect {
+            let w = box.height * aspect
+            return CGRect(x: (box.width - w) / 2, y: 0, width: w, height: box.height)
+        }
+        let h = box.width / aspect
+        return CGRect(x: 0, y: (box.height - h) / 2, width: box.width, height: h)
+    }
+
     /// A stable key per orientation (transforms differ by float noise only in theory; rounded to be safe).
     static func key(_ t: CGAffineTransform) -> String {
         [t.a, t.b, t.c, t.d, t.tx, t.ty].map { String(Int(($0 * 1000).rounded())) }.joined(separator: ",")

@@ -274,7 +274,8 @@ struct RacketDrillCover: View {
     // MARK: Camera check (CameraCheck → NoModelCamera, drill)
 
     private func cameraCheck(_ m: RacketRecordingMachine) -> some View {
-        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, accessDenied: accessDenied,
+        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, videoAspect: recorder.previewAspect,
+                               accessDenied: accessDenied,
                                continueTitle: "Continue",
                                footnote: "Next: warmup for a match, or a countdown to block 1 for a drill.",
                                onCancel: onClose,
@@ -697,6 +698,7 @@ struct RacketWarmPanel: View {
 struct RacketCameraCheckPanel: View {
     let sport: RacketSport
     let fake: Bool
+    var videoAspect: CGFloat? = nil
     let accessDenied: Bool
     let continueTitle: String
     var footnote: String? = nil
@@ -720,7 +722,7 @@ struct RacketCameraCheckPanel: View {
                             .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     }
                 }
-                .overlay { RacketCourtGuide(sport: sport) }
+                .overlay { RacketCourtGuide(sport: sport, videoAspect: videoAspect) }
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
                 .accessibilityElement(children: .contain)

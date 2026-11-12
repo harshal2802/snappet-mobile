@@ -31,6 +31,9 @@ final class RacketRecorder: NSObject {
     private(set) var codec: RacketVideoCodec = .hevc
     /// Bytes of finished parts this session (read from each file before it's handed to Photos).
     private(set) var savedBytes: Int64 = 0
+    /// The shown picture's width / height (the preview is mapped portrait, so a 16:9 format shows 9:16); nil until the
+    /// camera is configured (and for the stand-in, which fills its box). The court guide fits itself to it.
+    private(set) var previewAspect: CGFloat?
 
     /// A part saved to Photos (asset id, when it started, its length).
     var onPartSaved: ((RecordedClip) -> Void)?
@@ -183,6 +186,7 @@ final class RacketRecorder: NSObject {
         }
         rotation = AVCaptureDevice.RotationCoordinator(device: camera, previewLayer: nil)
         nonisolated(unsafe) let video = input
+        nonisolated(unsafe) let cam = camera
         nonisolated(unsafe) let mic = AVCaptureDevice.default(for: .audio).flatMap { try? AVCaptureDeviceInput(device: $0) }
         let preset: AVCaptureSession.Preset = quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
         let limit = CMTime(seconds: Self.partSec, preferredTimescale: 600)
@@ -200,7 +204,11 @@ final class RacketRecorder: NSObject {
                                           for: connection)
             }
             p.session.commitConfiguration()
-            Task { @MainActor in self.codec = hevc ? .hevc : .h264 }
+            let dims = CMVideoFormatDescriptionGetDimensions(cam.activeFormat.formatDescription)
+            Task { @MainActor in
+                self.codec = hevc ? .hevc : .h264
+                if dims.width > 0, dims.height > 0 { self.previewAspect = CGFloat(dims.height) / CGFloat(dims.width) }
+            }
         }
     }
 

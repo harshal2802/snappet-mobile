@@ -269,4 +269,47 @@ final class RacketDrillFlowTests: XCTestCase {
         XCTAssertEqual(spans, [.init(start: 0, end: 10, key: "a"), .init(start: 10, end: 15, key: nil),
                                .init(start: 15, end: 20, key: "b"), .init(start: 20, end: 25, key: nil)])
     }
+
+    // MARK: - Round 3: space left never rises; the guide frames the letterboxed picture
+
+    func testSpaceLeftNeverRisesWhileRecordingUnlessFreeSpaceReallyGrew() {
+        var s = RacketSpaceLeft()
+        let est = 1_000_000.0          // the config estimate
+        let a = s.update(freeBytes: 50_000_000_000, bytesPerSec: est)
+        // The measured rate comes in lower (a quiet scene): the number would jump up — it holds instead.
+        XCTAssertEqual(s.update(freeBytes: 49_990_000_000, bytesPerSec: 900_000), a)
+        // Recording uses space: it goes down.
+        let b = s.update(freeBytes: 49_000_000_000, bytesPerSec: est)
+        XCTAssertLessThan(b, a)
+        // A part moving into Photos frees its temp file (a small gain): still no rise.
+        XCTAssertEqual(s.update(freeBytes: 49_300_000_000, bytesPerSec: est), b)
+        // The user frees 5 GB: a genuine gain shows.
+        XCTAssertGreaterThan(s.update(freeBytes: 54_000_000_000, bytesPerSec: est), b)
+    }
+
+    func testMeterWaitsForEnoughTimeAndBytes() {
+        var m = RacketWriteRateMeter()
+        m.sample(at: t0, totalBytes: 0)
+        m.sample(at: at(30), totalBytes: 10_000_000)
+        m.sample(at: at(70), totalBytes: 20_000_000)
+        XCTAssertFalse(m.isMeasured, "70 s but only 20 MB: not meaningful yet")
+        m.sample(at: at(100), totalBytes: 60_000_000)
+        XCTAssertTrue(m.isMeasured)
+        XCTAssertEqual(m.measuredBytes, 60_000_000)
+    }
+
+    func testGuideFitsTheLetterboxedPicture() {
+        // A 9:16 picture in the camera check's wide box: a centred strip.
+        let r = RacketVideoOrientation.aspectFit(aspect: 9.0 / 16.0, in: CGSize(width: 396, height: 300))
+        XCTAssertEqual(r.height, 300, accuracy: 0.01)
+        XCTAssertEqual(r.width, 168.75, accuracy: 0.01)
+        XCTAssertEqual(r.midX, 198, accuracy: 0.01)
+        // A 16:9 picture in a tall box: a centred band.
+        let l = RacketVideoOrientation.aspectFit(aspect: 16.0 / 9.0, in: CGSize(width: 396, height: 546))
+        XCTAssertEqual(l.width, 396, accuracy: 0.01)
+        XCTAssertEqual(l.midY, 273, accuracy: 0.01)
+        // The stand-in fills its box.
+        XCTAssertEqual(RacketVideoOrientation.aspectFit(aspect: nil, in: CGSize(width: 100, height: 50)),
+                       CGRect(x: 0, y: 0, width: 100, height: 50))
+    }
 }

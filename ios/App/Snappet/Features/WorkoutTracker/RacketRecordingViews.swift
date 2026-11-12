@@ -358,6 +358,7 @@ struct RacketRecordingCover: View {
     @State private var storageFree: Int64?
     /// Measured write rate + live free space (sampled every 5 s) for "space left".
     @State private var meter = RacketWriteRateMeter()
+    @State private var spaceLeft = RacketSpaceLeft()
     @State private var ticks = 0
     /// Games already logged when the recording began; the split reads the recording's own games from here.
     @State private var baseSets = 0
@@ -430,10 +431,11 @@ struct RacketRecordingCover: View {
 
     /// The config the camera writes, and "space left" from the measured rate once it has warmed up.
     private var captureConfig: RacketCaptureConfig { RacketCaptureConfig(quality: quality, codec: recorder.codec) }
+    /// Never rises while recording (`RacketSpaceLeft`, round 3).
     private var spaceLeftSec: TimeInterval? {
+        if let shown = spaceLeft.shown { return shown }
         guard let free = storageFree else { return nil }
-        let rate = meter.effectiveRate(estimate: RacketBitrate.bytesPerSecond(captureConfig))
-        return RacketStorageCheck.roomSec(freeBytes: free, bytesPerSec: rate)
+        return RacketStorageCheck.roomSec(freeBytes: free, bytesPerSec: RacketBitrate.bytesPerSecond(captureConfig))
     }
 
     private func sampleStorage() {
@@ -443,6 +445,9 @@ struct RacketRecordingCover: View {
             meter.pause()
         }
         storageFree = RacketRecorder.storage()?.free ?? storageFree
+        if let free = storageFree {
+            spaceLeft.update(freeBytes: free, bytesPerSec: meter.effectiveRate(estimate: RacketBitrate.bytesPerSecond(captureConfig)))
+        }
     }
 
     // MARK: Set-up + plumbing
@@ -551,8 +556,6 @@ struct RacketRecordingCover: View {
                         .accessibilityIdentifier("racket.rec.previewStandIn")
                 }
             }
-            // The drill's camera step frames the shot: the court-check placeholder guide (device feedback round 2).
-            .overlay { if machine?.phase == .ready { RacketCourtGuide(sport: ex.racketFormat.sport) } }
             .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .accessibilityElement(children: .contain)
@@ -567,6 +570,7 @@ struct RacketRecordingCover: View {
             Spacer(minLength: 4)
             if ex.isRacketMatch, machine?.isEnded == false {
                 Text("Match, everything").font(.system(size: 15, weight: .semibold))
+                    .fixedSize()   // never truncated (device round 3: "Match, everyth…")
                     .accessibilityIdentifier("racket.rec.header")
                 Spacer(minLength: 4)
                 if thermal != .ok {
@@ -575,6 +579,8 @@ struct RacketRecordingCover: View {
                 } else {
                     Text(savedLine).font(.system(size: 13)).foregroundStyle(savedColor)
                         .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityIdentifier("racket.rec.saved")
                 }
             } else if thermal != .ok, machine?.isEnded == false {
@@ -641,6 +647,7 @@ struct RacketRecordingCover: View {
             }
         }
         .font(.system(size: 14, weight: .semibold))
+        .fixedSize()
         .accessibilityIdentifier("racket.rec.status")
     }
 
