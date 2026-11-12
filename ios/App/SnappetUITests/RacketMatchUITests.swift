@@ -81,20 +81,24 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertFalse(app.switches["racket.warmup.tracking"].isEnabled, "live tracking isn't built: off, disabled")
         XCTAssertTrue(app.buttons["racket.warmup.serve.them"].label == "Alex")
         app.buttons["racket.warmup.serve.us"].tap()
-        XCTAssertTrue(app.buttons["racket.warmup.show.dim"].isSelected, "During play, show: Dim")
+        // Device feedback round 2: play opens on the camera (as record everything does), not the board's Dim.
+        XCTAssertTrue(app.buttons["racket.warmup.show.camera"].isSelected, "During play, show: Camera")
         shot("warmup")
         app.buttons["racket.warmup.start"].tap()
 
         // DimOff.
         let status = any("racket.game.status")
         XCTAssertTrue(status.waitForExistence(timeout: 6))
+        XCTAssertTrue(any("racket.game.preview").exists, "the game opens on the camera")
+        app.buttons["racket.rec.show.dim"].tap()
         XCTAssertTrue(status.label.hasPrefix("Recording"), status.label)
         XCTAssertEqual(any("racket.game.unit").label, "Game 1")
         XCTAssertEqual(any("racket.game.phone").label, "Phone OK")
         XCTAssertEqual(any("racket.game.score").label, "0 – 0")
         XCTAssertEqual(any("racket.game.line").label, "Recording. Rallies will be found after the game.")
         XCTAssertTrue(app.buttons["racket.game.mark"].exists)
-        XCTAssertFalse(app.buttons["racket.rec.trackingTurnOn"].isEnabled, "Turn on stays disabled until step 6")
+        XCTAssertFalse(app.buttons["racket.rec.trackingTurnOn"].isEnabled, "live tracking isn't built: disabled")
+        XCTAssertEqual(app.buttons["racket.rec.trackingTurnOn"].label, "Not available yet")
         shot("dim-off")
         app.buttons["racket.game.mark"].tap()
         // CameraViewOff, StatsOff.
@@ -106,7 +110,7 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertTrue(any("racket.rec.stats.gameTime").waitForExistence(timeout: 3))
         XCTAssertTrue(any("racket.rec.stats.hr").exists, "StatsOff: Heart rate")
         XCTAssertTrue(any("racket.rec.stats.points").label.contains("Points played"))
-        XCTAssertEqual(any("racket.rec.stats.after").label, "Rally and shot stats appear after the game.")
+        XCTAssertEqual(any("racket.rec.stats.after").label, "Rally stats appear after the game. Shot stats: not available yet.")
         shot("stats-off")
         app.buttons["racket.rec.show.dim"].tap()
 
@@ -208,6 +212,9 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["racket.camera.continue"].waitForExistence(timeout: 6), "ScoreOnly → Camera")
         app.buttons["racket.camera.continue"].tap()
         app.buttons["racket.warmup.start"].tap()
+        // Play opens on the camera (device feedback round 2); Dim shows the big score.
+        XCTAssertTrue(app.buttons["racket.rec.show.dim"].waitForExistence(timeout: 6))
+        app.buttons["racket.rec.show.dim"].tap()
         XCTAssertTrue(any("racket.game.score").waitForExistence(timeout: 6))
         XCTAssertEqual(any("racket.game.score").label, "1 – 0", "the game in progress keeps its points")
         XCTAssertTrue(any("racket.game.status").label.hasPrefix("Recording"))
@@ -222,6 +229,15 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertTrue(golden.isSelected)
         app.buttons["racket.deuce.superTiebreak"].tap()
         XCTAssertTrue(app.buttons["racket.doubles.doubles"].isSelected, "padel defaults to doubles")
+        // Device feedback round 2: partner, then the other team's name (auto from its two players) and both players.
+        let p1 = app.textFields["racket.opponentPlayer1"]
+        tapWhenHittable(p1)
+        p1.typeText("Jordan\n")
+        let p2 = app.textFields["racket.opponentPlayer2"]
+        tapWhenHittable(p2)
+        p2.typeText("Lee\n")
+        XCTAssertEqual(app.textFields["racket.opponentTeam"].value as? String, "Jordan & Lee", "the team name follows the players")
+        XCTAssertTrue(app.textFields["racket.partner"].exists)
         shot("padel-deuce")
         tapWhenHittable(app.buttons["racket.deuce.continue"])
         XCTAssertTrue(any("racket.match.header").waitForExistence(timeout: 4))
@@ -258,6 +274,7 @@ final class RacketMatchUITests: XCTestCase {
         app.buttons["racket.warmup.start"].tap()
         XCTAssertTrue(any("racket.game.unit").waitForExistence(timeout: 6))
         XCTAssertEqual(any("racket.game.unit").label, "\(unit) 1")
+        app.buttons["racket.rec.show.dim"].tap()
         XCTAssertEqual(any("racket.game.line").label, line)
         shot("\(sport)-04-dim")
         app.buttons["racket.rec.show.camera"].tap()

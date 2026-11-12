@@ -30,14 +30,19 @@ final class RacketModelHooksTests: XCTestCase {
 
     // MARK: Registry (TtCapabilities)
 
-    func testEverySportHasThePlaceholderWithEveryFeatureAvailable() {
+    /// Device feedback round 2 (user, 2026-11-11): Capabilities reflects reality. The placeholder backs rally finding and
+    /// the drills' longest rally; everything else isn't built.
+    func testEverySportHasThePlaceholderBackingOnlyRallyFinding() {
         for s in RacketSport.allCases {
             let caps = RacketCapabilityRegistry.capabilities(for: s)
             XCTAssertEqual(caps.model?.id, "snappet.placeholder.motion")
             XCTAssertTrue(caps.model?.isPlaceholder == true)
             for f in RacketFeature.allCases {
-                XCTAssertTrue(caps.has(f), "\(s) \(f)")
-                XCTAssertEqual(RacketCapabilityRegistry.statusLabel(caps, f), "✓ Available")
+                let backed = f == .findRallies || f == .longestRallyInDrills
+                XCTAssertEqual(caps.has(f), backed, "\(s) \(f)")
+                XCTAssertEqual(caps.state(f), backed ? .placeholder : .notAvailableYet, "\(s) \(f)")
+                XCTAssertEqual(RacketCapabilityRegistry.statusLabel(caps, f), backed ? "Placeholder" : "Not available yet")
+                XCTAssertEqual(f.placeholderLimit != nil, backed)
             }
             XCTAssertEqual(RacketRallyFinding.availability(for: s), .available(modelName: "Snappet placeholder v1"))
         }
@@ -52,7 +57,8 @@ final class RacketModelHooksTests: XCTestCase {
         let caps = RacketCapabilityRegistry.capabilities(for: .squash, noModel: true)
         XCTAssertNil(caps.model)
         XCTAssertFalse(caps.has(.findRallies))
-        XCTAssertEqual(RacketCapabilityRegistry.statusLabel(caps, .endings), "Not yet")
+        XCTAssertEqual(RacketCapabilityRegistry.statusLabel(caps, .endings), "Not available yet")
+        XCTAssertEqual(RacketCapabilityRegistry.statusLabel(caps, .findRallies), "Not available yet")
         XCTAssertEqual(RacketRallyFinding.availability(for: .squash, noModel: true), .notYet)
         XCTAssertEqual(RacketRallyFinding.notYetLine(.squash), "Rally finding isn’t available for squash yet.")
     }

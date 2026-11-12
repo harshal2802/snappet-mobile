@@ -117,18 +117,24 @@ struct RacketCapabilitiesScreen: View {
                 Text("What works for \(sport.label.lowercased())").font(.system(size: 22, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("racket.caps.title")
-                mNote("Everything runs on Snappet’s placeholder model for now. If a feature isn’t ready for a sport, it says Not yet, and its screen switches to the by-hand version.")
+                mNote("Rally finding runs on Snappet’s placeholder model for now. A feature that isn’t built yet says Not available yet, and its screen uses the by-hand version.")
                 ForEach(RacketFeature.allCases, id: \.self) { f in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(f.title).font(.system(size: 16, weight: .semibold))
                             Text(f.withoutIt).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if caps.state(f) == .placeholder, let limit = f.placeholderLimit {
+                                Text(limit).font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer(minLength: 8)
+                        let state = caps.state(f)
                         Text(RacketCapabilityRegistry.statusLabel(caps, f))
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(caps.has(f) ? SnappetColor.perfFresh : SnappetColor.textSecondary)
+                            .foregroundStyle(state == .available ? SnappetColor.perfFresh
+                                             : state == .placeholder ? SnappetColor.perfModerate : SnappetColor.textSecondary)
                             .fixedSize()
                     }
                     .padding(12)

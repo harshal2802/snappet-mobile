@@ -354,11 +354,11 @@ struct RacketRecordingCover: View {
     @State private var now = Date()
     /// Dim · Camera · Stats (device feedback round 1: opens on the camera so the shot can be framed).
     @State private var show: RacketRecordingShow = .initial
-    @State private var confirmStop = false
     @State private var idleTimerWas = false
     @State private var storageFree: Int64?
     /// Measured write rate + live free space (sampled every 5 s) for "space left".
     @State private var meter = RacketWriteRateMeter()
+    @State private var spaceLeft = RacketSpaceLeft()
     @State private var ticks = 0
     /// Games already logged when the recording began; the split reads the recording's own games from here.
     @State private var baseSets = 0
@@ -381,7 +381,6 @@ struct RacketRecordingCover: View {
 
     private var recordingBody: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
             VStack(spacing: 12) {
                 topBar
                 if let m = machine {
@@ -404,13 +403,17 @@ struct RacketRecordingCover: View {
                 overlayPanel { stillPlayingPanel(m) }
             }
         }
+        .racketPersistentPreview(session: recorder.session, fake: recorder.fake)
+        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear(perform: setUp)
+        .onAppear { recorder.screenAppeared(); setUp() }
         .onDisappear {
-            recorder.stopPreview()
-            UIApplication.shared.isIdleTimerDisabled = idleTimerWas
-            RacketWatchRelay.shared.detach(ex.id)
+            let was = idleTimerWas, id = ex.id
+            recorder.screenDisappeared {
+                UIApplication.shared.isIdleTimerDisabled = was
+                RacketWatchRelay.shared.detach(id)
+            }
         }
         // The Watch mirrors this screen (prompt 245): every change of what it should show is sent.
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
@@ -419,24 +422,20 @@ struct RacketRecordingCover: View {
                 try? await Task.sleep(for: .milliseconds(500))
                 now = Date()
                 act { $0.tick(now: now) }
+                if let m = machine, m.interruption == nil { recorder.ensureCapturing(m.capturing) }
                 ticks += 1
                 if ticks % 10 == 0 { sampleStorage() }
             }
-        }
-        .confirmationDialog("Stop recording?", isPresented: $confirmStop, titleVisibility: .visible) {
-            Button(ex.isRacketMatch ? "Stop and split" : "Finish drill", role: .destructive) { act { $0.end(now: Date()) } }
-                .accessibilityIdentifier("racket.rec.confirmStop")
-        } message: {
-            Text("Everything so far is saved in your Photos library.")
         }
     }
 
     /// The config the camera writes, and "space left" from the measured rate once it has warmed up.
     private var captureConfig: RacketCaptureConfig { RacketCaptureConfig(quality: quality, codec: recorder.codec) }
+    /// Never rises while recording (`RacketSpaceLeft`, round 3).
     private var spaceLeftSec: TimeInterval? {
+        if let shown = spaceLeft.shown { return shown }
         guard let free = storageFree else { return nil }
-        let rate = meter.effectiveRate(estimate: RacketBitrate.bytesPerSecond(captureConfig))
-        return RacketStorageCheck.roomSec(freeBytes: free, bytesPerSec: rate)
+        return RacketStorageCheck.roomSec(freeBytes: free, bytesPerSec: RacketBitrate.bytesPerSecond(captureConfig))
     }
 
     private func sampleStorage() {
@@ -446,6 +445,9 @@ struct RacketRecordingCover: View {
             meter.pause()
         }
         storageFree = RacketRecorder.storage()?.free ?? storageFree
+        if let free = storageFree {
+            spaceLeft.update(freeBytes: free, bytesPerSec: meter.effectiveRate(estimate: RacketBitrate.bytesPerSecond(captureConfig)))
+        }
     }
 
     // MARK: Set-up + plumbing
@@ -456,8 +458,7 @@ struct RacketRecordingCover: View {
         UIApplication.shared.isIdleTimerDisabled = true   // a propped phone must not lock mid-match
         storageFree = RacketRecorder.storage()?.free
         baseSets = ex.sets.count
-        let kind: RacketRecordingMachine.Kind = ex.isRacketDrill
-            ? .drill(RacketDrillPlan(from: ex, defaults: defaults)) : .match
+        let kind: RacketRecordingMachine.Kind = .match
         var m = RacketRecordingMachine(kind: kind, recording: .everything,
                                        stillPlayingMinutes: defaults.stillPlayingMinutes(for: .everything), now: Date())
         m.baseSetIndex = baseSets
@@ -481,7 +482,6 @@ struct RacketRecordingCover: View {
         // "A match starts recording now"; a drill waits on the camera for "Start block 1".
         let effects = ex.isRacketMatch ? m.start(now: Date()) : []
         machine = m
-        if ex.isRacketDrill { show = .camera }
         perform(effects)
         if let log = m.log { onLog(log) }
         if let s = watchState { RacketWatchRelay.shared.publish(s) }
@@ -548,7 +548,7 @@ struct RacketRecordingCover: View {
 
     /// The live preview from the recorder's own session (no second session). The simulator / UI tests show a stand-in.
     private var cameraView: some View {
-        RacketCameraPreview(session: recorder.session, fake: recorder.fake)
+        Color.clear.racketPreviewSlot()
             .overlay {
                 if recorder.fake {
                     Text("Camera preview shows here on a device")
@@ -570,6 +570,7 @@ struct RacketRecordingCover: View {
             Spacer(minLength: 4)
             if ex.isRacketMatch, machine?.isEnded == false {
                 Text("Match, everything").font(.system(size: 15, weight: .semibold))
+                    .fixedSize()   // never truncated (device round 3: "Match, everyth…")
                     .accessibilityIdentifier("racket.rec.header")
                 Spacer(minLength: 4)
                 if thermal != .ok {
@@ -578,6 +579,8 @@ struct RacketRecordingCover: View {
                 } else {
                     Text(savedLine).font(.system(size: 13)).foregroundStyle(savedColor)
                         .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityIdentifier("racket.rec.saved")
                 }
             } else if thermal != .ok, machine?.isEnded == false {
@@ -617,8 +620,6 @@ struct RacketRecordingCover: View {
         case .recordingMatch:
             // V2.6: the board goes straight to the split prompt (SplitPrompt "Keep as one video" / Later is the undo).
             RacketStopButton(title: "Stop and split", id: "racket.rec.stop") { act { $0.end(now: Date()) } }
-        case .block: primary("End block", id: "racket.rec.endBlock") { act { $0.endBlock(now: Date()) } }
-        case .rest, .restPaused, .restDone: stopButton("Finish drill")
         default: EmptyView()
         }
     }
@@ -646,6 +647,7 @@ struct RacketRecordingCover: View {
             }
         }
         .font(.system(size: 14, weight: .semibold))
+        .fixedSize()
         .accessibilityIdentifier("racket.rec.status")
     }
 
@@ -666,34 +668,10 @@ struct RacketRecordingCover: View {
         switch m.phase {
         case .recordingMatch:
             if show == .stats && thermal == .ok { matchStatsPanel(m) } else { matchPanel(m, compact: compact && thermal == .ok) }
-        case .ready: readyPanel(m)
-        case .countdown(let b, let endsAt): countdownPanel(m, block: b, endsAt: endsAt, compact: compact)
-        case .block(let b, _):
-            blockPanel(m, block: b, compact: compact)
-            if show == .stats { drillStats(m) }
-        case .rest(let a, _), .restPaused(let a, _), .restDone(let a):
-            restPanel(m, after: a, compact: compact)
-            if show == .stats { drillStats(m) }
         case .ended(let route): endPanel(m, route)
+        // Drills have their own cover (`RacketDrillCover`, prompt 250); this screen records a whole match.
+        case .ready, .countdown, .block, .blockPaused, .rest, .restPaused, .restDone: EmptyView()
         }
-    }
-
-    /// The phase word over light numerals, without the ring (camera / dim): same identifiers as the ring.
-    private func compactTimer(_ d: RacketTimerDisplay, caption: String? = nil) -> some View {
-        let color: Color = switch d.tone {
-        case .work: SnappetColor.brand
-        case .rest, .restPaused: SnappetColor.textSecondary
-        case .done: SnappetColor.perfFresh
-        }
-        return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(d.word).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
-                .accessibilityIdentifier("racket.rec.phase")
-            Text(RacketClock.mmss(d.seconds)).font(.system(size: 40, weight: .light)).monospacedDigit()
-                .contentTransition(.numericText())
-                .accessibilityIdentifier("racket.rec.clock")
-            if let caption { Text(caption).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary) }
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func header(_ label: String, _ title: String) -> some View {
@@ -708,17 +686,6 @@ struct RacketRecordingCover: View {
         Text(text).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func stopButton(_ label: String) -> some View {
-        Button { confirmStop = true } label: {
-            Text(label).font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.perfHard)
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .overlay(Capsule().strokeBorder(SnappetColor.perfHard, lineWidth: 1.5))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("racket.rec.stop")
     }
 
     private func secondary(_ label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -818,16 +785,6 @@ struct RacketRecordingCover: View {
         .accessibilityIdentifier("racket.rec.warmPanel")
     }
 
-    /// Stats for a drill recording everything: blocks done and recorded time under the timer.
-    private func drillStats(_ m: RacketRecordingMachine) -> some View {
-        let done = max(0, ex.sets.count - baseSets)
-        return HStack(spacing: 10) {
-            stat("Blocks done", "\(done) of \(m.plan?.blocks ?? 1)", compact: false)
-            stat("Recorded", RacketClock.elapsed(m.log?.recordedSec(now: now) ?? 0), compact: false)
-        }
-        .accessibilityIdentifier("racket.rec.stats")
-    }
-
     private var savedLine: String {
         if recorder.savingParts > 0 { return "Saving a part…" }
         guard let at = recorder.lastSavedAt else { return "Saves every 10 min" }
@@ -847,105 +804,12 @@ struct RacketRecordingCover: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func blocksLabel(_ b: Int, _ m: RacketRecordingMachine) -> String {
-        "Block \(b + 1) of \(m.plan?.blocks ?? 1)"
-    }
-
-    // Before block 1 (and after Wait): the camera, then Start.
-    private func readyPanel(_ m: RacketRecordingMachine) -> some View {
-        VStack(spacing: 14) {
-            header("Drill, everything · \(blocksLabel(0, m))", title)
-            footnote("Point the camera at the play. Recording and the block timer start at zero, after a \(m.plan?.countdownSec ?? 5) s countdown.")
-            primary("Start block 1", id: "racket.rec.startBlock") { act { $0.startNextBlock(now: Date()) } }
-            secondary("Back to the drill", id: "racket.rec.back") { onClose() }
-        }
-    }
-
-    // BlockStart (review5 M3: block 1 has its own copy; Wait never leads to a rest timer before block 1)
-    private func countdownPanel(_ m: RacketRecordingMachine, block b: Int, endsAt: Date, compact: Bool) -> some View {
-        let left = max(0, Int(endsAt.timeIntervalSince(now).rounded(.up)))
-        return VStack(spacing: compact ? 10 : 14) {
-            header("Starting soon", blocksLabel(b, m))
-            if !compact { Spacer() }
-            Text("\(left)")
-                .font(.system(size: compact ? 64 : 120, weight: .light)).monospacedDigit()
-                .foregroundStyle(SnappetColor.brand)
-                .contentTransition(.numericText())
-                .accessibilityIdentifier("racket.rec.countdown")
-            footnote(b == 0 ? "Recording and the block timer start at zero."
-                            : "Still recording. The block timer starts at zero.")
-            if !compact { Spacer() }
-            HStack(spacing: 10) {
-                secondary("Wait", id: "racket.rec.wait") { act { $0.wait(now: Date()); return [] } }
-                secondary("+30 s", id: "racket.rec.addCountdown") { act { $0.extendCountdown(by: 30, now: Date()); return [] } }
-            }
-            footnote(b == 0 ? "Wait goes back to the camera." : "Wait returns to a paused rest timer.")
-        }
-    }
-
-    // BlockAll
-    private func blockPanel(_ m: RacketRecordingMachine, block b: Int, compact: Bool) -> some View {
-        VStack(spacing: compact ? 10 : 14) {
-            header("Block, recording everything", blocksLabel(b, m))
-            if let d = m.display(now: now) {
-                if compact { compactTimer(d, caption: "left in this block") } else { RacketTimerRing(display: d, caption: "left in this block") }
-            }
-            if !compact {
-                footnote("Blocks and rests are marked from your timers, so there’s nothing to split by hand.")
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    // RestEverything (+ paused / done)
-    @ViewBuilder private func restPanel(_ m: RacketRecordingMachine, after a: Int, compact: Bool) -> some View {
-        let next = a + 2
-        let autoStart = m.plan?.autoStart ?? true
-        VStack(spacing: compact ? 10 : 14) {
-            header("Rest, recording continues", "Block \(a + 1) done")
-            if let d = m.display(now: now) {
-                if compact { compactTimer(d) } else { RacketTimerRing(display: d) }
-            }
-            switch m.phase {
-            case .rest:
-                footnote(autoStart ? "Block \(next) starts by itself after this" : "Auto-start is off: you start the next block yourself")
-                HStack(spacing: 8) {
-                    secondary("Pause rest", id: "racket.rec.pauseRest") { act { $0.pauseRest(now: Date()); return [] } }
-                    secondary("+30 s", id: "racket.rec.add30") { act { $0.addRest(30, now: Date()); return [] } }
-                    secondary("+1 min", id: "racket.rec.add60") { act { $0.addRest(60, now: Date()); return [] } }
-                }
-                primary("Skip rest, start block \(next)", id: "racket.rec.skipRest") { act { $0.startNextBlock(now: Date()) } }
-            case .restPaused:
-                footnote("Rest timer paused. Block \(next) won’t start until you resume. Take your time.")
-                HStack(spacing: 8) {
-                    secondary("+30 s", id: "racket.rec.add30") { act { $0.addRest(30, now: Date()); return [] } }
-                    secondary("+1 min", id: "racket.rec.add60") { act { $0.addRest(60, now: Date()); return [] } }
-                }
-                primary("Resume rest timer", id: "racket.rec.resumeRest") { act { $0.resumeRest(now: Date()); return [] } }
-                secondary("Skip rest, start block \(next)", id: "racket.rec.skipRest") { act { $0.startNextBlock(now: Date()) } }
-            default:
-                primary("Start block \(next)", id: "racket.rec.startBlock") { act { $0.startNextBlock(now: Date()) } }
-            }
-            if !compact {
-                footnote("Rest stays in the recording, marked from your timer, and is left out of your stats.")
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    // Drill Review. A whole match ends at the split prompt instead (`body`, prompt 246); this "Recording saved" panel
-    // only shows when the host passed no session to edit — the match is split later from Your videos.
+    // A whole match ends at the split prompt (`body`, prompt 246); this "Recording saved" panel only shows when the host
+    // passed no session to edit — the match is split later from Your videos. A drill ends on its own cover's review.
     @ViewBuilder private func endPanel(_ m: RacketRecordingMachine, _ route: RacketRecordingEndRoute) -> some View {
         let recorded = m.log?.recordedSec(now: now) ?? 0
         VStack(spacing: 14) {
-            if route == .drillReview {
-                header("Drill done", title)
-                if let d = m.display(now: now) { RacketTimerRing(display: d, caption: "recorded") }
-                Text(m.log?.drillSummaryLine ?? "1 recording")
-                    .font(.system(size: 17, weight: .semibold))
-                    .accessibilityIdentifier("racket.rec.summary")
-                footnote("Each block is a time range on the one recording, so there’s nothing to split. The recording stays in your Photos library; a drill never offers to delete it. Mark rallies from Drill videos.")
-            } else {
+            do {
                 header("Recording saved", title)
                 Text(RacketClock.elapsed(recorded))
                     .font(.system(size: 56, weight: .light)).monospacedDigit()
@@ -992,6 +856,40 @@ struct RacketRecordingCover: View {
 
 // MARK: - Camera preview
 
+/// Where a screen wants the camera preview drawn (device feedback round 2). A preview layer attached to a session
+/// that is already recording makes the session reconfigure, and the movie file ends with AVError -11818 ("Recording
+/// Stopped") — on a phone, tapping Camera mid-game stopped the recording and showed "Snappet left the screen". So a
+/// recording screen keeps ONE preview for its whole life (attached before anything records), drawn behind the content
+/// at the rect a `racketPreviewSlot()` marks, and invisible (still attached) when no slot is on screen.
+struct RacketPreviewSlotKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+extension View {
+    /// Marks this view's bounds as where the camera preview shows (the view itself should be clear).
+    func racketPreviewSlot() -> some View {
+        anchorPreference(key: RacketPreviewSlotKey.self, value: .bounds) { $0 }
+    }
+
+    /// The screen's one camera preview, drawn behind the content at the marked slot. Apply at the screen's root, under
+    /// its black background.
+    func racketPersistentPreview(session: AVCaptureSession, fake: Bool) -> some View {
+        backgroundPreferenceValue(RacketPreviewSlotKey.self) { anchor in
+            GeometryReader { g in
+                let rect = anchor.map { g[$0] } ?? CGRect(x: 0, y: 0, width: 2, height: 2)
+                RacketCameraPreview(session: session, fake: fake)
+                    .frame(width: max(2, rect.width), height: max(2, rect.height))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .position(x: rect.midX, y: rect.midY)
+                    .opacity(anchor == nil ? 0 : 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
 struct RacketCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let fake: Bool
@@ -999,10 +897,46 @@ struct RacketCameraPreview: UIViewRepresentable {
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        private var loggedSize: CGSize = .zero
+        #if DEBUG
+        private let debugLabel = UILabel()
+        private var debugTimer: Timer?
+
+        /// `-racketCameraDebug`: running / connection / thermal on the preview itself, readable in a device screenshot.
+        func startDebugLabel() {
+            debugLabel.numberOfLines = 0
+            debugLabel.font = .monospacedSystemFont(ofSize: 11, weight: .bold)
+            debugLabel.textColor = .yellow
+            debugLabel.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+            addSubview(debugLabel)
+            debugTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshDebug() }
+            }
+        }
+
+        private func refreshDebug() {
+            let c = previewLayer.connection
+            let s = previewLayer.session
+            debugLabel.text = "running=\(s?.isRunning ?? false) interrupted=\(s?.isInterrupted ?? false) inputs=\(s?.inputs.count ?? 0)\nconnection=\(c != nil) enabled=\(c?.isEnabled ?? false) active=\(c?.isActive ?? false)\nsize=\(Int(bounds.width))x\(Int(bounds.height)) window=\(window != nil) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)"
+            debugLabel.frame = CGRect(x: 4, y: 4, width: bounds.width - 8, height: 48)
+        }
+        #endif
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds.size != loggedSize else { return }
+            loggedSize = bounds.size
+            let c = previewLayer.connection
+            RacketRecorder.trace("preview layout session=\(self.previewLayer.session.map { Unmanaged.passUnretained($0).toOpaque().debugDescription } ?? "nil") \(Int(self.bounds.width))x\(Int(self.bounds.height)) session=\(self.previewLayer.session != nil) running=\(self.previewLayer.session?.isRunning ?? false) connection=\(c != nil) enabled=\(c?.isEnabled ?? false) active=\(c?.isActive ?? false) hidden=\(self.isHidden) alpha=\(self.alpha)")
+        }
     }
 
     func makeUIView(context: Context) -> PreviewView {
         let v = PreviewView()
+        RacketRecorder.trace("preview view made (layer attaches to the session)")
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-racketCameraDebug") { v.startDebugLabel() }
+        #endif
         v.backgroundColor = fake ? UIColor(white: 0.12, alpha: 1) : .black
         if !fake {
             v.previewLayer.session = session

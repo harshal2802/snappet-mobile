@@ -59,46 +59,55 @@ final class RacketRecordingUITests: XCTestCase {
         XCTAssertTrue(drill.waitForExistence(timeout: 5))
         drill.tap()
 
-        // Plan + recording (M1: no "split later" for a drill).
+        // Plan + recording (M1: no "split later" for a drill). First time: choose practising and focus.
         let everything = app.buttons["racket.recording.everything"]
         XCTAssertTrue(everything.waitForExistence(timeout: 5), "the drill plan step should show")
         XCTAssertEqual(everything.label, "Everything, rests included")
         everything.tap()
-        // PracticeSetup: one tap, labelled by what comes next.
-        let start = app.buttons["racket.plan.start"]
-        tapWhenHittable(start)
+        tapWhenHittable(app.buttons["racket.plan.row.focus"])
+        tapWhenHittable(app.buttons["racket.custom.practising.Robot"])
+        tapWhenHittable(app.buttons["racket.custom.stroke.Topspin"])
+        app.buttons["racket.custom.save"].tap()
+        tapWhenHittable(app.buttons["racket.plan.start"])
 
-        // Setup → Storage (the boards' flow): the storage check opens by itself.
+        // Setup → Storage → Camera (the boards' flow).
         let room = any("racket.storage.room")
         XCTAssertTrue(room.waitForExistence(timeout: 5), "the storage check should open")
         XCTAssertTrue(room.label.hasPrefix("Room for about"), room.label)
         app.buttons["racket.storage.continue"].tap()
 
-        // Camera first, then block 1 (M3: Wait before block 1 goes back here, never to a rest timer).
-        let startBlock = app.buttons["racket.rec.startBlock"]
-        XCTAssertTrue(startBlock.waitForExistence(timeout: 8), "the recording screen should open on the camera")
-        XCTAssertTrue(any("racket.rec.preview").exists, "the camera step shows the preview for framing")
-        startBlock.tap()
+        // Camera check, then block 1 (M3: Wait before block 1 goes back here, never to a rest timer).
+        let toCountdown = app.buttons["racket.camera.continue"]
+        XCTAssertTrue(toCountdown.waitForExistence(timeout: 8), "the drill opens on the camera check")
+        XCTAssertTrue(any("racket.camera.guide").exists, "the court-check placeholder guide")
+        toCountdown.tap()
         XCTAssertTrue(any("racket.rec.countdown").waitForExistence(timeout: 4), "a countdown to block 1")
         app.buttons["racket.rec.wait"].tap()
-        XCTAssertTrue(startBlock.waitForExistence(timeout: 4), "Wait goes back to the camera")
-        startBlock.tap()
+        XCTAssertTrue(toCountdown.waitForExistence(timeout: 4), "Wait goes back to the camera")
+        toCountdown.tap()
 
-        // The block records; End block → rest (recording continues).
+        // BlockAll: records; Pause stops it (Paused); Resume; End block → RestEverything (recording continues).
         let endBlock = app.buttons["racket.rec.endBlock"]
         XCTAssertTrue(endBlock.waitForExistence(timeout: 12), "block 1 should start after the countdown")
-        XCTAssertTrue(any("racket.rec.status").label.hasPrefix("Recording"), any("racket.rec.status").label)
+        XCTAssertEqual(any("racket.rec.status").label, "● Recording everything")
+        app.buttons["racket.rec.pause"].tap()
+        XCTAssertTrue(app.buttons["racket.paused.resume"].waitForExistence(timeout: 4))
+        XCTAssertEqual(any("racket.rec.status").label, "Ⅱ Recording paused")
+        app.buttons["racket.paused.resume"].tap()
+        XCTAssertTrue(endBlock.waitForExistence(timeout: 4))
         endBlock.tap()
         XCTAssertTrue(app.buttons["racket.rec.pauseRest"].waitForExistence(timeout: 4), "the rest timer should run")
         XCTAssertEqual(any("racket.rec.phase").label, "Rest")
+        XCTAssertEqual(any("racket.rec.status").label, "● Recording everything")
+        XCTAssertTrue(app.buttons["racket.rest.more"].exists, "RestEverything: More options")
 
-        // Finish drill → review: one recording, its block parts.
+        // Finish drill → review.
         app.buttons["racket.rec.stop"].tap()
         confirmStop()
-        let summary = any("racket.rec.summary")
-        XCTAssertTrue(summary.waitForExistence(timeout: 5), "the drill review should show")
-        XCTAssertEqual(summary.label, "1 recording · 1 block part")
-        app.buttons["racket.rec.done"].tap()
+        let blocksLine = any("racket.review.blocksLine")
+        XCTAssertTrue(blocksLine.waitForExistence(timeout: 5), "the drill review should show")
+        XCTAssertTrue(app.buttons["racket.review.videos"].exists, "Drill videos")
+        app.buttons["racket.review.back"].tap()
 
         // Back on the drill page: the block is logged and the recording line describes it.
         XCTAssertTrue(any("racket.recording.line").waitForExistence(timeout: 6))

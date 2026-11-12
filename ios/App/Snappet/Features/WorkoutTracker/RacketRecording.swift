@@ -126,16 +126,21 @@ enum RacketBitrate {
 struct RacketWriteRateMeter: Equatable, Sendable {
     /// How much each new interval moves the estimate (0…1).
     var smoothing: Double
-    /// The measured rate isn't trusted until this much recording has been sampled.
+    /// The measured rate isn't trusted until this much recording has been sampled…
     var warmUpSec: TimeInterval
+    /// …and this many bytes written (a few seconds of a quiet scene says little — round 3: "space left" jumped up when
+    /// the meter took over too early).
+    var minBytes: Int64
     private(set) var rate: Double?
     private(set) var measuredSec: TimeInterval = 0
+    private(set) var measuredBytes: Int64 = 0
     private var lastAt: Date?
     private var lastBytes: Int64 = 0
 
-    init(smoothing: Double = 0.3, warmUpSec: TimeInterval = 20) {
+    init(smoothing: Double = 0.3, warmUpSec: TimeInterval = 60, minBytes: Int64 = 50_000_000) {
         self.smoothing = smoothing
         self.warmUpSec = warmUpSec
+        self.minBytes = minBytes
     }
 
     /// Feed a sample. A drop in total bytes or an interval under a second is skipped (the next one measures).
@@ -148,15 +153,36 @@ struct RacketWriteRateMeter: Equatable, Sendable {
         let r = Double(db) / dt
         rate = rate.map { $0 + smoothing * (r - $0) } ?? r
         measuredSec += dt
+        measuredBytes += db
     }
 
     /// Recording paused / interrupted: forget the last sample, keep the learned rate.
     mutating func pause() { lastAt = nil }
 
-    var isMeasured: Bool { (rate ?? 0) > 0 && measuredSec >= warmUpSec }
+    var isMeasured: Bool { (rate ?? 0) > 0 && measuredSec >= warmUpSec && measuredBytes >= minBytes }
 
     /// The rate to plan with: measured once warmed up, else the config estimate.
     func effectiveRate(estimate: Double) -> Double { isMeasured ? rate! : estimate }
+}
+
+/// "Space left" while recording, as shown (round 3): it never rises during a recording — a better rate estimate or a
+/// part moving into Photos can't make it jump up — unless free space really grew (≥ 1 GB more than when it was last
+/// shown, e.g. the user deleted something).
+struct RacketSpaceLeft: Equatable, Sendable {
+    static let genuineGainBytes: Int64 = 1_000_000_000
+    private(set) var shown: TimeInterval?
+    private var freeAtShown: Int64?
+
+    init() {}
+
+    @discardableResult
+    mutating func update(freeBytes: Int64, bytesPerSec: Double) -> TimeInterval {
+        let room = RacketStorageCheck.roomSec(freeBytes: freeBytes, bytesPerSec: bytesPerSec)
+        if let s = shown, room > s, let f = freeAtShown, freeBytes - f < Self.genuineGainBytes { return s }
+        shown = room
+        freeAtShown = freeBytes
+        return room
+    }
 }
 
 /// The storage check before recording everything (`TtStorage`), and "space left" while recording.
@@ -320,15 +346,18 @@ struct RacketDrillPlan: Equatable, Sendable {
     var autoStart: Bool
     var countdownSec: Int
     var recording: RacketRecordingMode
+    /// Drill details (Customize, prompt 250): practising, focus, pattern, goal.
+    var details = RacketDrillDetails()
 
     init(blocks: Int = 3, blockSec: Int = 300, restSec: Int = 60, autoStart: Bool = true, countdownSec: Int = 5,
-         recording: RacketRecordingMode = .byUnit) {
+         recording: RacketRecordingMode = .byUnit, details: RacketDrillDetails = RacketDrillDetails()) {
         self.blocks = blocks
         self.blockSec = blockSec
         self.restSec = restSec
         self.autoStart = autoStart
         self.countdownSec = countdownSec
         self.recording = recording
+        self.details = details
     }
 
     init(defaults d: RacketRecordingDefaults) {
@@ -343,7 +372,7 @@ struct RacketDrillPlan: Equatable, Sendable {
                   restSec: ex.targetRestSeconds > 0 ? ex.targetRestSeconds : d.restSec,
                   autoStart: ex.drillAutoStart ?? d.autoStartNextBlock,
                   countdownSec: ex.drillCountdownSec ?? d.countdownSec,
-                  recording: ex.racketRecording)
+                  recording: ex.racketRecording, details: RacketDrillDetails(from: ex))
     }
 
     func apply(to ex: inout SessionExercise) {
@@ -353,6 +382,7 @@ struct RacketDrillPlan: Equatable, Sendable {
         ex.drillAutoStart = autoStart
         ex.drillCountdownSec = countdownSec
         ex.racketRecordingRaw = recording == .byUnit ? nil : recording.rawValue
+        details.apply(to: &ex)
     }
 
     /// "3 blocks × 5:00".
@@ -450,9 +480,14 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var blockMarks: [Mark] { marks.filter { $0.kind == .block } }
     var userMarkCount: Int { marks.filter { $0.kind == .moment || $0.kind == .newGame || $0.kind == .breakStart }.count }
 
-    /// "1 recording · 3 block parts" (review5 M2): what a drill recorded with everything ends as.
+    /// "1 recording · 3 block parts" (review5 M2): what a drill recorded with everything ends as. Block by block
+    /// (prompt 250): "3 blocks · 3 clips" (PracticeReview) — every run is its own Photos clip.
     var drillSummaryLine: String {
         let n = blockMarks.filter { $0.endSec != nil }.count
+        if modeRaw == RacketRecordingMode.byUnit.rawValue {
+            let clips = runs.filter { r in r.endSec.map { $0 > r.startSec } ?? true }.count
+            return "\(n) \(n == 1 ? "block" : "blocks") · \(clips) \(clips == 1 ? "clip" : "clips")"
+        }
         return "1 recording · \(n) block \(n == 1 ? "part" : "parts")"
     }
 }
@@ -645,6 +680,9 @@ struct RacketRecordingMachine: Equatable, Sendable {
         /// Counting down to `block` (0-based).
         case countdown(block: Int, endsAt: Date)
         case block(Int, startedAt: Date)
+        /// Pause during a block (Paused / DrillPaused, prompt 250): the block timer stopped after `elapsed` seconds of
+        /// play; nothing is recorded or counted until Resume.
+        case blockPaused(Int, elapsed: TimeInterval)
         case rest(after: Int, endsAt: Date)
         case restPaused(after: Int, remaining: TimeInterval)
         /// The rest ran out with auto-start off, or Wait on a later countdown: the player starts the next block.
@@ -665,7 +703,8 @@ struct RacketRecordingMachine: Equatable, Sendable {
         case continueWithoutVideo
     }
 
-    let kind: Kind
+    /// The drill's plan can change mid-drill (More options: rest length, auto-start, blocks — prompt 250).
+    private(set) var kind: Kind
     let racketMode: RacketMode
     let recording: RacketRecordingMode
     /// "Still playing?" threshold in seconds; `nil` ⇒ off.
@@ -674,6 +713,9 @@ struct RacketRecordingMachine: Equatable, Sendable {
     /// reads the recording's own games from here; the space estimates use the quality). Stamped on the log.
     var baseSetIndex: Int?
     var quality: RacketRecordingQuality?
+    /// A drill's first block in this recording, as an index into the drill's blocks (prompt 250: the drill cover counts
+    /// blocks absolutely, so a drill reopened after block 2 starts at block 3). 0 for record everything's old screen.
+    var startingBlock = 0
 
     private(set) var phase: Phase = .ready
     /// The camera is (meant to be) writing.
@@ -701,7 +743,7 @@ struct RacketRecordingMachine: Equatable, Sendable {
     /// The block the screen is about (the current one, the next one during a countdown, the last one during rest).
     var currentBlock: Int? {
         switch phase {
-        case .countdown(let b, _), .block(let b, _): return b
+        case .countdown(let b, _), .block(let b, _), .blockPaused(let b, _): return b
         case .rest(let a, _), .restPaused(let a, _), .restDone(let a): return a
         case .ready: return plan == nil ? nil : 0
         case .recordingMatch, .ended: return nil
@@ -720,7 +762,7 @@ struct RacketRecordingMachine: Equatable, Sendable {
             phase = .recordingMatch
             return beginRun(now)
         case .drill(let p):
-            let next = log?.blockMarks.count ?? 0
+            let next = max(startingBlock, log?.blockMarks.count ?? 0)
             phase = .countdown(block: next, endsAt: now.addingTimeInterval(TimeInterval(p.countdownSec)))
             return []
         }
@@ -738,7 +780,7 @@ struct RacketRecordingMachine: Equatable, Sendable {
     mutating func wait(now: Date) {
         guard case .countdown(let b, _) = phase else { return }
         touch(now)
-        if b == 0 {
+        if b <= startingBlock {
             phase = .ready
         } else {
             // DrillCountdown: "Wait returns to a paused rest timer" (+30 s / +1 min add time; Resume continues).
@@ -789,7 +831,7 @@ struct RacketRecordingMachine: Equatable, Sendable {
 
     // MARK: Blocks
 
-    /// "End block" (or the block timer running out, via `tick`).
+    /// "End block" (or the block timer running out, via `tick`) — also from Paused.
     @discardableResult
     mutating func endBlock(now: Date) -> [Effect] {
         touch(now)
@@ -797,16 +839,99 @@ struct RacketRecordingMachine: Equatable, Sendable {
     }
 
     private mutating func finishBlock(now: Date) -> [Effect] {
-        guard case .block(let b, let startedAt) = phase, let p = plan else { return [] }
+        guard let p = plan else { return [] }
+        let b: Int, played: TimeInterval
+        switch phase {
+        case .block(let i, let startedAt): b = i; played = now.timeIntervalSince(startedAt)
+        case .blockPaused(let i, let elapsed): b = i; played = elapsed
+        default: return []
+        }
         closeOpenMark(.block, now: now)
-        var effects: [Effect] = [.logBlock(index: b, durationSec: now.timeIntervalSince(startedAt))]
+        var effects: [Effect] = [.logBlock(index: b, durationSec: played)]
         if b + 1 >= p.blocks {
             effects += finish(now: now)
         } else {
+            // Block by block (prompt 250): each block is its own clip, so recording pauses for the rest.
+            if recording == .byUnit, capturing {
+                endRun(now: now, reason: nil)
+                effects.append(.stopCapture)
+            }
             phase = .rest(after: b, endsAt: now.addingTimeInterval(TimeInterval(p.restSec)))
             openMark(.rest, index: b, now: now)
         }
         return effects
+    }
+
+    // MARK: Pause during a block (Paused / DrillPaused, prompt 250)
+
+    /// "Pause": the block timer stops and recording pauses (in every mode — "Nothing is recorded or counted while
+    /// paused"). The run closes without an interruption, so Resume starts a new part.
+    @discardableResult
+    mutating func pauseBlock(now: Date) -> [Effect] {
+        guard case .block(let b, let startedAt) = phase else { return [] }
+        touch(now)
+        phase = .blockPaused(b, elapsed: max(0, now.timeIntervalSince(startedAt)))
+        guard capturing else { return [] }
+        endRun(now: now, reason: nil)
+        return [.stopCapture]
+    }
+
+    /// "Resume" (phone or Watch): the block timer carries on from where it stopped; recording resumes.
+    @discardableResult
+    mutating func resumeBlock(now: Date) -> [Effect] {
+        guard case .blockPaused(let b, let elapsed) = phase else { return [] }
+        touch(now)
+        phase = .block(b, startedAt: now.addingTimeInterval(-elapsed))
+        return interruption == nil ? beginRun(now) : []
+    }
+
+    var isBlockPaused: Bool { if case .blockPaused = phase { return true } else { return false } }
+
+    // MARK: More options (RestEverything / Rest, prompt 250)
+
+    /// The rest's Auto-start switch (and More options → Auto-start).
+    mutating func setAutoStart(_ on: Bool, now: Date) {
+        guard case .drill(var p) = kind else { return }
+        touch(now)
+        p.autoStart = on
+        kind = .drill(p)
+        // A rest that already ran out with auto-start off stays "done"; switching it on then starts the countdown.
+        if on, case .restDone(let a) = phase {
+            closeOpenMark(.rest, now: now)
+            phase = .countdown(block: a + 1, endsAt: now.addingTimeInterval(TimeInterval(p.countdownSec)))
+        }
+    }
+
+    /// More options → Rest length: the running rest restarts from the new length; later rests use it too.
+    mutating func setRestSec(_ sec: Int, now: Date) {
+        guard case .drill(var p) = kind else { return }
+        touch(now)
+        p.restSec = max(5, sec)
+        kind = .drill(p)
+        switch phase {
+        case .rest(let a, _): phase = .rest(after: a, endsAt: now.addingTimeInterval(TimeInterval(p.restSec)))
+        case .restPaused(let a, _): phase = .restPaused(after: a, remaining: TimeInterval(p.restSec))
+        default: break
+        }
+    }
+
+    /// More options → "End after the next block": the next block is the last one.
+    mutating func endAfterNextBlock(now: Date) {
+        guard case .drill(var p) = kind, let b = currentBlock else { return }
+        touch(now)
+        switch phase {
+        case .rest, .restPaused, .restDone: p.blocks = b + 2
+        default: p.blocks = b + 1
+        }
+        kind = .drill(p)
+    }
+
+    /// More options → "Add a block".
+    mutating func addBlock(now: Date) {
+        guard case .drill(var p) = kind else { return }
+        touch(now)
+        p.blocks += 1
+        kind = .drill(p)
     }
 
     // MARK: Match marks
@@ -849,6 +974,10 @@ struct RacketRecordingMachine: Equatable, Sendable {
             // Finishing mid-block logs the block that was played.
             closeOpenMark(.block, now: now)
             effects.append(.logBlock(index: b, durationSec: now.timeIntervalSince(startedAt)))
+        } else if case .blockPaused(let b, let elapsed) = phase {
+            // Stop drill from Paused: the block played up to the pause.
+            closeOpenMark(.block, now: now)
+            effects.append(.logBlock(index: b, durationSec: elapsed))
         }
         return effects + finish(now: now)
     }
@@ -884,16 +1013,23 @@ struct RacketRecordingMachine: Equatable, Sendable {
         guard let i = interruption, i.canResume, !isEnded else { return [] }
         touch(now)
         interruption = nil
-        // A drill between blocks keeps recording too (everything includes rests), unless it hasn't started yet.
+        // A drill between blocks keeps recording too (everything includes rests), unless it hasn't started yet. A paused
+        // block, and block by block between blocks, stay paused (prompt 250).
         if case .ready = phase { return [] }
         if case .countdown = phase, (log?.runs.isEmpty ?? true) { return [] }
+        if case .blockPaused = phase { return [] }
+        if racketMode == .drill, recording == .byUnit, !isInBlock { return [] }
         return beginRun(now)
     }
 
     // MARK: Game by game (prompt 249)
 
+    /// The block timer is running (not paused, not between blocks).
+    var isInBlock: Bool { if case .block = phase { return true } else { return false } }
+
     /// Continue an earlier game-by-game recording of this match (the screen was closed between games): new games
-    /// add runs and parts to the same log. Only before anything is recorded here.
+    /// add runs and parts to the same log. Only before anything is recorded here. A block-by-block drill reopened
+    /// mid-way continues its log the same way (prompt 250).
     mutating func continueLog(_ l: RacketRecordingLog) {
         guard log == nil, recording == .byUnit else { return }
         log = l
@@ -1020,6 +1156,10 @@ struct RacketRecordingMachine: Equatable, Sendable {
             return .init(word: "Rest, paused", tone: .restPaused, seconds: left, progress: min(1, left / max(1, total)))
         case .restDone:
             return .init(word: "Rest done", tone: .rest, seconds: 0, progress: 0)
+        case .blockPaused(_, let elapsed):
+            let total = TimeInterval(plan?.blockSec ?? 1)
+            let left = max(0, total - elapsed)
+            return .init(word: "Paused", tone: .restPaused, seconds: left, progress: left / max(1, total))
         case .recordingMatch:
             return .init(word: "Recording", tone: .work, seconds: log?.recordedSec(now: now) ?? 0, progress: 1)
         case .ended:
@@ -1046,9 +1186,9 @@ struct RacketRecordingMachine: Equatable, Sendable {
     }
 
     private mutating func beginRun(_ now: Date) -> [Effect] {
-        // Everything, and a match game by game (prompt 249: each game is its own run and part). Block by block keeps
-        // prompt 203's camera.
-        guard recording == .everything || (recording == .byUnit && racketMode == .match) else { return [] }
+        // Everything, a match game by game (prompt 249: each game is its own run and part), and a drill block by block
+        // (prompt 250: each block is its own run and part). "Don't film" never records.
+        guard recording == .everything || recording == .byUnit else { return [] }
         if log == nil {
             var l = RacketRecordingLog(startedAt: now)
             l.baseSetIndex = baseSetIndex

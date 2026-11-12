@@ -268,7 +268,7 @@ final class RacketMatchFlowTests: XCTestCase {
         XCTAssertEqual(RacketGameCopy.recordingLine(.badminton), "Recording. Rallies will be found after the match.")
         XCTAssertEqual(RacketGameCopy.pointsLabel(.tableTennis), "Points played")
         XCTAssertEqual(RacketGameCopy.pointsLabel(.squash), "Points tagged")
-        XCTAssertEqual(RacketGameCopy.statsAfterLine(.tennis), "Rally and shot stats appear after the match.")
+        XCTAssertEqual(RacketGameCopy.statsAfterLine(.tennis), "Rally stats appear after the match. Shot stats: not available yet.")
         XCTAssertEqual(RacketGameCopy.warmupLine(.set), "Game by game saves nothing until you start the set. Everything records warmup too.")
         XCTAssertEqual(RacketGameCopy.scoreSubtitle(sport: .badminton, fromWatch: true, cap: 30),
                        "Win by 2, capped at 30. Filled in from your Watch.")
@@ -405,5 +405,58 @@ final class RacketMatchFlowTests: XCTestCase {
     func testOlderCountdownsStillReadAsBlocks() {
         let cd = RacketWatchState.Surface.countdown(.init(block: 1, blocks: 3, endsAt: at(5), totalSec: 5))
         XCTAssertEqual(cd.ring(now: t0)?.word, "Block 2 starts")
+    }
+
+    // MARK: Doubles opponents (device feedback round 2)
+
+    func testTeamNameFollowsThePlayersUntilTypedAndClearingGoesBackToAuto() {
+        var t = RacketOpponentTeam()
+        XCTAssertEqual(t.teamName, "")
+        t.setPlayer1("Jordan")
+        XCTAssertEqual(t.teamName, "Jordan")
+        t.setPlayer2("Lee")
+        XCTAssertEqual(t.teamName, "Jordan & Lee")
+        XCTAssertFalse(t.edited)
+        t.setTeamName("Jordan & Lee")          // the field echoing its own value isn't an edit
+        XCTAssertFalse(t.edited)
+        t.setTeamName("The Smashers")
+        XCTAssertTrue(t.edited)
+        t.setPlayer2("Sam")
+        XCTAssertEqual(t.teamName, "The Smashers", "a typed name stays")
+        t.setTeamName("")
+        XCTAssertFalse(t.edited)
+        XCTAssertEqual(t.teamName, "Jordan & Sam", "cleared: automatic again")
+        t.pickTeam("Mia & Zoe")
+        XCTAssertTrue(t.edited)
+    }
+
+    func testDoublesNamesAreStoredAdditivelyAndOldTeamsKeepTheirName() {
+        var p = RacketMatchParams(sport: .padel)
+        p.doubles = true
+        p.partner = "Mia"
+        p.opponents.setPlayer1("Jordan")
+        p.opponents.setPlayer2("Lee")
+        var ex = SessionExercise(exerciseId: "racket-match-padel", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+                                 sets: [], displayName: nil, kindRaw: SetKind.duration.rawValue)
+        p.apply(to: &ex)
+        XCTAssertEqual(ex.opponent, "Jordan & Lee", "the team name is the opponent: history and H2H keep working")
+        XCTAssertEqual(ex.racketOpponentPlayer1, "Jordan")
+        XCTAssertEqual(ex.racketOpponentPlayer2, "Lee")
+        XCTAssertNil(ex.racketOpponentTeamNameEdited)
+        XCTAssertEqual(RacketMatchParams(from: ex).opponents, p.opponents)
+        // An older match with only a team name: kept as typed.
+        ex.racketOpponentPlayer1 = nil; ex.racketOpponentPlayer2 = nil; ex.opponent = "Kai & Ana"
+        let old = RacketMatchParams(from: ex)
+        XCTAssertEqual(old.opponents.teamName, "Kai & Ana")
+        XCTAssertTrue(old.opponents.edited)
+        XCTAssertEqual(RacketOpponentTeam.players(player1: nil, player2: nil, team: "Kai & Ana"), ["Kai", "Ana"])
+        XCTAssertEqual(RacketOpponentTeam.players(player1: "Jordan", player2: "Lee", team: "The Smashers"), ["Jordan", "Lee"])
+        // Singles never writes doubles fields.
+        var single = RacketMatchParams(sport: .squash)
+        single.opponent = "Alex"
+        var sx = ex
+        single.apply(to: &sx)
+        XCTAssertEqual(sx.opponent, "Alex")
+        XCTAssertNil(sx.racketOpponentPlayer1)
     }
 }

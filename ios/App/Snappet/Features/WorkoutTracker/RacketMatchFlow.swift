@@ -403,8 +403,11 @@ enum RacketGameCopy {
     /// CameraViewOff: "Live tracking is off. Rallies will be found after the match."
     static let cameraTrackingOffLine = "Live tracking is off. Rallies will be found after the match."
 
-    /// StatsOff: "Rally and shot stats appear after the match."
-    static func statsAfterLine(_ sport: RacketSport) -> String { "Rally and shot stats appear after the \(afterWord(sport))." }
+    /// StatsOff: the board's "Rally and shot stats appear after the match." — shot count isn't built, so it says so
+    /// (device feedback round 2: no promise of a feature that doesn't exist).
+    static func statsAfterLine(_ sport: RacketSport) -> String {
+        "Rally stats appear after the \(afterWord(sport)). Shot stats: not available yet."
+    }
 
     /// StatsOff's points tile: "Points played" (table tennis) / "Points tagged" (the others).
     static func pointsLabel(_ sport: RacketSport) -> String { sport == .tableTennis ? "Points played" : "Points tagged" }
@@ -562,6 +565,61 @@ enum RacketRecapLine {
         let avg = bpms.reduce(0, +) / Double(bpms.count)
         return "\(time) · average heart rate \(Int(avg.rounded()))"
     }
+}
+
+// MARK: - Doubles opponents (device feedback round 2)
+
+/// The other team in doubles: a team name made from the two players' names ("Jordan & Lee") that follows them as
+/// they're typed, until the team name is edited by hand. Clearing the team name goes back to automatic.
+struct RacketOpponentTeam: Equatable, Sendable {
+    private(set) var player1 = ""
+    private(set) var player2 = ""
+    private(set) var teamName = ""
+    /// The team name was typed by hand.
+    private(set) var edited = false
+
+    init(player1: String = "", player2: String = "", teamName: String? = nil, edited: Bool = false) {
+        self.player1 = player1
+        self.player2 = player2
+        self.edited = edited && !(teamName ?? "").trimmed.isEmpty
+        self.teamName = self.edited ? (teamName ?? "") : Self.autoName(player1, player2)
+    }
+
+    /// "Jordan & Lee"; one name alone; "" with neither.
+    static func autoName(_ a: String, _ b: String) -> String {
+        [a.trimmed, b.trimmed].filter { !$0.isEmpty }.joined(separator: " & ")
+    }
+
+    mutating func setPlayer1(_ s: String) { player1 = s; follow() }
+    mutating func setPlayer2(_ s: String) { player2 = s; follow() }
+
+    /// Typing in the team name field: a name typed by hand stays; an empty field means automatic again.
+    mutating func setTeamName(_ s: String) {
+        if s.trimmed.isEmpty {
+            edited = false
+            teamName = Self.autoName(player1, player2)
+        } else {
+            edited = s != Self.autoName(player1, player2) || edited
+            teamName = s
+        }
+    }
+
+    /// A recent team picked from the chips: it's a name, typed or not.
+    mutating func pickTeam(_ s: String) { teamName = s; edited = !s.trimmed.isEmpty }
+
+    private mutating func follow() { if !edited { teamName = Self.autoName(player1, player2) } }
+
+    /// The individual players, for "who made the last shot" (DoublesTag): the named players, else the team name split
+    /// on "&" (older matches stored only the team).
+    static func players(player1: String?, player2: String?, team: String?) -> [String] {
+        let named = [player1, player2].compactMap { $0?.trimmed }.filter { !$0.isEmpty }
+        if !named.isEmpty { return named }
+        return (team ?? "").split(separator: "&").map { String($0).trimmed }.filter { !$0.isEmpty }
+    }
+}
+
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 // MARK: - The match form's chips (Match / XxMatch boards)
