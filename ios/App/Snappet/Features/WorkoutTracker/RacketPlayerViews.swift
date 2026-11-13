@@ -305,9 +305,12 @@ struct RacketPlayerScreen: View {
                     .font(SnappetType.detail)
                     transport(pb)
                     HStack(spacing: 10) {
-                        Toggle("Rallies only", isOn: $onlyRallies)
-                            .disabled(rallies.isEmpty)
-                            .accessibilityIdentifier("racket.player.ralliesOnly")
+                        // TtPlayerOriginal: "Rallies only" is a chip next to the speed (prompt 252, was a switch).
+                        RacketTagChip(label: "Rallies only", selected: onlyRallies, id: "racket.player.ralliesOnly") {
+                            onlyRallies.toggle()
+                        }
+                        .disabled(rallies.isEmpty)
+                        Spacer(minLength: 0)
                         Picker("Speed", selection: Binding(get: { pb.rate }, set: { pb.rate = $0 })) {
                             Text("1×").tag(Float(1))
                             Text("0.5×").tag(Float(0.5))

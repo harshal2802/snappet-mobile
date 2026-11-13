@@ -187,12 +187,15 @@ private struct Footnote: View {
 private struct ScoreButtons: View {
     let us: String
     let them: String
+    /// The tally's rules: side-out (pickleball) reads "We won / They won" (PbWatch, prompt 252).
+    var rules: RacketLiveRules? = nil
     let tap: (RacketWatchCommand) -> Void
 
     var body: some View {
+        let titles = rules?.scoreButtons(us: us, them: them) ?? (us: "\(us) +1", them: "\(them) +1")
         HStack(spacing: 8) {
-            WideButton(title: "\(us) +1", height: 62) { tap(.pointUs) }
-            WideButton(title: "\(them) +1", kind: .on, height: 62) { tap(.pointThem) }
+            WideButton(title: titles.us, height: 62) { tap(.pointUs) }
+            WideButton(title: titles.them, kind: .on, height: 62) { tap(.pointThem) }
         }
     }
 }
@@ -247,7 +250,7 @@ private struct RacketScoringView: View {
                     .font(.system(size: 44, weight: .light, design: .rounded).monospacedDigit())
                     .minimumScaleFactor(0.7)
                     .accessibilityLabel("Score \(scoring.score.display)")
-                ScoreButtons(us: state.sideUs, them: state.sideThem, tap: tap)
+                ScoreButtons(us: state.sideUs, them: state.sideThem, rules: scoring.score.rules, tap: tap)
                 if let note = state.note { Footnote(text: note) }
                 HStack(spacing: 8) {
                     WideButton(title: "Undo", kind: .quiet) { tap(.undo) }
@@ -282,7 +285,7 @@ private struct RacketMarksView: View {
                     Text(marks.score.display)
                         .font(.system(size: 30, weight: .light, design: .rounded).monospacedDigit())
                 }
-                ScoreButtons(us: state.sideUs, them: state.sideThem, tap: tap)
+                ScoreButtons(us: state.sideUs, them: state.sideThem, rules: marks.score.rules, tap: tap)
                 if !marks.score.isEmpty { WideButton(title: "Undo", kind: .quiet, height: 38) { tap(.undo) } }
                 StopButton(title: "Stop and split") { tap(.stopAndSplit) }
             }

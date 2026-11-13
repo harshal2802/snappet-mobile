@@ -271,6 +271,7 @@ final class RacketMatchUITests: XCTestCase {
     private func walk(_ sport: String, unit: String, line: String, subtitle: String) {
         openMatchForm(sport)
         if sport == "padel" { tapWhenHittable(app.buttons["racket.deuce.continue"]) }
+        if sport == "pickleball" { tapWhenHittable(app.buttons["racket.pbScoring.continue"]) }
         XCTAssertTrue(any("racket.match.header").waitForExistence(timeout: 5))
         shot("\(sport)-01-match")
         tapWhenHittable(app.buttons["racket.match.setUpCamera"])

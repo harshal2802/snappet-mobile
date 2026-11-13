@@ -12,7 +12,7 @@ import Foundation
 struct RacketLiveRules: Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         /// Every rally scores: first to `pointsTo`, win by 2, up to `cap` (badminton 30). TT, badminton, squash,
-        /// pickleball (rally scoring — side-out scoring isn't modelled yet).
+        /// pickleball rally scoring; pickleball's traditional side-out scoring sets `sideOut` (prompt 252).
         case rally
         /// Tennis / padel: points (15–30–40–Ad) make games, games make a set to `pointsTo` with a 7-point tiebreak at
         /// `pointsTo`–`pointsTo`; or a deciding super tiebreak to 10.
@@ -29,13 +29,36 @@ struct RacketLiveRules: Codable, Equatable, Sendable {
     /// Padel "Golden point" (PdDeuce, prompt 249): at 40–40 the next point wins the game. Optional on the wire, so an
     /// older Watch / phone decodes it as Advantage.
     var goldenPoint: Bool?
+    // Prompt 252 (PbScoring / PbSideOut) — optional on the wire, so an older Watch / phone decodes rally scoring.
+    /// Pickleball "Traditional, side-out": only the serving side scores; the receiving side winning a rally takes the
+    /// serve (after the second server in doubles).
+    var sideOut: Bool?
+    /// Side-out doubles: two servers per side ("4–2–1"), and the game's first side has one server only ("0–0–2").
+    var doubles: Bool?
+    /// Side-out: who serves this unit's first rally (`nil` read as us).
+    var servesFirst: RacketLiveScore.Side?
 
-    init(kind: Kind, pointsTo: Int, cap: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false) {
+    init(kind: Kind, pointsTo: Int, cap: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false,
+         sideOut: Bool = false, doubles: Bool = false, servesFirst: RacketLiveScore.Side? = nil) {
         self.kind = kind
         self.pointsTo = max(1, pointsTo)
         self.cap = cap
         self.superTiebreak = kind == .sets && superTiebreak
         self.goldenPoint = kind == .sets && goldenPoint ? true : nil
+        let so = kind == .rally && sideOut
+        self.sideOut = so ? true : nil
+        self.doubles = so && doubles ? true : nil
+        self.servesFirst = so ? (servesFirst ?? .us) : nil
+    }
+
+    /// Only the serving side scores (pickleball traditional scoring).
+    var isSideOut: Bool { sideOut == true }
+
+    /// The score buttons (Watch, PbWatchMark): "You +1 / Alex +1"; side-out "We won / They won" (PbWatch) — a receiving
+    /// win doesn't score, so it isn't "+1".
+    func scoreButtons(us: String, them: String) -> (us: String, them: String) {
+        guard isSideOut else { return ("\(us) +1", "\(them) +1") }
+        return us == "Us" ? ("We won", "They won") : ("\(us) won", "\(them) won")
     }
 }
 
@@ -55,7 +78,10 @@ struct RacketLiveUnitResult: Codable, Equatable, Sendable {
 }
 
 struct RacketLiveScore: Codable, Equatable, Sendable {
-    enum Side: String, Codable, Sendable { case us, them }
+    enum Side: String, Codable, Sendable {
+        case us, them
+        var other: Side { self == .us ? .them : .us }
+    }
 
     var rules: RacketLiveRules
     /// Every point won in this unit, in order. The only stored state.
@@ -78,6 +104,24 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
         /// Sets only: the current game is the set's tiebreak.
         var inTiebreak = false
         var result: RacketLiveUnitResult?
+        /// Side-out only: who serves the next rally, and (doubles) whether it's server 1 or 2.
+        var serving: Side?
+        var serverNumber: Int?
+        /// Side-out only (PbSideOut): the serving side's losses since the last point scored, oldest first — "Server 1
+        /// lost the rally" then "Server 2 lost the rally · Side-out". Starts over after a point or a side-out's next loss.
+        var serveChanges: [ServeChange] = []
+    }
+
+    /// A rally the serving side lost under side-out scoring: no point, the next server or a side-out.
+    struct ServeChange: Equatable, Sendable {
+        /// The side that was serving and lost the rally.
+        var side: Side
+        /// Doubles: the server number that lost it (1 or 2); `nil` in singles.
+        var serverNumber: Int?
+        /// The serve went to the other side.
+        var sideOut: Bool
+        /// The call after it ("4 – 2 – 2").
+        var callAfter: String
     }
 
     var tally: Tally { Self.tally(points, rules) }
@@ -107,6 +151,7 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
     var display: String {
         let t = tally
         if let r = t.result { return "\(r.scoreFor) – \(r.scoreAgainst)" }
+        if rules.isSideOut { return Self.call(t, doubles: rules.doubles == true, spaced: false) }
         if rules.kind == .rally || rules.superTiebreak || t.inTiebreak { return "\(t.pointsFor) – \(t.pointsAgainst)" }
         return Self.tennisPoints(t.pointsFor, t.pointsAgainst)
     }
@@ -114,7 +159,12 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
     /// The line above it: "Game 1" · "Set 1 · Games 4–3" · "Set 1 · Tiebreak" · "Match tiebreak".
     func header(unitNumber: Int) -> String {
         switch rules.kind {
-        case .rally: return "Game \(unitNumber)"
+        case .rally:
+            // PbWatch: "Game 1 · you serve".
+            if rules.isSideOut, !isFinished, let s = tally.serving {
+                return "Game \(unitNumber) · \(s == .us ? "you serve" : "they serve")"
+            }
+            return "Game \(unitNumber)"
         case .sets:
             if rules.superTiebreak { return "Match tiebreak" }
             let t = tally
@@ -122,6 +172,16 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
             let gf = t.result?.scoreFor ?? t.gamesFor, ga = t.result?.scoreAgainst ?? t.gamesAgainst
             return "Set \(unitNumber) · Games \(gf)–\(ga)"
         }
+    }
+
+    /// The side-out call: the serving side's score first, then the receiving side's, then (doubles) the server number —
+    /// "4–2–1" (PbDim, PbWatch, PbTag), spaced "4 – 2 – 2" on PbSideOut.
+    static func call(_ t: Tally, doubles: Bool, spaced: Bool) -> String {
+        let serving = t.serving ?? .us
+        let a = serving == .us ? t.pointsFor : t.pointsAgainst
+        let b = serving == .us ? t.pointsAgainst : t.pointsFor
+        let parts = [a, b] + (doubles ? [t.serverNumber ?? 1] : [])
+        return parts.map(String.init).joined(separator: spaced ? " – " : "–")
     }
 
     /// "0, 15, 30, 40", deuce "40 – 40", advantage "Ad – 40" / "40 – Ad".
@@ -137,6 +197,7 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
     // MARK: Rules
 
     private static func tally(_ points: [Side], _ rules: RacketLiveRules) -> Tally {
+        if rules.isSideOut { return sideOutTally(points, rules) }
         var t = Tally()
         for side in points {
             guard t.result == nil else { break }
@@ -173,6 +234,40 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
                         t.inTiebreak = true
                     }
                 }
+            }
+        }
+        return t
+    }
+
+    /// Pickleball traditional scoring. `points` are the rally winners. The serving side winning scores and keeps the
+    /// serve (same server); losing hands it to the second server (doubles, server 1 only) or to the other side
+    /// (side-out, their server 1). The game's first serving side starts on server 2: one server before the first
+    /// side-out. Only the serving side can reach the target, so a game ends on a serve: to `pointsTo`, win by 2.
+    private static func sideOutTally(_ points: [Side], _ rules: RacketLiveRules) -> Tally {
+        let doubles = rules.doubles == true
+        var t = Tally()
+        t.serving = rules.servesFirst ?? .us
+        t.serverNumber = doubles ? 2 : nil
+        for side in points {
+            guard t.result == nil, let serving = t.serving else { break }
+            if side == serving {
+                if side == .us { t.pointsFor += 1 } else { t.pointsAgainst += 1 }
+                t.serveChanges = []
+                if gameWon(t.pointsFor, t.pointsAgainst, to: rules.pointsTo, cap: rules.cap) != nil {
+                    t.result = .init(scoreFor: t.pointsFor, scoreAgainst: t.pointsAgainst)
+                }
+            } else {
+                let lostBy = t.serverNumber
+                let sideOut = !(doubles && t.serverNumber == 1)
+                if sideOut {
+                    t.serving = serving.other
+                    t.serverNumber = doubles ? 1 : nil
+                } else {
+                    t.serverNumber = 2
+                }
+                if t.serveChanges.last?.sideOut == true { t.serveChanges = [] }
+                t.serveChanges.append(.init(side: serving, serverNumber: lostBy, sideOut: sideOut,
+                                            callAfter: call(t, doubles: doubles, spaced: true)))
             }
         }
         return t

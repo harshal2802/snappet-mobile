@@ -110,12 +110,12 @@ final class RacketTagFlowTests: XCTestCase {
     }
 
     func testServingLineFollowsTheServeRules() {
-        // Badminton: the rally winner serves next.
+        // Badminton: the rally winner serves next, from the court of the serving side's score (prompt 252).
         let rs = [RacketRally(startSec: 1, endSec: 2, winner: .them), RacketRally(startSec: 3, endSec: 4)]
         XCTAssertEqual(RacketTagScore.servingLine(sport: .badminton, firstServer: .us, unitIndex: 0, previous: [],
-                                                  rallyID: rs[1].id, rallies: rs, sides: ("Us", "Them")), "Them serving")
+                                                  rallyID: rs[1].id, rallies: rs, sides: ("Us", "Them")), "Them serving, left court")
         XCTAssertEqual(RacketTagScore.servingLine(sport: .badminton, firstServer: .us, unitIndex: 0, previous: [],
-                                                  rallyID: rs[0].id, rallies: rs, sides: ("Us", "Them")), "Us serving")
+                                                  rallyID: rs[0].id, rallies: rs, sides: ("Us", "Them")), "Us serving, right court")
         XCTAssertNil(RacketTagScore.servingLine(sport: .badminton, firstServer: nil, unitIndex: 0, previous: [],
                                                 rallyID: rs[0].id, rallies: rs, sides: ("Us", "Them")))
     }
