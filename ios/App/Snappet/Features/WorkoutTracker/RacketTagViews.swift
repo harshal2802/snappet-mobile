@@ -92,6 +92,11 @@ struct RacketTagSheet: View {
     @State private var ending: RacketRallyEnding?
     @State private var lastShot: String?
     @State private var rules = false
+    /// TnServe / PdWall (prompt 252): the rally's serve and wall answers, saved with the tag.
+    @State private var serve: RacketServeOutcome?
+    @State private var wall: RacketWallBounce?
+    /// The sport's detail board open over the tag sheet (TnServe / PdWall / SqLet).
+    @State private var detail: RacketTagDetail?
     /// Unsure guesses in the part when the sheet opened, and how many are checked since.
     @State private var unsureTotal = 0
     @State private var unsureDone = 0
@@ -171,10 +176,18 @@ struct RacketTagSheet: View {
                                 .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Button("What counts as a rally?") { rules = true }
-                            .font(.system(size: 15)).underline()
-                            .frame(maxWidth: .infinity)
-                            .accessibilityIdentifier("racket.tag.rules")
+                        // XxTag: "What counts as a rally?" and the sport's own link side by side (TnTag "Serve details",
+                        // PdTag "Did it bounce first?", SqTag "Let, stroke or no let").
+                        HStack(spacing: 16) {
+                            Button("What counts as a rally?") { rules = true }
+                                .accessibilityIdentifier("racket.tag.rules")
+                            if let d = RacketTagDetail.link(for: sport) {
+                                Button(d.linkTitle) { detail = d }
+                                    .accessibilityIdentifier("racket.tag.detail.\(d.rawValue)")
+                            }
+                        }
+                        .font(.system(size: 15)).underline()
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 20)
@@ -193,6 +206,9 @@ struct RacketTagSheet: View {
                 }
             }
             .sheet(isPresented: $rules) { RacketRulesSheet(sport: sport) }
+            .sheet(item: $detail) { d in
+                if let r = current { detailSheet(d, rally: r, sides: sides) }
+            }
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -207,27 +223,23 @@ struct RacketTagSheet: View {
         return modelPath || doubles ? "Rally \(k + 1) of \(rallies.count)" : "Your rally \(k + 1) of \(rallies.count)"
     }
 
-    /// QuickTag / XxTag: "So far 6–5 · Final 11–9"; DoublesTag: "So far 6–5 · Us serving"; NoModelTag: "Marked 2:41–2:49 ·
+    /// QuickTag / XxTag: "So far 6–5 · Final 11–9" (TT, badminton, squash, pickleball rally scoring), "Games 4–3 · Point
+    /// 40–30" (tennis, padel), "4–2–1 · Mia serving next" (pickleball side-out, prompt 252); DoublesTag: the same score
+    /// with the serve line ("Mia serving", "Mia serving, right court", "Mia, server 2"); NoModelTag: "Marked 2:41–2:49 ·
     /// No suggestions".
     @ViewBuilder private func topLine(_ r: RacketRally, sides: (us: String, them: String)) -> some View {
         if modelPath || doubles {
-            let soFar = RacketTagScore.soFar(before: r.id, in: rallies)
-            let showsSoFar = !sport.usesSets && sport != .pickleball
+            let line = scoreLine(r, sides: sides)
             HStack(alignment: .firstTextBaseline) {
-                if showsSoFar {
-                    Text("So far \(soFar.us)–\(soFar.them)").font(.system(size: 14, weight: .semibold))
+                if let left = line.left {
+                    Text(left).font(.system(size: 14, weight: .semibold))
                         .accessibilityIdentifier("racket.tag.soFar")
                 }
                 Spacer(minLength: 6)
-                if doubles {
-                    Text(servingLine(r, sides: sides) ?? (ex?.racketFirstServerRaw == nil ? "Serving: choose who serves first at warmup"
-                                                                                    : "Serving: not known until this is a game"))
-                        .font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                if let right = line.right {
+                    Text(right).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
                         .multilineTextAlignment(.trailing)
-                        .accessibilityIdentifier("racket.tag.serving")
-                } else if showsSoFar, let f = finalLine {
-                    Text(f).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
-                        .accessibilityIdentifier("racket.tag.final")
+                        .accessibilityIdentifier(line.rightID)
                 }
             }
         } else {
@@ -249,7 +261,114 @@ struct RacketTagSheet: View {
     private func servingLine(_ r: RacketRally, sides: (us: String, them: String)) -> String? {
         RacketTagScore.servingLine(sport: sport, firstServer: ex?.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
                                    unitIndex: ref.setIndex, previous: ex?.racketUnits ?? [], rallyID: r.id,
-                                   rallies: rallies, sides: sides)
+                                   rallies: rallies, sides: sides, rules: ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) },
+                                   ourFirst: ex?.racketOurFirstServer, partner: ex?.partner, doubles: doubles)
+    }
+
+    /// The doubles serve line, or why it isn't known.
+    private func doublesServeText(_ r: RacketRally, sides: (us: String, them: String)) -> String {
+        servingLine(r, sides: sides) ?? (ex?.racketFirstServerRaw == nil ? "Serving: choose who serves first at warmup"
+                                                                         : "Serving: not known until this is a game")
+    }
+
+    /// The tag sheet's score line for this sport: left (bold) and right (grey) with the right side's identifier.
+    private func scoreLine(_ r: RacketRally, sides: (us: String, them: String)) -> (left: String?, right: String?, rightID: String) {
+        let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }
+        let before = RacketTagScore.points(before: r.id, in: rallies)
+        if sport.usesSets {
+            guard let rules else {
+                return (nil, doubles ? doublesServeText(r, sides: sides) : nil, "racket.tag.serving")
+            }
+            let l = RacketTagSportLine.sets(rules: rules, points: before)
+            return doubles ? (l.games, doublesServeText(r, sides: sides), "racket.tag.serving") : (l.games, l.point, "racket.tag.point")
+        }
+        if sport == .pickleball, let rules, rules.isSideOut, let i = ref.setIndex {
+            let l = RacketTagSportLine.pickleball(rules: rules, pointsBefore: before, winner: winner.map { $0 == .us ? .us : .them },
+                                                  ourFirst: ex?.racketOurFirstServer, unitIndex: i, partner: ex?.partner,
+                                                  sides: sides, doubles: doubles)
+            return (l.call, l.serve.isEmpty ? nil : l.serve, "racket.tag.serving")
+        }
+        let soFar = RacketTagScore.soFar(before: r.id, in: rallies)
+        let left = "So far \(soFar.us)–\(soFar.them)"
+        if doubles { return (left, doublesServeText(r, sides: sides), "racket.tag.serving") }
+        return (left, finalLine, "racket.tag.final")
+    }
+
+    // MARK: TnServe · PdWall · SqLet (prompt 252)
+
+    @ViewBuilder private func detailSheet(_ d: RacketTagDetail, rally r: RacketRally, sides: (us: String, them: String)) -> some View {
+        let number = (rallies.firstIndex { $0.id == r.id } ?? 0) + 1
+        let video = RacketRallyVideo(log: log, partStart: ref.startSec, partEnd: ref.endSec, range: r.startSec...r.endSec,
+                                     sport: sport, height: d == .serve ? 190 : 200)
+        switch d {
+        case .serve:
+            let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }
+            let before = RacketTagScore.points(before: r.id, in: rallies)
+            let t = rules.map { RacketLiveScore(rules: $0, points: before).tally }
+            let server = rules.flatMap { _ in serverSide(r) }
+            RacketServeSheet(number: number, video: video,
+                             gameLine: t.map { "Game \($0.gamesFor)–\($0.gamesAgainst)" },
+                             servingLine: servingWho(r, sides: sides),
+                             sides: sides, serve: serve, winner: winner, server: server,
+                             onNextPoint: { o, w in
+                                 serve = o
+                                 let implied = o.map { RacketServeOutcome.implied($0, server: server) }
+                                 winner = w ?? implied?.winner
+                                 if let e = implied?.ending { ending = e }
+                                 if o == .letReplay { winner = nil }
+                                 detail = nil
+                                 save(r, notRally: false)
+                             },
+                             onSkip: { detail = nil; advance(after: r.id) },
+                             onClose: { detail = nil })
+        case .wall:
+            RacketChoiceDetailSheet(title: "Rally \(number)", video: video, question: "Did the ball bounce first?",
+                                    options: RacketWallBounce.allCases.map { ($0.rawValue, $0.title, $0.subtitle) },
+                                    selected: wall?.rawValue, footnote: nil, idPrefix: "racket.wall",
+                                    onNext: { raw in
+                                        if let w = raw.flatMap(RacketWallBounce.init(rawValue:)) {
+                                            wall = w
+                                            ending = RacketWallBounce.ending(w, current: ending)
+                                        }
+                                        detail = nil
+                                    },
+                                    onSkip: { detail = nil; advance(after: r.id) },
+                                    onClose: { detail = nil })
+        case .letCall:
+            RacketChoiceDetailSheet(title: "Rally \(number)", video: video, question: "Was there interference?",
+                                    options: RacketLetCall.allCases.map { ($0.rawValue, $0.title, $0.subtitle) },
+                                    selected: RacketLetCall(ending: ending)?.rawValue, footnote: RacketLetCall.footnote,
+                                    idPrefix: "racket.let",
+                                    onNext: { raw in
+                                        if let c = raw.flatMap(RacketLetCall.init(rawValue:)) {
+                                            ending = c.ending
+                                            if c == .letReplay { winner = nil }
+                                        }
+                                        detail = nil
+                                    },
+                                    onSkip: { detail = nil; advance(after: r.id) },
+                                    onClose: { detail = nil })
+        }
+    }
+
+    /// Who serves this rally, by side (TnServe), from Warmup's "Who serves first?" and your tags before it.
+    private func serverSide(_ r: RacketRally) -> RacketServe.Side? {
+        guard let i = ref.setIndex, let ex else { return nil }
+        return RacketServe.server(sport: sport, firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
+                                  unitIndex: i, previous: Array(ex.racketUnits.prefix(i)),
+                                  points: RacketTagScore.points(before: r.id, in: rallies), rules: ex.racketLiveRules(unitIndex: i))
+    }
+
+    /// TnServe's "You’re serving" (doubles: "Mia serving"); why not, when it isn't known.
+    private func servingWho(_ r: RacketRally, sides: (us: String, them: String)) -> String {
+        guard let i = ref.setIndex, let ex else { return "Serving: not known until this is a set" }
+        guard let info = RacketDoublesServe.info(sport: sport, rules: ex.racketLiveRules(unitIndex: i),
+                                                 firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
+                                                 ourFirst: ex.racketOurFirstServer, unitIndex: i,
+                                                 previous: Array(ex.racketUnits.prefix(i)),
+                                                 points: RacketTagScore.points(before: r.id, in: rallies), doubles: doubles)
+        else { return "Serving: choose who serves first at warmup" }
+        return RacketServeCopy.serving(RacketServeCopy.who(info, partner: ex.partner, sides: sides))
     }
 
     private func load(_ id: UUID) {
@@ -259,11 +378,14 @@ struct RacketTagSheet: View {
         winner = r?.winner ?? (r?.isGuess == true ? r?.guessWinner : nil)
         ending = r?.ending
         lastShot = r?.lastShotBy
+        serve = r?.serve
+        wall = r?.wall
     }
 
     private func save(_ r: RacketRally, notRally: Bool) {
         let all = log?.allRallies ?? []
-        let updated = RacketRallyMarking.tag(all, id: r.id, winner: winner, ending: ending, lastShotBy: lastShot, notRally: notRally)
+        let updated = RacketRallyMarking.tag(all, id: r.id, winner: winner, ending: ending, lastShotBy: lastShot, notRally: notRally,
+                                             serve: .some(serve), wall: .some(wall))
         store.updateLog(ref.exerciseID) { $0.rallies = updated }
         Haptics.tap()
         if unsureOnly { unsureDone += 1 }
@@ -868,5 +990,183 @@ struct RacketEditScoreSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("racket.editScore.\(id)")
+    }
+}
+
+// MARK: - TnServe: serve details (prompt 252)
+
+/// TnServe "Tennis serves": Close · Point 12 · Skip, the rally's video, "Game 3–2 · You’re serving", How did the serve
+/// go? (First serve in / Second serve in / Double fault / Ace / Let, replay), the footnote, Who won the point?, Next point
+/// (saves the serve and the winner with the tag and moves the tag sheet on — the board's arrow back to Tag).
+struct RacketServeSheet: View {
+    let number: Int
+    let video: RacketRallyVideo
+    /// "Game 3–2": games in the set before this point; nil when the recording isn't split into sets yet.
+    let gameLine: String?
+    let servingLine: String
+    let sides: (us: String, them: String)
+    let serve: RacketServeOutcome?
+    let winner: RacketRallyWinner?
+    /// Who served this point, when known (an ace / double fault then picks the winner).
+    let server: RacketServe.Side?
+    let onNextPoint: (RacketServeOutcome?, RacketRallyWinner?) -> Void
+    let onSkip: () -> Void
+    let onClose: () -> Void
+
+    @State private var picked: RacketServeOutcome?
+    @State private var won: RacketRallyWinner?
+    @State private var configured = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    video
+                    HStack(alignment: .firstTextBaseline) {
+                        if let gameLine {
+                            Text(gameLine).font(.system(size: 14, weight: .semibold)).accessibilityIdentifier("racket.serve.game")
+                        }
+                        Spacer(minLength: 6)
+                        Text(servingLine).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("racket.serve.serving")
+                    }
+                    Text("How did the serve go?").font(.system(size: 17, weight: .bold))
+                    FlowRow {
+                        ForEach(RacketServeOutcome.allCases, id: \.self) { o in
+                            RacketTagChip(label: o.label, selected: picked == o, id: "racket.serve.\(o.rawValue)") {
+                                picked = picked == o ? nil : o
+                                if let o = picked {
+                                    let implied = RacketServeOutcome.implied(o, server: server)
+                                    if let w = implied.winner { won = w }
+                                    if o == .letReplay { won = nil }
+                                }
+                            }
+                        }
+                    }
+                    Text(RacketServeOutcome.footnote).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Who won the point?").font(.system(size: 17, weight: .bold))
+                    HStack(spacing: 8) {
+                        RacketTagChip(label: sides.us, selected: won == .us, id: "racket.serve.winner.us", wide: true) {
+                            won = won == .us ? nil : .us
+                        }
+                        RacketTagChip(label: sides.them, selected: won == .them, id: "racket.serve.winner.them", wide: true) {
+                            won = won == .them ? nil : .them
+                        }
+                    }
+                    .disabled(picked == .letReplay)
+                    RacketWideButton("Next point", id: "racket.serve.next") { onNextPoint(picked, won) }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Point \(number)").font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("racket.serve.title")
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { onClose() }.accessibilityIdentifier("racket.serve.close")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Skip") { onSkip() }.accessibilityIdentifier("racket.serve.skip")
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            guard !configured else { return }
+            configured = true
+            picked = serve
+            won = winner
+        }
+    }
+}
+
+// MARK: - PdWall / SqLet: one question with choice cards (prompt 252)
+
+/// PdWall "Did the ball bounce first?" and SqLet "Was there interference?": Close · Rally 12 · Skip, the rally's video,
+/// the question, one choice card per answer (title + what it means), SqLet's footnote, Back / Next. Both buttons return to
+/// the tag sheet (the board's "Back or next" arrow); Next keeps the answer.
+struct RacketChoiceDetailSheet: View {
+    let title: String
+    let video: RacketRallyVideo
+    let question: String
+    /// (id, title, subtitle).
+    let options: [(String, String, String)]
+    let selected: String?
+    let footnote: String?
+    let idPrefix: String
+    let onNext: (String?) -> Void
+    let onSkip: () -> Void
+    let onClose: () -> Void
+
+    @State private var picked: String?
+    @State private var configured = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 9) {
+                    video
+                    Text(question).font(.system(size: 20, weight: .bold)).padding(.top, 2)
+                        .accessibilityIdentifier("\(idPrefix).question")
+                    ForEach(options, id: \.0) { o in
+                        Button { picked = o.0; Haptics.tap() } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(o.1).font(.system(size: 16, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                                Text(o.2).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+                            .padding(.horizontal, 13).padding(.vertical, 6)
+                            .background(picked == o.0 ? SnappetColor.brand.opacity(0.14) : Color.white.opacity(0.05),
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(picked == o.0 ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1.5))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("\(idPrefix).\(o.0)")
+                        .accessibilityAddTraits(picked == o.0 ? .isSelected : [])
+                    }
+                    if let footnote {
+                        Text(footnote).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("\(idPrefix).footnote")
+                    }
+                    HStack(spacing: 10) {
+                        Button { onClose() } label: {
+                            Text("Back").font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.plain).pagerOutline()
+                        .accessibilityIdentifier("\(idPrefix).back")
+                        Button { onNext(picked) } label: {
+                            Text("Next").frame(maxWidth: .infinity, minHeight: 30)
+                        }
+                        .buttonStyle(SnappetWidePrimaryStyle())
+                        .accessibilityIdentifier("\(idPrefix).next")
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(title).font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("\(idPrefix).title")
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { onClose() }.accessibilityIdentifier("\(idPrefix).close")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Skip") { onSkip() }.accessibilityIdentifier("\(idPrefix).skip")
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            guard !configured else { return }
+            configured = true
+            picked = selected
+        }
     }
 }

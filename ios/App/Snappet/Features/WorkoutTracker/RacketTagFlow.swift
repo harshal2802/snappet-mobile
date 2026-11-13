@@ -194,15 +194,21 @@ enum RacketTagScore {
         return rs.prefix(i).compactMap { r in r.winner.map { $0 == .us ? .us : .them } }
     }
 
-    /// DoublesTag's serve line: "Us serving" from who served first and your tags so far; nil when not known.
+    /// DoublesTag's serve line from who served first and your tags so far: "Mia serving" (your player, when Warmup's
+    /// "Who serves first for us?" was answered and the rules fix the order), "Mia serving, right court" (badminton),
+    /// "Mia, server 2" (pickleball side-out), else the side ("Us serving"). nil when not known.
     static func servingLine(sport: RacketSport, firstServer: RacketServe.Side?, unitIndex: Int?,
                             previous: [RacketUnitScore], rallyID: UUID, rallies: [RacketRally],
-                            sides: (us: String, them: String)) -> String? {
-        guard let firstServer, let unitIndex else { return nil }
+                            sides: (us: String, them: String), rules: RacketLiveRules? = nil,
+                            ourFirst: RacketDoublesServe.Player? = nil, partner: String? = nil,
+                            doubles: Bool = true) -> String? {
+        guard let unitIndex else { return nil }
         let pts = points(before: rallyID, in: rallies)
-        guard let s = RacketServe.server(sport: sport, firstServer: firstServer, unitIndex: unitIndex,
-                                         previous: Array(previous.prefix(unitIndex)), points: pts) else { return nil }
-        return "\(s == .us ? sides.us : sides.them) serving"
+        let r = rules ?? RacketLiveRules(format: RacketFormat.defaults(for: sport), unitIndex: unitIndex)
+        guard let info = RacketDoublesServe.info(sport: sport, rules: r, firstServer: firstServer, ourFirst: ourFirst,
+                                                 unitIndex: unitIndex, previous: Array(previous.prefix(unitIndex)),
+                                                 points: pts, doubles: doubles) else { return nil }
+        return RacketServeCopy.doublesLine(info, partner: partner, sides: sides)
     }
 }
 
