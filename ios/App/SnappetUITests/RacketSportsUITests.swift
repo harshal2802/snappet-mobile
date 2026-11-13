@@ -180,4 +180,228 @@ final class RacketSportsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["session.exerciseMenu"].firstMatch.exists, "the drill is still there")
         shot("11-after-remove")
     }
+
+    // MARK: - Sport-specific boards (prompt 252)
+
+    private func relaunch(_ args: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments += args
+        app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
+        app.launch()
+    }
+
+    private func openMatchForm(_ sport: String) {
+        openFreeformPlayer()
+        tapWhenHittable(app.buttons["freeform.cardRacket"])
+        let s = app.buttons["racket.sport.\(sport)"]
+        XCTAssertTrue(s.waitForExistence(timeout: 5))
+        s.tap()
+        app.segmentedControls["racket.mode"].buttons["Match"].tap()
+        app.buttons["racket.next"].tap()
+    }
+
+    /// PbScoring → PbMatch → ScoreOnly's call → the game screen's caption → PbSideOut (server 1, then server 2 lost).
+    func testPickleballSideOutScoringFromSetupToTheServeChange() {
+        relaunch(["-uiTestFreshStore", "-uiTestFakeCamera", "-uiTestWatchReady", "-uiTestWatchTaps"])
+        openMatchForm("pickleball")
+        let sideOut = app.buttons["racket.pbScoring.sideOut"]
+        XCTAssertTrue(sideOut.waitForExistence(timeout: 5), "PbScoring comes before the pickleball match form")
+        XCTAssertTrue(sideOut.isSelected, "Traditional, side-out is the board's default")
+        XCTAssertTrue(app.buttons["racket.pbScoring.to11"].isSelected)
+        XCTAssertTrue(any("racket.pbScoring.call").label.contains("Doubles score call: 4 – 2 – 1"))
+        app.buttons["racket.doubles.doubles"].tap()
+        let partner = app.textFields["racket.partner"]
+        tapWhenHittable(partner)
+        partner.typeText("Mia\n")
+        shot("pb-01-scoring")
+        tapWhenHittable(app.buttons["racket.pbScoring.continue"])
+        XCTAssertTrue(any("racket.match.header").waitForExistence(timeout: 4))
+        XCTAssertFalse(any("racket.format").exists, "PbMatch has no format box (it's on PbScoring)")
+        XCTAssertTrue(any("racket.match.format").label.contains("Games to 11"))
+        shot("pb-02-match")
+
+        // ScoreOnly: the call, serving score first.
+        tapWhenHittable(app.buttons["racket.match.playWithoutVideo"])
+        XCTAssertTrue(any("racket.game.score").waitForExistence(timeout: 6))
+        XCTAssertEqual(any("racket.game.score").label, "0–0–2", "the game's first side has one server")
+        app.buttons["racket.scoreOnly.us"].tap()
+        XCTAssertEqual(any("racket.game.score").label, "1–0–2")
+        app.buttons["racket.scoreOnly.them"].tap()
+        XCTAssertEqual(any("racket.game.score").label, "0–1–1", "side-out: no point for winning while receiving")
+        shot("pb-03-score-only")
+        app.buttons["racket.scoreOnly.undo"].tap()
+        XCTAssertEqual(any("racket.game.score").label, "1–0–2")
+
+        // Start recording instead → Warmup's doubles row → the game screen.
+        app.buttons["racket.scoreOnly.record"].tap()
+        XCTAssertTrue(app.buttons["racket.camera.continue"].waitForExistence(timeout: 6))
+        app.buttons["racket.camera.continue"].tap()
+        let mia = app.buttons["racket.warmup.ourServe.partner"]
+        XCTAssertTrue(mia.waitForExistence(timeout: 4), "Who serves first for us? in doubles")
+        XCTAssertEqual(mia.label, "Mia")
+        mia.tap()
+        shot("pb-04-warmup")
+        app.buttons["racket.warmup.start"].tap()
+        XCTAssertTrue(app.buttons["racket.rec.show.dim"].waitForExistence(timeout: 6))
+        app.buttons["racket.rec.show.dim"].tap()
+        XCTAssertEqual(any("racket.game.score").label, "1–0–2", "the game in progress keeps its call")
+        XCTAssertEqual(any("racket.game.caption").label, "Serving · server 2")
+        shot("pb-05-dim")
+
+        // Their side out and back: us serving server 1 at 1–0–1.
+        let us = app.buttons["racket.test.watchUs"], them = app.buttons["racket.test.watchThem"]
+        them.tap()                       // our one server lost → side-out
+        XCTAssertTrue(any("racket.sideOut.panel.0").waitForExistence(timeout: 3), "PbSideOut after a serving-side loss")
+        XCTAssertEqual(any("racket.sideOut.call.0").label, "0 – 1 – 1")
+        us.tap()                         // their server 1 lost
+        us.tap()                         // their server 2 lost → side-out to us
+        XCTAssertTrue(any("racket.sideOut.panel.1").waitForExistence(timeout: 3))
+        // PbSideOut as the board: our server 1 loses, then server 2.
+        them.tap()
+        XCTAssertTrue(any("racket.sideOut.panel.0").waitForExistence(timeout: 3))
+        XCTAssertFalse(any("racket.sideOut.panel.1").exists)
+        XCTAssertTrue(app.staticTexts["Server 1 lost the rally"].exists)
+        XCTAssertTrue(app.staticTexts["No point. Your partner serves next."].exists)
+        XCTAssertEqual(any("racket.sideOut.call.0").label, "1 – 0 – 2")
+        them.tap()
+        XCTAssertTrue(any("racket.sideOut.panel.1").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Server 2 lost the rally"].exists)
+        XCTAssertTrue(app.staticTexts["Side-out. They serve next."].exists)
+        XCTAssertEqual(any("racket.sideOut.call.1").label, "0 – 1 – 1")
+        XCTAssertEqual(any("racket.sideOut.footnote").label, "At the start of a game, only one server serves before the first side-out.")
+        XCTAssertTrue(app.buttons["racket.game.next"].exists && app.buttons["racket.game.stop"].exists)
+        shot("pb-06-side-out")
+        app.buttons["racket.sideOut.undo"].tap()
+        XCTAssertFalse(any("racket.sideOut.panel.0").waitForExistence(timeout: 1), "Undo returns to the game screen")
+        XCTAssertEqual(any("racket.game.score").label, "1–0–2")
+        // Next rally: the panel goes once the next tap comes (or after a few seconds).
+        them.tap()
+        XCTAssertTrue(any("racket.sideOut.panel.0").waitForExistence(timeout: 3))
+        XCTAssertTrue(any("racket.game.score").waitForExistence(timeout: 9), "back on the game screen by itself")
+        XCTAssertEqual(any("racket.game.caption").label, "Them serving · server 1")
+    }
+
+    /// TnMatch "No-ad": at 40–40 the next point wins the game.
+    func testTennisNoAdDecidesDeuceWithOnePoint() {
+        relaunch(["-uiTestFreshStore", "-uiTestFakeCamera"])
+        openMatchForm("tennis")
+        let noAd = app.buttons["racket.format.noAd"]
+        tapWhenHittable(noAd)
+        XCTAssertTrue(noAd.isSelected)
+        XCTAssertTrue(any("racket.format.noAdLine").exists)
+        shot("tn-01-match-no-ad")
+        tapWhenHittable(app.buttons["racket.match.playWithoutVideo"])
+        let us = app.buttons["racket.scoreOnly.us"], them = app.buttons["racket.scoreOnly.them"]
+        XCTAssertTrue(us.waitForExistence(timeout: 6))
+        for _ in 0..<3 { us.tap(); them.tap() }
+        XCTAssertEqual(any("racket.game.score").label, "40 – 40")
+        them.tap()
+        XCTAssertEqual(any("racket.game.score").label, "0 – 0", "no-ad: the deciding point won the game (not Ad)")
+        shot("tn-02-no-ad-scored")
+    }
+
+    // MARK: Tag sheets per sport (seeded game-by-game match, Snappet's rallies in game 1)
+
+    private func openTagSheet(_ sport: String, doubles: Bool) {
+        var args = ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketTaggedGames", "-uiTestRacketSport", sport]
+        if doubles { args += ["-uiTestRacketDoubles", "YES"] }
+        relaunch(args)
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 8))
+        app.buttons["moduleCard.workout-log"].tap()
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Racket videos'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "the seeded session")
+        row.tap()
+        tapWhenHittable(app.buttons["racket.recap.videos"])
+        tapWhenHittable(app.buttons["racket.videos.mark.0"])
+        tapWhenHittable(app.buttons["racket.tl.rally.8"])
+        XCTAssertTrue(app.buttons["racket.tag.next"].waitForExistence(timeout: 5))
+    }
+
+    func testTennisTagShowsGamesPointAndServeDetails() {
+        openTagSheet("tennis", doubles: false)
+        XCTAssertEqual(any("racket.tag.soFar").label, "Games 1–0")
+        XCTAssertEqual(any("racket.tag.point").label, "Point 30–30")
+        shot("tn-03-tag")
+        tapWhenHittable(app.buttons["racket.tag.detail.serve"])
+        XCTAssertTrue(app.buttons["racket.serve.next"].waitForExistence(timeout: 4))
+        XCTAssertEqual(any("racket.serve.title").label, "Point 9")
+        XCTAssertEqual(any("racket.serve.game").label, "Game 1–0")
+        XCTAssertEqual(any("racket.serve.serving").label, "You’re serving")
+        app.buttons["racket.serve.doubleFault"].tap()
+        XCTAssertTrue(app.buttons["racket.serve.winner.them"].isSelected, "a double fault gives the point away")
+        app.buttons["racket.serve.secondIn"].tap()
+        app.buttons["racket.serve.winner.us"].tap()
+        shot("tn-04-serve")
+        app.buttons["racket.serve.next"].tap()
+        XCTAssertTrue(app.buttons["racket.tag.next"].waitForNonExistence(timeout: 5), "Next point saved the last rally")
+    }
+
+    func testPadelWallSetsTheEndingAndReturnsToTag() {
+        openTagSheet("padel", doubles: true)
+        XCTAssertEqual(any("racket.tag.soFar").label, "Games 1–0")
+        XCTAssertEqual(any("racket.tag.serving").label, "Mia serving")
+        shot("pd-01-doubles-tag")
+        tapWhenHittable(app.buttons["racket.tag.detail.wall"])
+        XCTAssertTrue(app.buttons["racket.wall.next"].waitForExistence(timeout: 4))
+        XCTAssertEqual(any("racket.wall.title").label, "Rally 9")
+        XCTAssertEqual(any("racket.wall.question").label, "Did the ball bounce first?")
+        app.buttons["racket.wall.wallFirst"].tap()
+        shot("pd-02-wall")
+        app.buttons["racket.wall.next"].tap()
+        XCTAssertTrue(app.buttons["racket.tag.next"].waitForExistence(timeout: 4), "back on the tag sheet")
+        XCTAssertTrue(app.buttons["racket.tag.end.hitWallFirst"].isSelected)
+        tapWhenHittable(app.buttons["racket.tag.detail.wall"])
+        XCTAssertTrue(app.buttons["racket.wall.wallFirst"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["racket.wall.wallFirst"].isSelected, "reopens on your answer")
+        app.buttons["racket.wall.back"].tap()
+        XCTAssertTrue(app.buttons["racket.tag.next"].waitForExistence(timeout: 4))
+    }
+
+    func testSquashLetCallIsTheEnding() {
+        openTagSheet("squash", doubles: false)
+        XCTAssertEqual(any("racket.tag.soFar").label, "So far 6–2")
+        XCTAssertEqual(any("racket.tag.final").label, "Final 11–9")
+        tapWhenHittable(app.buttons["racket.tag.detail.letCall"])
+        XCTAssertTrue(app.buttons["racket.let.next"].waitForExistence(timeout: 4))
+        XCTAssertEqual(any("racket.let.question").label, "Was there interference?")
+        XCTAssertEqual(any("racket.let.footnote").label, "Your tag decides how this rally scores. Snappet won’t judge this from video.")
+        app.buttons["racket.let.stroke"].tap()
+        shot("sq-01-let")
+        app.buttons["racket.let.next"].tap()
+        XCTAssertTrue(app.buttons["racket.tag.next"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["racket.tag.end.stroke"].isSelected)
+    }
+
+    func testPickleballDoublesTagShowsTheCallAndServer() {
+        openTagSheet("pickleball", doubles: true)
+        XCTAssertEqual(any("racket.tag.soFar").label, "4–1–1")
+        XCTAssertEqual(any("racket.tag.serving").label, "Mia, server 1")
+        shot("pb-07-doubles-tag")
+        app.buttons["racket.tag.winner.them"].tap()
+        XCTAssertEqual(any("racket.tag.soFar").label, "4–1–2", "after this rally: server 1 lost, no point")
+        XCTAssertEqual(any("racket.tag.serving").label, "You, server 2")
+    }
+
+    func testPickleballSinglesTagSaysWhoServesNext() {
+        openTagSheet("pickleball", doubles: false)
+        XCTAssertEqual(any("racket.tag.soFar").label, "5–1")
+        XCTAssertEqual(any("racket.tag.serving").label, "You’re serving")
+        app.buttons["racket.tag.winner.us"].tap()
+        XCTAssertEqual(any("racket.tag.soFar").label, "6–1")
+        XCTAssertEqual(any("racket.tag.serving").label, "You serving next")
+        shot("pb-08-tag")
+    }
+
+    func testDoublesTagNamesTheServerInEverySport() {
+        for (sport, line) in [("badminton", "You’re serving, right court"), ("tableTennis", "Mia serving"),
+                              ("tennis", "Mia serving"), ("squash", "Us serving")] {
+            openTagSheet(sport, doubles: true)
+            XCTAssertEqual(any("racket.tag.serving").label, line, sport)
+            shot("\(sport)-doubles-tag")
+        }
+    }
 }

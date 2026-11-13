@@ -332,8 +332,15 @@ enum RacketServe {
     ///   - unitIndex: the game / set being played (0-based).
     ///   - previous: the units already logged (their scores), for who starts this one.
     ///   - points: the points of this unit, in order (`RacketLiveScore.points`).
+    ///   - rules: the unit's tally rules (no-ad / golden point end a game at deuce, a super tiebreak is all tiebreak,
+    ///     pickleball side-out keeps the serve on a receiving win). `nil` ⇒ the sport's plain rules.
     static func server(sport: RacketSport, firstServer: Side?, unitIndex: Int, previous: [RacketUnitScore],
-                       points: [RacketLiveScore.Side]) -> Side? {
+                       points: [RacketLiveScore.Side], rules: RacketLiveRules? = nil) -> Side? {
+        // Side-out (prompt 252): the tally itself knows who serves (it decides who can score). It assumes you serve
+        // first when nobody said, so the server always matches the score shown.
+        if let rules, rules.isSideOut {
+            return RacketLiveScore(rules: rules, points: points).tally.serving.map { $0 == .us ? .us : .them }
+        }
         guard let firstServer else { return nil }
         switch sport {
         case .badminton, .squash, .pickleball:
@@ -344,28 +351,29 @@ enum RacketServe {
         case .tableTennis:
             // Two serves each, one each from 10–10; the receiver of game 1 serves first in game 2, and so on.
             let gameFirst = unitIndex % 2 == 0 ? firstServer : firstServer.other
-            let p = points.count
-            let flips = p < 20 ? p / 2 : p - 10
-            return flips % 2 == 0 ? gameFirst : gameFirst.other
+            return turn(tableTennisPoints: points.count) % 2 == 0 ? gameFirst : gameFirst.other
         case .tennis, .padel:
-            // The server changes every game, across sets; in a tiebreak the next server serves one, then two each.
-            let gamesBefore = previous.reduce(0) { $0 + $1.scoreFor + $1.scoreAgainst }
-            var games = 0, pf = 0, pa = 0, inTB = false
-            var gf = 0, ga = 0
-            for side in points {
-                if side == .us { pf += 1 } else { pa += 1 }
-                if !inTB, (pf >= 4 || pa >= 4), abs(pf - pa) >= 2 {
-                    if pf > pa { gf += 1 } else { ga += 1 }
-                    games += 1; pf = 0; pa = 0
-                    if gf == 6 && ga == 6 { inTB = true }
-                }
-            }
-            let total = gamesBefore + games
-            let gameServer = total % 2 == 0 ? firstServer : firstServer.other
-            guard inTB else { return gameServer }
-            let tbPoints = pf + pa
-            return ((tbPoints + 1) / 2) % 2 == 0 ? gameServer : gameServer.other
+            // The server changes every game, across sets (a set's tiebreak counts as one game); in a tiebreak the next
+            // server serves one, then two each.
+            let r = tennisRotation(previous: previous, points: points,
+                                   rules: rules ?? RacketLiveRules(kind: .sets, pointsTo: sport.defaultPointsTo))
+            return r % 2 == 0 ? firstServer : firstServer.other
         }
+    }
+
+    /// Table tennis: which service turn (two serves each, one each from 10–10) the next point is in.
+    static func turn(tableTennisPoints p: Int) -> Int { p < 20 ? p / 2 : 10 + (p - 20) }
+
+    /// Tennis / padel: the position in the serving rotation of the next point — one step per game played in the match
+    /// (a tiebreak is one game), plus, inside a tiebreak (or a super tiebreak), one step after the first point and
+    /// every two after it. Even ⇒ the match's first server's side.
+    static func tennisRotation(previous: [RacketUnitScore], points: [RacketLiveScore.Side], rules: RacketLiveRules) -> Int {
+        let gamesBefore = previous.reduce(0) { $0 + ($1.superTiebreak ? 1 : $1.scoreFor + $1.scoreAgainst) }
+        let t = RacketLiveScore(rules: rules, points: points).tally
+        let games = rules.superTiebreak ? 0 : t.gamesFor + t.gamesAgainst
+        let inTB = rules.superTiebreak || (t.inTiebreak && t.result == nil)
+        let tb = inTB ? (t.pointsFor + t.pointsAgainst + 1) / 2 : 0
+        return gamesBefore + games + tb
     }
 }
 
@@ -422,8 +430,9 @@ enum RacketGameCopy {
 
     /// The line under the big score: "Game 1 · you’re serving" (rally sports with a known server), "Games 4–3 · Set 1"
     /// (tennis / padel), "Score from Watch" (table tennis, once the Watch has a point), else "Game 1".
+    /// Doubles (prompt 252): `player` names your server when it's known ("Game 1 · Mia serving").
     static func scoreCaption(sport: RacketSport, unitIndex: Int, score: RacketLiveScore?, server: RacketServe.Side?,
-                             them: String, fromWatch: Bool = true) -> String {
+                             them: String, fromWatch: Bool = true, player: String? = nil) -> String {
         let title = unitTitle(sport.unit, index: unitIndex)
         if sport.usesSets {
             let t = score?.tally ?? .init()
@@ -433,7 +442,8 @@ enum RacketGameCopy {
         // Phone taps (ScoreOnly) aren't "from Watch".
         if sport == .tableTennis { return fromWatch && score?.isEmpty == false ? "Score from Watch" : title }
         switch server {
-        case .us?: return "\(title) · you’re serving"
+        case .us?: return player.map { $0 == "You" ? "\(title) · you’re serving" : "\(title) · \($0) serving" }
+            ?? "\(title) · you’re serving"
         case .them?: return "\(title) · \(them) serving"
         case nil: return title
         }
@@ -445,6 +455,10 @@ enum RacketGameCopy {
     }
 
     static let tiebreakWatchLine = "The Watch switches from 15, 30, 40 to plain points."
+
+    /// PbSideOut stays up this long after a serving-side loss, unless the next rally's tap comes first (there's no live
+    /// rally finding to know when the next rally starts).
+    static let sideOutShowSec: TimeInterval = 6
 
     /// SaveGame's subtitle: the sport's rule, then where the numbers came from.
     static func scoreSubtitle(sport: RacketSport, fromWatch: Bool, cap: Int?) -> String {
@@ -626,7 +640,7 @@ private extension String {
 
 enum RacketMatchFormChoices {
     /// The boards' format chips: TT best of 3 / 5 / 7, badminton best of 3 / one game, squash and tennis best of
-    /// 3 / 5; pickleball keeps its options until PbScoring is built.
+    /// 3 / 5. Pickleball and padel set theirs on PbScoring / PdDeuce (their match boards have no format row).
     static func bestOf(_ sport: RacketSport) -> [Int] {
         switch sport {
         case .tableTennis: return [3, 5, 7]

@@ -867,9 +867,15 @@ enum RacketVideoRows {
         return "\(n) \(n == 1 ? "block" : "blocks") · 1 recording · \(marked) marked by you"
     }
 
-    /// The recap line: "4 videos · 21 rallies tagged" (TtSessionRecap). `nil` with no recording.
+    /// The recap line: "4 videos · 21 rallies tagged" (TtSessionRecap); a drill "3 blocks · 3 videos" (prompt 252).
+    /// `nil` with no recording.
     static func recapLine(_ ex: SessionExercise) -> String? {
         guard let log = ex.racketRecordingLog else { return nil }
+        if ex.isRacketDrill {
+            let blocks = max(ex.completedSetCount, rows(for: ex).count)
+            let videos = rows(for: ex).count
+            return "\(blocks) \(blocks == 1 ? "block" : "blocks") · \(videos) \(videos == 1 ? "video" : "videos")"
+        }
         let videos = ex.isRacketDrill ? rows(for: ex).count : (log.isSplit ? (log.split?.countedParts.count ?? 0) : 1)
         let tagged = log.allRallies.filter(\.isTagged).count
         let marked = log.allRallies.filter(\.isRally).count

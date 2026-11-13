@@ -88,6 +88,11 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var fixReasonsRaw: [String]?
     /// ShotTags / DoublesShots: every shot of the rally, tagged by hand (no shot finding yet).
     var shots: [RacketShot]?
+    // Prompt 252 — additive Optionals.
+    /// TnServe "How did the serve go?" (`RacketServeOutcome.rawValue`).
+    var serveRaw: String?
+    /// PdWall "Did the ball bounce first?" (`RacketWallBounce.rawValue`).
+    var wallRaw: String?
 
     init(id: UUID = UUID(), startSec: Double, endSec: Double, winner: RacketRallyWinner? = nil,
          ending: RacketRallyEnding? = nil, lastShotBy: String? = nil, notRally: Bool? = nil) {
@@ -108,6 +113,8 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
         get { endingRaw.flatMap(RacketRallyEnding.init(rawValue:)) }
         set { endingRaw = newValue?.rawValue }
     }
+    var serve: RacketServeOutcome? { serveRaw.flatMap(RacketServeOutcome.init(rawValue:)) }
+    var wall: RacketWallBounce? { wallRaw.flatMap(RacketWallBounce.init(rawValue:)) }
     var durationSec: Double { max(0, endSec - startSec) }
     var isRally: Bool { notRally != true }
     /// Tagged = a winner picked (or a replay — no winner to pick).
@@ -226,8 +233,10 @@ enum RacketRallyMarking {
     }
 
     /// Apply a tag (TtNoModelTag "Next"): winner, optional ending and last shot. "Not a rally" clears the tags.
+    /// `serve` / `wall` (TnServe / PdWall, prompt 252): `.some(nil)` clears, `nil` keeps what's there.
     static func tag(_ rallies: [RacketRally], id: UUID, winner: RacketRallyWinner?, ending: RacketRallyEnding?,
-                    lastShotBy: String?, notRally: Bool) -> [RacketRally] {
+                    lastShotBy: String?, notRally: Bool, serve: RacketServeOutcome?? = nil,
+                    wall: RacketWallBounce?? = nil) -> [RacketRally] {
         rallies.map { r in
             guard r.id == id else { return r }
             var q = r
@@ -235,6 +244,8 @@ enum RacketRallyMarking {
             q.winner = notRally ? nil : winner
             q.ending = notRally ? nil : ending
             q.lastShotBy = notRally ? nil : lastShotBy
+            if let serve { q.serveRaw = notRally ? nil : serve?.rawValue }
+            if let wall { q.wallRaw = notRally ? nil : wall?.rawValue }
             // Tagged by you now, whoever tagged it before (prompt 247).
             q.tagSourceRaw = nil
             // A model's guess you've checked is yours now (prompt 248).

@@ -11176,3 +11176,64 @@ screen, Summary's full board layout, and the "Not available yet" placeholders (u
   player for its frame when it reaches a window, gets a player, or the item becomes ready (a tick off and back, since a
   seek to the current time may draw nothing). It skips the re-ask if a scrub or Play moved the player. A Debug-only
   `-racketCameraDebug` readout on the player (item status, layer ready, time, target) is how this was found on the phone.
+
+## 2026-11-13 — Racket parity: the sport-specific boards (issue #438; prompt 252)
+
+The last parity batch: the boards earlier batches declared "the last batch" — PbScoring / PbSideOut, tennis No-ad, TnServe,
+PdWall, SqLet, PbTag's "4–2–1 · Mia serving next", the DoublesTag lines that name the server — and the open Low items.
+
+- **Pickleball traditional side-out scoring lives in the shared tally** (`RacketLiveRules.sideOut` / `doubles` /
+  `servesFirst`, additive optionals on the wire, so an older Watch reads rally scoring). The list of rally winners stays
+  the only state: only the serving side scores; doubles start on server 2 ("0–0–2", one server before the first
+  side-out); server 1 losing hands to server 2 (no point); server 2 losing is a side-out to the other side's server 1;
+  singles side out at once; to 11 / 15 / 21, win by 2 (only a serving side can reach it). The display is the call, serving
+  score first ("4–2–1"; the board's PbDim / PbWatch / PbTag / PbScoreOnly write it unspaced, PbSideOut spaced). Undo is
+  still "drop the last rally". The phone and the Watch apply a tap the same way.
+- **Who serves first in a side-out game**: game 1 is Warmup's "Who serves first?"; **when nobody said, you serve** (the call
+  needs a server — ScoreOnly has no warmup; PbWatch reads "Game 1 · you serve"). Later games alternate (the side that
+  received first serves first), as the USA Pickleball rule does. Question for the user: offer a way to swap the first
+  server mid-game.
+- **PbScoring is a step before the pickleball match form** (as PdDeuce for padel): Traditional, side-out (the board's
+  default) / Rally scoring, Games to 11 · 15 · 21, players, the doubles score call panel, Continue. PbMatch then shows the
+  header, Film, Watch and the buttons only; best of stays 3 (the boards offer no choice, as padel). Stored as the additive
+  `SessionExercise.racketSideOut` — `nil` is rally scoring, so every pickleball match before this keeps its scoring.
+- **PbSideOut is a panel on the game screen**, shown after a serving-side loss under side-out: the serving side's losses
+  since its last point ("Server 1 lost the rally · No point. Your partner serves next. · 4 – 2 – 2", then "Server 2 lost
+  the rally · Side-out. They serve next. · 2 – 4 – 1" — the board's two panels are this chain), the footnote, Undo, Next
+  game / Stop. The board's arrow back is "Next rally": with no live rally finding, the panel goes at the next tap, on
+  Undo, or after 6 s so the game screen isn't hidden through a whole rally. Not on ScoreOnly (its arrows don't go there).
+  The game screen's caption is the board's "Serving · server 1" (theirs: "Them serving · server 2").
+- **The Watch** (PbWatch): the call, "Game 1 · you serve", "We won / They won" (a receiving win isn't "+1"), "Winning while
+  receiving doesn't score". Tennis's note says who serves when it's known ("You’re serving · tap for the point winner",
+  TnWatch); the phone sends it (`RacketWatchState.note`), so after a tap it lags until the next snapshot. ScoreOnly keeps
+  the board's "Us +1 / Them +1".
+- **Tennis No-ad = the golden-point rule**, stored in the existing `racketGoldenPoint` (40–40 → the next point wins);
+  tiebreaks and the match tiebreak are unchanged. A "No-ad" chip joins "Match tiebreak" under Options (the Sets / Options
+  split from review5 stays), with a one-line explanation when on.
+- **Serve tracking follows the tally** (`RacketServe.server(…, rules:)`): a no-ad / golden game ends at deuce, a set's
+  tiebreak counts as one game for the next set's server, and a deciding super tiebreak serves one, then two each (the old
+  hand-rolled loop needed two clear points and counted a super tiebreak's points as games).
+- **Doubles name the server only when Snappet can know it.** Warmup adds "Who serves first for us? Optional · You · Mia ·
+  Skip" in doubles (not on the board, which names "Mia" without saying how; squash hides it). Names: tennis / padel
+  through the whole match (A1 · B1 · A2 · B2; a team may change its order at a new set but almost none do); table tennis,
+  badminton and pickleball in game 1 only (the next game's first server is the serving side's free choice). Badminton
+  follows courts (players swap only when their side wins a rally on serve; a side winning the serve back serves from the
+  court of its score) and says "right / left court"; pickleball says "server 1 / 2" (players swap sides when they score).
+  The other team's players are never named ("Them serving"). Squash doubles names the side only — its serving order isn't
+  modelled.
+- **The tag sheet's score line follows each sport's board**: TT / badminton / squash "So far 6–5 · Final 11–9" (as
+  before), tennis / padel "Games 4–3 · Point 40–30" (prompt 251 said those boards had no line — they do), pickleball
+  side-out "4–2–1 · Mia serving next" (after this rally once you pick its winner, else this rally's server and call).
+  Doubles keep the score on the left and the serve line on the right.
+- **TnServe / PdWall / SqLet** open from the tag sheet's sport link, next to "What counts as a rally?" (shown on every tag
+  layout, not only XxTag: a padel match is doubles by default, and DoublesTag would otherwise never reach PdWall). TnServe:
+  "Point N", the rally's video, "Game 3–2 · You’re serving", the serve chips (an ace / double fault picks the winner when the
+  server is known; a let clears it), Who won the point?, "Next point" saves the serve and the winner on the rally and moves
+  to the next rally. PdWall / SqLet: one question with choice cards; Next writes the answer and returns to the same rally
+  (the board's "Back or next" arrow); PdWall sets the ending chip (wall first → Hit wall first, out of the court → Out),
+  SqLet's answer is the ending chip (Let (replay) / Stroke / No let). Stored as additive `RacketRally.serveRaw` / `wallRaw`.
+- **Low items**: Player "Rallies only" is a chip as on TtPlayerOriginal; the recap's drill row reads "Longest 19" then
+  "3 blocks · 3 videos" (TtSessionRecap). OriginalMissing's "one Photos video" stays plural (a recording can span parts).
+- **UI tests**: `-uiTestWatchTaps` (Debug only) puts two tiny stand-ins for the Watch's score taps on the game screen — the
+  simulator can't send Watch taps and the game screen has no score buttons — so PbSideOut is tested; `-uiTestRacketTaggedGames`
+  seeds the match game by game with Snappet's rallies in game 1 so each sport's tag line and detail link are walked.

@@ -470,6 +470,11 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var racketGoldenPoint: Bool?
     /// Who served first (Warmup "Who serves first?", prompt 249): `RacketServe.Side.rawValue`; `nil` ⇒ skipped.
     var racketFirstServerRaw: String?
+    /// Pickleball "Traditional, side-out" (PbScoring, prompt 252); `nil` ⇒ rally scoring (every match before it).
+    var racketSideOut: Bool?
+    /// Doubles: who serves first for your side (Warmup "Who serves first for us?", prompt 252):
+    /// `RacketDoublesServe.Player.rawValue` ("you" / "partner"); `nil` ⇒ skipped.
+    var racketOurFirstServerRaw: String?
     /// Doubles opponents by name (device feedback round 2): the two players; `opponent` holds the team name ("Jordan &
     /// Lee"), so history, head-to-head and lists keep reading one field. `nil` ⇒ singles or not given.
     var racketOpponentPlayer1: String?

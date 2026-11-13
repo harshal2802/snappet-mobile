@@ -171,6 +171,15 @@ enum RacketStats {
     // MARK: - Drills
 
     /// A drill's best block, in words: "76%" (made/tried) · "rally 42" · total time.
+    /// TtSessionRecap's drill headline: "Longest 19" (longest rally), "18/24 · 75%" (made / tried), the time (time only).
+    static func recapDrillHeadline(_ ex: SessionExercise) -> String? {
+        guard let line = drillLine(ex) else { return nil }
+        if ex.drillMeasure == .longestRally, let best = ex.sets.filter({ $0.completedAt != nil }).compactMap(\.longestRally).max() {
+            return "Longest \(best)"
+        }
+        return line
+    }
+
     static func drillLine(_ ex: SessionExercise) -> String? {
         let done = ex.sets.filter { $0.completedAt != nil }
         guard !done.isEmpty else { return nil }

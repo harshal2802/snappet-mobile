@@ -156,17 +156,25 @@ struct RacketFormat: Equatable, Sendable {
     var pointsTo: Int
     /// Tennis / padel: the deciding set is a super tiebreak to 10.
     var superTiebreak: Bool
-    /// Padel "Golden point" at 40–40 (PdDeuce, prompt 249); `false` ⇒ Advantage.
+    /// The deciding point at 40–40: padel "Golden point" (PdDeuce, prompt 249), tennis "No-ad" (TnMatch, prompt 252) —
+    /// the same rule. `false` ⇒ Advantage.
     var goldenPoint: Bool = false
+    /// Pickleball "Traditional, side-out" (PbScoring, prompt 252): only the serving side scores. `false` ⇒ rally scoring.
+    var sideOut: Bool = false
 
     /// `bestOf: nil` is an open format; use `RacketFormat.defaults(for:)` for the sport's standard one.
-    init(sport: RacketSport, bestOf: Int?, pointsTo: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false) {
+    init(sport: RacketSport, bestOf: Int?, pointsTo: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false,
+         sideOut: Bool = false) {
         self.sport = sport
         self.bestOf = bestOf.flatMap { $0 > 0 ? $0 : nil }
         self.pointsTo = pointsTo ?? sport.defaultPointsTo
         self.superTiebreak = sport.usesSets && superTiebreak
         self.goldenPoint = sport.usesSets && goldenPoint
+        self.sideOut = sport == .pickleball && sideOut
     }
+
+    /// Tennis "No-ad": a deciding point at deuce (stored as `goldenPoint`).
+    var noAd: Bool { sport == .tennis && goldenPoint }
 
     /// The score that wins a game outright: badminton 30 in a game to 21, 21 in a game to 15 (prompt 249); none
     /// elsewhere.
@@ -461,7 +469,8 @@ extension SessionExercise {
         let sport = racketSport ?? .tableTennis
         let bestOf: Int? = racketBestOf.map { $0 > 0 ? $0 : nil } ?? sport.defaultBestOf
         return RacketFormat(sport: sport, bestOf: bestOf, pointsTo: racketPointsTo,
-                            superTiebreak: racketSuperTiebreak ?? false, goldenPoint: racketGoldenPoint ?? false)
+                            superTiebreak: racketSuperTiebreak ?? false, goldenPoint: racketGoldenPoint ?? false,
+                            sideOut: racketSideOut ?? false)
     }
 
     /// The logged, scored units in order (unconfirmed games count for neither side).

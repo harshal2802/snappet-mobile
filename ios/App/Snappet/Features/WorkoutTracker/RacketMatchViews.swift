@@ -26,8 +26,8 @@ struct RacketGameCover: View {
     var heartRate: Double? = nil
     /// Warmup's "How to record this match" changed it.
     let onRecordingMode: (RacketRecordingMode) -> Void
-    /// "Who serves first?" (nil ⇒ Skip).
-    let onFirstServer: (RacketServe.Side?) -> Void
+    /// "Who serves first?" (nil ⇒ Skip) and, in doubles, "Who serves first for us?" (prompt 252).
+    let onFirstServer: (RacketServe.Side?, RacketDoublesServe.Player?) -> Void
     /// Save a game: the log and its set index (a new game appends; an index below the count rewrites it).
     let onUnit: (SetLog, Int) -> Void
     /// A Photos part was saved, with the game it belongs to (nil between games).
@@ -53,6 +53,10 @@ struct RacketGameCover: View {
     @State private var show: RacketRecordingShow = .dim
     @State private var thermal: RacketThermalLevel = .ok
     @State private var firstServer: RacketServe.Side?
+    @State private var ourFirstServer: RacketDoublesServe.Player?
+    /// PbSideOut (prompt 252): the serving side just lost a rally under side-out scoring; the panel shows until the next
+    /// rally's tap, Undo, or this time.
+    @State private var sideOutUntil: Date?
     @State private var choice: RacketRecordingMode = .byUnit
     @State private var scoring = false
     @State private var storageCheck = false
@@ -88,6 +92,10 @@ struct RacketGameCover: View {
         .onAppear { recorder.screenAppeared(); setUp() }
         .onDisappear(perform: tearDown)
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
+        .onChange(of: firstServer) { _, f in
+            // Side-out: who serves the first rally is part of the tally; rebuild it while the game hasn't started.
+            if score.isEmpty { score = RacketLiveScore(rules: ex.racketLiveRules(unitIndex: flow.unitIndex, firstServer: .some(f))) }
+        }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -121,6 +129,7 @@ struct RacketGameCover: View {
         idleTimerWas = UIApplication.shared.isIdleTimerDisabled
         UIApplication.shared.isIdleTimerDisabled = true
         firstServer = ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:))
+        ourFirstServer = ex.isDoubles ? ex.racketOurFirstServer : nil
         choice = ex.racketRecording == .everything ? .everything : .byUnit
         show = .initialGame
         writesLog = ex.racketRecordingLog.map(\.isGameByGame) ?? true
@@ -128,7 +137,7 @@ struct RacketGameCover: View {
         flow = RacketGameFlow(filming: filming, unitIndex: ex.sets.count,
                               options: .init(sport: sport, pointsTo: ex.racketFormat.pointsTo),
                               startInWarmup: filming)
-        score = RacketLiveScore(rules: RacketLiveRules(format: ex.racketFormat, unitIndex: ex.sets.count))
+        score = RacketLiveScore(rules: ex.racketLiveRules(unitIndex: ex.sets.count, firstServer: .some(firstServer)))
         if filming {
             stage = .camera
             openCamera()
@@ -269,7 +278,7 @@ struct RacketGameCover: View {
             return
         }
         onRecordingMode(.byUnit)
-        onFirstServer(firstServer)
+        onFirstServer(firstServer, ourFirstServer)
         var m = RacketRecordingMachine(kind: .match, recording: .byUnit,
                                        stillPlayingMinutes: defaults.stillPlayingMinutes(for: .byUnit), now: Date())
         m.baseSetIndex = ex.sets.count
@@ -288,6 +297,9 @@ struct RacketGameCover: View {
         let first = score.isEmpty
         guard score.point(us ? .us : .them) else { return }
         if fromWatch { scoreFromWatch = true }
+        // PbSideOut: the serving side lost the rally (no point) — show who serves next until the next rally.
+        sideOutUntil = score.rules.isSideOut && !score.tally.serveChanges.isEmpty && flow.filming
+            ? Date().addingTimeInterval(RacketGameCopy.sideOutShowSec) : nil
         machineAct { m in
             m.noteActivity(now: Date())
             if first { m.mark(.firstPoint, now: Date()) }
@@ -301,6 +313,7 @@ struct RacketGameCover: View {
 
     private func undo() {
         guard flow.phase == .playing, score.undo() else { return }
+        sideOutUntil = nil
         machineAct { $0.dropLastPoint(); return [] }
     }
 
@@ -321,8 +334,9 @@ struct RacketGameCover: View {
     }
 
     private func resetScoreForNext() {
-        score = RacketLiveScore(rules: RacketLiveRules(format: ex.racketFormat, unitIndex: flow.unitIndex))
+        score = RacketLiveScore(rules: ex.racketLiveRules(unitIndex: flow.unitIndex, firstServer: .some(firstServer)))
         scoreFromWatch = false
+        sideOutUntil = nil
     }
 
     /// InterruptedStop "Keep scoring without video" → ScoreOnly with the same game and tally.
@@ -351,6 +365,8 @@ struct RacketGameCover: View {
     private var watchContext: RacketWatchContext {
         var c = RacketWatchContext(ex)
         c.unitNumber = flow.unitIndex + 1
+        c.firstServer = firstServer
+        c.ourFirstServer = ourFirstServer
         return c
     }
 
@@ -437,6 +453,18 @@ struct RacketGameCover: View {
                                     selection: Binding(get: { firstServer?.rawValue ?? "skip" },
                                                        set: { firstServer = RacketServe.Side(rawValue: $0) }),
                                     idPrefix: "racket.warmup.serve")
+                        // Doubles (prompt 252): the boards name the server ("Mia serving"); this is how Snappet knows.
+                        if ex.isDoubles && sport != .squash {
+                            Text("Who serves first for us? Optional").font(.system(size: 15, weight: .semibold))
+                                .padding(.top, 4)
+                            RacketChips(options: ["you", "partner", "skip"],
+                                        label: { $0 == "you" ? "You" : $0 == "partner" ? RacketServeCopy.name(.partner, partner: ex.partner) : "Skip" },
+                                        selection: Binding(get: { ourFirstServer?.rawValue ?? "skip" },
+                                                           set: { ourFirstServer = RacketDoublesServe.Player(rawValue: $0) }),
+                                        idPrefix: "racket.warmup.ourServe")
+                            Text("Names your server on the score, the Watch and the tags.")
+                                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        }
                     }
                     RacketBox {
                         Text("During play, show").font(.system(size: 15, weight: .semibold))
@@ -466,6 +494,19 @@ struct RacketGameCover: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            #if DEBUG
+            // UI tests only (`-uiTestWatchTaps`): stand-ins for the Watch's score taps, which the simulator can't send —
+            // the game screen has no score buttons of its own (DimOff), so PbSideOut is reached this way.
+            if ProcessInfo.processInfo.arguments.contains("-uiTestWatchTaps"), flow.filming {
+                HStack {
+                    Button("W+us") { point(us: true, fromWatch: true) }.accessibilityIdentifier("racket.test.watchUs")
+                    Button("W+them") { point(us: false, fromWatch: true) }.accessibilityIdentifier("racket.test.watchThem")
+                }
+                .font(.system(size: 9)).opacity(0.25)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 44).padding(.trailing, 16)
+            }
+            #endif
             if let m = machine, flow.filming, !m.isEnded, let reason = m.interruption {
                 RacketOverlay {
                     RacketInterruptionPanel(
@@ -554,6 +595,8 @@ struct RacketGameCover: View {
                 warmContent
             } else if let range = liveTag {
                 liveTagContent(range)
+            } else if showsSideOut {
+                sideOutContent
             } else {
                 playingContent
                 if show != .dim { RacketTrackingOffRow() }
@@ -563,14 +606,55 @@ struct RacketGameCover: View {
         }
     }
 
-    private var server: RacketServe.Side? {
-        RacketServe.server(sport: sport, firstServer: firstServer, unitIndex: flow.unitIndex,
-                           previous: Array(ex.racketUnits.prefix(flow.unitIndex)), points: score.points)
+    private var serveInfo: RacketDoublesServe.Info? {
+        RacketDoublesServe.info(sport: sport, rules: score.rules, firstServer: firstServer, ourFirst: ourFirstServer,
+                                unitIndex: flow.unitIndex, previous: Array(ex.racketUnits.prefix(flow.unitIndex)),
+                                points: score.points, doubles: ex.isDoubles)
     }
 
     private var caption: String {
-        RacketGameCopy.scoreCaption(sport: sport, unitIndex: flow.unitIndex, score: score, server: server, them: sides.them,
-                                    fromWatch: scoreFromWatch)
+        if score.rules.isSideOut {
+            return RacketServeCopy.sideOutCaption(score.tally, unitTitle: unitTitle, them: sides.them, doubles: ex.isDoubles)
+        }
+        let info = serveInfo
+        return RacketGameCopy.scoreCaption(sport: sport, unitIndex: flow.unitIndex, score: score, server: info?.side,
+                                           them: sides.them, fromWatch: scoreFromWatch,
+                                           player: info?.player.map { RacketServeCopy.name($0, partner: ex.partner) })
+    }
+
+    private var showsSideOut: Bool {
+        guard let until = sideOutUntil, score.rules.isSideOut, !score.tally.serveChanges.isEmpty else { return false }
+        return now < until
+    }
+
+    /// PbSideOut: "Server 1 lost the rally · No point. Your partner serves next. · 4 – 2 – 2", then (server 2 lost)
+    /// "Side-out. They serve next. · 2 – 4 – 1"; the footnote and Undo; Next game / Stop.
+    private var sideOutContent: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+            ForEach(Array(score.tally.serveChanges.enumerated()), id: \.offset) { k, c in
+                let copy = RacketServeCopy.sideOutPanel(c, sides: sides, doubles: ex.isDoubles)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(copy.title).font(.system(size: 17, weight: .bold))
+                    Text(copy.line).font(.system(size: 15)).foregroundStyle(SnappetColor.textSecondary)
+                    Text(c.callAfter).font(.system(size: 54, weight: .light)).monospacedDigit()
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("racket.sideOut.call.\(k)")
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.hairline))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("racket.sideOut.panel.\(k)")
+            }
+            Text(RacketServeCopy.sideOutFootnote).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("racket.sideOut.footnote")
+            RacketWideButton("Undo", id: "racket.sideOut.undo", primary: false) { undo() }
+            Spacer(minLength: 0)
+            nextAndStop
+        }
     }
 
     private var inTiebreak: Bool { score.rules.kind == .sets && score.tally.inTiebreak && !score.isFinished }

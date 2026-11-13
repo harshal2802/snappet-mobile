@@ -717,6 +717,13 @@ Pure: `RacketModelHooks.swift` (`RacketModelHooksTests`); screens: `RacketModelV
 `Services/RacketScanCenter.swift`; UI: `RacketModelUITests` (synthetic signal). **Device-pending:** scan speed, thermal
 state, accuracy on real footage, background behaviour. Next (#438): live tracking (step 6) after a thermal test.
 
+🟡 **Racket wireframe parity (2026-11-11 → 13, prompts 249–252 — issue #438).** iOS + watchOS. Every racket board is
+built, or keeps its element in place with "Not available yet" (court check, live tracking, shot count / types, endings,
+ball path). The last batch (prompt 252) adds pickleball traditional side-out scoring (PbScoring, the "4–2–1" call,
+PbSideOut, the Watch's "We won / They won"), tennis No-ad, TnServe / PdWall / SqLet from the tag sheet, each sport's tag
+score line, and doubles serve lines that name your server. Pure: `RacketSportRules.swift` (`RacketSportRulesTests`),
+`Shared/RacketLiveScore.swift`. **Device-pending:** the Watch's side-out taps on a real wrist.
+
 ## License
 
 TBD.

@@ -10,6 +10,38 @@ enum RacketVideoSeed {
     static let argument = "-uiTestSeedRacketVideos"
     /// With the seed: the drill's first minute plays the bundled clip (prompt 251).
     static let bundledVideoArgument = "-uiTestRacketBundledVideo"
+    /// With the seed (prompt 252): the match was filmed game by game (already split per game) and game 1 has Snappet's
+    /// rallies, the first eight tagged by you, so the tag sheet shows each sport's score line ("Games 2–0 · Point 0–0",
+    /// "4–2–1 · Mia serving next") and its detail link. Pickleball is scored side-out; doubles say who serves first for
+    /// you (your partner).
+    static let taggedGamesArgument = "-uiTestRacketTaggedGames"
+
+    /// Game 1's tagged winners (u = you / us) and one untagged rally after them.
+    static let taggedWinners = "uuuuttuu"
+
+    /// The match as game by game: one game mark per game, the split applied, Snappet's rallies in game 1.
+    static func taggedGameLog(startedAt: Date) -> RacketRecordingLog {
+        var log = RacketRecordingLog(startedAt: startedAt)
+        log.baseSetIndex = 0
+        log.modeRaw = RacketRecordingMode.byUnit.rawValue
+        log.qualityRaw = RacketRecordingQuality.hd1080.rawValue
+        log.runs = [.init(startSec: 0, endSec: 1480, endReasonRaw: nil), .init(startSec: 1575, endSec: 2720, endReasonRaw: nil)]
+        log.marks = [.init(kindRaw: RacketRecordingLog.MarkKind.game.rawValue, index: 0, startSec: 0, endSec: 1480),
+                     .init(kindRaw: RacketRecordingLog.MarkKind.game.rawValue, index: 1, startSec: 1575, endSec: 2720)]
+        var rallies: [RacketRally] = []
+        for (k, c) in (taggedWinners + "-").enumerated() {
+            let t = 400 + Double(k) * 30
+            var r = RacketRally(startSec: t, endSec: t + 8, winner: c == "u" ? .us : c == "t" ? .them : nil)
+            r.sourceRaw = RacketModelSource.raw(id: "placeholder", version: 1)
+            r.confidence = 0.9
+            r.confirmed = c == "-" ? nil : true
+            rallies.append(r)
+        }
+        log.rallies = rallies
+        log.endedAt = startedAt.addingTimeInterval(2720)
+        log.split = RacketGameByGameSplit.split(log, now: startedAt.addingTimeInterval(2720))
+        return log
+    }
 
     /// The match recording's marks, as the boards' numbers (TtSplitReview).
     static func matchLog(startedAt: Date) -> RacketRecordingLog {
@@ -57,6 +89,14 @@ enum RacketVideoSeed {
             match.sets.append(g)
         }
         match.racketRecordingLog = matchLog(startedAt: start)
+        if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
+            match.racketRecordingRaw = nil
+            match.racketRecordingLog = taggedGameLog(startedAt: start)
+            // Tennis / padel: they served the first game, so rally 9 (game 2) is yours.
+            match.racketFirstServerRaw = sport.usesSets ? "them" : "us"
+            if sport == .pickleball { match.racketSideOut = true }
+            if doubles { match.racketOurFirstServerRaw = RacketDoublesServe.Player.partner.rawValue }
+        }
 
         let drillStart = start.addingTimeInterval(4600)
         var drill = SessionExercise(exerciseId: RacketStats.drillExerciseId(sport), targetSets: 3, targetReps: "",

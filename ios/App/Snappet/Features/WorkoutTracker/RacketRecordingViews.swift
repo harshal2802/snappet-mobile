@@ -492,7 +492,7 @@ struct RacketRecordingCover: View {
     // MARK: The Watch (prompt 245)
 
     private func watchRules(unitIndex: Int) -> RacketLiveRules {
-        RacketLiveRules(format: ex.racketFormat, unitIndex: unitIndex)
+        ex.racketLiveRules(unitIndex: unitIndex)
     }
 
     /// What the Watch shows for this screen, from the live entity (its unit number and match line).
