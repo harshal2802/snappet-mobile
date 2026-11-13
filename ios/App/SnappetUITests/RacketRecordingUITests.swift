@@ -156,6 +156,16 @@ final class RacketRecordingUITests: XCTestCase {
         XCTAssertTrue(any("racket.rec.preview").waitForExistence(timeout: 3))
         mark.tap()
         app.buttons["racket.rec.newGame"].tap()
+        // LiveTag (prompt 251): the last rally, tagged by hand; it counts in Stats' "From your tags".
+        app.buttons["racket.rec.tagLast"].tap()
+        XCTAssertTrue(any("racket.liveTag.title").waitForExistence(timeout: 3))
+        app.buttons["racket.liveTag.winner.them"].tap()
+        app.buttons["racket.liveTag.end.net"].tap()
+        app.buttons["racket.liveTag.done"].tap()
+        app.buttons["racket.rec.show.stats"].tap()
+        XCTAssertTrue(any("racket.rec.stats.source").waitForExistence(timeout: 3))
+        XCTAssertEqual(any("racket.rec.stats.source").label, "From your tags, 1 of 1")
+        app.buttons["racket.rec.show.camera"].tap()
 
         // Stop and split → the split prompt straight away (V2.6: no extra confirm, as on the board).
         app.buttons["racket.rec.stop"].tap()

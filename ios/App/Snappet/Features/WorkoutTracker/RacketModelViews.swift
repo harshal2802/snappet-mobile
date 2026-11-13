@@ -147,8 +147,13 @@ struct RacketCapabilitiesScreen: View {
                     mNote("\(m.label): \(m.note.lowercased()). Video only, on this phone.")
                         .accessibilityIdentifier("racket.caps.model")
                 }
-                if let onPreviewNoModel {
-                    mSecondary("Preview a sport with no model", id: "racket.caps.preview", action: onPreviewNoModel)
+                // Always on the board; from the match form there's no session to preview yet, so it says where it works.
+                mSecondary("Preview a sport with no model", id: "racket.caps.preview") { onPreviewNoModel?() }
+                    .disabled(onPreviewNoModel == nil)
+                    .opacity(onPreviewNoModel == nil ? 0.5 : 1)
+                if onPreviewNoModel == nil {
+                    mNote("Open What works from Your videos to preview it with this session’s recordings.")
+                        .accessibilityIdentifier("racket.caps.previewWhere")
                 }
             }
             .padding(20)
@@ -202,6 +207,22 @@ struct RacketAnalyzingScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Finding your rallies").font(.system(size: 22, weight: .semibold))
+                // The board's progress ring for the part being scanned (Batch M.1).
+                let fraction = running.map { center.live[$0.rec.id] ?? $0.rec.fraction }
+                    ?? (rs.isEmpty ? 0 : rs.allSatisfy({ $0.rec.status == .done }) ? 1 : 0)
+                ZStack {
+                    Circle().stroke(SnappetColor.hairline, lineWidth: 10)
+                    Circle().trim(from: 0, to: max(0.001, min(1, fraction)))
+                        .stroke(SnappetColor.brand, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.3), value: fraction)
+                    Text("\(Int((fraction * 100).rounded()))%").font(.system(size: 30, weight: .light)).monospacedDigit()
+                }
+                .frame(width: 140, height: 140)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement()
+                .accessibilityLabel("\(Int((fraction * 100).rounded())) percent complete")
+                .accessibilityIdentifier("racket.analyzing.ring")
                 Text(headline(rs, running: running)).font(SnappetType.body.monospacedDigit())
                     .foregroundStyle(SnappetColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -310,6 +331,8 @@ struct RacketAnalysisSummaryScreen: View {
     let onTimeline: () -> Void
     /// Tag one rally at a time (`unsureOnly` = only the unsure ones); `true` when finished.
     let onTag: (_ unsureOnly: Bool) -> Void
+    /// "Tag every shot" (Summary → Shots, prompt 251): the rally to start on.
+    var onShots: (UUID) -> Void = { _ in }
     let onEditScore: (Int) -> Void
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
@@ -321,51 +344,64 @@ struct RacketAnalysisSummaryScreen: View {
         let tags = RacketTagSummary.make(rallies, sport: ex?.racketSport ?? .tableTennis)
         let scan = log?.appliedScan(partStart: ref.startSec, partEnd: ref.endSec)
         let state = ref.setIndex.flatMap { i in ex.flatMap { i < $0.sets.count ? $0.sets[i].racketScoreState : nil } }
+        let firstShot = RacketShotTagging.firstToTag(rallies)
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let st = state, let i = ref.setIndex {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(headline(st)).font(.system(size: 28, weight: .light)).monospacedDigit()
+                    HStack(alignment: .center) {
+                        Text(headline(st)).font(.system(size: 28, weight: .bold)).monospacedDigit()
                             .accessibilityIdentifier("racket.analysis.score")
                         Spacer()
-                        mChip("Edit score", id: "racket.analysis.editScore") { onEditScore(i) }
+                        Button { onEditScore(i) } label: {
+                            Text("Edit score").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                                .padding(.horizontal, 14).frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain).pagerOutline()
+                        .accessibilityIdentifier("racket.analysis.editScore")
                     }
                     if case .fromWatch = st {
-                        Text("Score unconfirmed · from your Watch").font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                        Text("Score unconfirmed · from your Watch").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(SnappetColor.perfModerate)
                     } else if case .unconfirmed = st {
-                        Text(RacketScoreState.unconfirmedLabel).font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                        Text(RacketScoreState.unconfirmedLabel).font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(SnappetColor.perfModerate)
                     }
                 }
-                if let scan {
-                    Text("\(scan.modelLabel) · \((scan.finishedAt ?? scan.startedAt).formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                        .snappetLabel()
-                        .accessibilityIdentifier("racket.analysis.model")
-                }
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
                     stat("\(g.found)", "rallies found", id: "racket.analysis.found")
-                    stat(g.longestSec.map(RacketTagSummary.seconds) ?? "—", "longest rally", id: "racket.analysis.longest")
+                    // "about 14 · longest, shots": no model counts shots yet (Capabilities: Not available yet).
+                    stat("–", "longest, shots: not available yet", id: "racket.analysis.longestShots")
                     stat(g.averageSec.map(RacketTagSummary.seconds) ?? "—", "average rally", id: "racket.analysis.average")
                 }
-                mNote(g.guesses > 0 ? "Estimated from video until you confirm. Your tags replace Snappet’s guesses everywhere."
+                mNote(g.guesses > 0 ? "Estimated from video until you confirm"
                                     : "Every rally here is checked or tagged by you.")
-                Text("How much time do you have?").font(.system(size: 17, weight: .semibold))
+                if let scan {
+                    Text("\(scan.modelLabel) · longest \(g.longestSec.map(RacketTagSummary.seconds) ?? "—") · \((scan.finishedAt ?? scan.startedAt).formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
+                        .accessibilityIdentifier("racket.analysis.model")
+                }
+                Text("How much time do you have?").font(.system(size: 17, weight: .bold)).padding(.top, 4)
                 option("Done for now", "0 min", "Keep the estimates. You can tag later.", id: "racket.analysis.doneForNow",
                        action: onDoneForNow)
-                if g.unsureLeft > 0 {
-                    option("Check \(g.unsureLeft) unsure \(g.unsureLeft == 1 ? "rally" : "rallies")",
-                           minutes(Double(g.unsureLeft) * 15), "Only the ones Snappet isn’t sure about.",
-                           id: "racket.analysis.checkUnsure") { onTag(true) }
+                option("Check \(g.unsureLeft) unsure \(g.unsureLeft == 1 ? "rally" : "rallies")",
+                       g.unsureLeft > 0 ? minutes(Double(g.unsureLeft) * 15) : "0 min",
+                       g.unsureLeft > 0 ? "Only the ones Snappet isn’t sure about." : "Nothing unsure left.",
+                       id: "racket.analysis.checkUnsure", highlighted: g.unsureLeft > 0, enabled: g.unsureLeft > 0) { onTag(true) }
+                option("Tag winners and endings", tags.untagged > 0 ? minutes(Double(tags.untagged) * 12) : "0 min",
+                       tags.untagged > 0 ? "One rally at a time." : "Every rally here is tagged.",
+                       id: "racket.analysis.tagAll", enabled: tags.untagged > 0) { onTag(false) }
+                option("Tag every shot", "10 min or more", "Shot types, for the deepest stats. By hand for now.",
+                       id: "racket.analysis.tagShots", enabled: firstShot != nil) {
+                    if let r = firstShot { onShots(r.id) }
                 }
-                if tags.untagged > 0 {
-                    option("Tag winners and endings", minutes(Double(tags.untagged) * 12), "One rally at a time.",
-                           id: "racket.analysis.tagAll") { onTag(false) }
-                }
-                mSecondary("Open timeline", id: "racket.analysis.timeline", action: onTimeline)
-                mNote("Shot counts and shot types aren’t in the placeholder model yet, so they’re tagged by hand or skipped.")
+                Button("Open timeline", action: onTimeline)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("racket.analysis.timeline")
             }
-            .padding(20)
+            .padding(16)
         }
-        .navigationTitle("\(ref.shortTitle) summary")
+        .navigationTitle(ref.shortTitle)
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -384,10 +420,10 @@ struct RacketAnalysisSummaryScreen: View {
             Text(k).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12).pagerGlass(cornerRadius: 14)
     }
 
-    private func option(_ title: String, _ time: String, _ detail: String, id: String, action: @escaping () -> Void) -> some View {
+    private func option(_ title: String, _ time: String, _ detail: String, id: String, highlighted: Bool = false,
+                        enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -399,12 +435,17 @@ struct RacketAnalysisSummaryScreen: View {
                 Spacer(minLength: 6)
                 Text(time).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary).fixedSize()
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .pagerGlass(cornerRadius: 14)
+            .background(highlighted ? SnappetColor.brand.opacity(0.14) : Color(white: 0.08),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(highlighted ? SnappetColor.brand : SnappetColor.hairline, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
         .accessibilityIdentifier(id)
     }
 }
@@ -589,12 +630,13 @@ struct RacketAnalysisSettingsScreen: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Live tracking").font(.system(size: 16, weight: .semibold))
-                            Text("Off by default. May warm the phone more. Comes after a heat test on a phone; until then play uses the tracking-off screens.")
+                            Text("Off by default. May warm the phone more. Not available yet: play uses the tracking-off screens.")
                                 .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 6)
-                        Text("Off").font(SnappetType.detail.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
+                        // The board's switch, off and disabled: live tracking isn't built (Capabilities).
+                        Toggle("Live tracking", isOn: .constant(false)).labelsHidden().disabled(true)
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("racket.analysisSettings.live")

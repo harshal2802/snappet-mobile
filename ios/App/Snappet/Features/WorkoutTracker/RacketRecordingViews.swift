@@ -295,7 +295,7 @@ struct RacketTimerRing: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(color)
                     .accessibilityIdentifier("racket.rec.phase")
-                Text(RacketClock.mmss(display.seconds))
+                Text(RacketClock.ring(display))
                     .font(.system(size: 56, weight: .light)).monospacedDigit()
                     .foregroundStyle(SnappetColor.ink)
                     .contentTransition(.numericText())
@@ -366,6 +366,8 @@ struct RacketRecordingCover: View {
     @State private var liveScore: RacketLiveScore?
     /// Units the Watch logged during this recording (the next one's rules — a super tiebreak — follow from it).
     @State private var watchUnitsLogged = 0
+    /// LiveTag (prompt 251): the last rally's stretch while it's being tagged.
+    @State private var liveTag: ClosedRange<Double>?
 
     private var unit: RacketUnit { ex.racketFormat.sport.unit }
     private var title: String { ex.isRacketMatch ? ex.racketMatchTitle : (ex.displayName ?? "Drill") }
@@ -385,12 +387,12 @@ struct RacketRecordingCover: View {
                 topBar
                 if let m = machine {
                     if thermal != .ok, !m.isEnded { warmBanner }
-                    if thermal == .ok, RacketRecordingShow.showsPreview(show, phase: m.phase) {
+                    if thermal == .ok, liveTag == nil, RacketRecordingShow.showsPreview(show, phase: m.phase) {
                         cameraView.layoutPriority(1)
                     }
                     content(m)
-                    if RacketRecordingShow.showsSwitcher(phase: m.phase), thermal == .ok { switcher }
-                    bottomAction(m)
+                    if RacketRecordingShow.showsSwitcher(phase: m.phase), thermal == .ok, liveTag == nil { switcher }
+                    if liveTag == nil { bottomAction(m) }
                 } else {
                     Spacer()
                 }
@@ -667,7 +669,8 @@ struct RacketRecordingCover: View {
         let compact = RacketRecordingShow.compact(show, phase: m.phase)
         switch m.phase {
         case .recordingMatch:
-            if show == .stats && thermal == .ok { matchStatsPanel(m) } else { matchPanel(m, compact: compact && thermal == .ok) }
+            if let range = liveTag, m.interruption == nil { liveTagContent(m, range) }
+            else if show == .stats && thermal == .ok { matchStatsPanel(m) } else { matchPanel(m, compact: compact && thermal == .ok) }
         case .ended(let route): endPanel(m, route)
         // Drills have their own cover (`RacketDrillCover`, prompt 250); this screen records a whole match.
         case .ready, .countdown, .block, .blockPaused, .rest, .restPaused, .restDone: EmptyView()
@@ -717,6 +720,15 @@ struct RacketRecordingCover: View {
                     .accessibilityIdentifier("racket.rec.space")
                     .accessibilityHint(meter.isMeasured ? "Measured from what's been recorded" : "Estimated from the camera settings")
             }
+            if m.interruption == nil {
+                // LiveTag (prompt 251): tag the rally that just ended, by hand.
+                secondary("Tag last rally", id: "racket.rec.tagLast") {
+                    guard let log = m.log else { return }
+                    let t = log.offset(Date())
+                    liveTag = RacketLiveTag.range(now: t, since: RacketLiveTag.boundary(log: log, before: t))
+                    Haptics.tap()
+                }
+            }
             HStack(spacing: 8) {
                 secondary("Mark this moment", id: "racket.rec.mark") { act { $0.mark(.moment, now: Date()); return [] }; Haptics.tap() }
                 secondary("New \(unit.noun) starts", id: "racket.rec.newGame") {
@@ -729,6 +741,27 @@ struct RacketRecordingCover: View {
                 footnote(RacketStillPlaying.recordAllFooter(minutes: defaults.stillPlayingEverythingMin))
                     .multilineTextAlignment(.center)
                 Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// LiveTag board: the camera on top (this screen's one preview slot), then the tag.
+    private func liveTagContent(_ m: RacketRecordingMachine, _ range: ClosedRange<Double>) -> some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                if thermal == .ok {
+                    cameraView.frame(height: 180)
+                }
+                RacketLiveTagPanel(sport: ex.racketFormat.sport,
+                                   sides: RacketWatchCopy.sides(opponent: ex.opponent, doubles: ex.isDoubles),
+                                   number: RacketLiveTag.number(of: range, in: m.log?.allRallies ?? []),
+                                   lengthSec: range.upperBound - range.lowerBound,
+                                   onDone: { w, e, notRally in
+                                       act { $0.tagLastRally(range: range, winner: w, ending: e, notRally: notRally, now: Date()); return [] }
+                                       liveTag = nil
+                                       Haptics.success()
+                                   },
+                                   onCancel: { liveTag = nil })
             }
         }
     }

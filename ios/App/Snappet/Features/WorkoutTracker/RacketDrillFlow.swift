@@ -539,6 +539,9 @@ enum RacketDrillTrend {
 // MARK: - Court zones (Customize "From / To")
 
 enum RacketCourtZoneRule {
+    /// DrillCustomize's diagram: From in the middle row left of the net, To in the top row across it.
+    static let boardDefault: (from: Int?, to: Int?) = (8, 4)
+
     /// A tap on zone `z`: the first sets From, the next sets To, a third starts again; tapping a chosen zone clears it.
     static func tap(_ z: Int, from: Int?, to: Int?) -> (from: Int?, to: Int?) {
         if z == from { return (to, nil) }

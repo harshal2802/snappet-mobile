@@ -11097,3 +11097,82 @@ Wireframe parity batches D1 + D2, plus the deferrals the user now wants built on
   are added on top of that composition.
 - **RecordAll's header never truncates**: the status and "Match, everything" keep their size; "Saves every 10 min" /
   "Saved 2 min ago" wraps on the right.
+
+## 2026-11-12 — Racket parity: tagging, videos and player (issue #438; prompt 251)
+
+Wireframe parity batches V1 + V2 + M, plus the deferrals the user now wants built on these screens: shot-by-shot tagging
+by hand (Shots / DoublesShots), SplitPhotos, game-by-game clips in Your videos / Keep rallies, LiveTag from the recording
+screen, Summary's full board layout, and the "Not available yet" placeholders (user decision 2026-11-11: show the truth).
+
+- **Every tag screen shows the rally's own video** (device feedback: tagged blind twice). `RacketRallyVideo` owns a
+  `RacketPlayback` over the part and loops the rally padded 1 s each side until Pause; moving to the next rally replays
+  from its start. Fix rally has its own player: the frame follows the handle being dragged (one seek in flight, as the split
+  edit), a drag on the strip scrubs, the nudges seek. The timeline's own player pauses when a sheet opens. With no saved
+  video the stand-in shows, as everywhere.
+- **Tag sheet layouts follow the boards by state**: a part with Snappet's guesses is the XxTag board ("Unsure 2 of 4" /
+  "Rally 12 of 21", So far · Final), a part you marked by hand the XxNoModelTag board ("Your rally 3 of 5", "Marked …",
+  "No suggestions", "How did it end? Optional"), doubles the DoublesTag board. "So far" counts your tagged winners before the
+  rally; it shows for table tennis, badminton and squash only (the tennis / padel / pickleball boards have none: points
+  aren't rallies there). "Final" is the game's score. "Who won the point?" is table tennis's model / doubles wording, "the
+  rally" everywhere else (boards). The doubles serve line uses `RacketServe` from Warmup's "Who serves first?" and your
+  tags; the side is known, not the player, so it reads "Us serving" (the board names "Mia"); unknown first server says
+  "Serving: choose who serves first at warmup" (a whole, unsplit recording: "Serving: not known until this is a
+  game"). "What counts as a rally?" is on every tag sheet (the fixlist adds it to
+  NoModelTag). The tennis / padel / squash sub-links (Serve details, Did it bounce first?, Let, stroke or no let) are the
+  last batch's.
+- **Endings preselect: Not available yet.** QuickTag preselects Snappet's ending; no model reads endings, so the model-path
+  sheet says "Ending suggestions: not available yet" under "How did it end?" and nothing is picked.
+- **Rules** are the boards' rows per sport, verbatim (`RacketRallyRules`).
+- **Fix "What went wrong? Optional"** stores `RacketRally.fixReasonsRaw` (additive) for later model feedback; table tennis
+  says "Wrong table", badminton "Shuttle pickup". Title "Fix rally N" (number among the part's rallies).
+- **"+ Add a missed rally"** = FixRally in add mode ("Add a rally"): a 6 s rally from the playhead, shortened to fit before
+  the next rally; refused (with a line) when the playhead is inside a rally. Cancel adds nothing.
+- **Shots by hand** (`RacketRally.shots`, additive): side (tap to swap), FH / BH (singles) or the player (doubles, optional,
+  "Player?" dashed), the shot name from the sport's boards (+ Other), "+ Add a shot" alternates sides and starts with a
+  serve. "7 shots found · Dashed: Snappet's guess" becomes "N shots · Shot finding: not available yet". Opened from Summary
+  "Tag every shot" (first rally without shots; Save → the part's timeline, as the board's arrow), the drill Review "Tag shot
+  types" (Your videos opens on Shots; with no rally marked it points to the timeline), and a "Shots" button per timeline
+  row (an addition: the boards have no way to reach the other rallies' shots). Timeline rows and the Analyzed overlay show
+  "N shots" only from your shot tags; the shot-count placeholder says so.
+- **LiveTag is by hand.** There's no live rally detection, so "Tag last rally" (game by game Dim and Camera, record
+  everything) tags the stretch since the last score tap, tagged rally or game start, at least 2 s and at most 20 s. The
+  panel replaces the screen's content with the camera on top (the cover's one preview slot) and the board's who won / how it
+  ended / Not a rally | Done; "about 5 shots" reads "Shot count not available yet · last N s"; it closes on Done or Cancel
+  (the board's "closes by itself when the next rally starts" needs detection). It writes the rally onto the recording log
+  (`RacketRecordingMachine.tagLastRally`), so Stats' "From your tags" counts it. Scores are untouched by tags, as before.
+- **Summary** follows the board: "Won 11–9" + Edit score, the unconfirmed line, three stats (rallies found · "–" "longest,
+  shots: not available yet" · average rally), the four time options always shown (Check unsure / Tag winners disabled when
+  there's nothing to do; Tag every shot by hand), "Open timeline". The model / scan time line stays under the stats (added
+  in 248).
+- **EditScore** is its own sheet from Your videos, Summary and the split's "Enter the score": Which game chips ("Game 1 ·
+  confirmed / unconfirmed / no score"), opening on the game tapped, "From your Watch · Unconfirmed", Save score, the
+  footnote. The match page keeps the generic score sheet.
+- **SplitPhotos**: Your videos "Add from Photos" (the system picker, no library-wide access needed for the pick) → "Add a
+  video": the video, "Recorded with the Camera app · date · time · length", "This lines up with <session> · <match / drill>".
+  "Find games and drills" places the games / blocks you logged (their end time and length) on the video as New game / first
+  point / break marks (a drill: block marks) and opens the split review (a drill: Drill videos); "Add as one video" keeps it
+  whole. A video goes on a match / drill with no recording yet (one recording per entry); "Pick a different session" picks
+  which match or drill of this session (a video from another day is added from that session's Your videos — the cover is per
+  session).
+- **Game-by-game clips** filmed with prompt 203's per-game camera (SessionMedia rows on the match's sets, before prompt 249
+  wrote a log) are adopted as a game-by-game log when Your videos opens, so they list per game and count for Keep rallies.
+- **Analyzing** gets the board's ring (the running part's percent, 100 % when all are done). **AnalysisSettings**' live
+  tracking is the board's switch, off and disabled, "Not available yet". **Player Analyzed**: Ball path / Shot names /
+  Bounces are disabled switches "Not available yet". **Capabilities** always shows "Preview a sport with no model"; from the
+  match form (no session) it's disabled with where it works.
+- **"Sent to ChatGPT · Sent Oct 28. Bring its reply back when it's ready."** shows on a Your videos row while a send to that
+  app has no reply brought back since (V2.3).
+- **SplitPrompt** gets the board's video at the top (the review's player, shared, so nothing reloads).
+- **Rings**: Block and Paused read zero-padded ("01:48") as their boards; rest / break / interval / countdown keep "0:45".
+  **Drill details** opens with the board's From and To cells on the court until you pick your own; the From / To caption
+  under the diagram (not on the board) is gone.
+- **UI tests** lay the bundled 3 s test clip over the drill's first minute (`-uiTestRacketBundledVideo`) so the simulator
+  shows real frames on the tag sheet, Fix and Shots; `-uiTestPickPhotosVideo` replaces the system Photos picker with that
+  clip and seeds a match with no recording.
+- **Paused players open on a frame** (device, this batch). A recording's log starts about 0.7 s before the camera's
+  first frame, so a player over the whole recording (split prompt, split review), or over a part starting at 0, opened
+  on an empty stretch of the composition and stayed black until a seek. `RacketPlayback.load` now moves a paused start
+  that falls in a gap to the first moment with video (`RacketScrub.firstFrame`). The video layer also re-asks a paused
+  player for its frame when it reaches a window, gets a player, or the item becomes ready (a tick off and back, since a
+  seek to the current time may draw nothing). It skips the re-ask if a scrub or Play moved the player. A Debug-only
+  `-racketCameraDebug` readout on the player (item status, layer ready, time, target) is how this was found on the phone.
