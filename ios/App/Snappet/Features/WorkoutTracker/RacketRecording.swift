@@ -949,6 +949,15 @@ struct RacketRecordingMachine: Equatable, Sendable {
         appendMark(.point, index: us ? 0 : 1, now: now)
     }
 
+    /// LiveTag (prompt 251): the last rally, tagged by hand on the recording screen, joins the recording's rallies.
+    mutating func tagLastRally(range: ClosedRange<Double>, winner: RacketRallyWinner?, ending: RacketRallyEnding?,
+                               notRally: Bool, now: Date) {
+        guard phase == .recordingMatch, var l = log else { return }
+        l.rallies = RacketLiveTag.add(l.allRallies, range: range, winner: winner, ending: ending, notRally: notRally)
+        log = l
+        touch(now)
+    }
+
     /// Undo on the Watch: the last point tapped is gone.
     mutating func dropLastPoint() {
         guard var l = log, let i = l.marks.lastIndex(where: { $0.kind == .point }) else { return }

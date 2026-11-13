@@ -18,7 +18,7 @@ struct RacketVideoSurface: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let player = playback.player {
-                RacketPlayerLayerView(player: player)
+                RacketPlayerLayerView(player: player, target: playback.position - playback.partStart)
                 if let line = playback.loadState.line {
                     // Some stretches of the original are missing: say so over the video.
                     VStack {
@@ -71,23 +71,119 @@ struct RacketVideoSurface: View {
     }
 }
 
+/// The video layer. Device bug (prompt 251, split prompt / split review / Fix one part): a paused player shows nothing
+/// on a layer attached after its frame was decoded, or before its item is ready — the area stayed black until the
+/// first seek or play. So when the layer reaches a window, gets a player, or the item becomes ready while paused, it
+/// asks for the frame at the current time again (`RacketPlayerFrameRefresh`).
 private struct RacketPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
+    /// Where the playback wants to be, on the player's clock (RacketPlayback.position − partStart): the refresh seeks
+    /// there, never to a stale `currentTime()` that would cancel a seek still in flight.
+    let target: Double
 
     final class V: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        private var statusObservation: NSKeyValueObservation?
+        private var readyObservation: NSKeyValueObservation?
+        var target: Double = 0
+        #if DEBUG
+        private var refreshes: [String] = []
+        private let debugLabel = UILabel()
+        private var debugTimer: Timer?
+        private func startDebug() {
+            guard ProcessInfo.processInfo.arguments.contains("-racketCameraDebug"), debugTimer == nil else { return }
+            debugLabel.numberOfLines = 0
+            debugLabel.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
+            debugLabel.textColor = .yellow
+            debugLabel.frame = CGRect(x: 4, y: 4, width: 300, height: 60)
+            addSubview(debugLabel)
+            debugTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let p = self.playerLayer.player else { return }
+                    let st = p.currentItem.map { "\($0.status.rawValue)" } ?? "-"
+                    let size = p.currentItem?.presentationSize ?? .zero
+                    self.debugLabel.text = "item=\(st) layerReady=\(self.playerLayer.isReadyForDisplay) rate=\(p.rate)\n"
+                        + String(format: "t=%.2f target=%.2f size=%.0fx%.0f", p.currentTime().seconds, self.target, size.width, size.height)
+                        + "\nrefresh: " + self.refreshes.suffix(4).joined(separator: ",")
+                    self.debugLabel.sizeToFit()
+                }
+            }
+        }
+        #endif
+
+        func attach(_ player: AVPlayer) {
+            #if DEBUG
+            startDebug()
+            #endif
+            guard playerLayer.player !== player else { return }
+            playerLayer.player = player
+            // `.initial`: the item may already be ready when the layer gets the player (device: the split prompt stayed
+            // black because its item became ready before anyone was listening).
+            statusObservation = player.observe(\.currentItem?.status, options: [.initial, .new]) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.refreshFrame(reason: "item ready") }
+            }
+            readyObservation = playerLayer.observe(\.isReadyForDisplay, options: [.new]) { [weak self] layer, _ in
+                guard !layer.isReadyForDisplay else { return }
+                DispatchQueue.main.async { self?.refreshFrame(reason: "layer not ready") }
+            }
+            refreshFrame(reason: "attached")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { refreshFrame(reason: "in window") }
+        }
+
+        /// Re-seek a paused player to where it is, so the layer draws that frame.
+        private func refreshFrame(reason: String) {
+            #if DEBUG
+            refreshes.append("\(reason.prefix(5))\(window == nil ? "-nw" : "")\(playerLayer.player?.currentItem?.status == .readyToPlay ? "" : "-nr")")
+            #endif
+            guard let player = playerLayer.player, window != nil,
+                  RacketPlayerFrameRefresh.shouldRefresh(rate: player.rate,
+                                                         itemReady: player.currentItem?.status == .readyToPlay,
+                                                         layerReady: playerLayer.isReadyForDisplay,
+                                                         reason: reason) else { return }
+            // A seek to the time the player already sits at can be skipped by AVFoundation (no new frame), so step a
+            // tick off and back: the second seek lands exactly on the target and the layer draws it.
+            let t = CMTime(seconds: max(0, target), preferredTimescale: 600)
+            let nudge = CMTimeAdd(t, CMTime(value: 1, timescale: 600))
+            player.seek(to: nudge, toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
+                DispatchQueue.main.async {
+                    // Only if nothing else (a scrub, Play) moved the player meanwhile.
+                    guard let player, player.rate == 0,
+                          abs(player.currentTime().seconds - nudge.seconds) < 0.05 else { return }
+                    player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
+                }
+            }
+        }
     }
 
     func makeUIView(context: Context) -> V {
         let v = V()
         v.backgroundColor = .black
         v.playerLayer.videoGravity = .resizeAspect
-        v.playerLayer.player = player
+        v.target = target
+        v.attach(player)
         return v
     }
 
-    func updateUIView(_ v: V, context: Context) { v.playerLayer.player = player }
+    func updateUIView(_ v: V, context: Context) {
+        v.target = target
+        v.attach(player)
+    }
+}
+
+/// When the video layer should ask a paused player for its current frame again (pure, unit-tested).
+enum RacketPlayerFrameRefresh {
+    static func shouldRefresh(rate: Float, itemReady: Bool, layerReady: Bool, reason: String) -> Bool {
+        // Playing draws frames by itself; an item still loading can't seek yet (its ready event comes later).
+        guard rate == 0, itemReady else { return false }
+        // Attaching / reaching a window / the item becoming ready: always ask (the layer may hold no frame even
+        // though it reports ready). A layer that lost its frame while paused: ask too.
+        return reason != "layer not ready" || !layerReady
+    }
 }
 
 // MARK: - Timeline bar (rally segments on the part)
@@ -282,6 +378,7 @@ struct RacketPlayerScreen: View {
         }
         var parts: [String] = []
         if showNumber { parts.append(RacketPlaybackPolicy.overlayLine(number: r.number, rally: r.rally, sides: sides)) }
+        if let n = r.rally.shots?.count, n > 0 { parts.append("\(n) shots, your tags") }
         if r.rally.isGuess { parts.append(r.rally.isUnsure ? "Snappet guess, unsure" : "Snappet guess") }
         if showScore {
             let s = RacketPlaybackPolicy.runningScore(through: r.number, in: rallies)
@@ -335,12 +432,16 @@ struct RacketPlayerScreen: View {
             Text("Show on video").snappetLabel().padding(.top, 4)
             Toggle("Rally number", isOn: $showNumber).accessibilityIdentifier("racket.player.showNumber")
             Toggle("Score", isOn: $showScore).accessibilityIdentifier("racket.player.showScore")
+            // Ball path, shot names and bounces need a model that tracks the ball (Capabilities: Not available yet).
             ForEach(["Ball path", "Shot names", "Bounces"], id: \.self) { name in
-                HStack {
-                    Text(name)
-                    Spacer()
-                    Text("Not in the placeholder yet").font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
+                Toggle(isOn: .constant(false)) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name)
+                        Text("Not available yet").font(SnappetType.detail).foregroundStyle(SnappetColor.textTertiary)
+                    }
                 }
+                .disabled(true)
+                .accessibilityIdentifier("racket.player.notYet.\(name)")
             }
         }
         .padding(14).pagerGlass(cornerRadius: 18)
@@ -507,6 +608,10 @@ struct RacketTimelineScreen: View {
     @State private var problem: String?
     @State private var tagging: RacketRally?
     @State private var fixing: RacketRally?
+    /// "+ Add a missed rally": FixRally in add mode at the playhead (prompt 251).
+    @State private var adding: RacketRally?
+    /// Every shot of a rally, by hand (ShotTags / DoublesShots).
+    @State private var shotsFor: RacketRally?
     @State private var configured = false
     /// Timeline board: All / Unsure / Untagged (prompt 248).
     @State private var filter = 0
@@ -553,6 +658,7 @@ struct RacketTimelineScreen: View {
                             .accessibilityIdentifier("racket.tl.problem")
                     }
                     Button {
+                        pb.pause()
                         tagging = RacketPlaybackPolicy.rally(at: pb.position, in: rallies)?.rally
                             ?? RacketRallyMarking.nextUntagged(rallies, after: nil) ?? rallies.last
                     } label: { Text("Tag this rally").frame(maxWidth: .infinity, minHeight: 30) }
@@ -560,6 +666,11 @@ struct RacketTimelineScreen: View {
                     .disabled(rallies.isEmpty)
                     .accessibilityIdentifier("racket.tl.tag")
                     rallyRows
+                    Button { addMissed(pb) } label: {
+                        Text("+ Add a missed rally").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain).pagerOutline()
+                    .accessibilityIdentifier("racket.tl.addMissed")
                     Button { onSummary() } label: {
                         Text("Done, see your tags").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -580,9 +691,27 @@ struct RacketTimelineScreen: View {
             }
         }
         .sheet(item: $fixing) { r in
-            RacketFixRallySheet(rally: r, rallies: rallies, lo: ref.startSec, hi: ref.endSec) { updated in
+            RacketFixRallySheet(rally: r, rallies: rallies, lo: ref.startSec, hi: ref.endSec,
+                                log: ex?.racketRecordingLog, sport: sport) { updated in
                 save(updated)
             }
+        }
+        .sheet(item: $adding) { r in
+            RacketFixRallySheet(rally: r, rallies: rallies, lo: ref.startSec, hi: ref.endSec,
+                                log: ex?.racketRecordingLog, sport: sport, adding: true) { updated in
+                save(updated)
+            }
+        }
+        .sheet(item: $shotsFor) { r in
+            NavigationStack {
+                RacketShotsScreen(store: store, ref: ref, rallyID: r.id) { shotsFor = nil }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Back") { shotsFor = nil }.accessibilityIdentifier("racket.shots.back")
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
         }
         .task {
             guard !configured else { return }
@@ -600,6 +729,18 @@ struct RacketTimelineScreen: View {
     private func save(_ partRallies: [RacketRally]) {
         let outside = allRallies.filter { !($0.startSec >= ref.startSec - 0.01 && $0.startSec < ref.endSec) }
         store.updateLog(ref.exerciseID) { $0.rallies = (outside + partRallies).sorted { $0.startSec < $1.startSec } }
+    }
+
+    /// "+ Add a missed rally" → FixRally in add mode, a few seconds from the playhead.
+    private func addMissed(_ pb: RacketPlayback) {
+        pb.pause()
+        if let r = RacketMissedRally.make(at: pb.position, within: ref.startSec, ref.endSec, existing: rallies) {
+            adding = r
+            problem = nil
+        } else {
+            problem = "There's a rally at the playhead already. Move to a gap, then add one."
+            Haptics.warning()
+        }
     }
 
     private func markEnd(_ pb: RacketPlayback) {
@@ -647,12 +788,17 @@ struct RacketTimelineScreen: View {
                 }
                 Text(hasGuesses ? "A winner on a row means you tagged it. Your tags replace Snappet’s guesses everywhere."
                                 : "A winner on a row means you tagged it.").snappetLabel()
+                // Timeline rows say "about 4 shots": no model counts shots yet, so a row shows shots you tagged.
+                Text("Shot count: not available yet. Rows show shots you tag by hand (Shots).")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("racket.tl.shotsNotYet")
                 ForEach(Array(rs.enumerated()), id: \.element.id) { k, r in
                     HStack(spacing: 8) {
-                        Button { playback?.seek(to: r.startSec); tagging = r } label: {
+                        Button { playback?.pause(); playback?.seek(to: r.startSec); tagging = r } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Rally \(k + 1)").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
-                                Text("\(RacketVideoTime.clock(r.startSec - ref.startSec)) · \(RacketTagSummary.seconds(r.durationSec))"
+                                Text("\(RacketVideoTime.clock(r.startSec - ref.startSec)) · "
+                                     + ((r.shots?.isEmpty == false) ? "\(r.shots!.count) shots" : RacketTagSummary.seconds(r.durationSec))
                                      + (r.aiName.map { " · from \($0)" } ?? "")
                                      + (r.isGuess ? " · Snappet guess" : ""))
                                     .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
@@ -665,7 +811,10 @@ struct RacketTimelineScreen: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("racket.tl.rally.\(k)")
-                        Button("Fix") { fixing = r }
+                        Button("Shots") { playback?.pause(); shotsFor = r }
+                            .font(SnappetType.detail.weight(.semibold))
+                            .accessibilityIdentifier("racket.tl.shots.\(k)")
+                        Button("Fix") { playback?.pause(); fixing = r }
                             .font(SnappetType.detail.weight(.semibold))
                             .accessibilityIdentifier("racket.tl.fix.\(k)")
                     }
@@ -676,232 +825,4 @@ struct RacketTimelineScreen: View {
     }
 }
 
-// MARK: - FixRally
-
-struct RacketFixRallySheet: View {
-    let rally: RacketRally
-    let rallies: [RacketRally]
-    let lo: Double
-    let hi: Double
-    let onSave: ([RacketRally]) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var work: [RacketRally] = []
-    @State private var configured = false
-
-    private var current: RacketRally? { work.first { $0.id == rally.id } }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if let r = current {
-                    Section("Drag to where it starts and ends") {
-                        RacketRangeStrip(start: r.startSec, end: r.endSec,
-                                         window: max(lo, r.startSec - 10)...min(hi, r.endSec + 10)) { s, e in
-                            if let next = RacketRallyMarking.fix(work, id: r.id, start: s, end: e, within: lo, hi) { work = next }
-                        }
-                        HStack {
-                            Text(RacketVideoTime.precise(r.startSec - lo))
-                            Spacer()
-                            Text("Length \(RacketTagSummary.seconds(r.durationSec))")
-                            Spacer()
-                            Text(RacketVideoTime.precise(r.endSec - lo))
-                        }
-                        .font(SnappetType.detail.monospacedDigit())
-                        nudge("Start", r, edge: 0)
-                        nudge("End", r, edge: 1)
-                    }
-                    Section {
-                        Button("Split in two") { work = RacketRallyMarking.splitInTwo(work, id: r.id) }
-                        Button("Merge with next") { work = RacketRallyMarking.mergeWithNext(work, id: r.id) }
-                        Button("Not a rally", role: .destructive) {
-                            work = RacketRallyMarking.tag(work, id: r.id, winner: nil, ending: nil, lastShotBy: nil, notRally: true)
-                            onSave(work); dismiss()
-                        }
-                        .accessibilityIdentifier("racket.fix.notRally")
-                    }
-                }
-            }
-            .navigationTitle("Fix rally")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(work); dismiss() }.accessibilityIdentifier("racket.fix.save")
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-        .onAppear { if !configured { configured = true; work = rallies } }
-    }
-
-    private func nudge(_ label: String, _ r: RacketRally, edge: Int) -> some View {
-        HStack {
-            Text(label)
-            Spacer()
-            ForEach([-1.0, -0.2, 0.2, 1.0], id: \.self) { d in
-                Button(d > 0 ? "+\(d.formatted()) s" : "−\((-d).formatted()) s") {
-                    let s = edge == 0 ? r.startSec + d : r.startSec
-                    let e = edge == 1 ? r.endSec + d : r.endSec
-                    if let next = RacketRallyMarking.fix(work, id: r.id, start: s, end: e, within: lo, hi) { work = next }
-                }
-                .buttonStyle(.bordered).font(.caption)
-            }
-        }
-    }
-}
-
-// MARK: - TtNoModelTag / DoublesTag
-
-struct RacketTagSheet: View {
-    let store: RacketVideoStore
-    let ref: RacketPartRef
-    let startID: UUID
-    /// "Check N unsure rallies" (prompt 248): walk only Snappet's unsure guesses.
-    var unsureOnly = false
-    /// `true` when the last untagged rally was tagged (→ TtTagDone).
-    let onClose: (Bool) -> Void
-
-    @State private var currentID: UUID?
-    @State private var winner: RacketRallyWinner?
-    @State private var ending: RacketRallyEnding?
-    @State private var lastShot: String?
-
-    private var ex: SessionExercise? { store.ex(ref.exerciseID) }
-    private var rallies: [RacketRally] {
-        RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec).filter(\.isRally)
-    }
-    private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
-    private var doubles: Bool { ex?.isDoubles ?? false }
-    private var current: RacketRally? { rallies.first { $0.id == (currentID ?? startID) } }
-    /// Unsure guesses in the part when the sheet opened, and how many are checked since.
-    @State private var unsureTotal = 0
-    @State private var unsureDone = 0
-
-    private var players: [String] {
-        var names = ["You"]
-        if let p = ex?.partner, !p.isEmpty { names.append(p) }
-        return names + RacketOpponentTeam.players(player1: ex?.racketOpponentPlayer1, player2: ex?.racketOpponentPlayer2,
-                                                  team: ex?.opponent)
-    }
-
-    var body: some View {
-        let sides = RacketWatchCopy.sides(opponent: ex?.opponent, doubles: doubles)
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let r = current, let k = rallies.firstIndex(where: { $0.id == r.id }) {
-                        Text("Marked \(RacketVideoTime.clock(r.startSec - ref.startSec))–\(RacketVideoTime.clock(r.endSec - ref.startSec))")
-                            .font(.system(size: 22, weight: .light)).monospacedDigit()
-                            .accessibilityIdentifier("racket.tag.marked")
-                        if unsureOnly {
-                            Text("Unsure \(unsureDone + 1) of \(unsureTotal)").snappetLabel()
-                                .accessibilityIdentifier("racket.tag.unsureCount")
-                        } else if r.isGuess {
-                            Text(r.isUnsure ? "Snappet guess · unsure" : "Snappet guess").snappetLabel()
-                        } else {
-                            Text("No suggestions").snappetLabel()
-                        }
-                        Text("Who won the rally?").font(.system(size: 17, weight: .semibold))
-                        HStack(spacing: 10) {
-                            pick(sides.us + (r.guessWinner == .us && r.isGuess ? " · suggested" : ""), winner == .us,
-                                 id: "racket.tag.winner.us") { winner = .us }
-                            pick(sides.them + (r.guessWinner == .them && r.isGuess ? " · suggested" : ""), winner == .them,
-                                 id: "racket.tag.winner.them") { winner = .them }
-                        }
-                        Text("How did it end? Optional").font(.system(size: 17, weight: .semibold))
-                        FlowRow {
-                            ForEach(RacketRallyEnding.choices(for: sport), id: \.self) { e in
-                                pick(e.label, ending == e, id: "racket.tag.end.\(e.rawValue)") { ending = ending == e ? nil : e }
-                            }
-                        }
-                        if doubles {
-                            Text("Who made the last shot? Optional").font(.system(size: 17, weight: .semibold))
-                            FlowRow {
-                                ForEach(players, id: \.self) { n in
-                                    pick(n, lastShot == n, id: "racket.tag.last.\(n)") { lastShot = lastShot == n ? nil : n }
-                                }
-                            }
-                        }
-                        Button(role: .destructive) { save(r, notRally: true) } label: {
-                            Text("Not a rally").frame(maxWidth: .infinity, minHeight: 40)
-                        }
-                        .accessibilityIdentifier("racket.tag.notRally")
-                        Button { save(r, notRally: false) } label: { Text("Next").frame(maxWidth: .infinity, minHeight: 30) }
-                            .buttonStyle(SnappetWidePrimaryStyle())
-                            .accessibilityIdentifier("racket.tag.next")
-                        Text(r.isFromModel ? "A suggestion is only a suggestion: nothing counts until you pick it and tap Next."
-                             : "Nothing is picked for you. Snappet can’t suggest for \(sport.label.lowercased()) yet.")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Color.clear.frame(height: 0).navigationTitle(unsureOnly ? "Check unsure rallies" : "Your rally \(k + 1) of \(rallies.count)")
-                    }
-                }
-                .padding(20)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { onClose(false) }.accessibilityIdentifier("racket.tag.close")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    // Skip: the next rally, nothing saved (review5: Skip / Close / Not a rally are wired).
-                    Button("Skip") { advance(after: current?.id) }.accessibilityIdentifier("racket.tag.skip")
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-        .onAppear {
-            unsureTotal = rallies.filter(\.isUnsure).count
-            load(startID)
-        }
-    }
-
-    private func load(_ id: UUID) {
-        currentID = id
-        let r = rallies.first { $0.id == id }
-        // A guess with a score tap behind it starts on the suggested winner (QuickTag "You · suggested"); Next confirms
-        // it as your tag (prompt 248).
-        winner = r?.winner ?? (r?.isGuess == true ? r?.guessWinner : nil)
-        ending = r?.ending
-        lastShot = r?.lastShotBy
-    }
-
-    private func save(_ r: RacketRally, notRally: Bool) {
-        let all = ex?.racketRecordingLog?.allRallies ?? []
-        let updated = RacketRallyMarking.tag(all, id: r.id, winner: winner, ending: ending, lastShotBy: lastShot, notRally: notRally)
-        store.updateLog(ref.exerciseID) { $0.rallies = updated }
-        Haptics.tap()
-        if unsureOnly { unsureDone += 1 }
-        advance(after: r.id, afterSave: true)
-    }
-
-    private func advance(after id: UUID?, afterSave: Bool = false) {
-        let nextOne = unsureOnly ? RacketRallyMarking.nextUnsure(rallies, after: id) : RacketRallyMarking.nextUntagged(rallies, after: id)
-        if unsureOnly, nextOne == nil, !afterSave { onClose(false); return }
-        if let next = nextOne {
-            load(next.id)
-        } else if afterSave {
-            onClose(true)
-        } else if let id, let k = rallies.firstIndex(where: { $0.id == id }), k + 1 < rallies.count {
-            load(rallies[k + 1].id)
-        } else {
-            onClose(false)
-        }
-    }
-
-    private func pick(_ label: String, _ selected: Bool, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: { action(); Haptics.tap() }) {
-            Text(label).font(.system(size: 15, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? Color.black : SnappetColor.ink)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .frame(minWidth: 60)
-                .background(selected ? SnappetColor.brand : Color.clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(SnappetColor.hairline))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
+// MARK: - FixRally and the tag sheets live in RacketTagViews.swift (prompt 251).

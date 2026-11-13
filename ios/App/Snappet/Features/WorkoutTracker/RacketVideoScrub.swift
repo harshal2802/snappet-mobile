@@ -149,6 +149,15 @@ enum RacketScrub {
         return covered.map(\.startSec).min() ?? p.startSec
     }
 
+    /// Where a paused player opens (device bug, prompt 251): the split prompt, split review and the player opened at
+    /// recording time 0, but a recording's first video starts a moment later (the camera starting up, 0.7 s on the
+    /// phone) — an empty stretch of the composition, so the video area stayed black until a seek. A start inside a
+    /// gap moves to the first moment with video after it (within `end`); a start that has video stays.
+    static func firstFrame(at t: Double, segments: [RacketVideoSegment], end: Double) -> Double {
+        if segments.contains(where: { t >= $0.timelineStart - 0.001 && t < $0.timelineStart + $0.durationSec }) { return t }
+        return segments.map(\.timelineStart).filter { $0 > t && $0 < end }.min() ?? t
+    }
+
     /// Seek tolerance while dragging: about one point's worth of time on the strip (clamped to 0.04…2 s), so a
     /// drag lands near the frame under the finger without asking for an exact frame on every move.
     static func tolerance(windowSec: Double, widthPoints: Double) -> Double {

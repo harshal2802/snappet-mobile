@@ -97,7 +97,14 @@ final class RacketModelUITests: XCTestCase {
         // QuickTag over the unsure ones only, then TagDone with none left.
         let next = app.buttons["racket.tag.next"]
         XCTAssertTrue(next.waitForExistence(timeout: 5))
-        XCTAssertTrue(any("racket.tag.unsureCount").label.hasPrefix("Unsure 1 of "), any("racket.tag.unsureCount").label)
+        XCTAssertTrue(any("racket.tag.title").label.hasPrefix("Unsure 1 of "), any("racket.tag.title").label)
+        // V1: the rally's video is on the tag sheet (QuickTag), with So far / Final and the rules link.
+        XCTAssertTrue(any("racket.rallyVideo").exists, "the tag sheet shows the rally's video")
+        XCTAssertTrue(any("racket.tag.endingNotYet").exists, "ending suggestions say Not available yet")
+        app.buttons["racket.tag.rules"].tap()
+        XCTAssertTrue(any("racket.rules.footer").waitForExistence(timeout: 4))
+        app.buttons["racket.rules.close"].tap()
+        XCTAssertTrue(next.waitForExistence(timeout: 4))
         var n = 0
         while next.exists && n < 12 {
             next.tap()
@@ -125,6 +132,6 @@ final class RacketModelUITests: XCTestCase {
         XCTAssertEqual(any("racket.modelCompare.count").label, "No differences", "same model, same video")
         app.buttons["racket.modelCompare.use"].tap()
         XCTAssertTrue(any("racket.analysis.found").waitForExistence(timeout: 5), "Use → the game summary")
-        XCTAssertFalse(app.buttons["racket.analysis.checkUnsure"].exists, "the rallies you checked stay checked")
+        XCTAssertFalse(app.buttons["racket.analysis.checkUnsure"].isEnabled, "the rallies you checked stay checked")
     }
 }

@@ -8,6 +8,8 @@ import SwiftData
 /// (like the simulator's stand-in camera), so the player runs its virtual clock. Launch-arg guarded, fresh in-memory store.
 enum RacketVideoSeed {
     static let argument = "-uiTestSeedRacketVideos"
+    /// With the seed: the drill's first minute plays the bundled clip (prompt 251).
+    static let bundledVideoArgument = "-uiTestRacketBundledVideo"
 
     /// The match recording's marks, as the boards' numbers (TtSplitReview).
     static func matchLog(startedAt: Date) -> RacketRecordingLog {
@@ -28,15 +30,25 @@ enum RacketVideoSeed {
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
         let start = now.addingTimeInterval(-3 * 3600)
+        // Prompt 251's per-sport board walks: `-uiTestRacketSport tennis`, `-uiTestRacketDoubles YES`.
+        let sport = UserDefaults.standard.string(forKey: "uiTestRacketSport").flatMap(RacketSport.init(rawValue:)) ?? .tableTennis
+        let doubles = UserDefaults.standard.bool(forKey: "uiTestRacketDoubles")
 
-        var match = SessionExercise(exerciseId: RacketStats.matchExerciseId(.tableTennis), targetSets: 0, targetReps: "",
+        var match = SessionExercise(exerciseId: RacketStats.matchExerciseId(sport), targetSets: 0, targetReps: "",
                                     targetRestSeconds: 0, sets: [],
-                                    displayName: RacketStats.matchActivityName(.tableTennis),
+                                    displayName: RacketStats.matchActivityName(sport),
                                     kindRaw: SetKind.duration.rawValue)
         match.disciplineRaw = WorkoutDiscipline.racket.rawValue
-        match.racketSportRaw = RacketSport.tableTennis.rawValue
+        match.racketSportRaw = sport.rawValue
         match.racketModeRaw = RacketMode.match.rawValue
         match.opponent = "Alex"
+        if doubles {
+            match.partner = "Mia"
+            match.racketOpponentPlayer1 = "Jordan"
+            match.racketOpponentPlayer2 = "Lee"
+            match.opponent = "Jordan & Lee"
+            match.racketFirstServerRaw = "us"
+        }
         match.racketBestOf = 3
         match.racketRecordingRaw = RacketRecordingMode.everything.rawValue
         for (end, mine, theirs) in [(1482.0, 11, 9), (2722.0, 9, 11)] {
@@ -47,11 +59,11 @@ enum RacketVideoSeed {
         match.racketRecordingLog = matchLog(startedAt: start)
 
         let drillStart = start.addingTimeInterval(4600)
-        var drill = SessionExercise(exerciseId: RacketStats.drillExerciseId(.tableTennis), targetSets: 3, targetReps: "",
+        var drill = SessionExercise(exerciseId: RacketStats.drillExerciseId(sport), targetSets: 3, targetReps: "",
                                     targetRestSeconds: 60, sets: [], displayName: "Forehand loop vs block",
                                     kindRaw: SetKind.duration.rawValue)
         drill.disciplineRaw = WorkoutDiscipline.racket.rawValue
-        drill.racketSportRaw = RacketSport.tableTennis.rawValue
+        drill.racketSportRaw = sport.rawValue
         drill.racketModeRaw = RacketMode.drill.rawValue
         drill.racketRecordingRaw = RacketRecordingMode.everything.rawValue
         drill.plannedSets = 3
@@ -66,9 +78,28 @@ enum RacketVideoSeed {
             drill.sets.append(SetLog(completedAt: drillStart.addingTimeInterval(s + 300), durationSec: 300))
         }
         dlog.endedAt = drillStart.addingTimeInterval(1030)
+        if ProcessInfo.processInfo.arguments.contains(bundledVideoArgument) {
+            // Prompt 251: real frames on the simulator — the bundled 3 s clip laid end to end over the first minute,
+            // so block 1's rallies play video on the tag sheet, Fix and Shots.
+            let id = RecapClipSeed.bundledScheme + RecapClipSeed.bundledClipResource + ".mov"
+            dlog.assets = stride(from: 0.0, to: 60, by: 3).map { .init(localIdentifier: id, startSec: $0, durationSec: 3) }
+        }
         drill.racketRecordingLog = dlog
 
-        let session = WorkoutSession(routineID: nil, routineName: "Racket videos", exercises: [match, drill])
+        var exercises = [match, drill]
+        if ProcessInfo.processInfo.arguments.contains("-uiTestPickPhotosVideo") {
+            // SplitPhotos: a match with no recording yet, for a video added from Photos.
+            var sam = SessionExercise(exerciseId: RacketStats.matchExerciseId(.tableTennis), targetSets: 0, targetReps: "",
+                                      targetRestSeconds: 0, sets: [], displayName: RacketStats.matchActivityName(.tableTennis),
+                                      kindRaw: SetKind.duration.rawValue)
+            sam.disciplineRaw = WorkoutDiscipline.racket.rawValue
+            sam.racketSportRaw = RacketSport.tableTennis.rawValue
+            sam.racketModeRaw = RacketMode.match.rawValue
+            sam.opponent = "Sam"
+            sam.racketBestOf = 3
+            exercises.insert(sam, at: 0)
+        }
+        let session = WorkoutSession(routineID: nil, routineName: "Racket videos", exercises: exercises)
         session.startedAt = start
         session.completedAt = start.addingTimeInterval(5700)
         context.insert(session)
