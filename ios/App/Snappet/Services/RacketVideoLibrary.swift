@@ -47,6 +47,14 @@ final class RacketVideoLibrary {
         return ok
     }
 
+    /// SplitPhotos (prompt 251): when a picked Photos video was recorded, how long it is, and whether the Camera app
+    /// made it (a video with no creation date, e.g. saved from elsewhere, reads as "now").
+    func videoInfo(_ id: String) -> (created: Date?, durationSec: Double)? {
+        let fetched = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+        guard let a = fetched.firstObject, a.mediaType == .video else { return nil }
+        return (a.creationDate, a.duration)
+    }
+
     /// "Find it in Photos".
     func openPhotos() {
         if let url = URL(string: "photos-redirect://") { UIApplication.shared.open(url) }
@@ -380,7 +388,18 @@ final class RacketPlayback {
         loadState = .ready(missing: ids.count - found.count + failedCloud)
         let p = AVPlayer(playerItem: item)
         player = p
+        // Open on a frame, not on the empty start of the recording (the camera starts a moment after the log).
+        if !playing { position = RacketScrub.firstFrame(at: position, segments: segments, end: partEnd) }
         seek(to: position)
+        // Device bug (prompt 251): a seek issued before the item is ready may draw nothing, so a paused player opened
+        // on the split screens stayed black until the first seek or play. Once ready, ask for the frame again.
+        Task { [weak self] in
+            for _ in 0..<80 where item.status != .readyToPlay {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard let self, item.status == .readyToPlay, !self.playing, self.pendingSeek == nil, !self.seeking else { return }
+            self.redrawFrame()
+        }
         observer = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self, self.playing else { return }
@@ -464,6 +483,20 @@ final class RacketPlayback {
     }
 
     func step(_ sec: Double) { seek(to: position + sec) }
+
+    /// Draw the frame at the playhead again (a tick off and back: a seek to where the player already is can be
+    /// skipped and draw nothing).
+    func redrawFrame() {
+        guard let player else { return }
+        let t = CMTime(seconds: position - partStart, preferredTimescale: 600)
+        player.seek(to: CMTimeAdd(t, CMTime(value: 1, timescale: 600)), toleranceBefore: .zero, toleranceAfter: .zero) { @Sendable [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.playing, self.pendingSeek == nil, !self.seeking else { return }
+                self.player?.seek(to: CMTime(seconds: self.position - self.partStart, preferredTimescale: 600),
+                                  toleranceBefore: .zero, toleranceAfter: .zero)
+            }
+        }
+    }
 
     private func tick(_ t: Double) {
         position = min(partEnd, max(partStart, t))

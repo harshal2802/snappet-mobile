@@ -166,7 +166,7 @@ final class RacketDrillUITests: XCTestCase {
         XCTAssertEqual(any("racket.review.headline").label, "2 shots")
         XCTAssertTrue(any("racket.review.blocksLine").label.hasPrefix("1 block · "), any("racket.review.blocksLine").label)
         XCTAssertTrue(any("racket.review.tags").label.contains("With a partner"))
-        XCTAssertTrue(any("racket.review.tagShots").label.contains("Not available yet"))
+        XCTAssertTrue(any("racket.review.tagShots").label.contains("Tag shot types"))
         shot("tt-12-review")
         app.buttons["racket.review.progress"].tap()
         XCTAssertTrue(any("racket.trend.stats").waitForExistence(timeout: 4))

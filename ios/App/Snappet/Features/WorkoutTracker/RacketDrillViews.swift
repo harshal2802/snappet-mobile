@@ -382,7 +382,7 @@ struct RacketDrillCover: View {
                     Text(d.word).font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(d.tone == .work ? SnappetColor.brand : SnappetColor.textSecondary)
                         .accessibilityIdentifier("racket.rec.phase")
-                    Text(RacketClock.mmss(d.seconds)).font(.system(size: 40, weight: .light)).monospacedDigit()
+                    Text(RacketClock.ring(d)).font(.system(size: 40, weight: .light)).monospacedDigit()
                         .accessibilityIdentifier("racket.rec.clock")
                     Text(caption).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                 }
@@ -653,6 +653,7 @@ struct RacketDrillCover: View {
             RacketDrillReviewScreen(ex: ex, history: history,
                                     onSeeProgress: { reviewPath.append(.trend) },
                                     onDrillVideos: ex.racketRecordingLog == nil ? nil : { videos = RacketVideosTarget(start: .drillVideos(ex.id)) },
+                                    onTagShots: ex.racketRecordingLog == nil ? nil : { videos = RacketVideosTarget(start: .shots(ex.id)) },
                                     onBack: onClose, onDone: onDone)
                 .navigationDestination(for: RacketDrillRoute.self) { r in
                     switch r {
@@ -772,6 +773,8 @@ struct RacketDrillReviewScreen: View {
     let onSeeProgress: () -> Void
     /// nil ⇒ no video (Don't film).
     let onDrillVideos: (() -> Void)?
+    /// "Tag shot types" → Shots (prompt 251: shot-by-shot tagging by hand); nil ⇒ no video to tag.
+    var onTagShots: (() -> Void)? = nil
     let onBack: () -> Void
     let onDone: () -> Void
 
@@ -862,19 +865,23 @@ struct RacketDrillReviewScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("racket.review.doneForNow")
-                // "Tag shot types" — shot tagging isn't built: the tier stays in place, disabled, and says so.
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Tag shot types").font(.system(size: 15, weight: .semibold))
-                        Text("See your forehand and backhand mix.").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                // "Tag shot types" → Shots, by hand (prompt 251). Without video there's nothing to watch while tagging.
+                Button { onTagShots?() } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Tag shot types").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                            Text("See your forehand and backhand mix.").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                        }
+                        Spacer()
+                        Text(onTagShots == nil ? "Needs video" : "By hand").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
                     }
-                    Spacer()
-                    Text(RacketFeatureState.notAvailableYet.label).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                    .padding(14)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .contentShape(Rectangle())
                 }
-                .padding(14)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .opacity(0.6)
-                .accessibilityElement(children: .combine)
+                .buttonStyle(.plain)
+                .disabled(onTagShots == nil)
+                .opacity(onTagShots == nil ? 0.6 : 1)
                 .accessibilityIdentifier("racket.review.tagShots")
                 HStack(spacing: 8) {
                     Button("See progress", action: onSeeProgress)

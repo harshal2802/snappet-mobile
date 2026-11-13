@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 // MARK: - Racket videos, split and tagging screens (prompt 246, issue #438 step 3)
 //
@@ -28,6 +29,8 @@ enum RacketVideosStart: Hashable, Sendable {
     case capabilities(RacketSport)
     /// One drill's videos (PracticeReview "Drill videos", prompt 250).
     case drillVideos(UUID)
+    /// Every shot of the first rally to tag in this entity (PracticeReview "Tag shot types", prompt 251).
+    case shots(UUID)
 }
 
 struct RacketVideosTarget: Identifiable {
@@ -72,6 +75,11 @@ enum RacketVideoRoute: Hashable {
     /// The game summary after a scan (Summary board).
     case analysis(RacketPartRef)
     case analysisSettings(RacketSport)
+    // Prompt 251.
+    /// ShotTags / DoublesShots for one rally (Summary "Tag every shot"); Save → the part's timeline.
+    case shots(RacketPartRef, UUID)
+    /// SplitPhotos: a video picked from Photos (its local identifier).
+    case splitPhotos(String)
 }
 
 /// The tag sheet opened from the game summary ("Check N unsure" / "Tag winners and endings").
@@ -145,6 +153,10 @@ struct RacketVideosCover: View {
     /// The split review's player on the whole original (device feedback round 1), shared with "Fix one part".
     @State private var reviewPlayback: RacketPlayback?
     @State private var reviewFor: UUID?
+    /// SplitPhotos (prompt 251): the picked video, and which match / drill it goes on.
+    @State private var photoPick: PhotosPickerItem?
+    @State private var photoTarget: UUID?
+    @State private var choosingTarget = false
 
     private var store: RacketVideoStore { RacketVideoStore(session: session, context: context) }
 
@@ -163,9 +175,10 @@ struct RacketVideosCover: View {
                                  sport: draftFor.flatMap { store.ex($0)?.racketSport } ?? .tableTennis) { draft = $0 }
         }
         .sheet(item: $scoring) { t in
+            // EditScore board (V2.2): "Which game" chips, opening on the game tapped.
             if let ex = store.ex(t.exerciseID) {
-                RacketScoreSheet(ex: ex, unitIndex: t.unitIndex, durationSec: nil) { log in
-                    store.saveScore(t.exerciseID, unit: t.unitIndex, log)
+                RacketEditScoreSheet(ex: ex, unitIndex: t.unitIndex) { i, log in
+                    store.saveScore(t.exerciseID, unit: i, log)
                 }
             }
         }
@@ -214,6 +227,8 @@ struct RacketVideosCover: View {
                 .toolbar { closeButton() }
         case .drillVideos(let id):
             drillVideos(id).toolbar { closeButton() }
+        case .shots(let id):
+            shotsRoot(id).toolbar { closeButton() }
         }
     }
 
@@ -259,9 +274,13 @@ struct RacketVideosCover: View {
             RacketAnalysisSummaryScreen(store: store, ref: ref, onDoneForNow: { backToVideos() },
                                         onTimeline: { path.append(.timeline(ref)) },
                                         onTag: { tagTarget = RacketTagTarget(ref: ref, unsureOnly: $0) },
+                                        onShots: { path.append(.shots(ref, $0)) },
                                         onEditScore: { scoring = RacketScoreTarget(exerciseID: ref.exerciseID, unitIndex: $0, durationSec: nil) })
         case .analysisSettings(let sport):
             RacketAnalysisSettingsScreen(sport: sport) { path.append(.capabilities(sport)) }
+        case .shots(let ref, let id):
+            RacketShotsScreen(store: store, ref: ref, rallyID: id) { replaceTop(with: .timeline(ref)) }
+        case .splitPhotos(let asset): splitPhotos(asset)
         }
     }
 
@@ -415,6 +434,19 @@ struct RacketVideosCover: View {
         let u = ex?.racketFormat.sport.unit ?? .game
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // TtSplitPrompt's video at the top: the recording, the same player the review uses (prompt 251).
+                if let pb = reviewPlayback {
+                    RacketVideoSurface(playback: pb, sport: ex?.racketSport ?? .tableTennis, height: 190)
+                        .overlay(alignment: .bottomTrailing) {
+                            Button(pb.playing ? "Pause" : "Play") { pb.toggle() }
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(.black.opacity(0.6), in: Capsule())
+                                .padding(8)
+                                .accessibilityIdentifier("racket.split.prompt.play")
+                        }
+                        .accessibilityIdentifier("racket.split.prompt.video")
+                }
                 Text("\(RacketVideoTime.clock(log?.timelineSec ?? 0)) recorded")
                     .font(.system(size: 28, weight: .light)).monospacedDigit()
                     .accessibilityIdentifier("racket.split.recorded")
@@ -444,7 +476,7 @@ struct RacketVideosCover: View {
             }
         }
         .navigationBarBackButtonHidden()
-        .onAppear { ensureDraft(id) }
+        .onAppear { ensureDraft(id); ensureReviewPlayback(id) }
     }
 
     private func legend(_ c: Color, _ s: String) -> some View {
@@ -739,6 +771,7 @@ struct RacketVideosCover: View {
                 if keep.canKeep, previewSport == nil {
                     secondary("Keep rallies only…", id: "racket.videos.keepRallies") { keeping = true }
                 }
+                if previewSport == nil { addFromPhotos }
                 if canFind {
                     if !unscannedParts.isEmpty {
                         secondary("Scan all on charger", id: "racket.videos.scanAll") {
@@ -767,6 +800,7 @@ struct RacketVideosCover: View {
             }
         }
         .onAppear {
+            adoptGameClips()
             refreshFound()
             guard previewSport == nil else { return }
             scanCenter.settle(store)
@@ -892,6 +926,21 @@ struct RacketVideosCover: View {
                 chipButton("Bring results back", id: "racket.videos.aiImport.\(k)") { path.append(.aiImport(r)) }
             }
             aiPending(ex, r, id: "videos.\(k)")
+            aiWaiting(ex, r, id: "videos.\(k)")
+        }
+    }
+
+    /// FindRallies "Sent to ChatGPT · Sent Oct 28. Bring its reply back when it's ready." (V2.3).
+    @ViewBuilder private func aiWaiting(_ ex: SessionExercise, _ r: RacketPartRef, id: String) -> some View {
+        if let log = ex.racketRecordingLog, let req = RacketAIWaiting.request(log, partStart: r.startSec, partEnd: r.endSec) {
+            let l = RacketAIWaiting.lines(req)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(l.title).font(SnappetType.detail.weight(.semibold))
+                Text(l.detail).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("racket.\(id).aiWaiting")
         }
     }
 
@@ -1110,6 +1159,162 @@ struct RacketVideosCover: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(id)
+    }
+
+    // MARK: Prompt 251: shots root, SplitPhotos, game-by-game clips
+
+    /// PracticeReview "Tag shot types" → Shots for the first rally without shots; with no rallies yet, the first
+    /// block's timeline (mark rallies first).
+    @ViewBuilder private func shotsRoot(_ id: UUID) -> some View {
+        if let ex = store.ex(id), let log = ex.racketRecordingLog,
+           let row = RacketVideoRows.rows(for: ex).first(where: { r in
+               RacketRallyMarking.inRange(log.allRallies, r.startSec, r.endSec).contains(where: \.isRally) }) {
+            let r = ref(ex, row)
+            if let rally = RacketShotTagging.firstToTag(RacketRallyMarking.inRange(log.allRallies, r.startSec, r.endSec)) {
+                RacketShotsScreen(store: store, ref: r, rallyID: rally.id) { path.append(.timeline(r)) }
+            }
+        } else if let ex = store.ex(id), let row = RacketVideoRows.rows(for: ex).first {
+            VStack(alignment: .leading, spacing: 12) {
+                note("Mark a rally first, then tag its shots. Open the timeline, play to a rally and mark its start and end.")
+                    .accessibilityIdentifier("racket.shots.markFirst")
+                primary("Open timeline", id: "racket.shots.openTimeline") { path.append(.timeline(ref(ex, row))) }
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("Tag shot types")
+        } else {
+            note("No video for this drill yet.").padding(20)
+        }
+    }
+
+    /// "Add from Photos" (FindRallies → SplitPhotos). UI tests pick the bundled clip without the system picker.
+    @ViewBuilder private var addFromPhotos: some View {
+        if ProcessInfo.processInfo.arguments.contains("-uiTestPickPhotosVideo") {
+            secondary("Add from Photos", id: "racket.videos.addFromPhotos") {
+                path.append(.splitPhotos(RecapClipSeed.bundledScheme + RecapClipSeed.bundledClipResource + ".mov"))
+            }
+        } else {
+            PhotosPicker(selection: $photoPick, matching: .videos, photoLibrary: .shared()) {
+                Text("Add from Photos").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .pagerOutline()
+            .accessibilityIdentifier("racket.videos.addFromPhotos")
+            .onChange(of: photoPick) { _, item in
+                guard let id = item?.itemIdentifier else { return }
+                photoPick = nil
+                path.append(.splitPhotos(id))
+            }
+        }
+    }
+
+    /// The racket entries a picked video can go on: those without a recording yet (one recording per match / drill).
+    private var photoTargets: [SessionExercise] {
+        session.exercises.filter { $0.discipline == .racket && $0.racketRecordingLog == nil }
+    }
+
+    private func videoInfo(_ asset: String) -> (created: Date?, durationSec: Double)? {
+        if asset.hasPrefix(RecapClipSeed.bundledScheme) {
+            // The UI test's bundled clip: "recorded" at the session's start, 3 s long.
+            return (session.startedAt, 3)
+        }
+        return RacketVideoLibrary.shared.videoInfo(asset)
+    }
+
+    /// SplitPhotos: "Recorded with the Camera app · Nov 5 · 6:02 pm · 1:42:10", "This lines up with", Find games and
+    /// drills / Add as one video / Pick a different session.
+    @ViewBuilder private func splitPhotos(_ asset: String) -> some View {
+        let info = videoInfo(asset)
+        let targets = photoTargets
+        let target = targets.first { $0.id == photoTarget } ?? targets.first { $0.isRacketMatch } ?? targets.first
+        let start = info?.created ?? session.startedAt
+        let len = info?.durationSec ?? 0
+        let lines = RacketPhotosImport.linesUp(videoStart: start, durationSec: len, sessionStart: session.startedAt,
+                                               sessionEnd: session.completedAt)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                RacketRallyVideo(log: photoLog(asset, info: info), partStart: 0, partEnd: max(1, len),
+                                 range: 0...min(len, 20), sport: target?.racketSport ?? .tableTennis)
+                    .accessibilityIdentifier("racket.splitPhotos.video")
+                Text("Recorded with the Camera app").font(.system(size: 22, weight: .semibold))
+                Text(info.map { "\(($0.created ?? .now).formatted(.dateTime.month(.abbreviated).day())) · \(($0.created ?? .now).formatted(date: .omitted, time: .shortened)) · \(RacketVideoTime.clock($0.durationSec))" }
+                     ?? "Snappet can’t read this video. Pick another.")
+                    .font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("racket.splitPhotos.when")
+                panel {
+                    Text(lines ? "This lines up with" : "Doesn’t line up in time with").font(SnappetType.detail)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                    Text("\(Calendar.current.isDateInToday(session.startedAt) ? "Today’s session" : "Session on \(session.startedAt.formatted(.dateTime.month(.abbreviated).day()))") · \(session.startedAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: 17, weight: .bold))
+                    Text(target.map(entryName) ?? "Every match and drill here already has a recording")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("racket.splitPhotos.target")
+                }
+                note("Parts are marks on the original, so nothing new is saved. New videos are made only if you later delete the original.")
+                primary("Find games and drills", id: "racket.splitPhotos.find") {
+                    if let target { addPhotosVideo(asset, info: info, to: target, find: true) }
+                }
+                .disabled(target == nil || info == nil)
+                secondary("Add as one video", id: "racket.splitPhotos.asOne") {
+                    if let target { addPhotosVideo(asset, info: info, to: target, find: false) }
+                }
+                .disabled(target == nil || info == nil)
+                Button("Pick a different session") { choosingTarget = true }
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("racket.splitPhotos.pickSession")
+            }
+            .padding(20)
+        }
+        .navigationTitle("Add a video")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Add it to", isPresented: $choosingTarget, titleVisibility: .visible) {
+            ForEach(targets) { ex in Button(entryName(ex)) { photoTarget = ex.id } }
+        } message: {
+            Text("A video from another day goes on that session: open its Your videos and add it there.")
+        }
+    }
+
+    private func entryName(_ ex: SessionExercise) -> String {
+        ex.isRacketDrill ? (ex.displayName ?? "Drill") : "Match \(ex.racketMatchTitle)"
+    }
+
+    /// A one-asset log so the picked video plays before it's added.
+    private func photoLog(_ asset: String, info: (created: Date?, durationSec: Double)?) -> RacketRecordingLog? {
+        guard let info else { return nil }
+        return RacketPhotosImport.log(assetID: asset, videoStart: info.created ?? .now, durationSec: info.durationSec,
+                                      units: [], drill: false, findParts: false)
+    }
+
+    private func addPhotosVideo(_ asset: String, info: (created: Date?, durationSec: Double)?, to ex: SessionExercise, find: Bool) {
+        guard let info else { return }
+        let units = ex.sets.enumerated().map { RacketPhotosImport.Unit(index: $0.offset, completedAt: $0.element.completedAt,
+                                                                       durationSec: $0.element.durationSec) }
+        let log = RacketPhotosImport.log(assetID: asset, videoStart: info.created ?? session.startedAt,
+                                         durationSec: info.durationSec, units: units, drill: ex.isRacketDrill, findParts: find)
+        store.update(ex.id) { $0.racketRecordingLog = log }
+        Haptics.success()
+        if find {
+            if ex.isRacketDrill { replaceTop(with: .drill(ex.id)) } else { draftFor = nil; replaceTop(with: .review(ex.id)) }
+        } else {
+            replaceTop(with: .videos)
+        }
+    }
+
+    /// Game-by-game clips (prompt 203's per-game camera, before prompt 249 wrote a log) become a recording log, so
+    /// they list in Your videos and Keep rallies like every other recording.
+    private func adoptGameClips() {
+        let sid = session.id
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        for ex in session.exercises where ex.discipline == .racket && ex.racketRecordingLog == nil {
+            let clips = media.filter { $0.kindRaw == SessionMedia.Kind.video.rawValue && $0.assignedExerciseID == ex.id }
+                .map { RacketClipAdoption.Clip(localIdentifier: $0.localIdentifier, offsetSec: $0.offsetSec,
+                                               durationSec: $0.durationSec ?? 0, unitIndex: $0.assignedSetIndex) }
+            guard let log = RacketClipAdoption.log(clips, sessionStart: session.startedAt, drill: ex.isRacketDrill, now: .now)
+            else { continue }
+            store.update(ex.id) { $0.racketRecordingLog = log }
+        }
     }
 
     // MARK: TtOriginalMissing

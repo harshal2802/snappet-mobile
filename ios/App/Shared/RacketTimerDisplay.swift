@@ -24,6 +24,15 @@ enum RacketClock {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 
+    /// The phone ring's clock (prompt 251): Block and Paused read zero-padded like their boards ("01:48"); rest,
+    /// break, interval and countdown rings keep "0:45".
+    static func ring(_ d: RacketTimerDisplay) -> String {
+        guard d.word == "Block" || d.word == "Paused" else { return mmss(d.seconds) }
+        let s = max(0, Int(d.seconds.rounded(.up)))
+        if s >= 3600 { return mmss(d.seconds) }
+        return String(format: "%02d:%02d", s / 60, s % 60)
+    }
+
     /// Elapsed clocks floor rather than round up.
     static func elapsed(_ sec: TimeInterval) -> String {
         let s = max(0, Int(sec))
