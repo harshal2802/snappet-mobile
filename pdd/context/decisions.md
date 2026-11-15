@@ -11520,3 +11520,76 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
 - **Verified on the simulator only**: SnappetTests 3071 / 0 failures (5 skipped); UI suites run alone with the app
   uninstalled first — RacketRallyVideo 5 (new), Tagging 15, Player 7, Edit 7, Videos 2 — all green. Device build
   (`generic/platform=iOS`) succeeds. Not verified on a phone: the user's sideways clip, the real sheet height on 6.1".
+
+## 2026-11-15 — Racket split: Play in the split sheet, timeouts inside a game, the split state machine (prompt 258)
+
+- **Why**: "when i split the video and hit play. it doesnt play before saving"; "if there was timeout during the game
+  there is no way to combine the videos before and after the timeout cut"; "think about completing this state machine".
+  Their real match was split and saved long ago; Game 4 and Game 5 (both unscored) are one game with a timeout.
+- **Play**: `RacketScrub.playStart` — the playhead when it is inside the part and more than 0.3 s before its end, else
+  the part's start; plays to the part's end. After Split here the sheet stays on the first piece and seeks to its start.
+  The sheet's video is the prompt-257 box (`RacketVideoBox`) with its own small controls (`RacketSplitVideo`), not the
+  rally model: that one loops a rally, the split sheet plays a part once.
+- **Representation: structural, no flag.** New kind `.timeout`. A game group is a game part followed by (timeout, game)
+  pairs; a "continuation" is *defined* as the game right after a timeout, so invariant 3 can't be broken by stale data.
+  The one link (`setIndex`) sits on the group's first half. Chosen over a `continuesGame` flag or a group id because
+  both can disagree with the kinds and need repairing everywhere; a structure can't. An older build reads `timeout` as
+  Not play (the existing unknown-kind fallback) and sees two games — no crash.
+- **Draft-only `joinedSetIndexes`** on a half: the logged game it brought into a group, held on that half so changing
+  the timeout back returns it exactly. Folded in and cleared on Save (`RacketSplitJoin.commit`), never persisted after.
+- **Joined score**: two or more scores ⇒ their sum as a *suggested* score (`SetLog.suggestedFor/Against`, additive
+  Optionals) with "Score unconfirmed" — counts for neither side until confirmed in Edit score (which clears it), so the
+  review5 M5 one-state rule holds; `racketScore` stays nil, so results / history never count an unconfirmed sum. A single
+  score is kept exactly as it was (incl. "from Watch"); empty placeholders just disappear. The sum is shown in Your
+  videos as "11–8?" and prefilled where scores are edited. Tag-derived scores equal the sum when each half's score came
+  from its tags, so "from the joined tags" needs no separate path.
+- **Ask only when two scores join** (the confirm sheet "Game 4 and Game 5 become one game: 6–5 + 5–3 = 11–8", Join them /
+  Cancel). Joining unscored games (the user's case) asks nothing: nothing scored changes.
+- **Save** (`RacketSplitCommit`): normalize → fold joined games (kept = earliest; durations add = played time; logged at
+  the latest end) → remove the absorbed sets and renumber every link → `RacketSplitAssign.apply`, now group-aware and
+  **honouring links the editor kept first** (needed so an undo leaves the joined game on the first half), then Watch
+  games by the end of a group's LAST half, then in order. A new game is Score unconfirmed, its length played time, with
+  a suggested score from its rallies' tags (the undo case). `remap` moves `SessionMedia.assignedSetIndex` (photos / clips
+  attached to a game) — an edge the brief didn't list. The apply's own reordering was already not remapping media before
+  this; now it is.
+- **Transition table** (each a unit test in `RacketSplitTimeoutTests`):
+
+| Operation | Result |
+|---|---|
+| Timeout, neighbours game halves with the same belongs | one game; later half's game becomes joined; a game turned timeout joins too |
+| Timeout otherwise | disabled: "A timeout sits between two halves of the same game." |
+| …two+ joined games scored | confirm sheet with the sum; Cancel leaves the draft as it was |
+| Timeout → other kind | group dissolves; later half gets its own joined game back, else no link (Save matches / creates) |
+| Game half → non-game | timeouts beside it become breaks; the link (and joined) move to the group's next half |
+| Split here, first half / later half | the piece touching the timeout stays and keeps the link; the other is a new game, no link |
+| Split here in a timeout | disabled: "A timeout can’t be split. Change it to a break first." |
+| Merge with next, half + its timeout | the whole game (halves + timeouts) becomes one plain part; the note says so first |
+| Merge with next on a timeout / last part | disabled with a reason |
+| Break merges a group's first half | the link moves to the next half |
+| Drag / nudge | neighbours follow; a timeout shrinks to 5 s, never vanishes |
+| G T G T G | one game |
+| Belongs to | this match: every half follows; practice: the half leaves (as above) |
+| Cancel / Save | discard / repair then validate; an invalid list is never saved |
+
+- **Invariant 1 repair**: a short part borrows time from a neighbour that can spare it, else merges (the linked one
+  survives). Validate no longer flags a single part shorter than 5 s (a whole recording that short can't be fixed).
+- **Downstream**: one Your videos row per game (played length, "1 timeout skipped"); review "Game 2, continued" /
+  "Timeout · 3:10, skipped"; assign and done one row per game; "Change the split" reopens a saved split (there was no
+  way before). Players (Watch mode, Analyzed, Timeline, Edit through the Watch player's playback) skip timeouts via
+  `RacketPlayback.playedClock` (playing through, seek, scrub, ±10 s in played time); the Watch player shows played time
+  and a thin amber mark per timeout on its progress line. Its filmstrip stays in recording time (frames of the timeout
+  still show while dragging; a drag landing inside one moves to its edge). Rallies mostly inside a timeout leave every
+  list / count / tag / score / rallies-only; `RacketRecordingLog.rallies(lo, hi)` replaced the 20 `inRange` call sites.
+  Edit refuses a mark in a timeout and clamps one at its edge. Share "Whole game" joins the halves; rallies-only and one
+  rally unchanged. The other AI app's whole-game clip is the halves as pieces, so replies map back without landing in a
+  timeout (prompt 247 round trip survives). Delete the original saves halves only (timeouts are not "kept" parts); a
+  game plays from its two derived videos. Keep rallies only leaves rallies inside timeouts out.
+- **Heart rate**: the game window is `completedAt − durationSec … completedAt`; a joined game's completedAt is the end
+  of its last half and its duration the played time, so the window **includes the timeout** and starts about one
+  timeout-length after the game really began. Left as is (brief: leave the span), noted for a follow-up.
+- **Undo leaves the sum on the first game**: after changing the timeout back, the first game keeps the joined set (a
+  suggested 11–8, unconfirmed) and the second gets its tags' suggestion. The first game's suggestion is not
+  recomputed; it is unconfirmed and editable.
+- **Game-by-game adopted clips** get a split (`RacketGameByGameSplit`) and the same Change the split chip, so a timeout
+  works there too; a drill never offers the split.
+- **Scrub bar** (257 leftover): the rally is an accent bracket above the track; the played fill stays on the track.
