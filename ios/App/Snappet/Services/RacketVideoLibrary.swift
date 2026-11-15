@@ -158,6 +158,41 @@ final class RacketVideoLibrary {
         return out
     }
 
+    // MARK: First frame and shape (PlayerOpening · PlayerLetterbox, prompt 253)
+
+    /// A still of video `id` near `sec`, from what is on the phone: the bundled test clip's frame, or Photos' own
+    /// still of the video with the network off (an iCloud-only video still has one). nil when there is none.
+    func poster(_ id: String, at sec: Double = 0) async -> UIImage? {
+        if id.hasPrefix(RecapClipSeed.bundledScheme) {
+            guard let asset = await avAsset(id, network: false),
+                  let image = await Self.still(Box(value: asset), at: sec) else { return nil }
+            return UIImage(cgImage: image)
+        }
+        guard let ph = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
+        let boxed: Box<UIImage?> = await withCheckedContinuation { cont in
+            let opts = PHImageRequestOptions()
+            opts.isNetworkAccessAllowed = false
+            opts.deliveryMode = .highQualityFormat
+            opts.isSynchronous = false
+            PHImageManager.default().requestImage(for: ph, targetSize: CGSize(width: 1080, height: 1080),
+                                                  contentMode: .aspectFit, options: opts) { image, _ in
+                cont.resume(returning: Box(value: image))
+            }
+        }
+        return boxed.value
+    }
+
+    /// The upright size of what `item` shows: the video composition's render size, else the first video track's
+    /// natural size turned by its transform.
+    func uprightSize(_ item: AVPlayerItem) async -> CGSize? {
+        if let v = item.videoComposition { return v.renderSize }
+        guard let track = try? await item.asset.loadTracks(withMediaType: .video).first,
+              let natural = try? await track.load(.naturalSize) else { return nil }
+        let transform = (try? await track.load(.preferredTransform)) ?? .identity
+        let r = CGRect(origin: .zero, size: natural).applying(transform)
+        return CGSize(width: abs(r.width), height: abs(r.height))
+    }
+
     // MARK: Film strip (TtSplitEdit)
 
     /// Small frames of the player's video at `times` (seconds on the player's own clock). A time with no video (an
@@ -343,6 +378,16 @@ final class RacketPlayback {
     var rate: Float = 1 { didSet { if playing { player?.rate = rate } } }
     /// Ranges to play in "Rallies only" (set by the view).
     var ralliesOnly: [RacketRally]? = nil
+    /// "Loop this rally" (prompt 253): back to its start at its end; ends when the viewer moves away.
+    var loop: ClosedRange<Double>? = nil
+    /// The player's mute button (prompt 253).
+    var muted = false { didSet { player?.isMuted = muted } }
+    /// Playback reached the end of the part (or the last rally in Rallies only): PlayerEnd. Cleared by any seek or Play.
+    private(set) var ended = false
+    /// The video's upright size in pixels once loaded (PlayerLetterbox decides on it); nil for the stand-in.
+    private(set) var videoSize: CGSize?
+    /// A still of the video while it opens or downloads (PlayerOpening "an immediate first frame").
+    private(set) var poster: UIImage?
     /// Where `play(from:until:)` stops; cleared by a plain Play.
     @ObservationIgnored private var stopAt: Double?
     private(set) var player: AVPlayer?
@@ -350,6 +395,7 @@ final class RacketPlayback {
     /// What the video area says while it checks Photos, downloads from iCloud, or finds nothing (device feedback round 1).
     private(set) var loadState: RacketVideoLoad = .checking
     @ObservationIgnored private var observer: Any?
+    @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var segments: [RacketVideoSegment] = []
     @ObservationIgnored private var downloaded: [String: Double] = [:]
@@ -371,6 +417,10 @@ final class RacketPlayback {
         var ids: [String] = []
         for s in segments where !ids.contains(s.localIdentifier) { ids.append(s.localIdentifier) }
         let found = lib.found(ids)
+        // The first frame at once, from what Photos keeps on the phone (no download), while the rest opens.
+        if poster == nil, let first = segments.first(where: { found.contains($0.localIdentifier) }) {
+            poster = await lib.poster(first.localIdentifier, at: first.assetStart)
+        }
         let cloud = await lib.cloudOnly(ids.filter { found.contains($0) })
         loadState = RacketVideoLoad.initial(needed: ids, found: found, cloudOnly: cloud)
         if case .missing = loadState { return }
@@ -387,7 +437,9 @@ final class RacketPlayback {
         }
         loadState = .ready(missing: ids.count - found.count + failedCloud)
         let p = AVPlayer(playerItem: item)
+        p.isMuted = muted
         player = p
+        videoSize = await lib.uprightSize(item)
         // Open on a frame, not on the empty start of the recording (the camera starts a moment after the log).
         if !playing { position = RacketScrub.firstFrame(at: position, segments: segments, end: partEnd) }
         seek(to: position)
@@ -399,6 +451,18 @@ final class RacketPlayback {
             }
             guard let self, item.status == .readyToPlay, !self.playing, self.pendingSeek == nil, !self.seeking else { return }
             self.redrawFrame()
+        }
+        // The item played to its end (a seek to the very end, or the video running out before the part's end): the
+        // periodic observer may not fire there, so PlayerEnd hangs on this (prompt 253).
+        endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item,
+                                                             queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.playing else { return }
+                if let l = self.loop { self.seek(to: l.lowerBound); self.player?.rate = self.rate; return }
+                self.position = self.partEnd
+                self.pause()
+                self.ended = true
+            }
         }
         observer = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
@@ -421,6 +485,8 @@ final class RacketPlayback {
         player?.pause()
         if let observer { player?.removeTimeObserver(observer) }
         observer = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
         ticker?.cancel()
     }
 
@@ -428,6 +494,7 @@ final class RacketPlayback {
 
     func play() {
         if position >= partEnd - 0.05 { seek(to: partStart) }
+        ended = false
         stopAt = nil
         playing = true
         if let player { player.rate = rate; return }
@@ -458,6 +525,7 @@ final class RacketPlayback {
     /// flight, the newest position next. `seek(to:)` lands exactly when the drag ends.
     func scrub(to t: Double, tolerance: Double) {
         if playing { pause() }
+        ended = false
         position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
         guard player != nil else { return }
         pendingSeek = (position, tolerance)
@@ -478,8 +546,15 @@ final class RacketPlayback {
     func seek(to t: Double) {
         pendingSeek = nil
         position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
+        // Still at the end (another skip forward there) stays ended; anywhere else is not.
+        if position < partEnd - 0.05 { ended = false }
         player?.seek(to: CMTime(seconds: position - partStart, preferredTimescale: 600),
                      toleranceBefore: .zero, toleranceAfter: .zero)
+        // Skipping onto the very end while playing is the end (the player may report nothing more from there).
+        if playing, loop == nil, position >= partEnd - 0.05 {
+            pause()
+            ended = true
+        }
     }
 
     func step(_ sec: Double) { seek(to: position + sec) }
@@ -500,14 +575,32 @@ final class RacketPlayback {
 
     private func tick(_ t: Double) {
         position = min(partEnd, max(partStart, t))
-        if position >= partEnd - 0.01 { pause(); return }
+        if let l = loop, playing {
+            switch RacketPlayerLoop.jump(at: position, loop: l) {
+            case .to(let start): seek(to: start); return
+            case .clear: loop = nil
+            case nil: return
+            }
+        }
+        if position >= partEnd - 0.01 { pause(); ended = true; return }
         if let s = stopAt, position >= s - 0.01 { pause(); return }
         if let rallies = ralliesOnly, playing {
             switch RacketPlaybackPolicy.ralliesOnly(at: position, rallies: rallies) {
             case .to(let next): seek(to: next)
-            case .end: pause()
+            case .end: pause(); ended = true
             case nil: break
             }
         }
+    }
+
+    /// UI tests only (`-uiTestRacketPlayer opening`): stay on PlayerOpening at `fraction`, with the poster, as an
+    /// iCloud download in progress would (the simulator has no iCloud library).
+    func holdOpening(_ segments: [RacketVideoSegment], fraction: Double) async {
+        self.segments = segments
+        if let first = segments.first {
+            poster = await RacketVideoLibrary.shared.poster(first.localIdentifier, at: first.assetStart)
+        }
+        loadState = .downloading(fraction)
+        loaded = true
     }
 }

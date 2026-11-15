@@ -16,6 +16,45 @@ enum RacketVideoSeed {
     /// you (your partner).
     static let taggedGamesArgument = "-uiTestRacketTaggedGames"
 
+    /// With the seed (prompt 253, the Watch-mode player): `-uiTestRacketPlayer portrait|landscape|missing|opening`.
+    /// The match was filmed game by game: game 1 (5:00) has 21 rallies (rally 13 untagged, 7 – 5 after rally 12, 11 – 9 at the end, as
+    /// the boards) and game 2 (1:00) none. `portrait` / `landscape` lay a synthetic bundled clip (a drawn table and a
+    /// moving ball, no real footage) end to end over both games; `missing` points at a video that isn't in Photos;
+    /// `opening` holds the player on its iCloud download state.
+    static let playerArgument = "-uiTestRacketPlayer"
+    /// Game 1's winners in the player seed: u = you, t = them, - = untagged.
+    static let playerWinners = "uututtutuutu-uttuttuu"
+
+    static func playerLog(startedAt: Date, variant: String) -> RacketRecordingLog {
+        var log = RacketRecordingLog(startedAt: startedAt)
+        log.baseSetIndex = 0
+        log.modeRaw = RacketRecordingMode.byUnit.rawValue
+        log.qualityRaw = RacketRecordingQuality.hd1080.rawValue
+        log.runs = [.init(startSec: 0, endSec: 300, endReasonRaw: nil), .init(startSec: 330, endSec: 390, endReasonRaw: nil)]
+        log.marks = [.init(kindRaw: RacketRecordingLog.MarkKind.game.rawValue, index: 0, startSec: 0, endSec: 300),
+                     .init(kindRaw: RacketRecordingLog.MarkKind.game.rawValue, index: 1, startSec: 330, endSec: 390)]
+        log.rallies = playerWinners.enumerated().map { k, c in
+            let t = 8 + Double(k) * 14
+            return RacketRally(startSec: t, endSec: t + 4 + Double((k * 7) % 5) + 0.2,
+                               winner: c == "u" ? .us : c == "t" ? .them : nil)
+        }
+        let clip: String
+        switch variant {
+        case "landscape": clip = RecapClipSeed.bundledScheme + "racket-uitest-landscape.mov"
+        case "missing": clip = "uitest-missing-video/L0/001"
+        default: clip = RecapClipSeed.bundledScheme + "racket-uitest-portrait.mov"
+        }
+        if variant == "missing" {
+            log.assets = [.init(localIdentifier: clip, startSec: 0, durationSec: 300), .init(localIdentifier: clip, startSec: 330, durationSec: 60)]
+        } else {
+            log.assets = (stride(from: 0.0, to: 300, by: 6).map { $0 } + stride(from: 330.0, to: 390, by: 6).map { $0 })
+                .map { .init(localIdentifier: clip, startSec: $0, durationSec: 6) }
+        }
+        log.endedAt = startedAt.addingTimeInterval(390)
+        log.split = RacketGameByGameSplit.split(log, now: startedAt.addingTimeInterval(390))
+        return log
+    }
+
     /// Game 1's tagged winners (u = you / us) and one untagged rally after them.
     static let taggedWinners = "uuuuttuu"
 
@@ -89,7 +128,11 @@ enum RacketVideoSeed {
             match.sets.append(g)
         }
         match.racketRecordingLog = matchLog(startedAt: start)
-        if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
+        if let variant = UserDefaults.standard.string(forKey: String(playerArgument.dropFirst())) {
+            match.racketRecordingRaw = nil
+            match.racketRecordingLog = playerLog(startedAt: start, variant: variant)
+            match.sets = [match.sets[0]]   // game 1 won 11–9 on the Watch; game 2 has no score yet
+        } else if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = taggedGameLog(startedAt: start)
             // Tennis / padel: they served the first game, so rally 9 (game 2) is yours.

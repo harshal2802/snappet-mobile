@@ -118,11 +118,18 @@ final class RacketVideosUITests: XCTestCase {
         XCTAssertTrue(any("racket.videos.tags.0").waitForExistence(timeout: 4))
         XCTAssertEqual(any("racket.videos.tags.0").label, "1 marked by you")
 
-        // The player plays the part; Analyzed shows your tag at the rally.
+        // The Watch-mode player plays the part (prompt 253); Edit → Analysis view shows your tag at the rally.
         app.buttons["racket.videos.play.0"].tap()
-        XCTAssertTrue(any("racket.player.clock").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("racket.player.surface").waitForExistence(timeout: 5))
         XCTAssertTrue(any("racket.player.standIn").exists, "no Photos video in the simulator")
-        app.segmentedControls["racket.player.mode"].buttons["Analyzed"].tap()
+        // It opens playing with the controls showing; they hide by themselves, and a tap brings them back.
+        _ = app.buttons["racket.player.edit"].waitForNonExistence(timeout: 8)
+        any("racket.player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)).tap()
+        XCTAssertTrue(app.buttons["racket.player.edit"].waitForExistence(timeout: 3))
+        app.buttons["racket.player.edit"].tap()
+        let analysis = app.buttons["racket.player.edit.analysis"].firstMatch
+        XCTAssertTrue(analysis.waitForExistence(timeout: 4), "Edit lists Analysis view")
+        analysis.tap()
         XCTAssertTrue(any("racket.player.overlay").waitForExistence(timeout: 3), "the tag shows over the rally")
         XCTAssertTrue(any("racket.player.overlay").label.hasPrefix("Rally 1 · You won · Out"), any("racket.player.overlay").label)
     }

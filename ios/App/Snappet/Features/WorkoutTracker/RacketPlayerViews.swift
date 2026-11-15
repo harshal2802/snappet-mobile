@@ -75,7 +75,7 @@ struct RacketVideoSurface: View {
 /// on a layer attached after its frame was decoded, or before its item is ready — the area stayed black until the
 /// first seek or play. So when the layer reaches a window, gets a player, or the item becomes ready while paused, it
 /// asks for the frame at the current time again (`RacketPlayerFrameRefresh`).
-private struct RacketPlayerLayerView: UIViewRepresentable {
+struct RacketPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
     /// Where the playback wants to be, on the player's clock (RacketPlayback.position − partStart): the refresh seeks
     /// there, never to a stale `currentTime()` that would cancel a seek still in flight.
@@ -244,9 +244,13 @@ struct RacketTimelineBar: View {
     }
 }
 
-// MARK: - TtPlayerOriginal / TtPlayerAnalyzed
+// MARK: - TtPlayerAnalyzed
 
-struct RacketPlayerScreen: View {
+/// The analysis view of a part (TtPlayerAnalyzed): your tags over the video, another AI app's suggestions and Compare.
+/// Since prompt 253 the Watch-mode player (`RacketWatchPlayerScreen`) plays a part from Play; this screen opens from
+/// its Edit menu ("Analysis view"), after an AI compare, and for the drill's longest rally, until Edit mode (prompt
+/// 254) takes these over.
+struct RacketAnalyzedPlayerScreen: View {
     let store: RacketVideoStore
     let ref: RacketPartRef
     let ralliesOnly: Bool
