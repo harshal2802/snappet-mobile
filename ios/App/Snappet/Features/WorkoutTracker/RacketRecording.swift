@@ -465,6 +465,12 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     /// `RacketRecordingMode.rawValue` this recording was made in; `nil` ⇒ everything (the only mode with a log before).
     var modeRaw: String?
 
+    // Prompt 254 — additive Optionals: the look chosen in Edit (playback and shared copies only).
+    /// "Whole match": every part of this recording plays with this `RacketLook`.
+    var lookRaw: String?
+    /// "This video": a part's own look (by its start), over the match's.
+    var partLooks: [RacketPartLook]?
+
     init(startedAt: Date) { self.startedAt = startedAt }
 
     func offset(_ date: Date) -> Double { max(0, date.timeIntervalSince(startedAt)) }

@@ -1328,25 +1328,16 @@ struct RacketVideosCover: View {
         let next = rows.firstIndex { abs($0.startSec - ref.startSec) < 0.01 }
             .flatMap { $0 + 1 < rows.count ? rows[$0 + 1] : nil }
             .flatMap { row in ex.map { self.ref($0, row) } }
-        var edits = [RacketPlayerEditAction(id: "rallies", label: "Rallies and tags") { path.append(.timeline(ref)) }]
-        if let i = ref.setIndex, ex?.isRacketMatch == true {
-            edits.append(RacketPlayerEditAction(id: "score", label: "Edit score") {
-                scoring = RacketScoreTarget(exerciseID: ref.exerciseID, unitIndex: i, durationSec: nil)
-            })
-        }
-        edits.append(RacketPlayerEditAction(id: "analysis", label: "Analysis view") { path.append(.analyzed(ref)) })
-        if let imp = ex?.racketRecordingLog?.pendingAIImports(partStart: ref.startSec, partEnd: ref.endSec).last {
-            edits.append(RacketPlayerEditAction(id: "compare", label: "Compare \(imp.appName) suggestions") {
-                path.append(.aiCompare(ref, imp.id))
-            })
-        }
+        let compare = ex?.racketRecordingLog?.pendingAIImports(partStart: ref.startSec, partEnd: ref.endSec).last
+            .map { imp in (label: "Compare \(imp.appName) suggestions", action: { path.append(.aiCompare(ref, imp.id)) }) }
         let canFind = RacketCapabilityRegistry.capabilities(for: sport).model != nil
         return RacketWatchPlayerScreen(
             store: store, ref: ref, ralliesOnly: ralliesOnly, nextPart: next,
             onNextPart: { replaceTop(with: .player($0, ralliesOnly: false)) },
             onFindRallies: canFind ? { findRallies([ref], sport: sport) } : nil,
             onMarkByHand: { path.append(.timeline(ref)) },
-            editActions: edits)
+            onAnalysis: { path.append(.analyzed(ref)) },
+            compare: compare)
     }
 }
 

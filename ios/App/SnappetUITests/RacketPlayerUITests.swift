@@ -184,16 +184,12 @@ final class RacketPlayerUITests: XCTestCase {
         app.buttons["racket.player.zoomReset"].tap()
         XCTAssertTrue(any("racket.player.zoomLabel").waitForNonExistence(timeout: 3))
 
-        // Edit keeps today's surfaces: Rallies and tags opens the part's timeline.
+        // Edit opens Edit mode (prompt 254) on the same video; Cancel with no changes goes straight back.
         showControls()
         app.buttons["racket.player.edit"].tap()
-        let rallies = app.buttons["racket.player.edit.rallies"].firstMatch
-        XCTAssertTrue(rallies.waitForExistence(timeout: 4))
-        XCTAssertEqual(rallies.label, "Rallies and tags")
-        XCTAssertTrue(app.buttons["racket.player.edit.score"].firstMatch.exists)
-        XCTAssertTrue(app.buttons["racket.player.edit.analysis"].firstMatch.exists)
-        rallies.tap()
-        XCTAssertTrue(app.buttons["racket.tl.markStart"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["racket.edit.done"].waitForExistence(timeout: 5))
+        app.buttons["racket.edit.cancel"].tap()
+        XCTAssertTrue(surface.waitForExistence(timeout: 5))
     }
 
     func testNoRalliesAndEndOfGame() {

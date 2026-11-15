@@ -370,6 +370,13 @@ struct RacketFilmstrip: Equatable, Sendable {
         self.pointsPerSec = Self.pointsPerSec(duration: end - start, visibleWidth: visibleWidth)
     }
 
+    /// Edit's strip (prompt 254): a scale set by pinching.
+    init(start: Double, end: Double, pointsPerSec: Double) {
+        self.start = start
+        self.end = max(start, end)
+        self.pointsPerSec = max(0.0001, pointsPerSec)
+    }
+
     var length: Double { (end - start) * pointsPerSec }
 
     /// x of time `t` along the strip (0 at the part's start).
