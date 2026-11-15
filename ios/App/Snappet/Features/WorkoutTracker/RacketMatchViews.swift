@@ -1383,6 +1383,8 @@ struct RacketSaveGameSheet: View {
             .padding(20)
         }
         .presentationDetents([.fraction(0.62), .large])
+        // Opaque, as on ProCameraStop: the camera picture must not show through the score.
+        .presentationBackground(Color(white: 0.07))
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
         .onAppear {
