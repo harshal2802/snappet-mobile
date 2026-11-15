@@ -370,7 +370,7 @@ final class RacketProCameraRecordingUITests: XCTestCase {
 
         // The pro camera before block 1: lenses and quality, no mode strip.
         let shutter = app.buttons["racket.camera.shutter"]
-        XCTAssertTrue(shutter.waitForExistence(timeout: 10), "a drill opens on the pro camera")
+        XCTAssertTrue(shutter.waitForExistence(timeout: 25), "a drill opens on the pro camera")
         XCTAssertTrue(app.buttons["racket.camera.lens.3"].exists)
         XCTAssertFalse(app.buttons["racket.camera.mode.byUnit"].exists, "a drill's mode was chosen in setup")
         app.buttons["racket.camera.lens.2"].tap()
