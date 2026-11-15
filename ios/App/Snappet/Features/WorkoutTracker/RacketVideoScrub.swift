@@ -83,8 +83,9 @@ enum RacketRecordStats {
 // MARK: - The split review's segmented timeline (TtSplitReview)
 
 enum RacketSplitTimeline {
-    /// Game accent; warmup / break / rest / not play / practice grey; an unsure stretch amber.
-    enum Tone: Equatable, Sendable { case game, grey, unsure }
+    /// Game accent; warmup / break / rest / not play / practice grey; an unsure stretch amber; a timeout inside a game
+    /// a dim accent (prompt 258).
+    enum Tone: Equatable, Sendable { case game, grey, unsure, timeout }
 
     struct Segment: Equatable, Sendable {
         var id: UUID
@@ -100,6 +101,7 @@ enum RacketSplitTimeline {
         case .matched: return .game
         case .unsure: return .unsure
         case .notCounted: return .grey
+        case .skipped: return .timeout
         }
     }
 

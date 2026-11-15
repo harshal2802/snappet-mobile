@@ -19,6 +19,10 @@ enum RacketPartKind: String, Codable, CaseIterable, Sendable {
     case warmup, game, breakTime, drillBlock, rest, notPlay
     /// Rallies with no score: "an extra game or practice?" until the player says which.
     case unsure
+    /// A break **inside** a game (prompt 258): it sits between two halves of the same game, which count as one game
+    /// (one score, one rally list). It stays in the original recording but the player skips it and shared copies leave
+    /// it out. An older build reads the unknown raw value as "Not play" (`RacketVideoPart.kind`).
+    case timeout
 
     func label(unit: RacketUnit) -> String {
         switch self {
@@ -29,6 +33,7 @@ enum RacketPartKind: String, Codable, CaseIterable, Sendable {
         case .rest: return "Rest"
         case .notPlay: return "Not play"
         case .unsure: return "Rallies, no score"
+        case .timeout: return "Timeout"
         }
     }
 
@@ -36,7 +41,7 @@ enum RacketPartKind: String, Codable, CaseIterable, Sendable {
     var counts: Bool { self == .game || self == .drillBlock }
 
     /// The choices on "What is this part?" (TtSplitEdit).
-    static let editChoices: [RacketPartKind] = [.warmup, .game, .breakTime, .drillBlock, .rest, .notPlay]
+    static let editChoices: [RacketPartKind] = [.warmup, .game, .breakTime, .timeout, .drillBlock, .rest, .notPlay]
 }
 
 /// Where an unsure stretch belongs (TtSplitEdit "Belongs to").
@@ -58,6 +63,11 @@ struct RacketVideoPart: Codable, Hashable, Identifiable, Sendable {
     var setIndex: Int?
     /// `RacketPartBelongs.rawValue` — "Extra game, this match" turns an unsure stretch into a game of this match.
     var belongsRaw: String?
+    /// Prompt 258, **draft only**: logged games (indexes into `SessionExercise.sets`) that fold into this part's game
+    /// when the split is saved — a half brought its own game into a game group when a timeout joined them. Held on the
+    /// half the game came from, so changing the timeout back gives it back. Cleared by `RacketSplitCommit`; additive
+    /// Optional (old data decodes nil).
+    var joinedSetIndexes: [Int]?
 
     init(id: UUID = UUID(), kind: RacketPartKind, startSec: Double, endSec: Double, setIndex: Int? = nil,
          belongs: RacketPartBelongs? = nil) {
@@ -281,116 +291,8 @@ enum RacketSplitProposal {
 }
 
 // MARK: - Editing (TtSplitEdit)
-
-/// Range edits keep the parts **tiling** the recording: sorted, no overlaps, no gaps, clamped to its length, each
-/// at least `minPartSec`. Moving one edge moves the neighbour's edge with it.
-enum RacketSplitEditor {
-    static let minPartSec: Double = RacketSplitProposal.minPartSec
-
-    enum Issue: Equatable, Sendable {
-        case empty
-        case outOfRange(index: Int)
-        case overlap(index: Int)
-        case gap(index: Int)
-        case tooShort(index: Int)
-    }
-
-    /// Problems with a list of parts for a recording of `duration` seconds; `[]` ⇒ valid.
-    static func validate(_ parts: [RacketVideoPart], duration: Double) -> [Issue] {
-        guard !parts.isEmpty else { return [.empty] }
-        var issues: [Issue] = []
-        for (i, p) in parts.enumerated() {
-            if p.startSec < 0 || p.endSec > duration + 0.001 { issues.append(.outOfRange(index: i)) }
-            if p.durationSec < minPartSec - 0.001 { issues.append(.tooShort(index: i)) }
-            if i > 0 {
-                let prev = parts[i - 1].endSec
-                if p.startSec < prev - 0.001 { issues.append(.overlap(index: i)) }
-                if p.startSec > prev + 0.001 { issues.append(.gap(index: i)) }
-            }
-        }
-        if parts[0].startSec > 0.001 { issues.append(.gap(index: 0)) }
-        if let last = parts.last, last.endSec < duration - 0.001 { issues.append(.gap(index: parts.count)) }
-        return issues
-    }
-
-    /// Sort, clamp to `[0, duration]`, and close gaps / overlaps (each part starts where the one before ends).
-    static func normalized(_ parts: [RacketVideoPart], duration: Double) -> [RacketVideoPart] {
-        var ps = parts.sorted { $0.startSec < $1.startSec }
-        for i in ps.indices {
-            ps[i].startSec = i == 0 ? 0 : ps[i - 1].endSec
-            ps[i].endSec = min(duration, max(ps[i].startSec, ps[i].endSec))
-        }
-        if !ps.isEmpty { ps[ps.count - 1].endSec = duration }
-        return ps.filter { $0.durationSec > 0 }
-    }
-
-    /// Move part `id` to `[start, end]`, clamped so it and its neighbours stay at least `minPartSec`; the neighbours'
-    /// touching edges follow. The first part always starts at 0 and the last always ends at `duration`.
-    static func setBounds(_ parts: [RacketVideoPart], id: UUID, start: Double, end: Double,
-                          duration: Double) -> [RacketVideoPart] {
-        guard let i = parts.firstIndex(where: { $0.id == id }) else { return parts }
-        var ps = parts
-        let lo = i > 0 ? ps[i - 1].startSec + minPartSec : 0
-        let hi = i < ps.count - 1 ? ps[i + 1].endSec - minPartSec : duration
-        var s = i > 0 ? min(max(start, lo), hi - minPartSec) : 0
-        var e = i < ps.count - 1 ? max(min(end, hi), s + minPartSec) : duration
-        s = max(0, s); e = min(duration, e)
-        ps[i].startSec = s
-        ps[i].endSec = e
-        if i > 0 { ps[i - 1].endSec = s }
-        if i < ps.count - 1 { ps[i + 1].startSec = e }
-        return ps
-    }
-
-    /// "Split here": part `id` becomes two at `t` (both keep its kind; the second has no game link). Ignored when
-    /// either half would be shorter than `minPartSec`.
-    static func split(_ parts: [RacketVideoPart], id: UUID, at t: Double) -> [RacketVideoPart] {
-        guard let i = parts.firstIndex(where: { $0.id == id }) else { return parts }
-        let p = parts[i]
-        guard t - p.startSec >= minPartSec, p.endSec - t >= minPartSec else { return parts }
-        var first = p
-        first.endSec = t
-        var second = RacketVideoPart(kind: p.kind, startSec: t, endSec: p.endSec)
-        second.belongs = p.belongs
-        var ps = parts
-        ps.replaceSubrange(i...i, with: [first, second])
-        return ps
-    }
-
-    /// "Merge with next": part `id` takes the next part's range (it keeps its own kind and game link).
-    static func mergeWithNext(_ parts: [RacketVideoPart], id: UUID) -> [RacketVideoPart] {
-        guard let i = parts.firstIndex(where: { $0.id == id }), i < parts.count - 1 else { return parts }
-        var ps = parts
-        ps[i].endSec = ps[i + 1].endSec
-        if ps[i].setIndex == nil { ps[i].setIndex = ps[i + 1].setIndex }
-        ps.remove(at: i + 1)
-        return ps
-    }
-
-    /// "What is this part?" / "Belongs to". An unsure stretch that belongs to this match becomes an extra game;
-    /// "Practice" keeps it unsure and uncounted.
-    static func setKind(_ parts: [RacketVideoPart], id: UUID, kind: RacketPartKind) -> [RacketVideoPart] {
-        parts.map { p in
-            guard p.id == id else { return p }
-            var q = p
-            q.kind = kind
-            if !kind.counts { q.setIndex = nil }
-            if kind != .game && kind != .unsure { q.belongs = nil }
-            return q
-        }
-    }
-
-    static func setBelongs(_ parts: [RacketVideoPart], id: UUID, belongs: RacketPartBelongs) -> [RacketVideoPart] {
-        parts.map { p in
-            guard p.id == id else { return p }
-            var q = p
-            q.belongs = belongs
-            q.kind = belongs == .thisMatch ? .game : .unsure
-            if belongs == .practice { q.setIndex = nil }
-            return q
-        }
-    }
-}
+//
+// The editor, its invariants and every operation with timeouts (prompt 258) live in `RacketSplitGroups.swift`.
 
 // MARK: - Part ↔ game (TtSplitAssign) and Apply
 
@@ -407,63 +309,84 @@ enum RacketSplitAssign {
         var sets: [SetLog]
         /// How many "Score unconfirmed" games were added.
         var added: Int
+        /// For each new set index, the old index it came from (nil for an added game).
+        var sourceIndex: [Int?] = []
     }
 
-    static func apply(parts input: [RacketVideoPart], sets: [SetLog], base: Int, startedAt: Date) -> Outcome {
+    /// One game per game group (prompt 258: halves joined across timeouts are one game, linked on the first half).
+    /// Links the editor already set are kept; then a Watch game goes to the group its end falls in (the end of the
+    /// group's **last** half, plus `toleranceSec`); then the rest in order. A new game is "Score unconfirmed", its
+    /// length the played time, with a suggested score from `rallies`' tags when there are any.
+    static func apply(parts input: [RacketVideoPart], sets: [SetLog], base: Int, startedAt: Date,
+                      rallies: [RacketRally] = []) -> Outcome {
         var parts = input
+        let groups = RacketGameGroups.groups(parts)
+        let given = parts.map(\.setIndex)
         for i in parts.indices { parts[i].setIndex = nil }
-        let gameIdx = parts.indices.filter { parts[$0].kind == .game }
         let base = min(max(0, base), sets.count)
         let own = Array(sets[base...])
-        var setFor: [Int: Int] = [:]           // part index → index into `own`
+        var setFor: [Int: Int] = [:]           // group index → index into `own`
         var used = Set<Int>()
 
-        // 1. By time: a game whose completedAt falls in (or just after) a game part.
-        for (k, s) in own.enumerated() {
+        // 0. The links the editor kept (a reopened split, a group's link after a join or a split).
+        for (gi, g) in groups.enumerated() {
+            guard let l = given[g.first], l >= base, l - base < own.count, !used.contains(l - base) else { continue }
+            setFor[gi] = l - base
+            used.insert(l - base)
+        }
+        // 1. By time: a game whose completedAt falls in (or just after) a game.
+        for (k, s) in own.enumerated() where !used.contains(k) {
             guard let at = s.completedAt else { continue }
             let t = at.timeIntervalSince(startedAt)
-            if let pi = gameIdx.first(where: { setFor[$0] == nil && t >= parts[$0].startSec
-                                               && t <= parts[$0].endSec + toleranceSec }) {
-                setFor[pi] = k
+            if let gi = groups.indices.first(where: { setFor[$0] == nil && t >= parts[groups[$0].first].startSec
+                                                      && t <= parts[groups[$0].last].endSec + toleranceSec }) {
+                setFor[gi] = k
                 used.insert(k)
             }
         }
-        // 2. In order: the recording's other games fill the remaining parts, never before a part already matched
-        //    to a later game.
+        // 2. In order: the recording's other games fill the remaining games, never before one already matched to a
+        //    later game.
         var free = own.indices.filter { !used.contains($0) }
-        for pi in gameIdx where setFor[pi] == nil {
+        for gi in groups.indices where setFor[gi] == nil {
             guard let k = free.first else { break }
-            let laterMatched = setFor.contains { $0.key > pi && $0.value < k }
+            let laterMatched = setFor.contains { $0.key > gi && $0.value < k }
             if laterMatched { continue }
-            setFor[pi] = k
+            setFor[gi] = k
             free.removeFirst()
             used.insert(k)
         }
 
         // 3. Rebuild the recording's games in part order: matched games, then new "Score unconfirmed" ones, then any
         //    of its games no part claimed (kept, in their order).
-        var rebuilt: [(part: Int?, set: SetLog)] = []
+        var rebuilt: [(group: Int?, set: SetLog, source: Int?)] = []
         var added = 0
-        for pi in gameIdx {
-            if let k = setFor[pi] {
-                rebuilt.append((pi, own[k]))
+        for (gi, g) in groups.enumerated() {
+            if let k = setFor[gi] {
+                rebuilt.append((gi, own[k], base + k))
             } else {
                 var s = SetLog()
                 s.scoreUnconfirmed = true
-                s.completedAt = startedAt.addingTimeInterval(parts[pi].endSec)
-                s.durationSec = parts[pi].durationSec
-                rebuilt.append((pi, s))
+                s.completedAt = startedAt.addingTimeInterval(parts[g.last].endSec)
+                s.durationSec = RacketGameGroups.playedSec(parts, g)
+                let skips = RacketGameGroups.skips(parts, from: parts[g.first].startSec, to: parts[g.last].endSec)
+                let rs = RacketRallyMarking.inRange(rallies, parts[g.first].startSec, parts[g.last].endSec, skipping: skips)
+                    .filter(\.isRally)
+                let us = rs.filter { $0.winner == .us }.count, them = rs.filter { $0.winner == .them }.count
+                if us + them > 0 { s.suggestedFor = us; s.suggestedAgainst = them }
+                rebuilt.append((gi, s, nil))
                 added += 1
             }
         }
-        for k in own.indices where !used.contains(k) { rebuilt.append((nil, own[k])) }
+        for k in own.indices where !used.contains(k) { rebuilt.append((nil, own[k], base + k)) }
 
         var out = Array(sets[..<base])
+        var source: [Int?] = Array(0..<base)
         for (offset, r) in rebuilt.enumerated() {
             out.append(r.set)
-            if let pi = r.part { parts[pi].setIndex = base + offset }
+            source.append(r.source)
+            if let gi = r.group { parts[groups[gi].first].setIndex = base + offset }
         }
-        return Outcome(parts: parts, sets: out, added: added)
+        return Outcome(parts: parts, sets: out, added: added, sourceIndex: source)
     }
 
     /// One row of TtSplitAssign / TtSplitDone: "Game 1 · 11–9", "Game 3 · no score", "Extra game".
@@ -479,10 +402,12 @@ enum RacketSplitAssign {
         }
     }
 
-    /// "Game 3 has video but no score" — the first game part whose game has no score yet.
+    /// "Game 3 has video but no score" — the first game whose logged game has no score yet (a game's halves joined
+    /// across timeouts count once).
     static func missingScore(parts: [RacketVideoPart], sets: [SetLog], unit: RacketUnit) -> (part: RacketVideoPart, line: String)? {
         var n = 0
-        for p in parts where p.kind == .game {
+        for g in RacketGameGroups.groups(parts) {
+            let p = parts[g.first]
             n += 1
             let state = p.setIndex.flatMap { $0 < sets.count ? sets[$0].racketScoreState : nil }
             if state == nil || state == .unconfirmed {
@@ -508,6 +433,8 @@ enum RacketScoreEdit {
         set.superTiebreak = log.superTiebreak
         set.scoreUnconfirmed = nil
         set.scoreFromWatch = nil
+        set.suggestedFor = nil
+        set.suggestedAgainst = nil
         if set.completedAt == nil { set.completedAt = log.completedAt ?? .now }
     }
 }
@@ -515,36 +442,50 @@ enum RacketScoreEdit {
 // MARK: - Review lines (TtSplitReview)
 
 enum RacketSplitReview {
-    enum Status: String, Sendable { case matched = "Matched", notCounted = "Not counted", unsure = "Unsure" }
+    enum Status: String, Sendable {
+        case matched = "Matched", notCounted = "Not counted", unsure = "Unsure"
+        /// A timeout inside a game (prompt 258): kept in the original, skipped when playing.
+        case skipped = "Skipped"
+    }
 
     static func status(_ p: RacketVideoPart) -> Status {
         if p.kind.counts { return .matched }
+        if p.kind == .timeout { return .skipped }
         if p.kind == .unsure && p.belongs == nil { return .unsure }
         return .notCounted
     }
 
-    /// The part's name in the review list: "Game 2", "Warmup", "Extra game".
-    static func name(_ p: RacketVideoPart, ordinal: Int?, unit: RacketUnit) -> String {
-        if p.isExtra { return "Extra \(unit.noun)" }
-        switch p.kind {
-        case .game: return "\(unit.noun.capitalized) \(ordinal ?? 1)"
-        case .drillBlock: return "Block \(ordinal ?? 1)"
-        default: return p.kind.label(unit: unit)
+    /// The part's name in the review list: "Game 2", "Game 2, continued", "Warmup", "Extra game".
+    static func name(_ p: RacketVideoPart, ordinal: Int?, unit: RacketUnit, continued: Bool = false) -> String {
+        let base: String
+        if p.isExtra {
+            base = "Extra \(unit.noun)"
+        } else {
+            switch p.kind {
+            case .game: base = "\(unit.noun.capitalized) \(ordinal ?? 1)"
+            case .drillBlock: return "Block \(ordinal ?? 1)"
+            default: return p.kind.label(unit: unit)
+            }
         }
+        return continued ? "\(base), continued" : base
     }
 
     /// "6:10–24:40 · 11–9 from Watch", "· no score logged", "· not counted", "· an extra game or practice?",
-    /// "· packing up, not counted".
-    static func detail(_ p: RacketVideoPart, sets: [SetLog], unit: RacketUnit, isLast: Bool) -> String {
+    /// "· packing up, not counted"; a timeout "3:10, skipped"; a game's continuation just its range.
+    static func detail(_ p: RacketVideoPart, sets: [SetLog], unit: RacketUnit, isLast: Bool,
+                       continued: Bool = false) -> String {
         let range = RacketVideoTime.range(p.startSec, p.endSec)
         switch p.kind {
         case .game, .drillBlock:
+            if continued { return range }
             let state = p.setIndex.flatMap { $0 < sets.count ? sets[$0].racketScoreState : nil }
             if p.kind == .drillBlock { return range }
             switch state {
             case .some(.unconfirmed), .none: return "\(range) · no score logged"
             case .some(let s): return "\(range) · \(s.label)"
             }
+        case .timeout:
+            return "\(RacketVideoTime.clock(p.durationSec)), skipped"
         case .unsure:
             return p.belongs == .practice ? "\(range) · practice, not counted" : "\(range) · an extra \(unit.noun) or practice?"
         case .notPlay:
@@ -554,12 +495,16 @@ enum RacketSplitReview {
         }
     }
 
-    /// Ordinal per counted kind (Game 1, 2, 3 … / Block 1, 2 …), extra games excluded.
+    /// Ordinal per counted kind (Game 1, 2, 3 … / Block 1, 2 …), extra games excluded. A game's continuation after a
+    /// timeout has its game's ordinal (it is the same game).
     static func ordinals(_ parts: [RacketVideoPart]) -> [UUID: Int] {
         var games = 0, blocks = 0
         var out: [UUID: Int] = [:]
-        for p in parts {
-            if p.kind == .game && !p.isExtra { games += 1; out[p.id] = games }
+        for (i, p) in parts.enumerated() {
+            if p.kind == .game && !p.isExtra {
+                if !RacketGameGroups.isContinuation(i, in: parts) { games += 1 }
+                out[p.id] = max(1, games)
+            }
             if p.kind == .drillBlock { blocks += 1; out[p.id] = blocks }
         }
         return out
@@ -819,8 +764,9 @@ enum RacketVideoRows {
         guard let log = ex.racketRecordingLog else { return [] }
         let unit = ex.racketFormat.sport.unit
         let rallies = log.allRallies
-        func tagLine(_ a: Double, _ b: Double) -> (String, Int) {
-            let inPart = rallies.filter { $0.isRally && $0.startSec >= a - 0.01 && $0.startSec < b }
+        func tagLine(_ a: Double, _ b: Double, skips: [ClosedRange<Double>]) -> (String, Int) {
+            let inPart = rallies.filter { $0.isRally && $0.startSec >= a - 0.01 && $0.startSec < b
+                                          && RacketGameGroups.inGame($0, skips: skips) }
             // Prompt 247: say what came from another AI app (accepted on Compare).
             let ai = inPart.filter(\.isFromAI)
             if !ai.isEmpty {
@@ -829,34 +775,55 @@ enum RacketVideoRows {
             }
             return (inPart.isEmpty ? "Not marked yet" : "\(inPart.count) marked by you", inPart.count)
         }
-        let parts: [RacketVideoPart]
+        var parts: [RacketVideoPart]
+        var all: [RacketVideoPart] = []
         if ex.isRacketDrill {
             parts = RacketSplitProposal.drillParts(log: log).filter { $0.kind == .drillBlock }
         } else if let split = log.split, split.appliedAt != nil {
+            all = split.parts
             parts = split.countedParts
         } else {
             let total = log.timelineSec
-            let (t, n) = tagLine(0, total + 1)
+            let (t, n) = tagLine(0, total + 1, skips: [])
             return [RacketVideoRow(id: "\(ex.id)-whole", exerciseID: ex.id, kind: .whole, title: "Whole recording",
                                    line: "\(RacketVideoTime.clock(total)) · \(log.keptAsOne == true ? "kept as one video" : "not split yet")",
                                    scoreChip: nil, tagLine: t, setIndex: nil, startSec: 0, endSec: total, rallies: n)]
         }
+        // Prompt 258: one row per game — a game's halves joined across timeouts are one row, timeouts left out of
+        // its length and rallies.
+        var ends: [UUID: Double] = [:]
+        var played: [UUID: Double] = [:]
+        if !all.isEmpty {
+            let continued = RacketGameGroups.continuations(all)
+            for g in RacketGameGroups.groups(all) {
+                ends[all[g.first].id] = all[g.last].endSec
+                played[all[g.first].id] = RacketGameGroups.playedSec(all, g)
+            }
+            parts = parts.filter { !continued.contains($0.id) }
+        }
         let ordinals = RacketSplitReview.ordinals(parts)
         return parts.map { p in
+            let end = ends[p.id] ?? p.endSec
+            let skips = all.isEmpty ? [] : RacketGameGroups.skips(all, from: p.startSec, to: end)
             let state = p.setIndex.flatMap { $0 < ex.sets.count ? ex.sets[$0].racketScoreState : nil }
-            var line = RacketVideoTime.clock(p.durationSec)
+            var line = RacketVideoTime.clock(played[p.id] ?? p.durationSec)
             var chip: String?
             switch state {
             case .confirmed(let s): line = "\(s.label) · \(line)"
             case .fromWatch(let s): line = "\(s.label) · \(line)"; chip = "From Watch"
-            case .unconfirmed: chip = "Unconfirmed"
+            case .unconfirmed:
+                chip = "Unconfirmed"
+                if let s = p.setIndex.flatMap({ $0 < ex.sets.count ? ex.sets[$0].suggestedScore : nil }) {
+                    line = "\(s.label)? · \(line)"
+                }
             case nil: break
             }
-            let (t, n) = tagLine(p.startSec, p.endSec)
+            if !skips.isEmpty { line += " · \(skips.count == 1 ? "1 timeout" : "\(skips.count) timeouts") skipped" }
+            let (t, n) = tagLine(p.startSec, end, skips: skips)
             return RacketVideoRow(id: p.id.uuidString, exerciseID: ex.id, kind: .part(p.id),
                                   title: RacketSplitReview.name(p, ordinal: ordinals[p.id], unit: unit),
                                   line: line, scoreChip: chip, tagLine: t, setIndex: p.setIndex,
-                                  startSec: p.startSec, endSec: p.endSec, rallies: n)
+                                  startSec: p.startSec, endSec: end, rallies: n)
         }
     }
 
@@ -876,7 +843,7 @@ enum RacketVideoRows {
             let videos = rows(for: ex).count
             return "\(blocks) \(blocks == 1 ? "block" : "blocks") · \(videos) \(videos == 1 ? "video" : "videos")"
         }
-        let videos = ex.isRacketDrill ? rows(for: ex).count : (log.isSplit ? (log.split?.countedParts.count ?? 0) : 1)
+        let videos = ex.isRacketDrill ? rows(for: ex).count : (log.isSplit ? rows(for: ex).count : 1)
         let tagged = log.allRallies.filter(\.isTagged).count
         let marked = log.allRallies.filter(\.isRally).count
         let noun = ex.isRacketDrill ? (videos == 1 ? "block" : "blocks") : (videos == 1 ? "video" : "videos")

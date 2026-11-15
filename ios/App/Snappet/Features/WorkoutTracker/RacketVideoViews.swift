@@ -410,6 +410,7 @@ struct RacketVideosCover: View {
         case .matched: return SnappetColor.brand
         case .unsure: return SnappetColor.perfModerate
         case .notCounted: return SnappetColor.textSecondary.opacity(0.35)
+        case .skipped: return SnappetColor.brand.opacity(0.3)
         }
     }
 
@@ -1599,6 +1600,7 @@ struct RacketSplitTimelineBar: View {
         case .game: return SnappetColor.brand
         case .unsure: return SnappetColor.perfModerate
         case .grey: return SnappetColor.textSecondary.opacity(0.35)
+        case .timeout: return SnappetColor.brand.opacity(0.3)
         }
     }
 }
