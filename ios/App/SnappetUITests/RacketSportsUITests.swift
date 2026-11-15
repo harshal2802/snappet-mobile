@@ -404,4 +404,27 @@ final class RacketSportsUITests: XCTestCase {
             shot("\(sport)-doubles-tag")
         }
     }
+
+    /// Device walk follow-up (prompt 252): Edit score flags an impossible score and still saves it.
+    func testEditScoreWarnsAboutAnImpossibleScoreButSaves() {
+        relaunch(["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketTaggedGames", "-uiTestRacketSport", "tableTennis"])
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 8))
+        app.buttons["moduleCard.workout-log"].tap()
+        app.segmentedControls.buttons["History"].tap()
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'historyRow' AND label CONTAINS 'Racket videos'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        tapWhenHittable(app.buttons["racket.recap.videos"])
+        tapWhenHittable(app.buttons["racket.videos.score.0"])
+        XCTAssertTrue(app.buttons["racket.editScore.saveScore"].waitForExistence(timeout: 5))
+        XCTAssertEqual(any("racket.editScore.mine").label, "11")
+        XCTAssertFalse(any("racket.editScore.warning").exists, "11–9 is a finished game")
+        app.buttons["racket.editScore.theirs.plus"].tap()            // 11–10
+        XCTAssertEqual(any("racket.editScore.warning").label, "This isn’t a finished game score. You can still save it.")
+        shot("edit-score-warning")
+        app.buttons["racket.editScore.saveScore"].tap()
+        XCTAssertTrue(app.buttons["racket.editScore.saveScore"].waitForNonExistence(timeout: 5), "saving is never blocked")
+    }
 }

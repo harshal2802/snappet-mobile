@@ -374,3 +374,33 @@ enum RacketTagDetail: String, Identifiable, Sendable {
         }
     }
 }
+
+// MARK: - Score entry (device walk follow-up, prompt 252)
+
+/// What a score sheet saves, and whether the shown score is a finished result. The game-by-game score sheet prefills the
+/// target (11–0, 6–0, 10–0) so a usual entry is one tap; a game nobody scored (no taps) and nobody edited must not save
+/// that prefill as a confirmed win — it saves as "Score unconfirmed", like Later does. Never blocks saving.
+enum RacketScoreEntry {
+    enum Outcome: Equatable, Sendable {
+        /// No score: `SetLog.scoreUnconfirmed` (counts for neither side, confirm it later).
+        case unconfirmed
+        /// The score shown, confirmed.
+        case score(RacketUnitScore)
+    }
+
+    /// Empty tally and untouched steppers ⇒ unconfirmed; otherwise the shown score.
+    static func outcome(tallyEmpty: Bool, touched: Bool, shown: RacketUnitScore) -> Outcome {
+        tallyEmpty && !touched ? .unconfirmed : .score(shown)
+    }
+
+    /// Shown under the steppers while the tally is empty and nothing was touched.
+    static let untouchedLine = "No points were tapped. Set the score, or it saves as unconfirmed."
+
+    /// The amber line when the shown score isn't a finished result under the format's rules (the existing
+    /// `RacketScoring.check`: game to N win by 2 with the cap, sets 6–x / 7–5 / 7–6 with a tiebreak, super tiebreak to
+    /// 10 win by 2, no ties). nil when it is.
+    static func warning(_ score: RacketUnitScore, format: RacketFormat) -> String? {
+        guard case .warning = RacketScoring.check(score, format: format) else { return nil }
+        return "This isn’t a finished \(format.sport.unit.noun) score. You can still save it."
+    }
+}

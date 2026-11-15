@@ -1049,9 +1049,15 @@ struct RacketSaveGameSheet: View {
     @State private var tbTheirs = 5
     @State private var configured = false
     @State private var custom = false
+    /// A stepper (or the tiebreak) was changed by hand (device walk follow-up, prompt 252).
+    @State private var touched = false
 
     private var format: RacketFormat { ex.racketFormat }
     private var sport: RacketSport { format.sport }
+    private var shown: RacketUnitScore {
+        RacketUnitScore(scoreFor: mine, scoreAgainst: theirs, tiebreakFor: needsTB ? tbMine : nil,
+                        tiebreakAgainst: needsTB ? tbTheirs : nil, superTiebreak: isSTB)
+    }
     private var unit: RacketUnit { sport.unit }
     private var isSTB: Bool { format.isSuperTiebreak(index: unitIndex) }
     private var needsTB: Bool { !isSTB && sport.usesSets && RacketScoring.needsTiebreak(mine, theirs, gamesTo: format.pointsTo) }
@@ -1080,6 +1086,15 @@ struct RacketSaveGameSheet: View {
                 .padding(.vertical, 12)
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 if needsTB { tiebreakRow }
+                if live.isEmpty && !touched {
+                    Text(RacketScoreEntry.untouchedLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("racket.save.untouched")
+                } else if touched, let w = RacketScoreEntry.warning(shown, format: format) {
+                    Text(w).font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("racket.save.warning")
+                }
                 RacketBox {
                     Toggle(isOn: $options.autoStart) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1141,10 +1156,17 @@ struct RacketSaveGameSheet: View {
 
     private func save(startBreak: Bool) {
         var log = SetLog(durationSec: (durationSec ?? 0) > 0 ? durationSec : nil)
-        log.scoreFor = mine
-        log.scoreAgainst = theirs
-        if needsTB { log.tiebreakFor = tbMine; log.tiebreakAgainst = tbTheirs }
-        if isSTB { log.superTiebreak = true }
+        switch RacketScoreEntry.outcome(tallyEmpty: live.isEmpty, touched: touched, shown: shown) {
+        case .unconfirmed:
+            // Nobody scored this game and the prefill wasn't touched: no score, confirm it later.
+            log.scoreUnconfirmed = true
+        case .score(let s):
+            log.scoreFor = s.scoreFor
+            log.scoreAgainst = s.scoreAgainst
+            log.tiebreakFor = s.tiebreakFor
+            log.tiebreakAgainst = s.tiebreakAgainst
+            if s.superTiebreak { log.superTiebreak = true }
+        }
         onSave(log, startBreak)
         dismiss()
     }
@@ -1169,8 +1191,8 @@ struct RacketSaveGameSheet: View {
             Text("\(value.wrappedValue)").font(.system(size: 52, weight: .light)).monospacedDigit()
                 .accessibilityIdentifier("racket.save.\(id)")
             HStack(spacing: 10) {
-                stepButton("−", id: "\(id).minus") { value.wrappedValue = max(0, value.wrappedValue - 1) }
-                stepButton("+", id: "\(id).plus") { value.wrappedValue = min(maxValue, value.wrappedValue + 1) }
+                stepButton("−", id: "\(id).minus") { touched = true; value.wrappedValue = max(0, value.wrappedValue - 1) }
+                stepButton("+", id: "\(id).plus") { touched = true; value.wrappedValue = min(maxValue, value.wrappedValue + 1) }
             }
         }
         .frame(maxWidth: .infinity)
@@ -1190,9 +1212,9 @@ struct RacketSaveGameSheet: View {
         HStack {
             Text("Tiebreak").font(.subheadline.weight(.semibold))
             Spacer()
-            Stepper("\(tbMine)", value: $tbMine, in: 0...40).fixedSize()
+            Stepper("\(tbMine)", value: Binding(get: { tbMine }, set: { tbMine = $0; touched = true }), in: 0...40).fixedSize()
             Text("–").foregroundStyle(SnappetColor.textSecondary)
-            Stepper("\(tbTheirs)", value: $tbTheirs, in: 0...40).fixedSize()
+            Stepper("\(tbTheirs)", value: Binding(get: { tbTheirs }, set: { tbTheirs = $0; touched = true }), in: 0...40).fixedSize()
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))

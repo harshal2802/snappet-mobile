@@ -132,7 +132,10 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["racket.save.break.30"].exists, "table tennis offers a 0:30 break")
         XCTAssertTrue(app.buttons["racket.save.break.60"].isSelected, "1:00 by default")
         XCTAssertTrue(app.switches["racket.save.pauseRecording"].exists)
+        XCTAssertEqual(any("racket.save.untouched").label, "No points were tapped. Set the score, or it saves as unconfirmed.")
         for _ in 0..<7 { app.buttons["racket.save.theirs.plus"].tap() }
+        XCTAssertFalse(any("racket.save.untouched").exists, "touched: it saves what's shown")
+        XCTAssertFalse(any("racket.save.warning").exists, "11–7 is a finished game")
         shot("save-game")
         app.buttons["racket.save.startBreak"].tap()
 
@@ -170,9 +173,13 @@ final class RacketMatchUITests: XCTestCase {
         shot("videos-after-match")
         close.tap()
 
-        // The page: 11–7 and 11–0 decide a best of 3; What works shows in every mode.
+        // The page: game 1 saved 11–7 (a stepper was touched); game 2 nobody scored and nobody edited, so it's
+        // "Score unconfirmed", not the 11–0 prefill (device walk follow-up, prompt 252). What works shows in every mode.
         XCTAssertTrue(any("racket.whatWorks").waitForExistence(timeout: 6))
-        XCTAssertEqual(app.buttons.matching(identifier: "racket.unitChip").count, 2, "two games logged")
+        let chips = app.buttons.matching(identifier: "racket.unitChip")
+        XCTAssertEqual(chips.count, 3, "two games logged, plus game 3's chip: an unconfirmed game decides nothing")
+        XCTAssertTrue(chips.element(boundBy: 0).label.contains("11–7"), chips.element(boundBy: 0).label)
+        XCTAssertTrue(chips.element(boundBy: 1).label.contains("Score unconfirmed"), chips.element(boundBy: 1).label)
         XCTAssertTrue(app.buttons["racket.yourVideos"].exists, "the filmed games are in Your videos")
     }
 
@@ -365,5 +372,41 @@ final class RacketMatchUITests: XCTestCase {
         for _ in 0..<4 { them.tap() }
         XCTAssertEqual(any("racket.game.score").label, "5 – 4")
         shot("tennis-tiebreak")
+    }
+
+    /// Device walk follow-up (prompt 252): a game nobody scored, saved without touching the steppers, is "Score
+    /// unconfirmed" (not the 11–0 prefill); touching a stepper into an unfinished score warns but still saves it.
+    func testUnscoredGameSavesUnconfirmedAndATouchedOneWarnsButSaves() {
+        openMatchForm()
+        tapWhenHittable(app.buttons["racket.match.setUpCamera"])
+        XCTAssertTrue(app.buttons["racket.camera.continue"].waitForExistence(timeout: 8))
+        app.buttons["racket.camera.continue"].tap()
+        app.buttons["racket.warmup.start"].tap()
+        XCTAssertTrue(app.buttons["racket.game.next"].waitForExistence(timeout: 6))
+        app.buttons["racket.game.next"].tap()
+        XCTAssertTrue(any("racket.save.untouched").waitForExistence(timeout: 5))
+        XCTAssertEqual(any("racket.save.mine").label, "11", "the prefill stays")
+        shot("save-untouched")
+        app.buttons["racket.save.startBreak"].tap()
+        XCTAssertTrue(any("racket.break.line").waitForExistence(timeout: 5), "still starts the break")
+        app.buttons["racket.break.skip"].tap()
+        var waited = 0
+        while !any("racket.game.status").label.hasPrefix("Recording") && waited < 20 { Thread.sleep(forTimeInterval: 0.5); waited += 1 }
+        app.buttons["racket.game.stop"].tap()
+        XCTAssertTrue(app.buttons["racket.save.matchOver"].waitForExistence(timeout: 5))
+        app.buttons["racket.save.theirs.plus"].tap()                 // 11–1: touched, a finished game
+        XCTAssertFalse(any("racket.save.warning").exists)
+        for _ in 0..<9 { app.buttons["racket.save.theirs.plus"].tap() }  // 11–10: not finished
+        XCTAssertEqual(any("racket.save.warning").label, "This isn’t a finished game score. You can still save it.")
+        shot("save-warning")
+        app.buttons["racket.save.matchOver"].tap()
+        let close = app.buttons["racket.videos.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        close.tap()
+        let chips = app.buttons.matching(identifier: "racket.unitChip")
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 6))
+        XCTAssertEqual(chips.count, 3, "two games + the next one's chip (the match isn't decided)")
+        XCTAssertTrue(chips.element(boundBy: 0).label.contains("Score unconfirmed"), chips.element(boundBy: 0).label)
+        XCTAssertTrue(chips.element(boundBy: 1).label.contains("11–10"), "saving is never blocked: \(chips.element(boundBy: 1).label)")
     }
 }

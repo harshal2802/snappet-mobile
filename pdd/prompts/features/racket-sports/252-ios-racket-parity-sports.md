@@ -74,3 +74,24 @@ squash tag sheets reach their detail boards; and doubles say who serves by name 
 3. Device build + install (no device walk: these screens have no camera or video dependence).
 4. Board re-check `racket-wireframes/audit/recheck-sports.md`, screenshots + board renders + side-by-side composites in
    `racket-wireframes/shots/sports/`.
+
+## Follow-up (2026-11-14): two issues from the device walk
+
+The phone checklist walk (`racket-wireframes/shots/sports/device/`) found two things the user approved fixing:
+
+1. **A game nobody scored saved as a confirmed 11–0.** The score sheet prefills the target (11–0 / 6–0 / 10–0) so the
+   usual entry is one tap; saving it untouched logged a win that never happened. Now, with an empty tally and neither
+   stepper (nor the tiebreak) touched, "Save, start break" and "Save, match over" save the game with no score
+   (`scoreUnconfirmed`), as Later does, keeping each button's break / match-over behaviour. The prefill and layout stay;
+   one line under the steppers says "No points were tapped. Set the score, or it saves as unconfirmed."
+   (`racket.save.untouched`). Touching a stepper saves what's shown, confirmed. A tally changes nothing. Pure:
+   `RacketScoreEntry.outcome`.
+2. **Impossible scores saved without a word.** Edit score, and the score sheet once a stepper is touched, show one amber
+   line when the shown score isn't a finished result under the format's rules (`RacketScoring.check`, reused):
+   "This isn’t a finished game score. You can still save it." ("set" for tennis and padel; `racket.editScore.warning`,
+   `racket.save.warning`). Saving is never blocked. Pure: `RacketScoreEntry.warning`.
+
+Tests: `RacketSportRulesTests` (outcome, unconfirmed games never decide a match, the warning per sport / format);
+`RacketMatchUITests` (the game-by-game walk now expects game 2 "Score unconfirmed"; a new test for untouched → unconfirmed
+and touched 11–10 → warning but saved); `RacketSportsUITests` (Edit score 11–10 warns and saves). Device: test 11 of the
+checklist walk re-run on the phone.

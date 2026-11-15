@@ -925,6 +925,15 @@ struct RacketEditScoreSheet: View {
                         }
                         .accessibilityIdentifier("racket.editScore.tiebreak")
                     }
+                    // Device walk follow-up (prompt 252): an impossible score is flagged, never blocked.
+                    if let w = RacketScoreEntry.warning(RacketUnitScore(scoreFor: mine, scoreAgainst: theirs,
+                                                                        tiebreakFor: needsTB ? tbMine : nil,
+                                                                        tiebreakAgainst: needsTB ? tbTheirs : nil,
+                                                                        superTiebreak: isSTB), format: format) {
+                        Text(w).font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("racket.editScore.warning")
+                    }
                     Button { save() } label: { Text("Save score").frame(maxWidth: .infinity, minHeight: 30) }
                         .buttonStyle(SnappetWidePrimaryStyle())
                         .accessibilityIdentifier("racket.editScore.saveScore")

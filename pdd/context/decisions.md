@@ -11237,3 +11237,18 @@ PdWall, SqLet, PbTag's "4–2–1 · Mia serving next", the DoublesTag lines tha
 - **UI tests**: `-uiTestWatchTaps` (Debug only) puts two tiny stand-ins for the Watch's score taps on the game screen — the
   simulator can't send Watch taps and the game screen has no score buttons — so PbSideOut is tested; `-uiTestRacketTaggedGames`
   seeds the match game by game with Snappet's rallies in game 1 so each sport's tag line and detail link are walked.
+
+## 2026-11-14 — Racket score sheets: an unscored game is unconfirmed; impossible scores warn (prompt 252 follow-up)
+
+Found on the phone (checklist walk) and approved by the user.
+
+- **A game with no taps and an untouched score sheet saves as "Score unconfirmed"**, not the 11–0 / 6–0 / 10–0 prefill.
+  Both Save buttons keep their break / match-over behaviour; the prefill stays so a real entry is still one tap, and a
+  line says "No points were tapped. Set the score, or it saves as unconfirmed." Touching any stepper (or the tiebreak)
+  saves what's shown, confirmed; a game with Watch or phone taps is unchanged. Unconfirmed games count for neither side,
+  so they never decide a match or stop auto-start (`RacketScoreEntry.outcome`).
+- **Edit score and the score sheet warn, never block**, when the shown score isn't a finished result: "This isn’t a
+  finished game score. You can still save it." ("set" for tennis / padel), in amber. The rule is the existing
+  `RacketScoring.check` (game to N win by 2 with badminton's cap, sets 6–x / 7–5 / 7–6 with a tiebreak to 7 win by 2,
+  super tiebreak to 10 win by 2, no ties) — prompt 203's "never blocked" stands. The score sheet shows it only after a
+  stepper is touched, so the untouched line isn't doubled.

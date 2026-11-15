@@ -506,4 +506,63 @@ final class RacketSportRulesTests: XCTestCase {
         ex.sets = [b1, b2]
         XCTAssertEqual(RacketStats.recapDrillHeadline(ex), "Longest 19")
     }
+
+    // MARK: - Score entry (device walk follow-up)
+
+    func testAnUntouchedEmptyGameSavesUnconfirmed() {
+        let shown = RacketUnitScore(scoreFor: 11, scoreAgainst: 0)
+        XCTAssertEqual(RacketScoreEntry.outcome(tallyEmpty: true, touched: false, shown: shown), .unconfirmed)
+        XCTAssertEqual(RacketScoreEntry.outcome(tallyEmpty: true, touched: true, shown: shown), .score(shown),
+                       "touched: the shown values, confirmed")
+        let tally = RacketUnitScore(scoreFor: 5, scoreAgainst: 3)
+        XCTAssertEqual(RacketScoreEntry.outcome(tallyEmpty: false, touched: false, shown: tally), .score(tally),
+                       "a tally: unchanged")
+        XCTAssertEqual(RacketScoreEntry.untouchedLine, "No points were tapped. Set the score, or it saves as unconfirmed.")
+    }
+
+    func testUnconfirmedGamesCountForNobodyAndDontDecideTheMatch() {
+        var won = SetLog(); won.scoreFor = 11; won.scoreAgainst = 5
+        var unconfirmed = SetLog(); unconfirmed.scoreUnconfirmed = true
+        var ex = match(.tableTennis, games: [won, unconfirmed, unconfirmed])
+        ex.racketBestOf = 3
+        let st = ex.racketState
+        XCTAssertEqual([st.won, st.lost], [1, 0])
+        XCTAssertNil(st.result, "unconfirmed games never decide a match")
+        XCTAssertEqual(ex.racketUnconfirmedCount, 2)
+    }
+
+    func testFinishedScoreWarningPerSport() {
+        func w(_ sport: RacketSport, _ a: Int, _ b: Int, tb: (Int, Int)? = nil, stb: Bool = false,
+               to: Int? = nil, sideOut: Bool = false) -> String? {
+            RacketScoreEntry.warning(RacketUnitScore(scoreFor: a, scoreAgainst: b, tiebreakFor: tb?.0, tiebreakAgainst: tb?.1,
+                                                     superTiebreak: stb),
+                                     format: RacketFormat(sport: sport, bestOf: 3, pointsTo: to, superTiebreak: stb, sideOut: sideOut))
+        }
+        let game = "This isn’t a finished game score. You can still save it."
+        let set = "This isn’t a finished set score. You can still save it."
+        // Points games.
+        XCTAssertNil(w(.tableTennis, 11, 9))
+        XCTAssertEqual(w(.tableTennis, 11, 10), game, "win by 2")
+        XCTAssertNil(w(.tableTennis, 12, 10))
+        XCTAssertEqual(w(.tableTennis, 9, 7), game, "short of 11")
+        XCTAssertEqual(w(.squash, 5, 5), game, "tied")
+        XCTAssertNil(w(.badminton, 30, 29), "badminton's cap")
+        XCTAssertEqual(w(.badminton, 31, 29), game)
+        XCTAssertNil(w(.badminton, 21, 20, to: 15), "games to 15 cap at 21")
+        XCTAssertNil(w(.pickleball, 15, 13, to: 15))
+        XCTAssertEqual(w(.pickleball, 11, 10, sideOut: true), game, "side-out still wins by 2")
+        XCTAssertNil(w(.pickleball, 21, 19, to: 21, sideOut: true))
+        // Sets.
+        XCTAssertNil(w(.tennis, 6, 4))
+        XCTAssertNil(w(.tennis, 7, 5))
+        XCTAssertEqual(w(.tennis, 6, 5), set)
+        XCTAssertEqual(w(.padel, 7, 6), set, "7–6 needs its tiebreak")
+        XCTAssertNil(w(.padel, 7, 6, tb: (7, 4)))
+        XCTAssertEqual(w(.tennis, 7, 6, tb: (7, 6)), set, "a tiebreak is won by 2")
+        XCTAssertEqual(w(.tennis, 11, 9), set)
+        // Super tiebreak.
+        XCTAssertNil(w(.tennis, 10, 8, stb: true))
+        XCTAssertNotNil(w(.tennis, 10, 9, stb: true))
+        XCTAssertNotNil(w(.padel, 9, 4, stb: true))
+    }
 }
