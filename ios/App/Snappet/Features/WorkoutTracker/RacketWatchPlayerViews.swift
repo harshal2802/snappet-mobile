@@ -187,6 +187,8 @@ struct RacketWatchPlayerScreen: View {
         if onlyRallies, let first = rallies.rallies.first { pb.seek(to: first.startSec) }
         // Opened from Play: it plays (Photos), and the controls hide after a moment; unless the viewer already
         // paused or moved it while the video was opening.
+        // UI tests only (prompt 258): open at a recording time (just before a timeout) to see it skipped.
+        if let t = UserDefaults.standard.string(forKey: "uiTestRacketPlayerStart").flatMap(Double.init) { pb.seek(to: t) }
         if !missing, touches == before { pb.play() }
     }
 

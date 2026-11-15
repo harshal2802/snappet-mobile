@@ -177,6 +177,16 @@ enum RacketVideoSeed {
             match.racketBestOf = 7
             match.racketRecordingLog = m.log
             match.sets = m.sets
+            if ProcessInfo.processInfo.arguments.contains("-uiTestRacketSplitTimeoutJoined"), var log = match.racketRecordingLog,
+               let parts = log.split?.parts {
+                // Already joined (the player test): the break between Game 4 and Game 5 saved as a timeout.
+                let draft = RacketSplitEditor.setKind(parts, id: parts[6].id, kind: .timeout)
+                let out = RacketSplitCommit.apply(parts: draft, sets: match.sets, base: 0, startedAt: start,
+                                                  duration: log.timelineSec, rallies: log.allRallies)
+                log.split = RacketSplit(parts: out.parts, appliedAt: start.addingTimeInterval(4100))
+                match.racketRecordingLog = log
+                match.sets = out.sets
+            }
         } else if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = taggedGameLog(startedAt: start)
