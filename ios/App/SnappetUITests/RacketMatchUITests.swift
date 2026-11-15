@@ -90,19 +90,15 @@ final class RacketMatchUITests: XCTestCase {
         sleep(1)
         shutter.tap()
 
-        // DimOff.
+        // The camera while recording (prompt 256: ProCameraRecording), then Dim (ProCameraDim).
         let status = any("racket.game.status")
         XCTAssertTrue(status.waitForExistence(timeout: 6))
-        XCTAssertTrue(any("racket.game.preview").exists, "the game opens on the camera")
+        XCTAssertTrue(any("racket.camera.preview").exists, "the game opens on the camera")
         app.buttons["racket.rec.show.dim"].tap()
         XCTAssertTrue(status.label.hasPrefix("Recording"), status.label)
-        XCTAssertEqual(any("racket.game.unit").label, "Game 1")
-        XCTAssertEqual(any("racket.game.phone").label, "Phone OK")
+        XCTAssertEqual(any("racket.camera.recTitle").label, "Game 1 · 0 – 0")
         XCTAssertEqual(any("racket.game.score").label, "0 – 0")
-        XCTAssertEqual(any("racket.game.line").label, "Recording. Rallies will be found after the game.")
         XCTAssertTrue(app.buttons["racket.game.mark"].exists)
-        XCTAssertFalse(app.buttons["racket.rec.trackingTurnOn"].isEnabled, "live tracking isn't built: disabled")
-        XCTAssertEqual(app.buttons["racket.rec.trackingTurnOn"].label, "Not available yet")
         shot("dim-off")
         app.buttons["racket.game.mark"].tap()
         // LiveTag (prompt 251): tag the last rally by hand, then back to the game screen.
@@ -116,8 +112,8 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["racket.game.tagLast"].waitForExistence(timeout: 3))
         // CameraViewOff, StatsOff.
         app.buttons["racket.rec.show.camera"].tap()
-        XCTAssertTrue(any("racket.game.preview").waitForExistence(timeout: 3))
-        XCTAssertTrue(any("racket.game.cameraScore").exists)
+        XCTAssertTrue(any("racket.camera.preview").waitForExistence(timeout: 3))
+        XCTAssertEqual(any("racket.camera.recTitle").label, "Game 1 · 0 – 0")
         shot("camera-view-off")
         app.buttons["racket.rec.show.stats"].tap()
         XCTAssertTrue(any("racket.rec.stats.gameTime").waitForExistence(timeout: 3))
@@ -127,8 +123,8 @@ final class RacketMatchUITests: XCTestCase {
         shot("stats-off")
         app.buttons["racket.rec.show.dim"].tap()
 
-        // Next game → SaveGame.
-        app.buttons["racket.game.next"].tap()
+        // Stop (one tap, prompt 256) → SaveGame.
+        app.buttons["racket.game.stop"].tap()
         let subtitle = any("racket.save.subtitle")
         XCTAssertTrue(subtitle.waitForExistence(timeout: 5), "the score sheet opens")
         XCTAssertEqual(subtitle.label, "Fix it now or later.")
@@ -143,29 +139,38 @@ final class RacketMatchUITests: XCTestCase {
         shot("save-game")
         app.buttons["racket.save.startBreak"].tap()
 
-        // GameBreak → countdown → game 2.
+        // The break on the camera (ProCameraBreak) → countdown → game 2.
         let breakLine = any("racket.break.line")
         XCTAssertTrue(breakLine.waitForExistence(timeout: 5))
-        XCTAssertEqual(breakLine.label, "Game 2 starts by itself after this")
-        XCTAssertEqual(any("racket.game.unit").label, "Game 1 saved")
-        XCTAssertEqual(any("racket.game.status").label, "Ⅱ Recording paused")
-        XCTAssertEqual(any("racket.rec.phase").label, "Break")
+        XCTAssertTrue(breakLine.label.hasPrefix("Game 2 in "), breakLine.label)
+        XCTAssertEqual(any("racket.camera.recTitle").label, "Game 1 saved · 11–7")
+        XCTAssertEqual(any("racket.camera.notice").label, "Not recording. Lens and quality are unlocked.")
         shot("game-break")
+        app.buttons["racket.camera.options"].tap()
+        XCTAssertTrue(app.buttons["racket.break.pause"].waitForExistence(timeout: 4))
         app.buttons["racket.break.pause"].tap()
-        XCTAssertEqual(any("racket.rec.phase").label, "Break, paused")
+        XCTAssertTrue(app.buttons["racket.break.resume"].waitForExistence(timeout: 3))
+        app.buttons["racket.camera.optionsDone"].tap()
+        XCTAssertTrue(breakLine.waitForExistence(timeout: 3))
+        XCTAssertTrue(breakLine.label.hasPrefix("Game 2 · paused"), breakLine.label)
+        app.buttons["racket.camera.options"].tap()
+        XCTAssertTrue(app.buttons["racket.break.resume"].waitForExistence(timeout: 4))
         app.buttons["racket.break.resume"].tap()
+        app.buttons["racket.camera.optionsDone"].tap()
+        XCTAssertTrue(app.buttons["racket.break.skip"].waitForExistence(timeout: 3))
+        sleep(1)
         app.buttons["racket.break.skip"].tap()
         XCTAssertTrue(any("racket.countdown.number").waitForExistence(timeout: 3))
         XCTAssertEqual(any("racket.game.status").label, "Starting soon")
         shot("game-countdown")
         app.buttons["racket.countdown.wait"].tap()
-        XCTAssertEqual(any("racket.rec.phase").label, "Break, paused", "Wait returns to a paused break timer")
+        XCTAssertTrue(breakLine.waitForExistence(timeout: 3))
+        XCTAssertTrue(breakLine.label.hasPrefix("Game 2 · paused"), "Wait returns to a paused break timer: \(breakLine.label)")
         app.buttons["racket.break.skip"].tap()
-        let unit = any("racket.game.unit")
         var waited = 0
         // The countdown header already reads "Game 2"; the game itself starts recording at zero.
         while !any("racket.game.status").label.hasPrefix("Recording") && waited < 20 { Thread.sleep(forTimeInterval: 0.5); waited += 1 }
-        XCTAssertEqual(unit.label, "Game 2", "the countdown starts game 2")
+        XCTAssertEqual(any("racket.camera.recTitle").label, "Game 2 · 0 – 0", "the countdown starts game 2")
         XCTAssertTrue(any("racket.game.status").label.hasPrefix("Recording"), "recording starts at zero")
 
         // Stop → SaveGame → Save, match over → Your videos (Score → Analyzing).
@@ -276,8 +281,8 @@ final class RacketMatchUITests: XCTestCase {
 
     // MARK: Per sport
 
-    /// Walk one sport's boards: form → camera check → warmup → DimOff / CameraViewOff / StatsOff → SaveGame → GameBreak
-    /// → GameCountdown, checking the sport's copy.
+    /// Walk one sport's boards: form → the pro camera → DimOff / CameraViewOff / StatsOff → SaveGame → the break on the
+    /// camera → GameCountdown, checking the sport's copy. (`line`, the old Dim line, isn't on the ProCameraDim board.)
     private func walk(_ sport: String, unit: String, line: String, subtitle: String) {
         openMatchForm(sport)
         if sport == "padel" { tapWhenHittable(app.buttons["racket.deuce.continue"]) }
@@ -294,26 +299,27 @@ final class RacketMatchUITests: XCTestCase {
         app.buttons["racket.camera.optionsDone"].tap()
         sleep(1)
         app.buttons["racket.camera.shutter"].tap()
-        XCTAssertTrue(any("racket.game.unit").waitForExistence(timeout: 6))
-        XCTAssertEqual(any("racket.game.unit").label, "\(unit) 1")
+        XCTAssertTrue(any("racket.camera.recTitle").waitForExistence(timeout: 6))
+        XCTAssertTrue(any("racket.camera.recTitle").label.hasPrefix("\(unit) 1 · "), any("racket.camera.recTitle").label)
         app.buttons["racket.rec.show.dim"].tap()
-        XCTAssertEqual(any("racket.game.line").label, line)
+        XCTAssertTrue(any("racket.game.score").waitForExistence(timeout: 3) || any("racket.game.tiebreak").exists)
         shot("\(sport)-04-dim")
         app.buttons["racket.rec.show.camera"].tap()
-        XCTAssertTrue(any("racket.game.preview").waitForExistence(timeout: 3))
+        XCTAssertTrue(any("racket.camera.preview").waitForExistence(timeout: 3))
         shot("\(sport)-05-camera-view")
         app.buttons["racket.rec.show.stats"].tap()
         XCTAssertTrue(any("racket.rec.stats.hr").waitForExistence(timeout: 3))
         shot("\(sport)-06-stats")
         app.buttons["racket.rec.show.dim"].tap()
-        app.buttons["racket.game.next"].tap()
+        app.buttons["racket.game.stop"].tap()
         XCTAssertTrue(any("racket.save.subtitle").waitForExistence(timeout: 5))
         XCTAssertEqual(any("racket.save.subtitle").label, subtitle)
         shot("\(sport)-07-score")
         app.buttons["racket.save.startBreak"].tap()
         XCTAssertTrue(any("racket.break.line").waitForExistence(timeout: 5))
-        XCTAssertEqual(any("racket.break.line").label, "\(unit) 2 starts by itself after this")
+        XCTAssertTrue(any("racket.break.line").label.hasPrefix("\(unit) 2 in "), any("racket.break.line").label)
         shot("\(sport)-08-break")
+        sleep(1)
         app.buttons["racket.break.skip"].tap()
         XCTAssertTrue(any("racket.countdown.number").waitForExistence(timeout: 3))
         shot("\(sport)-09-countdown")
@@ -386,13 +392,14 @@ final class RacketMatchUITests: XCTestCase {
         tapWhenHittable(app.buttons["racket.match.setUpCamera"])
         XCTAssertTrue(app.buttons["racket.camera.shutter"].waitForExistence(timeout: 8))
         app.buttons["racket.camera.shutter"].tap()
-        XCTAssertTrue(app.buttons["racket.game.next"].waitForExistence(timeout: 6))
-        app.buttons["racket.game.next"].tap()
+        XCTAssertTrue(app.buttons["racket.game.stop"].waitForExistence(timeout: 6))
+        app.buttons["racket.game.stop"].tap()
         XCTAssertTrue(any("racket.save.untouched").waitForExistence(timeout: 5))
         XCTAssertEqual(any("racket.save.mine").label, "11", "the prefill stays")
         shot("save-untouched")
         app.buttons["racket.save.startBreak"].tap()
         XCTAssertTrue(any("racket.break.line").waitForExistence(timeout: 5), "still starts the break")
+        sleep(1)
         app.buttons["racket.break.skip"].tap()
         var waited = 0
         while !any("racket.game.status").label.hasPrefix("Recording") && waited < 20 { Thread.sleep(forTimeInterval: 0.5); waited += 1 }

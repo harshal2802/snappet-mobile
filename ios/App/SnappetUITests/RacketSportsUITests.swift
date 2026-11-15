@@ -272,7 +272,7 @@ final class RacketSportsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Side-out. They serve next."].exists)
         XCTAssertEqual(any("racket.sideOut.call.1").label, "0 – 1 – 1")
         XCTAssertEqual(any("racket.sideOut.footnote").label, "At the start of a game, only one server serves before the first side-out.")
-        XCTAssertTrue(app.buttons["racket.game.next"].exists && app.buttons["racket.game.stop"].exists)
+        XCTAssertTrue(app.buttons["racket.game.next"].exists && app.buttons["racket.game.stop"].exists, "the side-out panel keeps Next / Stop")
         shot("pb-06-side-out")
         app.buttons["racket.sideOut.undo"].tap()
         XCTAssertFalse(any("racket.sideOut.panel.0").waitForExistence(timeout: 1), "Undo returns to the game screen")

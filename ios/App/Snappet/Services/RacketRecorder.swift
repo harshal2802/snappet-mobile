@@ -52,7 +52,14 @@ final class RacketRecorder: NSObject {
     /// back to fair / nominal ⇒ ok. Critical still stops the recording (`onInterrupted(.tooHot)`).
     var onThermal: ((RacketThermalLevel) -> Void)?
     /// The level now, for a screen that opens while the phone is already warm.
-    var thermal: RacketThermalLevel { RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue) }
+    var thermal: RacketThermalLevel {
+        fakeThermal ?? RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
+    }
+    /// iOS says an interruption (a call, another app on the camera, leaving the app) is over (prompt 256): the screen
+    /// starts a new part by itself when the reason allows (`RacketInterruptionCopy.autoResumes`).
+    var onInterruptionEnded: (() -> Void)?
+    /// The fake's thermal state, forced by UI tests (`simulate`).
+    private var fakeThermal: RacketThermalLevel?
 
     private let movie = AVCaptureMovieFileOutput()
     private let library = MediaLibraryService()
@@ -447,6 +454,26 @@ final class RacketRecorder: NSObject {
     /// The look shown on the live preview (never recorded).
     func setLook(_ look: RacketLook) { setup.look = look }
 
+    /// UI tests (DEBUG, the fake camera only): force what a phone would report — heat, a call starting and ending.
+    enum Simulated: String, CaseIterable { case warm, hot, cool, call, callEnded }
+
+    func simulate(_ s: Simulated) {
+        guard fake else { return }
+        switch s {
+        case .warm: fakeThermal = .warm; onThermal?(.warm)
+        case .hot: fakeThermal = .tooHot; onThermal?(.tooHot); report(.tooHot)
+        case .cool: fakeThermal = .ok; onThermal?(.ok)
+        case .call: report(.call)
+        case .callEnded: onInterruptionEnded?()
+        }
+    }
+
+    /// The battery is charging (low battery isn't trouble then).
+    static func isCharging() -> Bool {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        return UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
+    }
+
     /// The battery, when the phone reports one (the simulator doesn't; UI tests may pass `-uiTestCameraBattery 82`).
     static func batteryPercent() -> Int? {
         #if DEBUG
@@ -558,7 +585,10 @@ final class RacketRecorder: NSObject {
             MainActor.assumeIsolated { self?.report(.cameraError) }
         })
         observers.append(nc.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session,
-                                        queue: .main) { _ in Self.trace("session interruption ended") })
+                                        queue: .main) { [weak self] _ in
+            Self.trace("session interruption ended")
+            MainActor.assumeIsolated { self?.onInterruptionEnded?() }
+        })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session,
                                         queue: .main) { n in Self.trace("session didStartRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session,

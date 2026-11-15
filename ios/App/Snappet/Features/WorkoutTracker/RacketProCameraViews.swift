@@ -35,6 +35,13 @@ struct RacketProCameraView: View {
     let onShutter: () -> Void
     let onClose: () -> Void
     let onPlayWithoutVideo: () -> Void
+    /// While recording (prompt 256): the recording chrome in place of the ready chrome. nil ⇒ before recording.
+    var live: RacketCameraLive? = nil
+    /// Extra controls at the top of Options (the break's pause, +1 min, auto-start).
+    var optionsExtra: AnyView? = nil
+    /// UI tests only: stand-in buttons drawn above everything in this view's own stack (outside it, the preview's UIKit
+    /// gesture layer takes their taps).
+    var testOverlay: AnyView? = nil
 
     @AppStorage(RacketFraming.storageKey) private var framingData = Data()
     @AppStorage(RacketRecordingDefaults.storageKey) private var defaultsData = Data()
@@ -75,27 +82,46 @@ struct RacketProCameraView: View {
         }
     }
 
+    /// Sideways when the screen is wider than tall (ProCameraLandscape); which way from the window scene.
+    private func orientation(_ box: CGSize) -> RacketCameraOrientation {
+        guard box.width > box.height else { return .portrait }
+        let o = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.interfaceOrientation
+        return o == .landscapeLeft ? .landscapeLeft : .landscapeRight
+    }
+
     private var camera: some View {
         GeometryReader { g in
             let box = g.size
-            let video = RacketVideoOrientation.aspectFit(aspect: recorder.previewAspect, in: box)
+            let o = orientation(box)
+            let aspect = o.shownAspect(portraitAspect: recorder.previewAspect.map(Double.init)).map { CGFloat($0) }
+            let video = RacketVideoOrientation.aspectFit(aspect: aspect, in: box)
             ZStack(alignment: .topLeading) {
-                // The cover's one live preview is drawn here (behind), with the look on it; the fake draws a court.
-                Color.clear.racketPreviewSlot()
-                if recorder.fake {
-                    RacketFakeCourtScene()
-                        .modifier(RacketLookPreviewEffect(preview: RacketLookPreview(setup.look)))
-                        .scaleEffect(max(1, setup.zoom), anchor: .center)
-                        .frame(width: video.width, height: video.height)
-                        .clipped()
-                        .offset(x: video.minX, y: video.minY)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                if live?.showsPicture ?? true {
+                    // The cover's one live preview is drawn here (behind), with the look on it; the fake draws a court.
+                    Color.clear.racketPreviewSlot()
+                    if recorder.fake {
+                        RacketFakeCourtScene()
+                            .modifier(RacketLookPreviewEffect(preview: RacketLookPreview(live == nil ? setup.look : .original)))
+                            .scaleEffect(max(1, setup.zoom), anchor: .center)
+                            .frame(width: video.width, height: video.height)
+                            .clipped()
+                            .offset(x: video.minX, y: video.minY)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                    if live == nil { framingOverlays(video) }
+                    gestureLayer(box, aspect: aspect, orientation: o)
+                    if let p = focusAt { focusOverlay(p, box: box) }
+                } else {
+                    Color.black
                 }
-                framingOverlays(video)
-                gestureLayer(box)
-                if let p = focusAt { focusOverlay(p, box: box) }
-                controls
+                if let live { liveMiddle(live) }
+                if o.isLandscape { landscapeControls } else if let live { liveControls(live) } else { controls }
+                if let testOverlay {
+                    // A background makes the strip take its own taps (bare buttons over the preview lose them to the
+                    // UIKit gesture layer).
+                    testOverlay.fixedSize().background(Color.black.opacity(0.35)).padding(.top, safeTop + 50).padding(.leading, 4)
+                }
             }
             .frame(width: box.width, height: box.height)
         }
@@ -142,7 +168,7 @@ struct RacketProCameraView: View {
             RacketCameraOptionsSheet(
                 framing: Binding(get: { framing }, set: { framingData = $0.encoded }),
                 firstServer: firstServer, ourFirstServer: ourFirstServer, sides: sides, partnerName: partnerName,
-                show: $show, useWatch: $useWatch, watchAvailable: watchAvailable,
+                show: $show, useWatch: $useWatch, watchAvailable: watchAvailable, extra: optionsExtra,
                 onDone: { showOptions = false },
                 onLooks: {
                     showOptions = false
@@ -160,6 +186,18 @@ struct RacketProCameraView: View {
     }
 
     private func appear() {
+        #if DEBUG
+        // UI tests: the headless simulator doesn't turn the app with the device (prompt 253's hook).
+        if UserDefaults.standard.bool(forKey: "uiTestRacketLandscape") {
+            // After the cover has finished presenting (a request mid-transition is dropped).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { e in
+                    RacketRecorder.trace("landscape request failed \(e.localizedDescription)")
+                }
+            }
+        }
+        #endif
         if level == nil { level = RacketLevelMeter(fake: recorder.fake) }
         if framing.level { level?.start() }
         free = RacketRecorder.storage()?.free
@@ -181,7 +219,7 @@ struct RacketProCameraView: View {
 
     // MARK: Gestures on the preview: tap = focus (always), touch and hold = AE/AF lock, pinch = zoom
 
-    private func gestureLayer(_ box: CGSize) -> some View {
+    private func gestureLayer(_ box: CGSize, aspect: CGFloat?, orientation o: RacketCameraOrientation) -> some View {
         RacketCameraGestureLayer(
             onTap: { p in
                 if setup.locked {
@@ -191,10 +229,10 @@ struct RacketProCameraView: View {
                     Haptics.tap()
                     return
                 }
-                focus(at: p, box: box, lock: false)
+                focus(at: p, box: box, aspect: aspect, o: o, lock: false)
             },
             onHold: { p in
-                focus(at: p, box: box, lock: true)
+                focus(at: p, box: box, aspect: aspect, o: o, lock: true)
                 Haptics.success()
             },
             onPinch: { scale, ended in
@@ -210,21 +248,21 @@ struct RacketProCameraView: View {
             .accessibilityHint("Tap to focus and set the exposure there. Touch and hold to lock them.")
             .accessibilityIdentifier("racket.camera.preview")
             .accessibilityAction(named: "Focus on the centre") {
-                focus(at: CGPoint(x: box.width / 2, y: box.height / 2), box: box, lock: false)
+                focus(at: CGPoint(x: box.width / 2, y: box.height / 2), box: box, aspect: aspect, o: o, lock: false)
             }
             .accessibilityAction(named: setup.locked ? "Unlock focus and exposure" : "Lock focus and exposure") {
                 if setup.locked { recorder.unlock(); focusAt = nil; lockCaption = false }
-                else { focus(at: focusAt ?? CGPoint(x: box.width / 2, y: box.height / 2), box: box, lock: true) }
+                else { focus(at: focusAt ?? CGPoint(x: box.width / 2, y: box.height / 2), box: box, aspect: aspect, o: o, lock: true) }
             }
             .accessibilityZoomAction { action in
                 recorder.setZoom(RacketZoomDial.stepped(setup.zoom, up: action.direction == .zoomIn, caps), ramp: true)
             }
     }
 
-    private func focus(at p: CGPoint, box: CGSize, lock: Bool) {
-        let device = RacketFocusPoint.devicePoint(tap: p, in: box, videoAspect: recorder.previewAspect)
+    private func focus(at p: CGPoint, box: CGSize, aspect: CGFloat?, o: RacketCameraOrientation, lock: Bool) {
+        let device = RacketFocusPoint.devicePoint(tap: p, in: box, videoAspect: aspect, orientation: o)
         recorder.focus(at: device, lock: lock)
-        let shown = RacketFocusPoint.viewPoint(device: device, in: box, videoAspect: recorder.previewAspect)
+        let shown = RacketFocusPoint.viewPoint(device: device, in: box, videoAspect: aspect, orientation: o)
         withAnimation(.easeOut(duration: 0.15)) {
             focusAt = shown
             lockCaption = lock
@@ -602,6 +640,420 @@ struct RacketProCameraView: View {
         .accessibilityIdentifier("racket.camera.looks")
         .transition(.opacity)
     }
+
+    // MARK: While recording (prompt 256: ProCameraRecording → ProCameraSpace)
+
+    @ViewBuilder private func liveMiddle(_ live: RacketCameraLive) -> some View {
+        if let card = live.card {
+            cardView(card).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let dim = live.dim {
+            VStack(spacing: 6) {
+                Text(dim.score).font(.system(size: 64, weight: .light)).monospacedDigit()
+                    .contentTransition(.numericText())
+                    .accessibilityIdentifier(live.dimScoreID)
+                Text(dim.caption).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier(live.dimCaptionID)
+            }
+            .foregroundStyle(Color.white)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let middle = live.middle {
+            ScrollView { middle.padding(.horizontal, 16) }
+                .padding(.top, safeTop + 64)
+                .padding(.bottom, 230)
+                .foregroundStyle(Color.white)
+        }
+    }
+
+    private func liveControls(_ live: RacketCameraLive) -> some View {
+        VStack(spacing: 0) {
+            liveTopBar(live)
+            if let b = live.banner, live.card == nil { bannerView(b).padding(.horizontal, 12).padding(.top, 10) }
+            if let notice = live.notice {
+                Text(notice).font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.top, 12)
+                    .accessibilityIdentifier("racket.camera.notice")
+            }
+            Spacer(minLength: 0)
+            if lockCaption {
+                Text("Stays fixed when players move. Tap anywhere to unlock.")
+                    .font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.bottom, 16)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("racket.camera.lockCaption")
+            }
+            if live.card == nil { liveBottom(live) }
+        }
+        .foregroundStyle(Color.white)
+    }
+
+    private func toneColor(_ t: RacketCameraLive.Tone) -> Color {
+        switch t {
+        case .plain: return Color.white
+        case .amber: return cameraAmber
+        case .red: return SnappetColor.perfHard
+        }
+    }
+
+    private func liveTopBar(_ live: RacketCameraLive) -> some View {
+        HStack(spacing: 8) {
+            Text(live.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(toneColor(live.titleTone))
+                .lineLimit(1).minimumScaleFactor(0.75)
+                .accessibilityIdentifier(live.titleID)
+            Spacer(minLength: 4)
+            if let c = live.centre { centreView(c) }
+            Spacer(minLength: 4)
+            if setup.locked {
+                // AE/AF lock holds through the recording; the badge says so.
+                Text("AE/AF").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.black)
+                    .padding(.horizontal, 5).padding(.vertical, 3)
+                    .background(cameraAmber, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .accessibilityLabel("AE/AF LOCK")
+                    .accessibilityIdentifier("racket.camera.lockBadge")
+            }
+            qualityButton(locked: live.qualityLocked)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, safeTop)
+        .frame(minHeight: 44 + safeTop)
+        .background(Color.black.opacity(0.55))
+    }
+
+    @ViewBuilder private func centreView(_ c: RacketCameraLive.Centre) -> some View {
+        switch c {
+        case .timer(let text, let a11y, let id):
+            Text(text).font(.system(size: 15, weight: .semibold)).monospacedDigit().foregroundStyle(Color.white)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(SnappetColor.perfHard, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(a11y)
+                .accessibilityValue(text)
+                .accessibilityAddTraits(.updatesFrequently)
+                .accessibilityIdentifier(id)
+        case .amber(let text, let id):
+            Text(text).font(.system(size: 14, weight: .semibold)).monospacedDigit().foregroundStyle(cameraAmber)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityIdentifier(id)
+        case .stopped(let text, let id):
+            Text(text).font(.system(size: 14, weight: .semibold)).monospacedDigit().foregroundStyle(SnappetColor.perfHard)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    private func qualityButton(locked: Bool) -> some View {
+        Button { showQuality = true } label: {
+            Text(setup.format.label).font(.system(size: 15, weight: .bold))
+                .foregroundStyle(locked ? Color.white.opacity(0.4) : Color.white)
+                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(locked || recorder.isCapturing)
+        .accessibilityLabel("Video quality \(setup.format.label)")
+        .accessibilityHint(locked ? "Locked while recording" : "")
+        .accessibilityIdentifier("racket.camera.quality")
+    }
+
+    private func bannerView(_ b: RacketCameraLive.Banner) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(b.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(toneColor(b.tone))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier(b.id)
+            if let line = b.line {
+                Text(line).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("\(b.id).line")
+            }
+            if b.primary != nil || b.secondary != nil {
+                HStack(spacing: 8) {
+                    if let p = b.primary { bannerButton(p, primary: true) }
+                    if let s = b.secondary { bannerButton(s, primary: false) }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(toneColor(b.tone).opacity(0.8)))
+        .accessibilityElement(children: .contain)
+        .onAppear { AccessibilityNotification.Announcement(b.title).post() }
+    }
+
+    private func bannerButton(_ a: RacketCameraLive.Action, primary: Bool) -> some View {
+        Button(action: a.action) {
+            Text(a.label ?? a.title).font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(primary ? Color.black : Color.white)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(primary ? SnappetColor.brand : Color.white.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!a.enabled)
+        .opacity(a.enabled ? 1 : 0.5)
+        .accessibilityIdentifier(a.id)
+    }
+
+    private func cardView(_ c: RacketCameraLive.Card) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(c.title).font(.system(size: 18, weight: .bold)).foregroundStyle(SnappetColor.perfHard)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("racket.camera.stopTitle")
+            Text(c.line).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("racket.camera.stopLine")
+            if let p = c.primary {
+                Button(action: p.action) { Text(p.label ?? p.title).frame(maxWidth: .infinity, minHeight: 30) }
+                    .buttonStyle(SnappetWidePrimaryStyle())
+                    .disabled(!p.enabled)
+                    .accessibilityIdentifier(p.id)
+            }
+            if let sec = c.secondary {
+                RacketWideButton(sec.title, id: sec.id, primary: false, action: sec.action)
+            }
+        }
+        .padding(16)
+        .background(Color(white: 0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(SnappetColor.hairline))
+        .padding(.horizontal, 24)
+        .foregroundStyle(Color.white)
+        .onAppear { AccessibilityNotification.Announcement(c.title).post() }
+    }
+
+    private func liveBottom(_ live: RacketCameraLive) -> some View {
+        VStack(spacing: 14) {
+            // The boards drop the lenses while a banner (warm, interrupted, low space) asks for attention; pinch still zooms.
+            if live.showsLenses, live.showsPicture, live.banner == nil {
+                if dialOpen, caps.maxZoom > caps.minZoom { dial }
+                lensRow
+            }
+            if let a = live.above {
+                Button(action: a.action) {
+                    Text(a.title).font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SnappetColor.hairline))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .accessibilityIdentifier(a.id)
+            }
+            liveStrip(live)
+            HStack {
+                Group {
+                    if live.thumbnailAndOptions { thumbnailButton } else if let l = live.left { circleButton(l, light: false) }
+                    else { Color.clear.frame(width: 52, height: 52) }
+                }
+                .frame(width: 72, alignment: .leading)
+                Spacer()
+                liveShutter(live)
+                Spacer()
+                Group {
+                    if live.thumbnailAndOptions { optionsButton } else if let r = live.right { circleButton(r, light: true) }
+                    else { Color.clear.frame(width: 52, height: 52) }
+                }
+                .frame(width: 72, alignment: .trailing)
+            }
+            .padding(.horizontal, 24)
+        }
+        .padding(.top, 12)
+        .padding(.bottom, max(12, safeBottom))
+        .background(live.showsPicture ? Color.black.opacity(0.55) : Color.clear)
+    }
+
+    @ViewBuilder private func liveStrip(_ live: RacketCameraLive) -> some View {
+        if let views = live.views {
+            HStack(spacing: 30) {
+                ForEach(RacketRecordingShow.allCases, id: \.self) { v in
+                    let on = views.wrappedValue == v
+                    Button { views.wrappedValue = v; Haptics.tap() } label: {
+                        Text(v.label.uppercased()).font(.system(size: 14, weight: .semibold)).tracking(0.6)
+                            .foregroundStyle(on ? cameraAmber : Color.white)
+                            .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(v.label)
+                    .accessibilityIdentifier("\(live.viewIDPrefix).\(v.rawValue)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(live.viewIDPrefix)
+        } else if !live.stripActions.isEmpty {
+            HStack(spacing: 26) {
+                ForEach(Array(live.stripActions.enumerated()), id: \.offset) { _, a in
+                    Button(action: { a.action(); Haptics.tap() }) {
+                        Text(a.title).font(.system(size: 14, weight: .semibold)).tracking(0.4)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!a.enabled)
+                    .accessibilityLabel(a.label ?? a.title)
+                    .accessibilityIdentifier(a.id)
+                }
+            }
+        }
+    }
+
+    private func circleButton(_ a: RacketCameraLive.Action, light: Bool) -> some View {
+        Button(action: { a.action(); Haptics.tap() }) {
+            Text(a.title).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(light ? Color.black : Color.white)
+                .frame(width: 54, height: 54)
+                .background(light ? Color.white.opacity(0.92) : Color.white.opacity(0.08), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!a.enabled)
+        .opacity(a.enabled ? 1 : 0.45)
+        .accessibilityLabel(a.label ?? a.title)
+        .accessibilityIdentifier(a.id)
+    }
+
+    private var optionsButton: some View {
+        Button { showOptions = true } label: {
+            Text("Options").font(.system(size: 13, weight: .semibold))
+                .frame(width: 60, height: 60)
+                .background(Color.white.opacity(0.08), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("racket.camera.options")
+    }
+
+    private func liveShutter(_ live: RacketCameraLive) -> some View {
+        let a = live.shutter
+        return Button(action: { Haptics.tap(); a.action() }) {
+            ZStack {
+                Circle().strokeBorder(Color.white, lineWidth: 5).frame(width: 78, height: 78)
+                if live.shutterStops {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(SnappetColor.perfHard).frame(width: 32, height: 32)
+                } else {
+                    Circle().fill(SnappetColor.perfHard).frame(width: 62, height: 62)
+                }
+            }
+            .opacity(a.enabled ? 1 : 0.4)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!a.enabled)
+        .accessibilityLabel(a.label ?? a.title)
+        .accessibilityIdentifier(a.id)
+    }
+
+    // MARK: Sideways (ProCameraLandscape): status and quality on the left, the controls down the right edge
+
+    private var landscapeControls: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let live {
+                    qualityButton(locked: live.qualityLocked)
+                    Spacer(minLength: 0)
+                    if let c = live.centre { centreView(c) }
+                    Text(live.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(toneColor(live.titleTone))
+                        .lineLimit(2).minimumScaleFactor(0.7)
+                        .accessibilityIdentifier(live.titleID)
+                    if let views = live.views {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(RacketRecordingShow.allCases, id: \.self) { v in
+                                Button { views.wrappedValue = v } label: {
+                                    Text(v.label.uppercased()).font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(views.wrappedValue == v ? cameraAmber : Color.white)
+                                        .frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("\(live.viewIDPrefix).\(v.rawValue)")
+                                .accessibilityAddTraits(views.wrappedValue == v ? .isSelected : [])
+                            }
+                        }
+                    }
+                } else {
+                    Button { showQuality = true } label: {
+                        Text(setup.format.label).font(.system(size: 15, weight: .bold))
+                            .frame(minWidth: 44, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Video quality \(setup.format.label)")
+                    .accessibilityIdentifier("racket.camera.quality")
+                    Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        Circle().fill(pillColor).frame(width: 9, height: 9)
+                        Text(pill.text.components(separatedBy: " · ").first ?? pill.text)
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(pillColor)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(pill.text)
+                    .accessibilityIdentifier("racket.camera.status")
+                    Button(action: onClose) {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .accessibilityIdentifier("racket.camera.close")
+                }
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 12)
+            .frame(width: 120, alignment: .leading)
+            .frame(maxHeight: .infinity)
+            .background(Color.black.opacity(0.55))
+            Spacer(minLength: 0)
+            if let b = live?.banner, live?.card == nil {
+                bannerView(b).frame(maxWidth: 380).padding(.top, 12).frame(maxHeight: .infinity, alignment: .top)
+                Spacer(minLength: 0)
+            }
+            if live?.showsPicture ?? true, live?.showsLenses ?? true {
+                VStack(spacing: 8) {
+                    ForEach(Array(caps.lenses.enumerated().reversed()), id: \.offset) { i, lens in
+                        let on = i == RacketZoomDial.selectedLens(for: setup.zoom, caps)
+                        let text = RacketZoomDial.buttonText(lens: lens, selected: on, zoom: setup.zoom)
+                        Button { recorder.setZoom(lens, ramp: true) } label: {
+                            Text(text).font(.system(size: 12, weight: .bold)).monospacedDigit()
+                                .foregroundStyle(on ? cameraAmber : Color.white)
+                                .frame(width: 38, height: 38)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .frame(width: 44, height: 44).contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Zoom \(on ? text : RacketZoomDial.label(lens))")
+                        .accessibilityIdentifier("racket.camera.lens.\(RacketZoomDial.number(lens))")
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+            VStack {
+                if let live {
+                    if live.thumbnailAndOptions { optionsButton } else if let r = live.right { circleButton(r, light: true) }
+                    Spacer(minLength: 0)
+                    liveShutter(live)
+                    Spacer(minLength: 0)
+                    if live.thumbnailAndOptions { thumbnailButton } else if let l = live.left { circleButton(l, light: false) }
+                } else {
+                    optionsButton
+                    Spacer(minLength: 0)
+                    shutter
+                    Spacer(minLength: 0)
+                    thumbnailButton
+                }
+            }
+            .padding(.vertical, 16)
+            .frame(width: 100)
+            .frame(maxHeight: .infinity)
+            .background(Color.black.opacity(0.55))
+        }
+        .foregroundStyle(Color.white)
+    }
 }
 
 // MARK: - The look on the live preview
@@ -858,6 +1310,7 @@ struct RacketCameraOptionsSheet: View {
     @Binding var show: RacketRecordingShow
     @Binding var useWatch: Bool
     let watchAvailable: Bool
+    var extra: AnyView? = nil
     let onDone: () -> Void
     let onLooks: () -> Void
     let onCompareQuality: () -> Void
@@ -873,6 +1326,7 @@ struct RacketCameraOptionsSheet: View {
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("racket.camera.optionsDone")
                 }
+                if let extra { extra }
                 label("Framing")
                 HStack(spacing: 8) {
                     toggleChip("Grid", on: framing.grid, id: "grid") { framing.grid.toggle() }

@@ -11422,3 +11422,63 @@ Boards ProCamera → ProCameraDenied (`racket-wireframes/boards2/`). Apple Camer
   focus / lock, the format switch, the live look on the preview layer and the carry-over into record everything are
   unverified on hardware. `RacketProCameraUITests.testReportsWhatThisCameraHas` is written to read and print them on the
   phone (no shutter; `CAMERA-REPORT` lines).
+
+## 2026-11-14 — Racket pro camera, while recording (issue #448 part 2; prompt 256)
+
+Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
+
+- **One camera for every recording screen.** The game-by-game cover (game and break), the record-everything cover and the
+  drill cover hand the camera a `RacketCameraLive` (title, centre, strip, Tag / Pause, stop, Mark, banner or stop card,
+  Dim / Stats content); `RacketProCameraView` draws it. The preview stays the cover's one persistent layer, so switching
+  views or states never rebuilds it (round 2). Interval (badminton), the countdown, ScoreOnly, the pickleball side-out
+  panel, live tagging, a paused block, rest and the drill review keep their own screens (no boards for them here).
+- **Stop is one tap** (the stop square, `racket.game.stop`): `endGame(matchOver: false)` → the score sheet. "Next game" is
+  gone; the sheet's "Save, start break" / "Save, match over" decide. **"That was a mistake, keep playing game 1"** is the
+  sheet's cancel: `cancelScore` returns `.resumeCapture`, so the same game continues with its tally and rallies; the clip
+  ran on under the sheet, and if the file had stopped meanwhile the machine starts a new part of the same game. The sheet
+  follows ProCameraStop (title + Later, steppers, the line, saves, Later, the undo); the break options (auto-start, break
+  length, pause recording in the break) stay below it. Table tennis' Watch line is the board's "From your Watch. Fix it
+  now or later."
+- **The red timer** is the recording's recorded time ("00:09:41"; drills "01:48 left"). Its accessibility label keeps the
+  old status ("Recording 09:41", "● Recording everything") and its value the time. The top-left line is the game and live
+  score ("Game 1 · 4 – 3"), "Match · saved just now" (from the recorder's real save state), or "Block 2 of 3"; when there is
+  trouble it becomes the trouble list in amber ("12 min left · 9% · Watch off").
+- **Dim** is the board's big score and "Game 1 · Alex serving" on black (a tennis / padel tiebreak shows the tiebreak
+  banner); record everything's Dim is its match score; a drill's is the time left and the block line. The old Dim's
+  "Recording. Rallies will be found after…" line, the "Live tracking off" row and the camera's score tiles are not on the
+  boards and are gone from the recording screens (Options still has Live tracking "Not available yet").
+- **Break on the camera** (ProCameraBreak): "Game 1 saved · 11–9", amber "Game 2 in 0:45" (paused / ready variants),
+  SKIP BREAK (→ the countdown), +30 S, MATCH OVER; "Not recording. Lens and quality are unlocked." when the break isn't
+  recorded; the shutter (red circle) starts the next game at once; thumbnail and Options. Pause / Resume, +1 min and
+  Auto-start moved into Options (top), since the strip holds three actions.
+- **Banners, one at a time** (`RacketCameraBanner`): a stop card (too hot; storage full) over an interruption over warm
+  over low space. Warm follows the board: the picture stays (the old screens dropped it) with "HD · 30 from next game" and
+  "Dim". Too hot: "Resume filming when cool" is enabled once `thermalState` is back below serious (the machine resumes a
+  heat stop only with `cooled`); "Keep scoring without video" → ScoreOnly with the same tally; Watch scoring keeps working.
+  Interrupted: per-reason copy; a call, another app on the camera, or leaving Snappet resume by themselves when iOS ends
+  the interruption (`interruptionEndedNotification`), as a new part; a camera error needs Resume now.
+- **"HD · 30 from next game"** never changes the file being written: game by game it applies when the next game starts
+  capturing; a block-by-block drill at the next block. **Record everything doesn't offer it**: a whole recording keeps one
+  size so its split and exports compose parts without rescaling; its warm banner has Dim only.
+- **Low space**: warn under 30 min of room at the current rate; **stop cleanly under 1 min** of room, which is measured
+  above iOS's margin (500 MB or 2 % of free space), so the last part closes with at least 500 MB still free and never
+  hits a disk-full error. Before recording, under 15 min the shutter is disabled (prompt 255). **"Free space" opens the
+  storage screen** ("Check space first"), not Settings: leaving Snappet would stop the recording. Battery trouble is
+  ≤ 20 % and not charging. "Watch off" = a Watch was linked when the camera opened and is now unpaired / switched off in
+  Options (WatchConnectivity reachability is too noisy — the Watch app isn't always in front).
+- **Drills now open on the pro camera** (replacing the old camera check): lenses, zoom, focus, lock and quality before
+  block 1, no mode strip (chosen in setup); the shutter starts the countdown; Wait returns to it. ProCameraDrill: "Block 2
+  of 3", red "01:48 left", Pause · End block (the stop square) · Mark (new for drills: a moment mark). "Play without video"
+  on a drill's no-access card closes the camera (a drill's mode can't change mid-cover).
+- **Sideways**: the camera screens already rotate (`allButUpsideDown`); now the preview connection turns with the interface
+  (90° portrait, 0° landscape right, 180° landscape left) and taps map through `RacketCameraOrientation`. Landscape layout:
+  quality and status (or the title, timer and view strip) on the left, lenses in a column, Options / Mark · shutter ·
+  thumbnail / Tag down the right edge; no mode strip sideways (as the board). Recorded parts stay horizon-level as before.
+- **UI-test hooks (DEBUG)**: `-uiTestCameraTrouble` (heat, cool, a call and its end on the fake camera), `-uiTestWatchOff`;
+  test buttons are drawn inside the camera view's own stack (outside it, the preview's UIKit gesture layer takes taps).
+- **Verified on the simulator only** (fake camera): SnappetTests 3056 / 0 failures (5 skipped); every racket UI suite run
+  alone with the app uninstalled first — ProCameraRecording 9, ProCamera 10, Match 14, Recording 2, Sports 10, Drill 3,
+  Videos 2, Tagging 15, Player 7, Edit 7, AI 2, Model 2, GameHR 1 — all green. Device build: the phone stayed
+  "unavailable", so `generic/platform=iOS` was built (succeeds). Not verified on hardware: the real interruption-ended
+  signal, real thermal states, the low-space stop on a nearly full phone, the format switch at the next game, the preview
+  turning sideways on a real camera, zoom / focus / lock while a file is being written.

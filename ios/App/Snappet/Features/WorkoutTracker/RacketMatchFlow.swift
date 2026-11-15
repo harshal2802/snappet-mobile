@@ -151,10 +151,14 @@ struct RacketGameFlow: Equatable, Sendable {
         return (resume ? [.resumeCapture] : []) + [.openScore]
     }
 
-    /// The score sheet was cancelled: back to the game.
-    mutating func cancelScore() {
-        guard case .scoring = phase else { return }
+    /// The score sheet was cancelled ("That was a mistake, keep playing game 1", prompt 256): back to the same game,
+    /// its tally and rallies untouched. The clip runs on through the sheet; if the camera stopped the file meanwhile,
+    /// `.resumeCapture` continues it as a new part of the same game (a no-op while it is still writing).
+    @discardableResult
+    mutating func cancelScore() -> [Effect] {
+        guard case .scoring = phase else { return [] }
         phase = .playing
+        return filming ? [.resumeCapture] : []
     }
 
     /// "Save, start break" / "Later" (`startBreak: true`) or "Save, match over". `decided`: the saved score decides
@@ -464,7 +468,7 @@ enum RacketGameCopy {
     static func scoreSubtitle(sport: RacketSport, fromWatch: Bool, cap: Int?) -> String {
         switch sport {
         case .tableTennis:
-            return fromWatch ? "Filled in from your Watch taps. Fix it now or later." : "Fix it now or later."
+            return fromWatch ? "From your Watch. Fix it now or later." : "Fix it now or later."
         case .badminton:
             let rule = cap.map { "Win by 2, capped at \($0)." } ?? "Win by 2."
             return fromWatch ? "\(rule) Filled in from your Watch." : rule
