@@ -118,6 +118,9 @@ final class RacketVideoLibrary {
             } catch { continue }
         }
         guard !placed.isEmpty else { return nil }
+        // A recording with no sound leaves the audio track empty. An empty track makes a re-encoding export stop at
+        // once ("Operation Stopped", found on the phone, prompt 254); passthrough and playback don't mind. Drop it.
+        if let a = aTrack, a.segments.isEmpty { comp.removeTrack(a) }
         guard order.count > 1, let first = tracks[order[0]] else { return (comp, nil) }
         let render = RacketVideoOrientation.orientedSize(natural: first.natural, transform: first.transform)
         let video = AVMutableVideoComposition()
@@ -231,12 +234,17 @@ final class RacketVideoLibrary {
         try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: box.comp)
     }
 
+    /// The look / label composition for a share copy, boxed the same way (device builds only reach this).
+    private nonisolated static func lookComposition(_ box: CompositionBox, control: RacketLookControl) async -> AVVideoComposition? {
+        await RacketLookRenderer.composition(for: box.comp, control: control)
+    }
+
     /// Export `pieces` (each a list of segments for one recording range, joined end to end) to an .mp4. `captions`
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
     func export(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
                 captions: [(start: Double, end: Double, text: String)] = [],
                 look: RacketLook = .original, speed: Double = 1, labels: [RacketSharePlan.Label] = [],
-                progress: (@MainActor (Double) -> Void)? = nil) async throws -> URL {
+                progress: (@MainActor (Double) -> Void)? = nil, fileName: String? = nil) async throws -> URL {
         // Pieces end to end, each part with its own orientation (round 3).
         var items: [(segment: RacketVideoSegment, atSec: Double)] = []
         var cursorSec = 0.0
@@ -269,7 +277,7 @@ final class RacketVideoLibrary {
             comp.scaleTimeRange(all, toDuration: CMTimeMultiplyByFloat64(comp.duration, multiplier: 1 / speed))
         }
         if built.video == nil, !look.isOriginal || !labels.isEmpty {
-            videoComposition = await RacketLookRenderer.composition(for: comp, control: RacketLookControl(look: look, labels: labels))
+            videoComposition = await Self.lookComposition(CompositionBox(comp: comp), control: RacketLookControl(look: look, labels: labels))
         } else if !captions.isEmpty, let vc = base {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
@@ -286,7 +294,8 @@ final class RacketVideoLibrary {
             throw VideoError.exportFailed("no export session")
         }
         session.videoComposition = videoComposition
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("racket-\(UUID().uuidString).mp4")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent(fileName ?? "racket-\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: out)
         let watcher = progress.map { report in
             Task { @MainActor in
                 for await state in session.states(updateInterval: 0.2) {
@@ -303,6 +312,10 @@ final class RacketVideoLibrary {
         } catch {
             try? FileManager.default.removeItem(at: out)
             if Task.isCancelled { throw CancellationError() }
+            #if DEBUG
+            let ns = error as NSError
+            print("RACKETEXPORT failed \(ns.domain) \(ns.code) \(ns.userInfo) underlying: \(String(describing: ns.userInfo[NSUnderlyingErrorKey]))")
+            #endif
             throw VideoError.exportFailed(error.localizedDescription)
         }
         progress?(1)

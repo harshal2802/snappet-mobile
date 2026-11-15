@@ -305,4 +305,97 @@ final class RacketEditUITests: XCTestCase {
         XCTAssertTrue(sheet.waitForExistence(timeout: 60) || close.waitForExistence(timeout: 1), "the share sheet shows the copy")
         XCTAssertFalse(any("racket.share.error").exists)
     }
+
+    // MARK: Held sideways (prompt 254 follow-up)
+
+    /// Edit and Share are portrait boards: opened with the phone (or, on the headless simulator, the scene) turned to
+    /// landscape, they come up upright and every control can be reached; the player turns again afterwards.
+    func testEditStaysUprightWhenHeldSideways() {
+        launch(extra: ["-uiTestRacketLandscape", "YES"])
+        openPlayer()
+        // Turn the phone once the player is up (the app's list screens have their own landscape layouts).
+        XCUIDevice.shared.orientation = .landscapeLeft
+        Thread.sleep(forTimeInterval: 1.5)
+        pause()
+        button("racket.player.edit").tap()
+        XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5), "Edit mode")
+        Thread.sleep(forTimeInterval: 1.5)
+        let video = any("racket.edit.video")
+        XCTAssertLessThan(video.frame.width, 600, "upright: the video spans a portrait width (\(video.frame))")
+        XCTAssertTrue(button("racket.edit.addRally").isHittable, "+ Rally can be reached")
+        button("racket.edit.tab.looks").tap()
+        button("racket.edit.look.vivid").tap()
+        button("racket.edit.cancel").tap()
+        XCTAssertTrue(button("racket.edit.discard").waitForExistence(timeout: 3))
+        XCTAssertTrue(button("racket.edit.discard").isHittable, "the discard sheet can be reached")
+        button("racket.edit.discard").tap()
+        XCTAssertTrue(surface.waitForExistence(timeout: 5), "back to the player")
+        // Share is upright too.
+        if !button("racket.player.share").exists { tapVideo() }
+        button("racket.player.share").tap()
+        XCTAssertTrue(button("racket.share.go").waitForExistence(timeout: 4))
+        XCTAssertTrue(button("racket.share.go").isHittable)
+        button("racket.share.cancel").tap()
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    // MARK: Share variants (pulled off the phone and checked frame by frame)
+
+    /// Dismiss the system share sheet (Close, else a swipe down).
+    private func closeSystemShareSheet() {
+        let close = app.buttons["Close"].firstMatch
+        if close.waitForExistence(timeout: 2) { close.tap() } else { app.swipeDown(velocity: .fast) }
+        _ = button("racket.share.go").waitForNonExistence(timeout: 5)
+    }
+
+    private func share(_ which: String, keepSpeed: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+        if !button("racket.player.share").exists { tapVideo() }
+        button("racket.player.share").tap()
+        XCTAssertTrue(any("racket.share.summary").waitForExistence(timeout: 4), file: file, line: line)
+        button("racket.share.which.\(which)").tap()
+        if keepSpeed { button("racket.share.speed").tap() }
+        print("RACKETSHAREPLAN \(which) \(any("racket.share.summary").label) \(any("racket.share.size").label)")
+        button("racket.share.go").tap()
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        let close = app.buttons["Close"].firstMatch
+        let made = sheet.waitForExistence(timeout: 240) || close.waitForExistence(timeout: 1)
+        XCTAssertTrue(made, "the copy (\(which)) was made: \(any("racket.share.error").exists ? any("racket.share.error").label : "")",
+                      file: file, line: line)
+        XCTAssertFalse(any("racket.share.error").exists, file: file, line: line)
+        closeSystemShareSheet()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// Five copies, named `uitest-share-v2-…` in the app's tmp folder (`-uiTestShareName v2`): the whole game with labels,
+    /// this rally, rallies only, this rally kept at 0.5×, and this rally with the Warm look and labels.
+    func testShareVariants() {
+        launch(extra: ["-uiTestShareName", "v2"])
+        openPlayer()
+        pause()
+        goToRally(12)
+        controls.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        controls.tap()
+        share("whole")
+        share("rally")
+        share("ralliesOnly")
+        // 0.5× kept.
+        if !button("racket.player.speed").exists { tapVideo() }
+        button("racket.player.speed").tap()
+        button("racket.player.speed.0.5").tap()
+        if controls.label == "Pause" { controls.tap() }
+        share("rally", keepSpeed: true)
+        // Back to 1×, Warm for this video, then this rally with the look and labels.
+        if !button("racket.player.speed").exists { tapVideo() }
+        button("racket.player.speed").tap()
+        button("racket.player.speed.1").tap()
+        if controls.label == "Pause" { controls.tap() }
+        button("racket.player.edit").tap()
+        XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
+        button("racket.edit.tab.looks").tap()
+        button("racket.edit.look.warm").tap()
+        button("racket.edit.done").tap()
+        XCTAssertTrue(surface.waitForExistence(timeout: 5))
+        share("rally")
+    }
 }

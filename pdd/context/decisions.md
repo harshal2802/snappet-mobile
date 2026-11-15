@@ -11341,4 +11341,16 @@ Boards EditRallies → EditList, ShareSheet, ShareExport (`racket-wireframes/boa
   were not verified on a device in this job.
 - **UI-test hooks (DEBUG only)**: `-uiTestShareSlow` holds ShareExport for 3 s so it can be seen; the Find rallies test uses
   the existing `-uiTestStubRallySignal`.
+- **Phone-run fixes (same day).** (1) The device-only branch of `export` sent a non-Sendable composition across an
+  await; it now goes through `lookComposition(_:control:)` in a box, like `propertiesComposition`. Every job now also
+  passes a device build (the simulator never compiles that branch). (2) Share failed on the phone with "Operation
+  Stopped": a recording with no sound (the UI-test clip) left the composition's audio track **empty**, and a re-encoding
+  export stops at once on an empty track (passthrough on the simulator and playback don't mind). Empty audio tracks are
+  dropped in `assemble`. The Core Image pass itself was fine; its label text was black on the dark box, so the text is
+  now made white. The failure line is one sentence. Verified on the phone by pulling the copies (`uitest-share-v2-*`, named
+  by a DEBUG `-uiTestShareName` hook) and reading their frames. (3) Edit and Share are portrait boards, so they **lock to
+  portrait on iPhone** while they show (`SnappetOrientation`, an app-delegate orientation mask set per screen, with
+  `requestGeometryUpdate` to turn an already-sideways phone); the Watch player keeps rotating and the lock lifts when they
+  close. (4) EditDiscard is a real bottom sheet: the hand-made overlay carried the `.isModal` trait, which XCTest reports
+  as an "Alert" interruption it can't handle; that was the "Interrupting element Alert" in the phone run.
 

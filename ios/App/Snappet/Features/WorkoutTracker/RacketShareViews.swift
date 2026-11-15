@@ -53,6 +53,8 @@ struct RacketShareSheet: View {
         .presentationDetents([.height(470)])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(fraction != nil)
+        // ShareSheet / ShareExport are portrait boards: upright however the phone is held.
+        .portraitOnly()
         .sheet(item: Binding(get: { shareURL.map(URLBox.init) }, set: { shareURL = $0?.url })) { box in
             ShareSheet(items: [box.url]) { _, _ in dismiss() }
         }
@@ -159,6 +161,17 @@ struct RacketShareSheet: View {
         .accessibilityIdentifier("racket.share.cancelExport")
     }
 
+    /// UI tests only (`-uiTestShareName <tag>`): a name that says what the copy should be, so a device run can pull
+    /// exactly the files it made ("uitest-share-<tag>-whole-warm-1.0x-labels.mp4") and nothing else.
+    private func testFileName(_ p: RacketSharePlan, look: RacketLook) -> String? {
+        #if DEBUG
+        guard let tag = UserDefaults.standard.string(forKey: "uiTestShareName") else { return nil }
+        return "uitest-share-\(tag)-\(p.which.rawValue)-\(look.rawValue)-\(p.speed)x-\(p.labels.isEmpty ? "nolabels" : "labels").mp4"
+        #else
+        return nil
+        #endif
+    }
+
     private func start(smaller: Bool) {
         guard let p = plan(which), let log = ex?.racketRecordingLog else { return }
         let pieces = p.ranges.map { (RacketVideoMap.segments(start: $0.lowerBound, end: $0.upperBound, log: log), $0.lowerBound, $0.upperBound) }
@@ -175,7 +188,8 @@ struct RacketShareSheet: View {
             #endif
             do {
                 let url = try await RacketVideoLibrary.shared.export(pieces, smaller: smaller, look: chosenLook, speed: p.speed,
-                                                                     labels: p.labels) { f in fraction = f }
+                                                                     labels: p.labels, progress: { f in fraction = f },
+                                                                     fileName: testFileName(p, look: chosenLook))
                 guard !Task.isCancelled else { return }
                 fraction = nil
                 shareURL = url
@@ -184,7 +198,11 @@ struct RacketShareSheet: View {
                 fraction = nil
             } catch {
                 fraction = nil
-                failure = "Couldn’t make the copy. Nothing is lost. \(error.localizedDescription)"
+                // One sentence (the export's own reason repeated "Couldn’t make…"); the reason goes to the debug log.
+                failure = "Couldn’t make the copy. Nothing is lost: try again, or share at a smaller size."
+                #if DEBUG
+                print("RACKETSHARE \(error)")
+                #endif
                 Haptics.warning()
             }
         }

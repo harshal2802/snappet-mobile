@@ -45,10 +45,18 @@ enum RacketLookRenderer {
         gen.fontName = "HelveticaNeue-Bold"
         gen.fontSize = Float(size)
         gen.scaleFactor = 1
-        guard let textImage = gen.outputImage else { return nil }
+        guard let black = gen.outputImage else { return nil }
+        // The generator draws black text; make it white (alpha kept) so it reads on the dark box (found on the phone).
+        let white = CIFilter.colorMatrix()
+        white.inputImage = black
+        white.rVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        white.gVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        white.bVector = CIVector(x: 0, y: 0, z: 0, w: 0)
+        white.biasVector = CIVector(x: 1, y: 1, z: 1, w: 0)
+        guard let textImage = white.outputImage?.cropped(to: black.extent) else { return nil }
         let pad = size * 0.45
         let box = textImage.extent.insetBy(dx: -pad, dy: -pad * 0.6)
-        let bg = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0.6)).cropped(to: box)
+        let bg = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0.65)).cropped(to: box)
         return textImage.composited(over: bg).transformed(by: CGAffineTransform(translationX: -box.minX, y: -box.minY))
     }
 

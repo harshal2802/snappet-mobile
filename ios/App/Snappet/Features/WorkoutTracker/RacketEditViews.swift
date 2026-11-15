@@ -76,7 +76,11 @@ struct RacketEditScreen: View {
             tabBar
         }
         .background(Color.black.ignoresSafeArea())
-        .overlay { if askDiscard, let s = session { discardSheet(s) } }
+        // EditDiscard as a real bottom sheet (a hand-made modal overlay read as an "Alert" to XCTest and blocked taps
+        // on the phone, prompt 254 follow-up).
+        .sheet(isPresented: $askDiscard) { if let s = session { discardSheet(s) } }
+        // The boards define Edit in portrait only: it stays upright however the phone is held (the player rotates).
+        .portraitOnly()
         .preferredColorScheme(.dark)
         .tint(SnappetColor.brand)
         .sheet(isPresented: $rules) { RacketRulesSheet(sport: sport) }
@@ -1097,31 +1101,32 @@ struct RacketEditScreen: View {
     // MARK: EditDiscard
 
     private func discardSheet(_ s: RacketEditSession) -> some View {
-        ZStack(alignment: .bottom) {
-            Color.black.opacity(0.45).ignoresSafeArea().onTapGesture { askDiscard = false }
-            VStack(spacing: 10) {
-                Text(s.discardLine).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
-                    .accessibilityIdentifier("racket.edit.discardLine")
-                Button { discard() } label: {
-                    Text("Discard changes").font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.perfHard)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(SnappetColor.perfHard.opacity(0.6)))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("racket.edit.discard")
-                Button { askDiscard = false } label: {
-                    Text("Keep editing").font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.ink)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(SnappetColor.hairline))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("racket.edit.keepEditing")
+        VStack(spacing: 10) {
+            Text(s.discardLine).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.edit.discardLine")
+            Button { askDiscard = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { discard() } } label: {
+                Text("Discard changes").font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.perfHard)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(SnappetColor.perfHard.opacity(0.6)))
+                    .contentShape(Rectangle())
             }
-            .padding(16)
-            .background(Color(white: 0.07), in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("racket.edit.discard")
+            Button { askDiscard = false } label: {
+                Text("Keep editing").font(.system(size: 17, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(SnappetColor.hairline))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("racket.edit.keepEditing")
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(white: 0.07).ignoresSafeArea())
+        .presentationDetents([.height(220)])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
     }
 
     // MARK: Detail sheets (TnServe · PdWall · SqLet), on the working copy
