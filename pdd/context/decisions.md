@@ -11354,3 +11354,71 @@ Boards EditRallies → EditList, ShareSheet, ShareExport (`racket-wireframes/boa
   close. (4) EditDiscard is a real bottom sheet: the hand-made overlay carried the `.isModal` trait, which XCTest reports
   as an "Alert" interruption it can't handle; that was the "Interrupting element Alert" in the phone run.
 
+
+## 2026-11-14 — Racket pro camera, before recording (issue #448 part 2; prompt 255)
+
+Boards ProCamera → ProCameraDenied (`racket-wireframes/boards2/`). Apple Camera's layout and gestures, not its artwork.
+
+- **The pro camera replaces the match's camera check AND Warmup** (one pre-recording surface). Warmup's choices moved:
+  "How to record this match" → the mode strip (GAME BY GAME / EVERYTHING; SET BY SET for tennis and padel); Who serves
+  first, Who serves first for us (doubles), During play show, the Live tracking row → Options. Start recording → the
+  shutter (the Watch's Start still starts it). Everything keeps today's path: shutter → the storage check ("Back") →
+  record everything. Warmup's own copy ("Camera ready · Not recording", the warmup line, "Switch any time…", "Or tap Start
+  on your Watch…") and the camera check's "Line up the view yourself" / consent line are not on the new boards and are gone.
+- **Drills keep the old camera check in this job.** The boards here are match-only (mode strip, who serves); the drill's
+  camera is ProCameraDrill in the next job (while recording). A drill therefore gets no lens / zoom / lock yet.
+- **A Close button (top left) the boards don't draw**: a full-screen cover with no way out would trap the user; Apple
+  Camera is an app you leave, this is a cover.
+- **Lenses tell the truth.** Discovery prefers the back virtual device (triple → dual wide → dual → wide) so zoom crosses
+  lenses continuously at the switch-over factors. 1× = the wide (device factor = the first switch-over with an ultra-wide).
+  0.5 only with an ultra-wide; a telephoto's button from the later switch-overs (3 on a 13 Pro, 5 on a 15 Pro Max); 2 only
+  for a native crop (`secondaryNativeResolutionZoomFactors`, read as device units — not verifiable on a 12 MP phone) or a
+  2× telephoto. The board's "0.5 / 1× / 2 / 3" is the 14 Pro+ case. Digital zoom is capped at 3× the longest lens (9× on a
+  3× telephoto — the Camera app's own video limit there) and never past the device's.
+- **Zoom dial**: logarithmic (each doubling the same width), the boards' fixed ruler with a moving amber indicator; drag
+  across the lens buttons (right zooms in, 110 pt per doubling) opens it, a drag on it sets the zoom where the finger is,
+  it fades 2 s after the last touch. Lens taps ramp (`ramp(toVideoZoomFactor:withRate: 6)`); drags and pinches set the
+  factor directly (they're already smooth). VoiceOver: the dial is adjustable (25 % steps that stop on lenses) and the
+  preview has a zoom action.
+- **Tap = focus and exposure there, continuous; touch and hold (0.6 s) = one-shot focus / exposure, then `.locked` 0.8 s
+  later.** A new point resets the brightness (as the Camera app). Any tap while locked unlocks (to continuous at the
+  centre) and does nothing else. The square and the sun slider fade after 3 s; the AE/AF LOCK badge stays; the caption
+  shows 4 s. The sun slider is ±2 EV (the device allows ±8, useless for a court), 45 pt per EV. The preview's tap is UIKit
+  (tap waits for the hold to fail) because SwiftUI's long press has no location.
+- **Quality**: HD · 30 / HD · 60 / 4K · 30 / 4K · 60, only those the active camera has a format for (exact size, top
+  frame rate reaching it; 8-bit before 10-bit HDR; the lowest top frame rate, so a 240 fps slow-motion format isn't used
+  for 30). The device's `activeFormat` and frame duration are set after the session is configured (the preset then
+  becomes input priority); zoom / point / lock are re-applied after a format change. Estimates use the existing bitrate
+  table (Apple's Camera sizes, prompt 244), so the board's illustrative "34 h 50 min · 1.3 GB/h" reads "12 h · 3.7 GB/h"
+  at 45 GB — the board's numbers are not real HEVC rates. The pill: Ready / Low space (< 2 h) / No space (< 15 min, the
+  shutter is disabled) · whole hours · battery (omitted where the phone reports none). "Use for every match" is off each
+  time the page opens and, on, saves the pick as `RacketRecordingDefaults.quality` + the new additive `fps`. Back discards.
+  The quality label is disabled while a part is being written (lock-while-recording is the next job).
+- **Carry-over**: game by game keeps the same `RacketRecorder`, so zoom, lock and format simply continue. Everything opens
+  a new screen with a new recorder; the camera's `RacketCameraSetup` (format, zoom, point, lock, bias, look) rides
+  `RacketRecordingTarget` and is applied in `configure` on the capture queue before the first part starts. The storage
+  check may change the resolution; a different resolution starts at 30 fps. The log stamps `fps` (additive) and the look.
+- **Looks on the camera are preview only.** The preview layer can't run Core Image, so the live picture approximates each
+  look with the compositor's colour effects (saturation, contrast, brightness, a warm / cool colour multiply) derived from
+  the same `RacketLook.Params` (`RacketLookPreview`); playback applies the exact Core Image look. The effect modifiers are
+  always present on the game cover's preview (neutral off the camera) so changing the look, or starting to record, never
+  rebuilds the preview view (round 2: a rebuilt preview mid-recording ends the part). The record-everything screen doesn't
+  take them. The strip's thumbnails are the code-drawn sample court with each look, not a frame of the camera. The pick is
+  written to the match's log as `lookRaw` ("Whole match", prompt 254), also on a continued game-by-game log. The strip
+  tucks away 6 s after the last pick (there's no board for closing it).
+- **Options' Watch row is real**: on (default, when a Watch is linked) the relay is attached as before; off detaches it
+  for this match ("Off for this match"); no Watch ⇒ disabled, "No Apple Watch linked". **Compare quality** opens the Video
+  quality page (it compares the qualities). Grid and Level default on (the ProCamera board shows both), Court guide off;
+  remembered in UserDefaults (`racket.camera.framing`, cleared by `-uiTestFreshStore`). The level uses CoreMotion gravity,
+  green within 1°, and works propped sideways (nearest quarter turn); flat on a table it hides.
+- **Your videos from the thumbnail is a sheet**, not a full-screen cover: a cover over the camera cover fires its
+  onDisappear, which stops the camera 0.8 s later and detaches the Watch (round 3's guard), and nothing restarts it.
+- **ProCameraDenied** shows when camera or Photos access is refused; Play without video is ScoreOnly for the same match.
+- **UI-test hooks (DEBUG)**: `-uiTestCameraLenses`, `-uiTestCameraFormats`, `-uiTestCameraFreeGB`, `-uiTestCameraBattery`,
+  `-uiTestCameraTilt`, `-uiTestCameraDenied`. The fake draws a code-generated court so zoom and looks are visible.
+- **Verified on the simulator only** (fake camera): SnappetTests 3044 / 0 failures; RacketProCameraUITests 10, Match 14,
+  Recording 2, Sports 10, Drill 3, all green. The device build (generic iOS device) compiles. **Not run on the phone**: the
+  iPhone 13 Pro Max showed "unavailable" to devicectl for the whole job, so real lens discovery, zoom range, formats,
+  focus / lock, the format switch, the live look on the preview layer and the carry-over into record everything are
+  unverified on hardware. `RacketProCameraUITests.testReportsWhatThisCameraHas` is written to read and print them on the
+  phone (no shutter; `CAMERA-REPORT` lines).

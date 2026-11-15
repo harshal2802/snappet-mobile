@@ -272,7 +272,7 @@ struct FreeformPlayerView: View {
         .fullScreenCover(item: $racketRecordingFor) { target in
             if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
                 RacketRecordingCover(
-                    ex: ex, quality: target.quality, defaults: racketRecordingDefaults,
+                    ex: ex, quality: target.quality, defaults: racketRecordingDefaults, camera: target.camera,
                     onPartSaved: { clip in attachRacketRecordingPart(clip, exerciseID: target.exerciseID) },
                     onLog: { log in saveRacketRecordingLog(log, exerciseID: target.exerciseID) },
                     onBlockLogged: { _, sec in logRacketRecordedBlock(exerciseID: target.exerciseID, durationSec: sec) },
@@ -335,10 +335,11 @@ struct FreeformPlayerView: View {
                         persist()
                     },
                     onLog: { log in saveRacketRecordingLog(log, exerciseID: target.exerciseID) },
-                    onRecordEverything: { quality in
+                    onRecordEverything: { setup in
                         racketGameFor = nil
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                            racketRecordingFor = RacketRecordingTarget(exerciseID: target.exerciseID, quality: quality)
+                            racketRecordingFor = RacketRecordingTarget(exerciseID: target.exerciseID,
+                                                                       quality: setup.format.quality, camera: setup)
                         }
                     },
                     onMatchOver: { hasVideo in
@@ -350,7 +351,8 @@ struct FreeformPlayerView: View {
                             }
                         }
                     },
-                    onClose: { racketGameFor = nil })
+                    onClose: { racketGameFor = nil },
+                    session: session)
             }
         }
         .sheet(item: $racketScoring) { target in

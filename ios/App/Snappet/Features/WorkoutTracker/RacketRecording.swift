@@ -250,6 +250,8 @@ struct RacketRecordingDefaults: Codable, Equatable, Sendable {
     var matchMode: RacketRecordingMode = .byUnit
     var drillMode: RacketRecordingMode = .byUnit
     var quality: RacketRecordingQuality = .hd1080
+    /// The frame rate "Use for every match" saved with the quality on the camera (prompt 255): 30 or 60.
+    var fps: Int = 30
     /// Rest between drill blocks.
     var restSec: Int = 60
     /// Start the next block when the rest timer ends.
@@ -282,6 +284,7 @@ struct RacketRecordingDefaults: Codable, Equatable, Sendable {
         drillMode = mode(.drillMode) ?? d.drillMode
         quality = (try? c.decodeIfPresent(String.self, forKey: .quality)).flatMap { $0 }
             .flatMap(RacketRecordingQuality.init(rawValue:)) ?? d.quality
+        fps = (try? c.decodeIfPresent(Int.self, forKey: .fps)).flatMap { $0 } ?? d.fps
         restSec = (try? c.decodeIfPresent(Int.self, forKey: .restSec)).flatMap { $0 } ?? d.restSec
         autoStartNextBlock = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartNextBlock)).flatMap { $0 } ?? d.autoStartNextBlock
         countdownSec = (try? c.decodeIfPresent(Int.self, forKey: .countdownSec)).flatMap { $0 } ?? d.countdownSec
@@ -299,6 +302,7 @@ struct RacketRecordingDefaults: Codable, Equatable, Sendable {
         try c.encode(matchMode.rawValue, forKey: .matchMode)
         try c.encode(drillMode.rawValue, forKey: .drillMode)
         try c.encode(quality.rawValue, forKey: .quality)
+        try c.encode(fps, forKey: .fps)
         try c.encode(restSec, forKey: .restSec)
         try c.encode(autoStartNextBlock, forKey: .autoStartNextBlock)
         try c.encode(countdownSec, forKey: .countdownSec)
@@ -310,7 +314,7 @@ struct RacketRecordingDefaults: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case matchMode, drillMode, quality, restSec, autoStartNextBlock, countdownSec, blocks, blockSec,
+        case matchMode, drillMode, quality, fps, restSec, autoStartNextBlock, countdownSec, blocks, blockSec,
              stillPlayingByUnitMin, stillPlayingEverythingMin
     }
 
@@ -470,6 +474,10 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var lookRaw: String?
     /// "This video": a part's own look (by its start), over the match's.
     var partLooks: [RacketPartLook]?
+
+    // Prompt 255 — additive Optional.
+    /// The frame rate it was recorded at (the pro camera's quality); `nil` ⇒ 30.
+    var fps: Int?
 
     init(startedAt: Date) { self.startedAt = startedAt }
 
@@ -719,6 +727,9 @@ struct RacketRecordingMachine: Equatable, Sendable {
     /// reads the recording's own games from here; the space estimates use the quality). Stamped on the log.
     var baseSetIndex: Int?
     var quality: RacketRecordingQuality?
+    /// The frame rate and the look picked on the pro camera (prompt 255), stamped on the log when it is created.
+    var fps: Int?
+    var lookRaw: String?
     /// A drill's first block in this recording, as an index into the drill's blocks (prompt 250: the drill cover counts
     /// blocks absolutely, so a drill reopened after block 2 starts at block 3). 0 for record everything's old screen.
     var startingBlock = 0
@@ -1048,6 +1059,8 @@ struct RacketRecordingMachine: Equatable, Sendable {
     mutating func continueLog(_ l: RacketRecordingLog) {
         guard log == nil, recording == .byUnit else { return }
         log = l
+        // A look picked on the camera (prompt 255) becomes the match's playback look, also on a continued log.
+        if let lookRaw { log?.lookRaw = lookRaw }
     }
 
     /// A break or an interval with "Pause recording" on, or between games: the run closes without an interruption.
@@ -1208,6 +1221,8 @@ struct RacketRecordingMachine: Equatable, Sendable {
             var l = RacketRecordingLog(startedAt: now)
             l.baseSetIndex = baseSetIndex
             l.qualityRaw = quality?.rawValue
+            l.fps = fps
+            l.lookRaw = lookRaw
             if recording == .byUnit { l.modeRaw = recording.rawValue }
             log = l
         }

@@ -3,13 +3,13 @@ import SwiftUI
 // MARK: - Game-by-game match screens (prompt 249, issue #438 parity)
 //
 // One full-screen cover for a match filmed game by game, and for a match scored without video:
-// Camera check (NoModelCamera) → Warmup → the game screen (DimOff · CameraViewOff · StatsOff, Warm, BdInterval,
+// the pro camera (prompt 255: ProCamera → ProCameraDenied, in place of the camera check and Warmup) → the game screen (DimOff · CameraViewOff · StatsOff, Warm, BdInterval,
 // TnTiebreak) → Score (SaveGame) → Break (GameBreak) → Countdown (GameCountdown) → … → match over; ScoreOnly; and
 // the Interrupted / InterruptedStop / Still playing? panels shared with the record-everything screen. Thin renderers
 // over the pure `RacketGameFlow` (`RacketMatchFlow.swift`) and `RacketRecordingMachine` (`recording: .byUnit`); the
 // camera and Photos stay in `Services/RacketRecorder.swift`.
 
-/// What the host presents: a match's camera check (then warmup → game screen), or scoring without video.
+/// What the host presents: a match's pro camera (then the game screen), or scoring without video.
 struct RacketGameCoverTarget: Identifiable {
     enum Start: Equatable { case camera, scoreOnly }
     let id = UUID()
@@ -34,13 +34,17 @@ struct RacketGameCover: View {
     let onPartSaved: (RecordedClip, Int?) -> Void
     /// The recording log changed: persist it on the match.
     let onLog: (RacketRecordingLog) -> Void
-    /// Warmup chose "Everything, split later" and the storage check passed: record everything instead.
-    let onRecordEverything: (RacketRecordingQuality) -> Void
+    /// The camera's mode strip chose Everything and the storage check passed: record everything instead, with the
+    /// camera's format, zoom, focus / exposure lock and look carried into the recording screen (prompt 255).
+    let onRecordEverything: (RacketCameraSetup) -> Void
     /// Match over: close; `true` ⇒ there's video to find rallies in (Score → Analyzing, via Your videos).
     let onMatchOver: (Bool) -> Void
     let onClose: () -> Void
+    /// The session, for Your videos from the camera's thumbnail (prompt 255); nil ⇒ no thumbnail.
+    var session: WorkoutSession? = nil
 
-    private enum Stage: Equatable { case camera, warmup, game }
+    /// The pro camera (framing, quality, mode and Warmup's choices), then the game screen.
+    private enum Stage: Equatable { case camera, game }
 
     @State private var stage: Stage = .camera
     @State private var recorder = RacketRecorder()
@@ -70,6 +74,10 @@ struct RacketGameCover: View {
     @State private var writesLog = true
     /// LiveTag (prompt 251): the last rally's stretch on the recording, while it's being tagged.
     @State private var liveTag: ClosedRange<Double>?
+    /// Options → "Start and score from your Watch" (prompt 255): off detaches the Watch from this match.
+    @State private var useWatch = true
+    /// Your videos over the camera (the thumbnail).
+    @State private var videos: RacketVideosTarget?
 
     private var sport: RacketSport { ex.racketSport ?? ex.racketFormat.sport }
     private var unit: RacketUnit { sport.unit }
@@ -79,17 +87,22 @@ struct RacketGameCover: View {
     var body: some View {
         ZStack {
             switch stage {
-            case .camera: cameraCheck
-            case .warmup: warmup
+            case .camera: proCamera
             case .game: game
             }
         }
         // One preview for the cover's life (device feedback round 2: attaching one mid-recording stopped the recording).
-        .racketPersistentPreview(session: recorder.session, fake: recorder.fake)
+        // The camera's look shows on the live picture before recording only (preview only, never recorded).
+        .racketPersistentPreview(session: recorder.session, fake: recorder.fake,
+                                 look: stage == .camera ? RacketLookPreview(recorder.setup.look) : .none)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear { recorder.screenAppeared(); setUp() }
+        .onChange(of: useWatch) { _, on in setWatch(on) }
+        .sheet(item: $videos) { t in
+            if let session { RacketVideosCover(session: session, start: t.start) { videos = nil } }
+        }
         .onDisappear(perform: tearDown)
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .onChange(of: firstServer) { _, f in
@@ -112,9 +125,10 @@ struct RacketGameCover: View {
                 .interactiveDismissDisabled()
         }
         .sheet(isPresented: $storageCheck) {
-            RacketStorageSheet(mode: .match, defaultQuality: defaults.quality, cancelLabel: "Back") { quality in
+            RacketStorageSheet(mode: .match, defaultQuality: recorder.setup.format.quality, cancelLabel: "Back") { quality in
                 onRecordingMode(.everything)
-                onRecordEverything(quality)
+                onFirstServer(firstServer, ourFirstServer)
+                onRecordEverything(recorder.setup.with(quality: quality))
             }
             .presentationDetents([.large])
         }
@@ -170,8 +184,11 @@ struct RacketGameCover: View {
         Task {
             let ok = await RacketRecorder.requestAccess()
             RacketRecorder.trace("camera check access ok=\(ok)")
-            accessDenied = !ok
-            if ok { recorder.startPreview(quality: defaults.quality) }
+            accessDenied = !ok || Self.deniedForTests
+            // The camera opens on the quality saved for every match, and the match's look if it has one.
+            var initial = RacketCameraSetup(format: defaults.cameraFormat)
+            initial.look = ex.racketRecordingLog?.lookRaw.flatMap(RacketLook.init(rawValue:)) ?? .original
+            if ok { recorder.startPreview(setup: initial) }
         }
     }
 
@@ -282,7 +299,10 @@ struct RacketGameCover: View {
         var m = RacketRecordingMachine(kind: .match, recording: .byUnit,
                                        stillPlayingMinutes: defaults.stillPlayingMinutes(for: .byUnit), now: Date())
         m.baseSetIndex = ex.sets.count
-        m.quality = defaults.quality
+        // The camera's quality and look (prompt 255); zoom, focus and lock stay on this same camera.
+        m.quality = recorder.setup.format.quality
+        m.fps = recorder.setup.format.fps
+        m.lookRaw = recorder.setup.look.isOriginal ? nil : recorder.setup.look.rawValue
         if let old = ex.racketRecordingLog, old.isGameByGame { m.continueLog(old) }
         let effects = m.start(now: Date())
         machine = m
@@ -350,7 +370,7 @@ struct RacketGameCover: View {
         score = kept
     }
 
-    /// ScoreOnly "Start recording instead" → the camera check, then warmup; the game in progress keeps its tally.
+    /// ScoreOnly "Start recording instead" → the pro camera; the game in progress keeps its tally.
     private func startRecordingInstead() {
         let kept = score
         flow = RacketGameFlow(filming: true, unitIndex: flow.unitIndex, options: flow.options, startInWarmup: true)
@@ -380,7 +400,7 @@ struct RacketGameCover: View {
         machineAct { $0.noteActivity(now: at); return [] }
         switch RacketWatchBridge.gameAction(command, phase: flow.phase) {
         case .startGame:
-            if stage == .warmup { startRecording() } else if stage == .game { step { $0.startGame(now: at) } }
+            if stage == .camera, !accessDenied, useWatch { startRecording() } else if stage == .game { step { $0.startGame(now: at) } }
         case .point(let us): point(us: us, fromWatch: true)
         case .undo: undo()
         case .endGame: step { $0.endGame(matchOver: false, now: at) }
@@ -408,80 +428,54 @@ struct RacketGameCover: View {
         }
     }
 
-    // MARK: Camera check (NoModelCamera)
+    // MARK: The pro camera (prompt 255: ProCamera → ProCameraDenied)
 
-    private var cameraCheck: some View {
-        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, videoAspect: recorder.previewAspect,
-                               accessDenied: accessDenied, continueTitle: "Continue to warmup", onCancel: onClose,
-                               onContinue: { stage = .warmup })
-            .padding(16)
+    /// UI tests (`-uiTestCameraDenied`, DEBUG): show the no-access state with the fake camera.
+    private static var deniedForTests: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-uiTestCameraDenied")
+        #else
+        return false
+        #endif
     }
 
-    // MARK: Warmup
+    private var proCamera: some View {
+        RacketProCameraView(
+            recorder: recorder, sport: sport, unit: unit,
+            mode: $choice, accessDenied: accessDenied,
+            firstServer: $firstServer,
+            ourFirstServer: ex.isDoubles && sport != .squash ? $ourFirstServer : nil,
+            sides: sides, partnerName: RacketServeCopy.name(.partner, partner: ex.partner),
+            show: $show, useWatch: $useWatch,
+            watchAvailable: RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady"),
+            thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            onVideos: session == nil ? nil : { videos = RacketVideosTarget(start: .videos) },
+            onShutter: startRecording,
+            onClose: onClose,
+            onPlayWithoutVideo: playWithoutVideo)
+    }
 
-    private var warmup: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Button { stage = .camera } label: { Label("Back", systemImage: "chevron.left") }
-                    .accessibilityIdentifier("racket.warmup.back")
-                Spacer()
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Camera ready").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.perfFresh)
-                        Spacer()
-                        Text("Not recording").font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .overlay(Capsule().strokeBorder(SnappetColor.hairline))
-                            .accessibilityIdentifier("racket.warmup.status")
-                    }
-                    Text("Warmup").font(.system(size: 30, weight: .bold)).accessibilityIdentifier("racket.warmup.title")
-                    Text(RacketGameCopy.warmupLine(unit)).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    RacketBox {
-                        Text("How to record this match").font(.system(size: 15, weight: .semibold))
-                        RacketChips(options: [RacketRecordingMode.byUnit, .everything],
-                                    label: { $0.label(for: .match, unit: unit) },
-                                    selection: $choice, idPrefix: "racket.warmup.mode")
-                        RacketTrackingSwitchRow(line: RacketGameCopy.warmupTrackingLine(sport))
-                    }
-                    RacketBox {
-                        Text("Who serves first? Optional").font(.system(size: 15, weight: .semibold))
-                        RacketChips(options: ["us", "them", "skip"],
-                                    label: { $0 == "us" ? sides.us : $0 == "them" ? sides.them : "Skip" },
-                                    selection: Binding(get: { firstServer?.rawValue ?? "skip" },
-                                                       set: { firstServer = RacketServe.Side(rawValue: $0) }),
-                                    idPrefix: "racket.warmup.serve")
-                        // Doubles (prompt 252): the boards name the server ("Mia serving"); this is how Snappet knows.
-                        if ex.isDoubles && sport != .squash {
-                            Text("Who serves first for us? Optional").font(.system(size: 15, weight: .semibold))
-                                .padding(.top, 4)
-                            RacketChips(options: ["you", "partner", "skip"],
-                                        label: { $0 == "you" ? "You" : $0 == "partner" ? RacketServeCopy.name(.partner, partner: ex.partner) : "Skip" },
-                                        selection: Binding(get: { ourFirstServer?.rawValue ?? "skip" },
-                                                           set: { ourFirstServer = RacketDoublesServe.Player(rawValue: $0) }),
-                                        idPrefix: "racket.warmup.ourServe")
-                            Text("Names your server on the score, the Watch and the tags.")
-                                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                        }
-                    }
-                    RacketBox {
-                        Text("During play, show").font(.system(size: 15, weight: .semibold))
-                        RacketChips(options: RacketRecordingShow.allCases, label: { $0.label }, selection: $show,
-                                    idPrefix: "racket.warmup.show")
-                        Text("Switch any time. Camera and live tracking may warm the phone more.")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            RacketWideButton("Start recording", id: "racket.warmup.start") { startRecording() }
-            Text("Or tap Start on your Watch. Everything checks space first.")
-                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                .multilineTextAlignment(.center)
+    /// ProCameraDenied "Play without video": the existing no-video path (ScoreOnly) for this match.
+    private func playWithoutVideo() {
+        recorder.stopPreview()
+        let kept = score
+        var f = RacketGameFlow(filming: false, unitIndex: flow.unitIndex, options: flow.options, startInWarmup: false)
+        f.startGame(now: Date())
+        flow = f
+        score = kept
+        stage = .game
+    }
+
+    /// Options → "Start and score from your Watch".
+    private func setWatch(_ on: Bool) {
+        if on {
+            guard watchToken == nil else { return }
+            watchToken = RacketWatchRelay.shared.attach(ex.id) { command, at in handleWatch(command, now: at) }
+            if let s = watchState { RacketWatchRelay.shared.publish(s) }
+        } else if let token = watchToken {
+            RacketWatchRelay.shared.detach(ex.id, token: token)
+            watchToken = nil
         }
-        .padding(16)
     }
 
     // MARK: The game screen

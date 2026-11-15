@@ -35,6 +35,15 @@ final class RacketRecorder: NSObject {
     /// camera is configured (and for the stand-in, which fills its box). The court guide fits itself to it.
     private(set) var previewAspect: CGFloat?
 
+    // Pro camera (prompt 255): what this phone's back camera can do, and how it is set now. The fake (`-uiTestFakeCamera`)
+    // keeps the same state against a fake capability set, so the camera's controls run in UI tests.
+    /// Lens buttons, zoom range and qualities, from device discovery (the fake's from launch arguments).
+    private(set) var capabilities: RacketCameraCapabilities
+    /// Format, zoom, focus / exposure point, lock, bias and the preview look.
+    private(set) var setup = RacketCameraSetup()
+    /// The back camera in use: the virtual multi-camera device when the phone has one, so zoom crosses lenses smoothly.
+    @ObservationIgnored private var device: AVCaptureDevice?
+
     /// A part saved to Photos (asset id, when it started, its length).
     var onPartSaved: ((RecordedClip) -> Void)?
     /// Recording stopped for a reason the owner must show.
@@ -65,7 +74,9 @@ final class RacketRecorder: NSObject {
 
     init(fake: Bool = CameraController.fakeRequested || !CameraController.isAvailable) {
         self.fake = fake
+        capabilities = fake ? Self.fakeCapabilities : RacketCameraCapabilities.sample
         super.init()
+        if fake { previewAspect = setup.format.portraitAspect }
         Self.trace("recorder init session=\(Unmanaged.passUnretained(self.session).toOpaque())")
     }
 
@@ -85,6 +96,13 @@ final class RacketRecorder: NSObject {
 
     /// Free space for new files, and the volume's size.
     nonisolated static func storage() -> (free: Int64, total: Int64)? {
+        #if DEBUG
+        // UI tests (`-uiTestCameraFreeGB 45`): a fixed free space, so the pill and the quality page read the same on any Mac.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-uiTestCameraFreeGB"), i + 1 < args.count, let gb = Double(args[i + 1]) {
+            return (Int64(gb * 1e9), 256_000_000_000)
+        }
+        #endif
         let url = URL(fileURLWithPath: NSHomeDirectory())
         guard let v = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
               let free = v.volumeAvailableCapacityForImportantUsage else { return nil }
@@ -121,11 +139,24 @@ final class RacketRecorder: NSObject {
         #endif
     }
 
+    /// Start the preview at `quality` (30 fps unless the camera was already set to 60 at that resolution).
     func startPreview(quality: RacketRecordingQuality) {
+        startPreview(setup: setup.with(quality: quality))
+    }
+
+    /// Start the preview with a camera setup — the pro camera's own, or one carried from it into a recording screen.
+    func startPreview(setup wanted: RacketCameraSetup) {
         observe()
         Self.trace("startPreview session=\(Unmanaged.passUnretained(self.session).toOpaque()) fake=\(self.fake) configured=\(self.configured) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) camera=\(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
-        guard !fake else { return }
-        if !configured { configure(quality: quality) }
+        if !configured { setup = wanted }
+        guard !fake else {
+            configured = true
+            setup.format = RacketCameraFormats.fallback(setup.format, supported: capabilities.formats)
+            setup.zoom = RacketZoomDial.clamp(setup.zoom, capabilities)
+            previewAspect = setup.format.portraitAspect
+            return
+        }
+        if !configured { configure(setup: wanted) }
         let p = parts
         queue.async {
             if !p.session.isRunning { p.session.startRunning() }
@@ -173,10 +204,37 @@ final class RacketRecorder: NSObject {
         queue.async { if p.session.isRunning { p.session.stopRunning() } }
     }
 
-    private func configure(quality: RacketRecordingQuality) {
+    /// The back camera: the triple / dual-wide / dual virtual device when the phone has one (zoom then moves between
+    /// lenses by itself at the switch-over factors, so it is continuous), else the wide camera.
+    private static func backCamera() -> AVCaptureDevice? {
+        let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera,
+                                                   .builtInWideAngleCamera]
+        for t in types { if let d = AVCaptureDevice.default(t, for: .video, position: .back) { return d } }
+        return nil
+    }
+
+    /// What the device can do, described as plain values for `RacketCameraCapabilities`.
+    nonisolated private static func info(_ d: AVCaptureDevice) -> RacketCameraDeviceInfo {
+        let formats = d.formats.map { f -> RacketDeviceFormatInfo in
+            let dims = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+            let sub = CMFormatDescriptionGetMediaSubType(f.formatDescription)
+            return RacketDeviceFormatInfo(width: dims.width, height: dims.height,
+                                          maxFps: f.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0,
+                                          isTenBit: sub == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                                            || sub == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange)
+        }
+        return RacketCameraDeviceInfo(
+            hasUltraWide: d.constituentDevices.contains { $0.deviceType == .builtInUltraWideCamera },
+            switchOverFactors: d.virtualDeviceSwitchOverVideoZoomFactors.map(\.doubleValue),
+            cropFactors: d.activeFormat.secondaryNativeResolutionZoomFactors.map { Double($0) },
+            minZoom: Double(d.minAvailableVideoZoomFactor), maxZoom: Double(d.maxAvailableVideoZoomFactor),
+            formats: formats)
+    }
+
+    private func configure(setup wanted: RacketCameraSetup) {
         configured = true
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            Self.trace("configure: no back wide camera")
+        guard let camera = Self.backCamera() else {
+            Self.trace("configure: no back camera")
             return
         }
         let input: AVCaptureDeviceInput
@@ -184,19 +242,28 @@ final class RacketRecorder: NSObject {
             Self.trace("configure: camera input failed \(error.localizedDescription)")
             return
         }
+        device = camera
+        let caps = RacketCameraCapabilities(device: Self.info(camera))
+        capabilities = caps
+        var s = wanted
+        s.format = RacketCameraFormats.fallback(wanted.format, supported: caps.formats)
+        s.zoom = RacketZoomDial.clamp(wanted.zoom, caps)
+        setup = s
+        Self.trace("configure: \(camera.deviceType.rawValue) lenses=\(caps.lenses) zoom=\(caps.minZoom)...\(caps.maxZoom) wide=\(caps.wideFactor) formats=\(caps.formats.map(\.label)) format=\(s.format.label)")
         rotation = AVCaptureDevice.RotationCoordinator(device: camera, previewLayer: nil)
         nonisolated(unsafe) let video = input
         nonisolated(unsafe) let cam = camera
         nonisolated(unsafe) let mic = AVCaptureDevice.default(for: .audio).flatMap { try? AVCaptureDeviceInput(device: $0) }
-        let preset: AVCaptureSession.Preset = quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
+        let preset: AVCaptureSession.Preset = s.format.quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
         let limit = CMTime(seconds: Self.partSec, preferredTimescale: 600)
+        let formatInfos = Self.info(camera).formats
         let p = parts
         queue.async {
             p.session.beginConfiguration()
             p.session.sessionPreset = p.session.canSetSessionPreset(preset) ? preset : .high
             if p.session.canAddInput(video) { p.session.addInput(video) }
             if let mic, p.session.canAddInput(mic) { p.session.addInput(mic) }
-            if p.session.canAddOutput(p.movie) { p.session.addOutput(p.movie) }
+            if p.session.canAddOutput(p.movie) { p.movie.maxRecordedDuration = limit; p.session.addOutput(p.movie) }
             p.movie.maxRecordedDuration = limit
             let hevc = p.movie.availableVideoCodecTypes.contains(.hevc)
             if let connection = p.movie.connection(with: .video) {
@@ -204,12 +271,206 @@ final class RacketRecorder: NSObject {
                                           for: connection)
             }
             p.session.commitConfiguration()
+            // The exact format and frame rate (the session's preset then becomes input priority).
+            Self.applyFormat(s.format, infos: formatInfos, on: cam)
+            Self.applyCamera(s, caps: caps, on: cam)
             let dims = CMVideoFormatDescriptionGetDimensions(cam.activeFormat.formatDescription)
+            let refreshed = RacketCameraCapabilities(device: Self.info(cam))
             Task { @MainActor in
                 self.codec = hevc ? .hevc : .h264
                 if dims.width > 0, dims.height > 0 { self.previewAspect = CGFloat(dims.height) / CGFloat(dims.width) }
+                // The zoom range can depend on the active format.
+                self.capabilities = refreshed
             }
         }
+    }
+
+    // MARK: - Pro camera controls (prompt 255)
+
+    nonisolated private static func applyFormat(_ f: RacketCameraFormat, infos: [RacketDeviceFormatInfo], on d: AVCaptureDevice) {
+        guard let i = RacketCameraFormats.pick(f, from: infos), i < d.formats.count else {
+            trace("format \(f.label) not offered: keeping \(d.activeFormat)")
+            return
+        }
+        do {
+            try d.lockForConfiguration()
+            d.activeFormat = d.formats[i]
+            let duration = CMTime(value: 1, timescale: CMTimeScale(f.fps))
+            d.activeVideoMinFrameDuration = duration
+            d.activeVideoMaxFrameDuration = duration
+            d.unlockForConfiguration()
+            trace("format set \(f.label) index=\(i)")
+        } catch { trace("format lock failed \(error.localizedDescription)") }
+    }
+
+    /// Zoom, focus / exposure point, lock and bias, in one device lock.
+    nonisolated private static func applyCamera(_ s: RacketCameraSetup, caps: RacketCameraCapabilities, on d: AVCaptureDevice) {
+        do {
+            try d.lockForConfiguration()
+            d.videoZoomFactor = clampDeviceZoom(caps.deviceZoom(s.zoom), d)
+            setPoint(s.focusPoint ?? CGPoint(x: 0.5, y: 0.5), locking: s.locked, on: d)
+            d.setExposureTargetBias(Float(RacketExposureBias.clamp(s.exposureBias, deviceMin: Double(d.minExposureTargetBias),
+                                                                   deviceMax: Double(d.maxExposureTargetBias))))
+            d.unlockForConfiguration()
+        } catch { trace("camera lock failed \(error.localizedDescription)") }
+        if s.locked { lockSoon(d) }
+    }
+
+    nonisolated private static func clampDeviceZoom(_ z: Double, _ d: AVCaptureDevice) -> CGFloat {
+        min(d.maxAvailableVideoZoomFactor, max(d.minAvailableVideoZoomFactor, CGFloat(z)))
+    }
+
+    /// Focus and expose at `p` once (then lock) or keep doing it there (continuous). Called inside a device lock.
+    nonisolated private static func setPoint(_ p: CGPoint, locking: Bool, on d: AVCaptureDevice) {
+        if d.isFocusPointOfInterestSupported { d.focusPointOfInterest = p }
+        let focus: AVCaptureDevice.FocusMode = locking ? .autoFocus : .continuousAutoFocus
+        if d.isFocusModeSupported(focus) { d.focusMode = focus }
+        if d.isExposurePointOfInterestSupported { d.exposurePointOfInterest = p }
+        let exposure: AVCaptureDevice.ExposureMode = locking ? .autoExpose : .continuousAutoExposure
+        if d.isExposureModeSupported(exposure) { d.exposureMode = exposure }
+    }
+
+    /// AE/AF lock: after the one-shot focus and exposure at the point have settled, hold them (they then stay put when
+    /// players cross the frame, through the recording).
+    nonisolated private static func lockSoon(_ d: AVCaptureDevice) {
+        nonisolated(unsafe) let dev = d
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.8) {
+            do {
+                try dev.lockForConfiguration()
+                if dev.isFocusModeSupported(.locked) { dev.focusMode = .locked }
+                if dev.isExposureModeSupported(.locked) { dev.exposureMode = .locked }
+                dev.unlockForConfiguration()
+                trace("AE/AF locked focus=\(dev.focusMode.rawValue) exposure=\(dev.exposureMode.rawValue)")
+            } catch { trace("lock failed \(error.localizedDescription)") }
+        }
+    }
+
+    /// Zoom in display units (1 = wide), clamped to the phone. `ramp` eases there (a lens tap); otherwise it is set at
+    /// once (a dial drag or a pinch, which already move smoothly).
+    func setZoom(_ display: Double, ramp: Bool) {
+        let z = RacketZoomDial.clamp(display, capabilities)
+        setup.zoom = z
+        guard !fake, let d = device else { return }
+        nonisolated(unsafe) let dev = d
+        let target = capabilities.deviceZoom(z)
+        queue.async {
+            do {
+                try dev.lockForConfiguration()
+                let f = Self.clampDeviceZoom(target, dev)
+                if ramp { dev.ramp(toVideoZoomFactor: f, withRate: 6) } else {
+                    if dev.isRampingVideoZoom { dev.cancelVideoZoomRamp() }
+                    dev.videoZoomFactor = f
+                }
+                dev.unlockForConfiguration()
+            } catch { Self.trace("zoom lock failed \(error.localizedDescription)") }
+        }
+    }
+
+    /// A tap (focus and expose there, keep following) or a touch and hold (focus, expose, then lock). A new point
+    /// resets the brightness, as the Camera app does.
+    func focus(at point: CGPoint, lock: Bool) {
+        setup.focusPoint = point
+        setup.locked = lock
+        setup.exposureBias = 0
+        Self.trace("focus at \(point) lock=\(lock)")
+        guard !fake, let d = device else { return }
+        nonisolated(unsafe) let dev = d
+        queue.async {
+            do {
+                try dev.lockForConfiguration()
+                Self.setPoint(point, locking: lock, on: dev)
+                dev.setExposureTargetBias(0)
+                dev.unlockForConfiguration()
+            } catch { Self.trace("focus lock failed \(error.localizedDescription)") }
+            if lock { Self.lockSoon(dev) }
+        }
+    }
+
+    /// "Tap anywhere to unlock": back to continuous focus and exposure at the centre.
+    func unlock() {
+        setup.locked = false
+        setup.focusPoint = nil
+        setup.exposureBias = 0
+        guard !fake, let d = device else { return }
+        nonisolated(unsafe) let dev = d
+        queue.async {
+            do {
+                try dev.lockForConfiguration()
+                Self.setPoint(CGPoint(x: 0.5, y: 0.5), locking: false, on: dev)
+                dev.setExposureTargetBias(0)
+                dev.unlockForConfiguration()
+            } catch { Self.trace("unlock failed \(error.localizedDescription)") }
+        }
+    }
+
+    /// The sun slider (EV). Works locked or not.
+    func setExposureBias(_ bias: Double) {
+        let b = RacketExposureBias.clamp(bias)
+        setup.exposureBias = b
+        guard !fake, let d = device else { return }
+        nonisolated(unsafe) let dev = d
+        queue.async {
+            do {
+                try dev.lockForConfiguration()
+                dev.setExposureTargetBias(Float(RacketExposureBias.clamp(b, deviceMin: Double(dev.minExposureTargetBias),
+                                                                        deviceMax: Double(dev.maxExposureTargetBias))))
+                dev.unlockForConfiguration()
+            } catch { Self.trace("bias lock failed \(error.localizedDescription)") }
+        }
+    }
+
+    /// Video quality. Only before recording (the page is closed while a part is written). The zoom, point and lock are
+    /// re-applied: a new format resets them.
+    func setFormat(_ f: RacketCameraFormat) {
+        guard !isCapturing else { return }
+        let format = RacketCameraFormats.fallback(f, supported: capabilities.formats)
+        setup.format = format
+        guard !fake, let d = device else { previewAspect = format.portraitAspect; return }
+        nonisolated(unsafe) let dev = d
+        let s = setup
+        let p = parts
+        queue.async {
+            let infos = Self.info(dev).formats
+            p.session.beginConfiguration()
+            Self.applyFormat(format, infos: infos, on: dev)
+            p.session.commitConfiguration()
+            let caps = RacketCameraCapabilities(device: Self.info(dev))
+            Self.applyCamera(s, caps: caps, on: dev)
+            let dims = CMVideoFormatDescriptionGetDimensions(dev.activeFormat.formatDescription)
+            Task { @MainActor in
+                self.capabilities = caps
+                if dims.width > 0, dims.height > 0 { self.previewAspect = CGFloat(dims.height) / CGFloat(dims.width) }
+            }
+        }
+    }
+
+    /// The look shown on the live preview (never recorded).
+    func setLook(_ look: RacketLook) { setup.look = look }
+
+    /// The battery, when the phone reports one (the simulator doesn't; UI tests may pass `-uiTestCameraBattery 82`).
+    static func batteryPercent() -> Int? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-uiTestCameraBattery"), i + 1 < args.count, let b = Int(args[i + 1]) { return b }
+        #endif
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let level = UIDevice.current.batteryLevel
+        return level < 0 ? nil : Int((level * 100).rounded())
+    }
+
+    /// The fake's capability set: the sample phone, or `-uiTestCameraLenses "0.5,1,2,3"` / `-uiTestCameraFormats
+    /// "hd1080-30,uhd4k-30"` (DEBUG only).
+    private static var fakeCapabilities: RacketCameraCapabilities {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ key: String) -> String? {
+            guard let i = args.firstIndex(of: key), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        return RacketCameraCapabilities.fake(lenses: value("-uiTestCameraLenses"), formats: value("-uiTestCameraFormats"))
+        #else
+        return .sample
+        #endif
     }
 
     /// Total bytes written by this recording so far (finished parts + the part being written); `nil` for the

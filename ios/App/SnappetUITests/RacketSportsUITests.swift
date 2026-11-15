@@ -233,16 +233,18 @@ final class RacketSportsUITests: XCTestCase {
         app.buttons["racket.scoreOnly.undo"].tap()
         XCTAssertEqual(any("racket.game.score").label, "1–0–2")
 
-        // Start recording instead → Warmup's doubles row → the game screen.
+        // Start recording instead → the camera's Options (doubles row, prompt 255) → the game screen.
         app.buttons["racket.scoreOnly.record"].tap()
-        XCTAssertTrue(app.buttons["racket.camera.continue"].waitForExistence(timeout: 6))
-        app.buttons["racket.camera.continue"].tap()
-        let mia = app.buttons["racket.warmup.ourServe.partner"]
+        XCTAssertTrue(app.buttons["racket.camera.shutter"].waitForExistence(timeout: 6))
+        app.buttons["racket.camera.options"].tap()
+        let mia = app.buttons["racket.camera.ourServe.partner"]
         XCTAssertTrue(mia.waitForExistence(timeout: 4), "Who serves first for us? in doubles")
         XCTAssertEqual(mia.label, "Mia")
         mia.tap()
-        shot("pb-04-warmup")
-        app.buttons["racket.warmup.start"].tap()
+        shot("pb-04-options")
+        app.buttons["racket.camera.optionsDone"].tap()
+        sleep(1)
+        app.buttons["racket.camera.shutter"].tap()
         XCTAssertTrue(app.buttons["racket.rec.show.dim"].waitForExistence(timeout: 6))
         app.buttons["racket.rec.show.dim"].tap()
         XCTAssertEqual(any("racket.game.score").label, "1–0–2", "the game in progress keeps its call")

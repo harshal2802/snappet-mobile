@@ -744,6 +744,20 @@ always; hold for the original) and Score; Cancel / Undo / Redo / Done over a pur
 `Services/RacketLookRenderer.swift`; UI `RacketEditUITests`. **Device-pending:** looks on real footage, the shared copy's
 look / labels / speed (the simulator only passes through), haptic ticks, VoiceOver.
 
+🟡 **Racket pro camera, before recording (2026-11-14, prompt 255 — issue #448 part 2).** iOS. "Set up camera" on a
+match opens Apple Camera's layout in place of the camera check and Warmup: a status pill (ready · recording time at this
+quality · battery) and the quality label; lens buttons for only the lenses the phone has, the zoom dial (drag across the
+lenses) and pinch, zoom continuous across lenses on the virtual multi-camera device; tap to focus and expose with a
+brightness slider, touch and hold for AE/AF lock; the Video quality page (HD/4K × 30/60, only supported formats, time and
+GB per hour, heat notes, Use for every match); mode strip Game by game / Everything; thumbnail → Your videos; Options
+(Grid / Level / Court guide overlays, who serves, while playing show, the Watch, live tracking "Not available yet", Looks,
+Compare quality); a preview-only Looks strip whose pick becomes the match's playback look; the no-access state. Zoom, lens,
+lock and quality carry into the recording (the same camera for game by game; a carried `RacketCameraSetup` for record
+everything). Pure: `RacketProCamera.swift` (`RacketProCameraTests`); screens `RacketProCameraViews.swift`; edge
+`Services/RacketRecorder.swift`, `Services/RacketLevelMeter.swift`; UI `RacketProCameraUITests`. Drills keep the old
+camera check until the next job. **Device-pending:** see the prompt 255 entry in `decisions.md` for what the phone run
+verified.
+
 ## License
 
 TBD.
