@@ -11482,3 +11482,10 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
   "unavailable", so `generic/platform=iOS` was built (succeeds). Not verified on hardware: the real interruption-ended
   signal, real thermal states, the low-space stop on a nearly full phone, the format switch at the next game, the preview
   turning sideways on a real camera, zoom / focus / lock while a file is being written.
+- **Phone run, 2026-11-15 (prompt 256 follow-up).** On an iPhone 13 Pro Max the real camera reports lenses 0.5 / 1 / 3,
+  zoom to 9×, and HD · 30, HD · 60, 4K · 30 (no 4K · 60 on the triple camera). The live picture was black for two
+  reasons, both fixed: the pro camera view painted its own black background over the cover's persistent preview, and
+  SwiftUI colour effects (`RacketLookPreviewEffect`) on the preview view draw the camera layer black or dimmed on a real
+  phone. So a look no longer tints the real live picture (the fake court still shows it); a filtered preview needs the
+  camera frames themselves and is not built. UI tests cannot see the picture: `testReportsWhatThisCameraHas` now keeps a
+  screenshot in the result bundle on a phone. With the fake camera, heat and charging come only from the test.

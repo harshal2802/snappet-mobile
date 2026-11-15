@@ -35,6 +35,11 @@ final class RacketProCameraUITests: XCTestCase {
     }
 
     private func shot(_ name: String) {
+        if onPhone, app.state == .runningForeground {
+            // On a phone there is no shared folder: keep the app's own window in the result bundle.
+            let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            a.name = name; a.lifetime = .keepAlways; add(a)
+        }
         guard let dir = ProcessInfo.processInfo.environment["RACKET_SHOTS"] else { return }
         let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: url)

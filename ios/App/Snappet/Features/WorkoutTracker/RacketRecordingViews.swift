@@ -1032,13 +1032,10 @@ extension View {
         backgroundPreferenceValue(RacketPreviewSlotKey.self) { anchor in
             GeometryReader { g in
                 let rect = anchor.map { g[$0] } ?? CGRect(x: 0, y: 0, width: 2, height: 2)
-                Group {
-                    if let look {
-                        RacketCameraPreview(session: session, fake: fake).modifier(RacketLookPreviewEffect(preview: look))
-                    } else {
-                        RacketCameraPreview(session: session, fake: fake)
-                    }
-                }
+                // No SwiftUI colour effects on this view: on a real phone they draw the camera layer black or dimmed
+                // (seen on an iPhone 13 Pro Max, 2026-11-15). A look therefore doesn't tint the real live picture yet;
+                // `look` is kept so callers don't change when a proper filtered preview arrives.
+                RacketCameraPreview(session: session, fake: fake)
                     .frame(width: max(2, rect.width), height: max(2, rect.height))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .position(x: rect.midX, y: rect.midY)

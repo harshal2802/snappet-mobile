@@ -126,7 +126,7 @@ struct RacketProCameraView: View {
             .frame(width: box.width, height: box.height)
         }
         .ignoresSafeArea()
-        .background(Color.black)
+        // No background here: the live picture is drawn behind this view by the owning cover, which is black itself.
         .onAppear(perform: appear)
         .onDisappear { level?.stop() }
         .task {

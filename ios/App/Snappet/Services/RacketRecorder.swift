@@ -285,6 +285,12 @@ final class RacketRecorder: NSObject {
             // The exact format and frame rate (the session's preset then becomes input priority).
             Self.applyFormat(s.format, infos: formatInfos, on: cam)
             Self.applyCamera(s, caps: caps, on: cam)
+            #if DEBUG
+            // What the sensor is doing two seconds in: a black picture with the gain at its ceiling is a covered lens.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                Self.trace("sensor iso=\(cam.iso) max=\(cam.activeFormat.maxISO) shutter=\(cam.exposureDuration.seconds) offset=\(cam.exposureTargetOffset) zoom=\(cam.videoZoomFactor) active=\(cam.activeFormat) connections=\(p.session.connections.map { "\($0.isActive)/\($0.isEnabled)" })")
+            }
+            #endif
             let dims = CMVideoFormatDescriptionGetDimensions(cam.activeFormat.formatDescription)
             let refreshed = RacketCameraCapabilities(device: Self.info(cam))
             Task { @MainActor in
