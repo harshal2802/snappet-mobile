@@ -186,6 +186,14 @@ enum RacketScrub {
         return min(12, max(1, Int((width / (height * 16 / 9)).rounded(.up))))
     }
 
+    /// Prompt 258 (the user: "when i split the video and hit play. it doesnt play before saving"): where Play in the
+    /// split sheet starts — at the playhead when it is inside the part and more than `playLeadSec` before its end;
+    /// otherwise at the part's start (after a handle moved, a nudge, or "Split here", the playhead sits on an edge).
+    static let playLeadSec: Double = 0.3
+    static func playStart(playhead: Double, start: Double, end: Double) -> Double {
+        playhead >= start - 0.001 && playhead < end - playLeadSec ? max(start, playhead) : start
+    }
+
     /// "Split here" at the playhead: the playhead, when it leaves both halves at least `RacketSplitEditor.minPartSec`;
     /// otherwise nil (the button explains why).
     static func splitPoint(playhead: Double, part: RacketVideoPart) -> Double? {

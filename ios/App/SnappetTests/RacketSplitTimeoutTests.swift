@@ -499,4 +499,26 @@ final class RacketSplitTimeoutTests: XCTestCase {
         XCTAssertEqual(segs.map(\.localIdentifier), ["d2220.0", "d2890.0"], "one game from its two saved videos")
         XCTAssertEqual(segs.map(\.timelineStart), [2220, 2890], "rally positions stay on the recording's clock")
     }
+
+    // MARK: Prompt 258 small rules
+
+    func testPlayStartsAtThePlayheadInsideThePartElseAtItsStart() {
+        XCTAssertEqual(RacketScrub.playStart(playhead: 50, start: 10, end: 100), 50)
+        XCTAssertEqual(RacketScrub.playStart(playhead: 100, start: 10, end: 100), 10, "end handle moved: the playhead sits on the end")
+        XCTAssertEqual(RacketScrub.playStart(playhead: 99.8, start: 10, end: 100), 10, "less than 0.3 s before the end")
+        XCTAssertEqual(RacketScrub.playStart(playhead: 5, start: 10, end: 100), 10, "before the part")
+        XCTAssertEqual(RacketScrub.playStart(playhead: 10, start: 10, end: 100), 10)
+        // After "Split here" at 40 the sheet stays on the first half (10–40) and the playhead is on its end.
+        XCTAssertEqual(RacketScrub.playStart(playhead: 40, start: 10, end: 40), 10)
+    }
+
+    func testTheReviewSuggestsATimeoutWhenOnlyOneSideHasAScore() {
+        let sets = [scored(11, 9, 100), unscored(250)]
+        XCTAssertEqual(RacketTimeoutSuggestion.ask(pair, index: 1, sets: sets, unit: .game), "Was this a timeout in Game 1?")
+        XCTAssertNil(RacketTimeoutSuggestion.ask(pair, index: 1, sets: [scored(11, 9, 100), scored(5, 3, 250)], unit: .game))
+        XCTAssertNil(RacketTimeoutSuggestion.ask(pair, index: 1, sets: [unscored(100), unscored(250)], unit: .game))
+        XCTAssertNil(RacketTimeoutSuggestion.ask(pair, index: 0, sets: sets, unit: .game))
+        let yes = RacketSplitEditor.setKind(pair, id: pair[1].id, kind: .timeout)
+        XCTAssertEqual(kinds(yes), [.game, .timeout, .game])
+    }
 }

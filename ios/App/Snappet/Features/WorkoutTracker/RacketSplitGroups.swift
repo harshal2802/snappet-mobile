@@ -632,3 +632,21 @@ extension SetLog {
         return RacketUnitScore(scoreFor: f, scoreAgainst: a, tiebreakFor: nil, tiebreakAgainst: nil, superTiebreak: false)
     }
 }
+
+// MARK: - The split review's quiet suggestion
+
+/// The proposal never proposes timeouts. When a break sits between two game stretches and only one of them has a
+/// logged score, the review asks "Was this a timeout in Game 2?" ("Yes, same game" chooses Timeout for it).
+enum RacketTimeoutSuggestion {
+    static func ask(_ ps: [RacketVideoPart], index i: Int, sets: [SetLog], unit: RacketUnit) -> String? {
+        guard ps.indices.contains(i), ps[i].kind == .breakTime, RacketSplitEditor.timeoutBlock(ps, index: i) == nil else { return nil }
+        func hasScore(_ p: RacketVideoPart) -> Bool {
+            guard let l = p.setIndex, l < sets.count else { return false }
+            return sets[l].racketScore != nil
+        }
+        let before = RacketGameGroups.group(of: i - 1, in: ps).map { ps[$0.first] } ?? ps[i - 1]
+        guard hasScore(before) != hasScore(ps[i + 1]) else { return nil }
+        let n = RacketSplitReview.ordinals(ps)[ps[i - 1].id] ?? 1
+        return "Was this a timeout in \(unit.noun.capitalized) \(n)?"
+    }
+}

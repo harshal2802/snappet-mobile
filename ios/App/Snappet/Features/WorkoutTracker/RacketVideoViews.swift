@@ -118,9 +118,22 @@ struct RacketVideoStore {
     func logGames(_ id: UUID, parts: [RacketVideoPart]) {
         update(id) { e in
             guard let l = e.racketRecordingLog else { return }
-            let out = RacketSplitAssign.apply(parts: parts, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt)
+            let out = RacketSplitCommit.apply(parts: parts, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt,
+                                              duration: l.timelineSec, rallies: l.allRallies)
             e.sets = out.sets
         }
+    }
+
+    /// Prompt 258: a split saved with games joined (or un-joined) renumbers the match's games; a photo or clip attached
+    /// to a game by its index follows it.
+    func remapMedia(_ id: UUID, _ remap: [Int: Int]) {
+        guard remap.contains(where: { $0.key != $0.value }) else { return }
+        let sid = session.id
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        for m in media where m.assignedExerciseID == id {
+            if let old = m.assignedSetIndex, let new = remap[old] { m.assignedSetIndex = new }
+        }
+        try? context.save()
     }
 
     func saveScore(_ id: UUID, unit: Int, _ log: SetLog) {
@@ -172,7 +185,8 @@ struct RacketVideosCover: View {
         .sheet(item: $editing) { p in
             RacketSplitEditSheet(part: p, parts: draft, duration: draftDuration, unit: unit(draftFor),
                                  playback: reviewPlayback, sources: reviewSources,
-                                 sport: draftFor.flatMap { store.ex($0)?.racketSport } ?? .tableTennis) { draft = $0 }
+                                 sport: draftFor.flatMap { store.ex($0)?.racketSport } ?? .tableTennis,
+                                 sets: draftFor.flatMap { store.ex($0)?.sets } ?? []) { draft = $0 }
         }
         .sheet(item: $scoring) { t in
             // EditScore board (V2.2): "Which game" chips, opening on the game tapped.
@@ -496,6 +510,7 @@ struct RacketVideosCover: View {
         let ex = store.ex(id)
         let u = ex?.racketFormat.sport.unit ?? .game
         let ords = RacketSplitReview.ordinals(draft)
+        let continued = RacketGameGroups.continuations(draft)
         let playing = reviewPlayback.flatMap { RacketSplitTimeline.partIndex(at: $0.position, in: draft) }
         VStack(spacing: 0) {
             if let pb = reviewPlayback {
@@ -506,7 +521,8 @@ struct RacketVideosCover: View {
                         Text(RacketVideoTime.clock(pb.position)).monospacedDigit()
                             .accessibilityIdentifier("racket.split.clock")
                         if let k = playing, k < draft.count {
-                            Text(RacketSplitReview.name(draft[k], ordinal: ords[draft[k].id], unit: u))
+                            Text(RacketSplitReview.name(draft[k], ordinal: ords[draft[k].id], unit: u,
+                                                        continued: continued.contains(draft[k].id)))
                                 .font(SnappetType.detail.weight(.semibold))
                                 .accessibilityIdentifier("racket.split.playingPart")
                         }
@@ -529,9 +545,10 @@ struct RacketVideosCover: View {
                             Button { playPart(k) } label: {
                                 HStack(alignment: .top, spacing: 10) {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(RacketSplitReview.name(p, ordinal: ords[p.id], unit: u))
+                                        Text(RacketSplitReview.name(p, ordinal: ords[p.id], unit: u, continued: continued.contains(p.id)))
                                             .font(.system(size: 16, weight: .semibold)).foregroundStyle(SnappetColor.ink)
-                                        Text(RacketSplitReview.detail(p, sets: ex?.sets ?? [], unit: u, isLast: k == draft.count - 1))
+                                        Text(RacketSplitReview.detail(p, sets: ex?.sets ?? [], unit: u, isLast: k == draft.count - 1,
+                                                                      continued: continued.contains(p.id)))
                                             .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                             .multilineTextAlignment(.leading)
@@ -560,6 +577,20 @@ struct RacketVideosCover: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .pagerGlass(cornerRadius: 14)
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(SnappetColor.brand, lineWidth: playing == k ? 1.5 : 0))
+                        if let ask = RacketTimeoutSuggestion.ask(draft, index: k, sets: ex?.sets ?? [], unit: u) {
+                            // Prompt 258: a break between two game stretches where only one has a logged score.
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(ask).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("racket.split.suggestTimeout.\(k)")
+                                Spacer(minLength: 6)
+                                chipButton("Yes, same \(u.noun)", id: "racket.split.suggestTimeout.yes.\(k)") {
+                                    draft = RacketSplitEditor.setKind(draft, id: p.id, kind: .timeout)
+                                    Haptics.tap()
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                        }
                     }
                     primary("Looks right, apply", id: "racket.split.apply") { apply(id) }
                 }
@@ -603,15 +634,19 @@ struct RacketVideosCover: View {
     }
 
     private func apply(_ id: UUID) {
+        var remap: [Int: Int] = [:]
         store.update(id) { e in
             guard var l = e.racketRecordingLog else { return }
-            let parts = RacketSplitEditor.normalized(draft, duration: l.timelineSec)
-            let out = RacketSplitAssign.apply(parts: parts, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt)
+            // Prompt 258: repair, fold the games joined across timeouts into one, renumber, then link.
+            let out = RacketSplitCommit.apply(parts: draft, sets: e.sets, base: l.baseIndex, startedAt: l.startedAt,
+                                              duration: l.timelineSec, rallies: l.allRallies)
             e.sets = out.sets
             l.split = RacketSplit(parts: out.parts, appliedAt: .now)
             l.keptAsOne = nil
             e.racketRecordingLog = l
+            remap = out.remap
         }
+        store.remapMedia(id, remap)
         draft = store.ex(id)?.racketRecordingLog?.split?.parts ?? draft
         Haptics.success()
         path.append(.assign(id))
@@ -622,26 +657,30 @@ struct RacketVideosCover: View {
     @ViewBuilder private func splitAssign(_ id: UUID) -> some View {
         let ex = store.ex(id)
         let u = ex?.racketFormat.sport.unit ?? .game
-        let parts = ex?.racketRecordingLog?.split?.parts.filter { $0.kind == .game } ?? []
+        let all = ex?.racketRecordingLog?.split?.parts ?? []
+        let groups = RacketGameGroups.groups(all)
         let sets = ex?.sets ?? []
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Match video to your \(u.noun)s").font(.system(size: 22, weight: .semibold))
                 note("Each part links to that \(u.noun). It stays inside the original video.")
-                ForEach(Array(parts.enumerated()), id: \.element.id) { k, p in
+                // One row per game: a game's halves joined across timeouts are one game ("Game 2", not 2 and 3).
+                ForEach(Array(groups.enumerated()), id: \.offset) { k, g in
+                    let p = all[g.first]
                     HStack(spacing: 8) {
                         Text(RacketSplitAssign.title(p, ordinal: k + 1, sets: sets, unit: u))
                             .font(.system(size: 15, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 4)
                         Text("→").foregroundStyle(SnappetColor.textSecondary)
-                        Text(RacketVideoTime.range(p.startSec, p.endSec))
+                        Text(g.halves.map { RacketVideoTime.range(all[$0].startSec, all[$0].endSec) }.joined(separator: " + "))
                             .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                            .multilineTextAlignment(.trailing)
                     }
                     .padding(12).pagerGlass(cornerRadius: 14)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("racket.assign.row.\(k)")
                 }
-                if let missing = RacketSplitAssign.missingScore(parts: parts, sets: sets, unit: u) {
+                if let missing = RacketSplitAssign.missingScore(parts: all, sets: sets, unit: u) {
                     panel {
                         Text(missing.line).font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(SnappetColor.perfModerate)
@@ -672,8 +711,12 @@ struct RacketVideosCover: View {
     @ViewBuilder private func splitDone(_ id: UUID) -> some View {
         let ex = store.ex(id)
         let u = ex?.racketFormat.sport.unit ?? .game
-        let parts = ex?.racketRecordingLog?.split?.countedParts ?? []
+        let all = ex?.racketRecordingLog?.split?.parts ?? []
+        let continued = RacketGameGroups.continuations(all)
+        let parts = (ex?.racketRecordingLog?.split?.countedParts ?? []).filter { !continued.contains($0.id) }
         let ords = RacketSplitReview.ordinals(parts)
+        let played: [UUID: Double] = Dictionary(uniqueKeysWithValues: RacketGameGroups.groups(all).map {
+            (all[$0.first].id, RacketGameGroups.playedSec(all, $0)) })
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("\(parts.count) \(parts.count == 1 ? "part" : "parts") saved")
@@ -684,7 +727,7 @@ struct RacketVideosCover: View {
                     HStack {
                         Text(RacketSplitReview.name(p, ordinal: ords[p.id], unit: u)).font(SnappetType.body)
                         Spacer()
-                        Text(RacketVideoTime.clock(p.durationSec)).font(SnappetType.body.monospacedDigit())
+                        Text(RacketVideoTime.clock(played[p.id] ?? p.durationSec)).font(SnappetType.body.monospacedDigit())
                             .foregroundStyle(SnappetColor.textSecondary)
                     }
                     .padding(.vertical, 4)
@@ -864,6 +907,13 @@ struct RacketVideosCover: View {
             if case .missing = state {
                 Text("Original video not found").font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
                     .accessibilityIdentifier("racket.videos.missing")
+            }
+            if !ex.isRacketDrill, log?.isSplit == true {
+                // Prompt 258: reopen a saved split (e.g. a break that was really a timeout).
+                chipButton("Change the split", id: "racket.videos.changeSplit") {
+                    draftFor = nil
+                    path.append(.review(ex.id))
+                }
             }
             if ex.isRacketDrill {
                 panel {
@@ -1354,6 +1404,8 @@ struct RacketSplitEditSheet: View {
     var playback: RacketPlayback? = nil
     var sources: [RacketVideoMap.Source] = []
     var sport: RacketSport = .tableTennis
+    /// The match's logged games (prompt 258: joining two scored games asks first, showing the joined score).
+    var sets: [SetLog] = []
     let onSave: ([RacketVideoPart]) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1361,25 +1413,42 @@ struct RacketSplitEditSheet: View {
     @State private var configured = false
     @State private var thumbnails: [UIImage?] = []
     @State private var stripWidth: CGFloat = 320
+    /// Choosing Timeout would join scored games: the result waits for "Join them".
+    @State private var pendingJoin: RacketJoinAsk?
+    @State private var saveProblem: String?
 
     private var current: RacketVideoPart? { work.first { $0.id == part.id } }
+    private var index: Int? { work.firstIndex { $0.id == part.id } }
+
+    /// "Game 4", "Game 4, continued", "Timeout" — what this part is now.
+    private var heading: String? {
+        guard let i = index else { return nil }
+        let p = work[i]
+        guard p.kind == .game || p.kind == .timeout else { return nil }
+        return RacketSplitReview.name(p, ordinal: RacketSplitReview.ordinals(work)[p.id], unit: unit,
+                                      continued: RacketGameGroups.isContinuation(i, in: work))
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let p = current {
+                    if let p = current, let i = index {
+                        if let heading {
+                            Text(heading).font(.system(size: 20, weight: .semibold))
+                                .accessibilityIdentifier("racket.split.edit.title")
+                        }
                         if let pb = playback {
-                            RacketVideoSurface(playback: pb, sport: sport, height: 200)
+                            RacketSplitVideo(playback: pb, sport: sport, start: p.startSec, end: p.endSec)
                             HStack(spacing: 10) {
                                 Text("Playhead \(RacketVideoTime.clock(pb.position))")
                                     .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                                     .accessibilityIdentifier("racket.split.edit.playhead")
                                 Spacer()
-                                Button(pb.playing ? "Pause" : "Play") { pb.playing ? pb.pause() : pb.play(from: pb.position, until: p.endSec) }
+                                Button(pb.playing ? "Pause" : "Play") { RacketSplitVideo.toggle(pb, start: p.startSec, end: p.endSec) }
                                     .font(.system(size: 15, weight: .semibold))
                                     .buttonStyle(.bordered)
-                                    .accessibilityIdentifier("racket.split.edit.play")
+                                    .accessibilityIdentifier("racket.split.edit.playPart")
                             }
                         }
                         Text("Drag to where it starts and ends").snappetLabel()
@@ -1410,12 +1479,26 @@ struct RacketSplitEditSheet: View {
                             if let c = current { playback?.seek(to: c.endSec) }
                         }
                         Text("What is this part?").snappetLabel()
+                        let timeoutBlock = RacketSplitEditor.timeoutBlock(work, index: i)
                         FlowRow {
                             ForEach(RacketPartKind.editChoices, id: \.self) { k in
+                                let off = k == .timeout && timeoutBlock != nil
                                 choice(k.label(unit: unit), selected: p.kind == k, id: "racket.split.edit.kind.\(k.rawValue)") {
-                                    work = RacketSplitEditor.setKind(work, id: p.id, kind: k)
+                                    choose(k, for: p)
                                 }
+                                .disabled(off)
+                                .opacity(off ? 0.45 : 1)
                             }
+                        }
+                        if let timeoutBlock, p.kind != .timeout {
+                            Text(timeoutBlock).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("racket.split.edit.timeoutReason")
+                        } else if p.kind == .timeout {
+                            Text("Skipped when you play this \(unit.noun), and left out of shared copies. It stays in the original.")
+                                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("racket.split.edit.timeoutNote")
                         }
                         if p.kind == .unsure || p.kind == .game {
                             Text("Belongs to").snappetLabel()
@@ -1428,20 +1511,37 @@ struct RacketSplitEditSheet: View {
                             }
                         }
                         let cut = splitPoint(p)
+                        let splitOff = RacketSplitEditor.splitBlock(work, index: i)
+                        let mergeOff = RacketSplitEditor.mergeBlock(work, index: i)
                         HStack(spacing: 10) {
                             outline("Split here", id: "racket.split.edit.splitHere") {
-                                if let cut { work = RacketSplitEditor.split(work, id: p.id, at: cut); Haptics.tap() }
+                                if let cut, splitOff == nil {
+                                    work = RacketSplitEditor.split(work, id: p.id, at: cut)
+                                    // Stay on the first piece; Play plays it from its start.
+                                    if let c = current { playback?.seek(to: c.startSec) }
+                                    Haptics.tap()
+                                }
                             }
-                            .disabled(cut == nil)
-                            .opacity(cut == nil ? 0.45 : 1)
+                            .disabled(cut == nil || splitOff != nil)
+                            .opacity(cut == nil || splitOff != nil ? 0.45 : 1)
                             outline("Merge with next", id: "racket.split.edit.merge") {
                                 work = RacketSplitEditor.mergeWithNext(work, id: p.id)
                             }
+                            .disabled(mergeOff != nil)
+                            .opacity(mergeOff != nil ? 0.45 : 1)
                         }
-                        Text(splitNote(p, cut: cut))
+                        Text([splitOff ?? splitNote(p, cut: cut),
+                              mergeOff.flatMap { $0 == RacketSplitEditor.mergeLastReason ? nil : $0 }
+                                ?? RacketSplitEditor.mergeNote(work, index: i, unit: unit)]
+                            .compactMap { $0 }.joined(separator: " "))
                             .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("racket.split.edit.splitNote")
+                        if let saveProblem {
+                            Text(saveProblem).font(SnappetType.detail).foregroundStyle(SnappetColor.perfHard)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("racket.split.edit.problem")
+                        }
                     }
                 }
                 .padding(20)
@@ -1456,8 +1556,12 @@ struct RacketSplitEditSheet: View {
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(work); dismiss() }.accessibilityIdentifier("racket.split.edit.save")
+                    Button("Save") { save() }.accessibilityIdentifier("racket.split.edit.save")
                 }
+            }
+            .sheet(item: $pendingJoin) { ask in
+                RacketJoinConfirmSheet(ask: ask) { work = ask.after } onCancel: {}
+                    .presentationDetents([.height(260)])
             }
         }
         .preferredColorScheme(.dark)
@@ -1470,6 +1574,35 @@ struct RacketSplitEditSheet: View {
         }
         .onDisappear { playback?.pause() }
         .task(id: filmKey) { await loadFilmStrip() }
+    }
+
+    /// A kind chip. Timeout joining scored games asks first (the confirm sheet shows the joined score).
+    private func choose(_ k: RacketPartKind, for p: RacketVideoPart) {
+        let after = RacketSplitEditor.setKind(work, id: p.id, kind: k)
+        if k == .timeout {
+            let ords = RacketSplitReview.ordinals(work)
+            let ordinal: (Int) -> Int = { link in
+                work.first { $0.setIndex == link }.flatMap { ords[$0.id] } ?? link + 1
+            }
+            if let pv = RacketSplitJoin.preview(before: work, after: after, id: p.id, sets: sets, unit: unit, ordinal: ordinal),
+               pv.needsConfirm {
+                pendingJoin = RacketJoinAsk(preview: pv, after: after)
+                return
+            }
+        }
+        work = after
+    }
+
+    /// Save only a list that passes every invariant (repaired first).
+    private func save() {
+        let fixed = RacketSplitEditor.normalized(work, duration: duration)
+        let issues = RacketSplitEditor.validate(fixed, duration: duration)
+        guard issues.isEmpty else {
+            saveProblem = "This split can’t be saved yet: some parts overlap or are too short. Adjust the edges and try again."
+            return
+        }
+        onSave(fixed)
+        dismiss()
     }
 
     /// The film strip is redrawn when the window (the neighbours' outer edges) or the strip's size changes, or once
@@ -1544,6 +1677,47 @@ struct RacketSplitEditSheet: View {
         }
         .buttonStyle(.plain).pagerOutline()
         .accessibilityIdentifier(id)
+    }
+}
+
+/// Choosing Timeout would join two or more scored games: what to show and the list to keep on "Join them".
+struct RacketJoinAsk: Identifiable {
+    let id = UUID()
+    let preview: RacketSplitJoin.Preview
+    let after: [RacketVideoPart]
+}
+
+/// "Game 4 and Game 5 become one game: 6–5 + 5–3 = 11–8" · Join them / Cancel (prompt 258). The joined score is
+/// "Score unconfirmed" until you confirm it in Edit score.
+struct RacketJoinConfirmSheet: View {
+    let ask: RacketJoinAsk
+    let onJoin: () -> Void
+    let onCancel: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(ask.preview.title).font(.system(size: 20, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("racket.join.title")
+            Text(ask.preview.scoreLine).font(.system(size: 28, weight: .light)).monospacedDigit()
+                .accessibilityIdentifier("racket.join.score")
+            Text("The joined score shows as “Score unconfirmed” until you confirm it. Later games move up one.")
+                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button { onCancel(); dismiss() } label: {
+                    Text("Cancel").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain).pagerOutline()
+                .accessibilityIdentifier("racket.join.cancel")
+                Button { onJoin(); dismiss() } label: { Text("Join them").frame(maxWidth: .infinity, minHeight: 30) }
+                    .buttonStyle(SnappetWidePrimaryStyle())
+                    .accessibilityIdentifier("racket.join.confirm")
+            }
+        }
+        .padding(20)
+        .preferredColorScheme(.dark)
     }
 }
 
