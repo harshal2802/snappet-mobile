@@ -83,7 +83,11 @@ final class RacketRecorder: NSObject {
         self.fake = fake
         capabilities = fake ? Self.fakeCapabilities : RacketCameraCapabilities.sample
         super.init()
-        if fake { previewAspect = setup.format.portraitAspect }
+        if fake {
+            previewAspect = setup.format.portraitAspect
+            // The fake camera's heat comes only from the test, so a test phone that is really warm doesn't change it.
+            fakeThermal = .ok
+        }
         Self.trace("recorder init session=\(Unmanaged.passUnretained(self.session).toOpaque())")
     }
 
@@ -470,6 +474,10 @@ final class RacketRecorder: NSObject {
 
     /// The battery is charging (low battery isn't trouble then).
     static func isCharging() -> Bool {
+        #if DEBUG
+        // A test that sets the battery level means an unplugged phone, even when the test phone is on a cable.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestCameraBattery") { return false }
+        #endif
         UIDevice.current.isBatteryMonitoringEnabled = true
         return UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
     }
@@ -597,6 +605,7 @@ final class RacketRecorder: NSObject {
                                         queue: .main) { [weak self] _ in
             let level = RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
             MainActor.assumeIsolated {
+                guard self?.fake == false else { return }
                 self?.onThermal?(level)
                 if level == .tooHot { self?.report(.tooHot) }
             }
