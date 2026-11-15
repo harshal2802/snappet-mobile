@@ -479,6 +479,11 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     /// The frame rate it was recorded at (the pro camera's quality); `nil` ⇒ 30.
     var fps: Int?
 
+    // Prompt 257 — additive Optional.
+    /// Quarter turns clockwise the viewer chose with Rotate (`RacketVideoTurn`), for every part of this recording on
+    /// the tag, fix, timeline, split and player screens; `nil` ⇒ as saved. Playback only: shared copies aren't turned.
+    var quarterTurns: Int?
+
     init(startedAt: Date) { self.startedAt = startedAt }
 
     func offset(_ date: Date) -> Double { max(0, date.timeIntervalSince(startedAt)) }

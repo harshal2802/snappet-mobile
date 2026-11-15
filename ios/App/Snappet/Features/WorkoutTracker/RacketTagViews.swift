@@ -9,72 +9,7 @@ import AVFoundation
 // (`RacketRallyVideo`), looping it, and the fix sheet's frame follows the handle being dragged. Pure logic in
 // `RacketTagFlow.swift` / `RacketRallyTags.swift`.
 
-// MARK: - The rally's video (loops the rally, padded a second each side)
-
-struct RacketRallyVideo: View {
-    let log: RacketRecordingLog?
-    let partStart: Double
-    let partEnd: Double
-    /// The stretch to loop (recording time); changes when the sheet moves to another rally.
-    let range: ClosedRange<Double>?
-    var sport: RacketSport = .tableTennis
-    var height: CGFloat = 190
-
-    @State private var playback: RacketPlayback?
-    @State private var looping = true
-
-    private var loop: ClosedRange<Double>? {
-        range.map { max(partStart, $0.lowerBound - 1)...min(partEnd, $0.upperBound + 1) }
-    }
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            if let pb = playback {
-                RacketVideoSurface(playback: pb, sport: sport, height: height)
-                Button {
-                    if pb.playing { looping = false; pb.pause() } else { looping = true; replay() }
-                } label: {
-                    Label(pb.playing ? "Pause" : "Replay", systemImage: pb.playing ? "pause.fill" : "arrow.counterclockwise")
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(.black.opacity(0.6), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(8)
-                .accessibilityIdentifier("racket.rallyVideo.play")
-            } else {
-                Color(white: 0.11).frame(height: height)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-        }
-        .frame(height: height)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("racket.rallyVideo")
-        .task {
-            guard playback == nil else { return }
-            let pb = RacketPlayback(partStart: partStart, partEnd: partEnd, startAt: loop?.lowerBound)
-            playback = pb
-            if let log { await pb.load(RacketVideoMap.segments(start: partStart, end: partEnd, log: log)) }
-            replay()
-        }
-        .task(id: "\(range?.lowerBound ?? -1)-\(range?.upperBound ?? -1)") {
-            // A new rally: play it from its start. Then keep looping until Pause.
-            looping = true
-            replay()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let pb = playback, let l = loop, looping, !pb.playing else { continue }
-                if pb.position >= l.upperBound - 0.15 || pb.position < l.lowerBound - 0.05 { replay() }
-            }
-        }
-        .onDisappear { playback?.stop() }
-    }
-
-    private func replay() {
-        guard let pb = playback, let l = loop else { return }
-        pb.play(from: l.lowerBound, until: l.upperBound)
-    }
-}
+// The rally's video (`RacketRallyVideo`, with its controls) lives in `RacketRallyVideoViews.swift` (prompt 257).
 
 // MARK: - The tag sheet (QuickTag · XxTag · XxNoModelTag · DoublesTag)
 
@@ -100,6 +35,8 @@ struct RacketTagSheet: View {
     /// Unsure guesses in the part when the sheet opened, and how many are checked since.
     @State private var unsureTotal = 0
     @State private var unsureDone = 0
+    /// The sheet's visible height: caps the video so "Who won the point?" stays on the first screen (prompt 257).
+    @State private var visibleHeight: CGFloat = 0
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var log: RacketRecordingLog? { ex?.racketRecordingLog }
@@ -126,7 +63,9 @@ struct RacketTagSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let r = current {
                         RacketRallyVideo(log: log, partStart: ref.startSec, partEnd: ref.endSec,
-                                         range: r.startSec...r.endSec, sport: sport)
+                                         range: r.startSec...r.endSec, sport: sport,
+                                         maxHeight: RacketVideoTurn.tagSheetCap(visibleHeight: visibleHeight),
+                                         onTurn: saveTurn)
                         topLine(r, sides: sides)
                         Text(sport == .tableTennis && (modelPath || doubles) ? "Who won the point?" : "Who won the rally?")
                             .font(.system(size: 17, weight: .bold))
@@ -192,6 +131,7 @@ struct RacketTagSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.bottom, 20)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { visibleHeight = $0 }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -263,7 +203,7 @@ struct RacketTagSheet: View {
     @ViewBuilder private func detailSheet(_ d: RacketTagDetail, rally r: RacketRally, sides: (us: String, them: String)) -> some View {
         let number = (rallies.firstIndex { $0.id == r.id } ?? 0) + 1
         let video = RacketRallyVideo(log: log, partStart: ref.startSec, partEnd: ref.endSec, range: r.startSec...r.endSec,
-                                     sport: sport, height: d == .serve ? 190 : 200)
+                                     sport: sport, maxHeight: 280, onTurn: saveTurn)
         switch d {
         case .serve:
             let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }
@@ -316,6 +256,11 @@ struct RacketTagSheet: View {
     }
 
     private func serverSide(_ r: RacketRally) -> RacketServe.Side? { lines.serverSide(r) }
+
+    /// Rotate (prompt 257): kept on the recording, for every rally and screen showing it.
+    private func saveTurn(_ turns: Int) {
+        store.updateLog(ref.exerciseID) { $0.quarterTurns = RacketVideoTurn.stored(turns) }
+    }
 
     private func servingWho(_ r: RacketRally, sides: (us: String, them: String)) -> String { lines.servingWho(r, sides: sides) }
 
@@ -465,20 +410,21 @@ struct RacketFixRallySheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let r = current {
                         if let pb = playback {
-                            RacketVideoSurface(playback: pb, sport: sport, height: 190)
-                                .overlay(alignment: .bottomTrailing) {
-                                    Button(pb.playing ? "Pause" : "Play") {
-                                        if pb.playing { pb.pause() } else {
-                                            pb.play(from: pb.position >= r.endSec - 0.1 ? r.startSec : pb.position, until: r.endSec)
-                                        }
+                            // The picture's own shape, turned as the recording is (prompt 257).
+                            RacketVideoBox(playback: pb, sport: sport, maxHeight: 280, id: "racket.fix.video") { box in
+                                Button(pb.playing ? "Pause" : "Play") {
+                                    if pb.playing { pb.pause() } else {
+                                        pb.play(from: pb.position >= r.endSec - 0.1 ? r.startSec : pb.position, until: r.endSec)
                                     }
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(.black.opacity(0.6), in: Capsule())
-                                    .padding(8)
-                                    .accessibilityIdentifier("racket.fix.play")
                                 }
-                                .accessibilityIdentifier("racket.fix.video")
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(.black.opacity(0.6), in: Capsule())
+                                .frame(minHeight: 44)
+                                .padding(.trailing, 8)
+                                .accessibilityIdentifier("racket.fix.play")
+                                .frame(width: box.width, height: box.height, alignment: .bottomTrailing)
+                            }
                         }
                         Text("Drag to where it starts and ends").font(.system(size: 17, weight: .bold))
                         RacketRangeStrip(start: r.startSec, end: r.endSec, window: window(r), playhead: playback?.position,
@@ -560,6 +506,7 @@ struct RacketFixRallySheet: View {
         .task {
             guard playback == nil else { return }
             let pb = RacketPlayback(partStart: lo, partEnd: hi, startAt: rally.startSec)
+            pb.quarterTurns = RacketVideoTurn.normalized(log?.quarterTurns)
             playback = pb
             if let log { await pb.load(RacketVideoMap.segments(start: lo, end: hi, log: log)) }
             pb.seek(to: current?.startSec ?? rally.startSec)
@@ -630,7 +577,8 @@ struct RacketShotsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 RacketRallyVideo(log: log, partStart: ref.startSec, partEnd: ref.endSec,
-                                 range: rally.map { $0.startSec...$0.endSec }, sport: sport)
+                                 range: rally.map { $0.startSec...$0.endSec }, sport: sport, maxHeight: 320,
+                                 onTurn: { t in store.updateLog(ref.exerciseID) { $0.quarterTurns = RacketVideoTurn.stored(t) } })
                 HStack(alignment: .firstTextBaseline) {
                     Text("\(shots.count) \(shots.count == 1 ? "shot" : "shots")").font(.system(size: 17, weight: .bold))
                         .accessibilityIdentifier("racket.shots.count")

@@ -73,3 +73,59 @@ enum RacketVideoOrientation {
         return out
     }
 }
+
+// MARK: - Turning a recording by hand, and the box a clip shows in (prompt 257) — pure
+//
+// Device feedback: a clip on the tag sheet was a portrait picture pillarboxed in a wide black box, and the scene inside it
+// was sideways (stored with the wrong turn). The viewer can turn a recording a quarter at a time ("Rotate"); the turn is
+// kept on the recording (`RacketRecordingLog.quarterTurns`) and every screen showing it through `RacketPlayback` draws
+// it turned. The video box takes the picture's own shape (no side bars), capped in height.
+
+enum RacketVideoTurn {
+    /// 0…3 quarter turns clockwise (any integer folds into that range; nil ⇒ 0).
+    static func normalized(_ turns: Int?) -> Int { (((turns ?? 0) % 4) + 4) % 4 }
+
+    /// One more quarter turn clockwise (the Rotate button).
+    static func next(_ turns: Int?) -> Int { normalized(normalized(turns) + 1) }
+
+    /// The stored value: nil for upright, so an untouched recording stays as it was saved.
+    static func stored(_ turns: Int) -> Int? { normalized(turns) == 0 ? nil : normalized(turns) }
+
+    static func degrees(_ turns: Int?) -> Double { Double(normalized(turns)) * 90 }
+
+    /// A quarter or three-quarter turn swaps width and height.
+    static func swapsSides(_ turns: Int?) -> Bool { normalized(turns) % 2 == 1 }
+
+    /// The size a picture shows at after `turns`.
+    static func displayed(_ size: CGSize, turns: Int?) -> CGSize {
+        swapsSides(turns) ? CGSize(width: size.height, height: size.width) : size
+    }
+
+    /// Width / height as shown after `turns`; nil without a usable size.
+    static func aspect(_ size: CGSize?, turns: Int?) -> CGFloat? {
+        guard let size, size.width > 0, size.height > 0 else { return nil }
+        let d = displayed(size, turns: turns)
+        return d.width / d.height
+    }
+
+    /// The shape a box has before the picture's size is known (a landscape guess, the common filming shape).
+    static let placeholderAspect: CGFloat = 16.0 / 9.0
+
+    /// The video box: the picture's own shape, full `width`; taller than `maxHeight` ⇒ that height and narrower (the
+    /// caller centres it). nil aspect ⇒ the placeholder shape.
+    static func box(aspect: CGFloat?, width: CGFloat, maxHeight: CGFloat) -> CGSize {
+        let a = aspect.flatMap { $0 > 0 ? $0 : nil } ?? placeholderAspect
+        guard width > 0 else { return .zero }
+        let h = width / a
+        let cap = max(1, maxHeight)
+        if h <= cap { return CGSize(width: width, height: h) }
+        return CGSize(width: min(width, cap * a), height: cap)
+    }
+
+    /// The tag sheet's height cap for the video: about 55 % of the screen, and never so tall that the controls under
+    /// the picture and "Who won the point?" with its buttons (`reserve`) leave the first screen of the sheet.
+    static func tagSheetCap(visibleHeight: CGFloat, reserve: CGFloat = 250) -> CGFloat {
+        guard visibleHeight > 0 else { return 300 }
+        return max(180, min(visibleHeight * 0.66, visibleHeight - reserve))
+    }
+}

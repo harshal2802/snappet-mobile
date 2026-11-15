@@ -14,11 +14,15 @@ struct RacketVideoSurface: View {
     var overlay: String? = nil
     var sport: RacketSport = .tableTennis
     var height: CGFloat = 220
+    /// The box's width (prompt 257: the box takes the picture's shape); nil ⇒ as wide as offered.
+    var width: CGFloat? = nil
 
     var body: some View {
         ZStack(alignment: .top) {
             if let player = playback.player {
-                RacketPlayerLayerView(player: player, target: playback.position - playback.partStart)
+                RacketTurned(turns: playback.quarterTurns) {
+                    RacketPlayerLayerView(player: player, target: playback.position - playback.partStart)
+                }
                 if let line = playback.loadState.line {
                     // Some stretches of the original are missing: say so over the video.
                     VStack {
@@ -66,8 +70,29 @@ struct RacketVideoSurface: View {
                     .accessibilityIdentifier("racket.player.overlay")
             }
         }
-        .frame(height: height)
+        .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// Draws `content` turned by `turns` quarter turns (prompt 257, Rotate): laid out in the box with its sides swapped for
+/// a quarter turn, then rotated, so an aspect-fitted video fills the same box upright.
+struct RacketTurned<Content: View>: View {
+    let turns: Int
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if RacketVideoTurn.normalized(turns) == 0 {
+            content()
+        } else {
+            GeometryReader { g in
+                let swap = RacketVideoTurn.swapsSides(turns)
+                content()
+                    .frame(width: swap ? g.size.height : g.size.width, height: swap ? g.size.width : g.size.height)
+                    .rotationEffect(.degrees(RacketVideoTurn.degrees(turns)))
+                    .frame(width: g.size.width, height: g.size.height)
+            }
+        }
     }
 }
 
@@ -346,6 +371,7 @@ struct RacketAnalyzedPlayerScreen: View {
             configured = true
             analyzed = startAnalyzed
             let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
+            pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
             playback = pb
             onlyRallies = ralliesOnly && !rallies.isEmpty
             pb.ralliesOnly = onlyRallies ? rallies : nil
@@ -724,6 +750,7 @@ struct RacketTimelineScreen: View {
             guard !configured else { return }
             configured = true
             let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
+            pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
             playback = pb
             if let log = ex?.racketRecordingLog {
                 await pb.load(RacketVideoMap.segments(start: ref.startSec, end: ref.endSec, log: log))

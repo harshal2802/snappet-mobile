@@ -11489,3 +11489,34 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
   phone. So a look no longer tints the real live picture (the fake court still shows it); a filtered preview needs the
   camera frames themselves and is not built. UI tests cannot see the picture: `testReportsWhatThisCameraHas` now keeps a
   screenshot in the result bundle on a phone. With the fake camera, heat and charging come only from the test.
+
+## 2026-11-15 — Racket rally video: bigger picture, controls, Rotate (device feedback; prompt 257)
+
+- **Why**: on the phone the tag sheet's clip was a portrait picture pillarboxed in a fixed 190 pt wide box (about a
+  quarter of it) with only Pause, and the scene was sideways. "Video look so small on this page and there are no controls."
+- **The box is the picture's shape** (`RacketVideoTurn.box`): full width, height from the displayed aspect, capped; when
+  capped it narrows and centres, so there are never side bars. The tag sheet's cap comes from the sheet's own measured
+  height (`tagSheetCap`: 66 % of it, and at least 250 pt left for the controls under the picture, the score line, "Who
+  won" and its buttons) — about 55 % of a 6.1" screen; no `UIScreen` read. Detail sheets / Fix 280 pt, Shots 320 pt.
+  Placeholder 16:9 before the size is known (the common filming shape), so a landscape clip doesn't move at all and a
+  portrait one changes once.
+- **Controls follow the Watch player**, not new inventions: its speed text, its zoom / pan clamp and its UIKit gesture
+  surface in full screen. Speed is 1× → 0.5× → 0.25× (a cycling button: slow motion is what reading a rally needs; no
+  menu). The loop keeps the proven pattern (play-until the loop's end, a 250 ms watchdog restarts it) rather than
+  `RacketPlayback.loop`, whose "moved away ⇒ clear" rule would fight scrubbing. Releasing the scrub bar always resumes
+  the loop (as asked), even if it was paused. "−3 s" replays from the new start (to see what led to the rally); "+3 s"
+  keeps playing from where it is. Widening resets on the next rally; speed is kept while the sheet is open.
+- **Full screen shares the inline view's playback** (two layers on one `AVPlayer`), so position, speed and loop carry
+  over and back. The zoomed video layer must not hit-test: scaled past the stage, its UIView swallowed the top bar's taps.
+- **Rotate is per recording** (`RacketRecordingLog.quarterTurns`, additive Optional, nil when upright), because the
+  wrong turn comes from how the file was stored, not from one rally. `RacketPlayback.quarterTurns` carries it and
+  `RacketTurned` lays the layer out with swapped sides then rotates it, so an aspect-fitted video fills the same box.
+  Honoured by the tag sheet, detail sheets, Shots, Fix, the analysis timeline, the split review, the Watch player (fit,
+  letterbox and turn hint use the turned size) and Edit. **Not turned**: shared / exported copies and AI clips (they
+  need a composition transform — a follow-up), and the Watch player's filmstrip thumbnails. Rotate buttons exist only
+  where the rally video is (tag sheet, its detail sheets, Edit's detail sheets, Shots).
+- **Not fixed here**: why the user's footage was stored sideways (the recorder's horizon-level orientation on that phone).
+  Rotate is the viewer's remedy; the root cause needs the phone.
+- **Verified on the simulator only**: SnappetTests 3071 / 0 failures (5 skipped); UI suites run alone with the app
+  uninstalled first — RacketRallyVideo 5 (new), Tagging 15, Player 7, Edit 7, Videos 2 — all green. Device build
+  (`generic/platform=iOS`) succeeds. Not verified on a phone: the user's sideways clip, the real sheet height on 6.1".

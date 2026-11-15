@@ -767,6 +767,14 @@ battery / Watch off each show one banner or stop card; the camera lays out sidew
 block 1 too. Pure: `RacketProCameraRecording.swift` (`RacketProCameraRecordingTests`); `RacketProCameraLive.swift`; UI
 `RacketProCameraRecordingUITests`. **Device-pending:** everything that needs the real camera (see `decisions.md`).
 
+🟡 **Racket rally video controls (2026-11-15, prompt 257 — device feedback).** iOS. The rally video on the tag sheet
+(and its serve / wall / let sheets, Shots, Fix) takes the picture's own shape — full width, capped so "Who won" stays on
+the first screen — with the Watch player's controls: tap to play / pause, Replay, 1× · 0.5× · 0.25×, a scrub bar over the
+loop with the rally highlighted, −3 s / +3 s to widen it, full screen with pinch-zoom, and Rotate (a quarter turn kept on
+the recording, honoured by every screen playing it; not by shared copies). Pure: `RacketRallyVideoControls.swift`,
+`RacketVideoTurn` (`RacketRallyVideoControlsTests`); views `RacketRallyVideoViews.swift`; UI `RacketRallyVideoUITests`.
+**Device-pending:** the user's sideways clip turned upright on the phone; the cap on a real 6.1" sheet.
+
 ## License
 
 TBD.

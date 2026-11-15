@@ -151,9 +151,13 @@ struct RacketEditScreen: View {
         ZStack(alignment: .top) {
             Group {
                 if let player = playback.player {
-                    RacketPlayerLayerView(player: player, target: playback.position - playback.partStart)
+                    RacketTurned(turns: playback.quarterTurns) {
+                        RacketPlayerLayerView(player: player, target: playback.position - playback.partStart)
+                    }
                 } else if let poster = playback.poster {
-                    Image(uiImage: poster).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    RacketTurned(turns: playback.quarterTurns) {
+                        Image(uiImage: poster).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
                     ZStack {
                         Color(white: 0.11)
@@ -1136,7 +1140,11 @@ struct RacketEditScreen: View {
         let number = (rs.firstIndex { $0.id == r.id } ?? 0) + 1
         let lines = RacketTagLines(ex: ex, ref: ref, rallies: rs)
         let video = RacketRallyVideo(log: log, partStart: ref.startSec, partEnd: ref.endSec, range: r.startSec...r.endSec,
-                                     sport: sport, height: 190)
+                                     sport: sport, maxHeight: 280, onTurn: { t in
+                                         // Rotate (prompt 257): the recording's turn, and the player under Edit at once.
+                                         playback.quarterTurns = t
+                                         store.updateLog(ref.exerciseID) { $0.quarterTurns = RacketVideoTurn.stored(t) }
+                                     })
         switch d {
         case .serve:
             let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }

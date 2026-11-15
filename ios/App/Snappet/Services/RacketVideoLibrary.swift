@@ -428,6 +428,13 @@ final class RacketPlayback {
     private(set) var ended = false
     /// The video's upright size in pixels once loaded (PlayerLetterbox decides on it); nil for the stand-in.
     private(set) var videoSize: CGSize?
+    /// Quarter turns the viewer chose for this recording (prompt 257, `RacketRecordingLog.quarterTurns`): every surface
+    /// drawing this playback turns the picture by it.
+    var quarterTurns = 0
+    /// The picture's shape as shown (the video, else the poster, after `quarterTurns`); nil for the stand-in.
+    var displayedSize: CGSize? {
+        (videoSize ?? poster?.size).map { RacketVideoTurn.displayed($0, turns: quarterTurns) }
+    }
     /// A still of the video while it opens or downloads (PlayerOpening "an immediate first frame").
     private(set) var poster: UIImage?
     /// The look it plays with (prompt 254): set any time, the next frame shows it. Playback only.
