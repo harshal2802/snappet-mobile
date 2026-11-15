@@ -159,7 +159,7 @@ struct RacketAISendScreen: View {
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var rallies: [RacketRally] {
-        RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec).filter(\.isRally)
+        (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? []).filter(\.isRally)
     }
     private var unitWord: String {
         guard let ex else { return "game" }
@@ -167,7 +167,8 @@ struct RacketAISendScreen: View {
     }
 
     private var clip: RacketAIClip {
-        kind == .ralliesOnly ? RacketAIClip.rallies(rallies, within: ref.startSec, ref.endSec) : .whole(ref.startSec, ref.endSec)
+        kind == .ralliesOnly ? RacketAIClip.rallies(rallies, within: ref.startSec, ref.endSec)
+            : .whole(ref.startSec, ref.endSec, skipping: ex?.racketRecordingLog?.timeouts(from: ref.startSec, to: ref.endSec) ?? [])
     }
 
     private var context: RacketAIPromptContext {
@@ -408,7 +409,10 @@ struct RacketAIImportScreen: View {
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var request: RacketAIRequest? { ex?.racketRecordingLog?.lastAIRequest(partStart: ref.startSec, partEnd: ref.endSec) }
-    private var clip: RacketAIClip { request?.clip ?? .whole(ref.startSec, ref.endSec) }
+    private var clip: RacketAIClip {
+        request?.clip ?? .whole(ref.startSec, ref.endSec,
+                                skipping: ex?.racketRecordingLog?.timeouts(from: ref.startSec, to: ref.endSec) ?? [])
+    }
     /// Read once per change of the text (a reply can be long).
     @State private var result: Result<RacketAIParseReport, RacketAIParseError> = .failure(.empty)
     private var report: RacketAIParseReport? { if case .success(let r) = result { return r } else { return nil } }
@@ -627,7 +631,7 @@ struct RacketAICompareScreen: View {
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var imp: RacketAIImport? { ex?.racketRecordingLog?.allAIImports.first { $0.id == importID } }
     private var yours: [RacketRally] {
-        RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? [])
     }
     private var sides: (us: String, them: String) {
         RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)

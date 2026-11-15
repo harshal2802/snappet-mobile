@@ -128,6 +128,11 @@ extension RacketRecordingLog {
     var quality: RacketRecordingQuality { qualityRaw.flatMap(RacketRecordingQuality.init(rawValue:)) ?? .hd1080 }
     var allRallies: [RacketRally] { rallies ?? [] }
     var isSplit: Bool { split?.appliedAt != nil }
+    /// The rallies "Keep rallies only" saves: none from inside a game's timeout (prompt 258).
+    var keptRallies: [RacketRally] {
+        let skips = timeouts(from: 0, to: timelineSec)
+        return allRallies.filter { RacketGameGroups.inGame($0, skips: skips) }
+    }
 }
 
 // MARK: - Proposal (TtSplitReview: "Found from your Watch taps and new-game marks … and pauses")
@@ -705,8 +710,8 @@ enum RacketKeepRallies {
         var plan = Plan(fullVideos: 0, rallies: 0, keepSec: 0, freedBytes: 0, matchRallies: 0, drillRallies: 0)
         for ex in exercises where ex.discipline == .racket {
             guard let log = ex.racketRecordingLog, log.originalDeleted != true, !log.assets.isEmpty else { continue }
-            let n = log.allRallies.filter(\.isRally).count
-            let keep = ranges(log.allRallies, duration: log.timelineSec).reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }
+            let n = log.keptRallies.filter(\.isRally).count
+            let keep = ranges(log.keptRallies, duration: log.timelineSec).reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }
             let full = RacketVideoMap.sources(log).reduce(0) { $0 + ($1.endSec - $1.startSec) }
             plan.fullVideos += log.assets.count
             plan.rallies += n

@@ -41,7 +41,7 @@ struct RacketTagSheet: View {
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var log: RacketRecordingLog? { ex?.racketRecordingLog }
     private var rallies: [RacketRally] {
-        RacketRallyMarking.inRange(log?.allRallies ?? [], ref.startSec, ref.endSec).filter(\.isRally)
+        (log?.rallies(ref.startSec, ref.endSec) ?? []).filter(\.isRally)
     }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var doubles: Bool { ex?.isDoubles ?? false }
@@ -566,7 +566,7 @@ struct RacketShotsScreen: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var log: RacketRecordingLog? { ex?.racketRecordingLog }
-    private var rallies: [RacketRally] { RacketRallyMarking.inRange(log?.allRallies ?? [], ref.startSec, ref.endSec).filter(\.isRally) }
+    private var rallies: [RacketRally] { (log?.rallies(ref.startSec, ref.endSec) ?? []).filter(\.isRally) }
     private var rally: RacketRally? { rallies.first { $0.id == rallyID } }
     private var number: Int { (rallies.firstIndex { $0.id == rallyID } ?? 0) + 1 }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }

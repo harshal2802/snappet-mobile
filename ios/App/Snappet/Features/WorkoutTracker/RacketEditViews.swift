@@ -54,6 +54,8 @@ struct RacketEditScreen: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var log: RacketRecordingLog? { ex?.racketRecordingLog }
+    /// The game's timeouts (prompt 258): no rally is marked inside one.
+    private var timeouts: [ClosedRange<Double>] { log?.timeouts(from: ref.startSec, to: ref.endSec) ?? [] }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var doubles: Bool { ex?.isDoubles ?? false }
     private var sides: (us: String, them: String) { RacketWatchCopy.sides(opponent: ex?.opponent, doubles: doubles) }
@@ -92,7 +94,7 @@ struct RacketEditScreen: View {
     private func configure() {
         guard !configured else { return }
         configured = true
-        let part = RacketRallyMarking.inRange(log?.allRallies ?? [], ref.startSec, ref.endSec)
+        let part = (log?.rallies(ref.startSec, ref.endSec) ?? [])
         originalPart = part
         let always = UserDefaults.standard.string(forKey: RacketLookStore.alwaysKey).flatMap(RacketLook.init(rawValue:))
         let look = RacketLookStore.resolve(partStart: ref.startSec, log: log, always: always)
@@ -1194,7 +1196,7 @@ struct RacketEditScreen: View {
 
     private func startMark(_ s: RacketEditSession) {
         problem = nil
-        if let p = RacketEditMark.canStart(at: position, rallies: s.visible) {
+        if let p = RacketEditMark.canStart(at: position, rallies: s.visible, skips: timeouts) {
             problem = p.message
             Haptics.warning()
             return
@@ -1208,7 +1210,8 @@ struct RacketEditScreen: View {
 
     private func endMark() {
         guard let start = markStart, let s = session else { return }
-        switch RacketEditMark.finish(start: start, end: position, rallies: s.visible, lo: ref.startSec, hi: ref.endSec) {
+        switch RacketEditMark.finish(start: start, end: position, rallies: s.visible, lo: ref.startSec, hi: ref.endSec,
+                                     skips: timeouts) {
         case .success(let m):
             var id: UUID?
             mutate { id = $0.add(m.range) }
@@ -1260,8 +1263,7 @@ struct RacketEditScreen: View {
             try? await Task.sleep(for: .milliseconds(400))
             guard let rec = store.ex(ref.exerciseID)?.racketRecordingLog?.allScans.first(where: { $0.id == id }) else { continue }
             if rec.status == .done {
-                let found = RacketRallyMarking.inRange(store.ex(ref.exerciseID)?.racketRecordingLog?.allRallies ?? [],
-                                                       ref.startSec, ref.endSec).filter(\.isGuess)
+                let found = (store.ex(ref.exerciseID)?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? []).filter(\.isGuess)
                 var n = 0
                 mutate { n = $0.mergeFound(found) }
                 scanFound = n

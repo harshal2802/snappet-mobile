@@ -214,7 +214,7 @@ struct RacketVideosCover: View {
     }
 
     private func startID(_ t: RacketTagTarget) -> UUID {
-        let rs = RacketRallyMarking.inRange(store.ex(t.ref.exerciseID)?.racketRecordingLog?.allRallies ?? [], t.ref.startSec, t.ref.endSec)
+        let rs = (store.ex(t.ref.exerciseID)?.racketRecordingLog?.rallies(t.ref.startSec, t.ref.endSec) ?? [])
         let next = t.unsureOnly ? RacketRallyMarking.nextUnsure(rs, after: nil) : RacketRallyMarking.nextUntagged(rs, after: nil)
         return (next ?? rs.first(where: \.isRally))?.id ?? UUID()
     }
@@ -1065,7 +1065,7 @@ struct RacketVideosCover: View {
 
     @ViewBuilder private func tagDone(_ ref: RacketPartRef) -> some View {
         let ex = store.ex(ref.exerciseID)
-        let rallies = RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        let rallies = (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? [])
         let s = RacketTagSummary.make(rallies, sport: ex?.racketSport ?? .tableTennis)
         let g = RacketGuessSummary.make(rallies)
         let modelPath = rallies.contains(where: \.isFromModel)
@@ -1124,7 +1124,7 @@ struct RacketVideosCover: View {
     @ViewBuilder private func manualSummary(_ ref: RacketPartRef) -> some View {
         let ex = store.ex(ref.exerciseID)
         let sport = ex?.racketSport ?? .tableTennis
-        let rallies = RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        let rallies = (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? [])
         let s = RacketTagSummary.make(rallies, sport: sport)
         let sides = RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
         let scoreState = ref.setIndex.flatMap { i in ex.flatMap { i < $0.sets.count ? $0.sets[i].racketScoreState : nil } }
@@ -1221,9 +1221,9 @@ struct RacketVideosCover: View {
     @ViewBuilder private func shotsRoot(_ id: UUID) -> some View {
         if let ex = store.ex(id), let log = ex.racketRecordingLog,
            let row = RacketVideoRows.rows(for: ex).first(where: { r in
-               RacketRallyMarking.inRange(log.allRallies, r.startSec, r.endSec).contains(where: \.isRally) }) {
+               log.rallies(r.startSec, r.endSec).contains(where: \.isRally) }) {
             let r = ref(ex, row)
-            if let rally = RacketShotTagging.firstToTag(RacketRallyMarking.inRange(log.allRallies, r.startSec, r.endSec)) {
+            if let rally = RacketShotTagging.firstToTag(log.rallies(r.startSec, r.endSec)) {
                 RacketShotsScreen(store: store, ref: r, rallyID: rally.id) { path.append(.timeline(r)) }
             }
         } else if let ex = store.ex(id), let row = RacketVideoRows.rows(for: ex).first {
@@ -2037,7 +2037,7 @@ struct RacketKeepRalliesSheet: View {
             do {
                 for ex in store.session.exercises where ex.discipline == .racket {
                     guard let log = ex.racketRecordingLog, log.originalDeleted != true, !log.assets.isEmpty else { continue }
-                    let ranges = RacketKeepRallies.ranges(log.allRallies, duration: log.timelineSec)
+                    let ranges = RacketKeepRallies.ranges(log.keptRallies, duration: log.timelineSec)
                     guard !ranges.isEmpty else { continue }
                     var made: [RacketDerivedVideo] = []
                     for (k, r) in ranges.enumerated() {

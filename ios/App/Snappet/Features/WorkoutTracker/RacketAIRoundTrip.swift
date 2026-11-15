@@ -98,6 +98,21 @@ struct RacketAIClip: Codable, Hashable, Sendable {
 
     static func whole(_ lo: Double, _ hi: Double) -> RacketAIClip { RacketAIClip(pieces: [Piece(startSec: lo, endSec: max(lo, hi))]) }
 
+    /// A whole game with its timeouts left out (prompt 258): one piece per half, so the other app sees played time and
+    /// its reply's times map back onto the recording through the pieces like a rallies-only clip's.
+    static func whole(_ lo: Double, _ hi: Double, skipping: [ClosedRange<Double>]) -> RacketAIClip {
+        let c = RacketPlayedTime(start: lo, end: hi, skips: skipping)
+        guard c.hasSkips else { return whole(lo, hi) }
+        var pieces: [Piece] = []
+        var t = lo
+        for s in c.skips {
+            if s.lowerBound > t { pieces.append(Piece(startSec: t, endSec: s.lowerBound)) }
+            t = s.upperBound
+        }
+        if hi > t { pieces.append(Piece(startSec: t, endSec: hi)) }
+        return RacketAIClip(pieces: pieces)
+    }
+
     /// "Rallies only": your marked rallies in the part, padded and merged like Keep rallies only.
     static func rallies(_ rallies: [RacketRally], within lo: Double, _ hi: Double) -> RacketAIClip {
         let inPart = RacketRallyMarking.inRange(rallies, lo, hi)
@@ -842,7 +857,8 @@ extension RacketRecordingLog {
 
     /// Suggested rallies inside a part (from imports not compared yet), labelled.
     func aiSuggestions(partStart lo: Double, partEnd hi: Double) -> [RacketRally] {
-        RacketRallyMarking.inRange(pendingAIImports(partStart: lo, partEnd: hi).flatMap(\.rallies), lo, hi)
+        RacketRallyMarking.inRange(pendingAIImports(partStart: lo, partEnd: hi).flatMap(\.rallies), lo, hi,
+                                   skipping: timeouts(from: lo, to: hi))
     }
 }
 

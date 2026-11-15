@@ -521,4 +521,68 @@ final class RacketSplitTimeoutTests: XCTestCase {
         let yes = RacketSplitEditor.setKind(pair, id: pair[1].id, kind: .timeout)
         XCTAssertEqual(kinds(yes), [.game, .timeout, .game])
     }
+
+    // MARK: Downstream: share, Edit marks, the other AI app, Keep rallies only, Watch-player skipping
+
+    func testAWholeGameCopyLeavesTheTimeoutOutAndJoinsTheHalves() {
+        let rs = [RacketRally(startSec: 2300, endSec: 2308, winner: .us), RacketRally(startSec: 2950, endSec: 2957, winner: .them)]
+        let plan = RacketSharePlan.make(.whole, rallies: rs, position: 2300, partStart: 2220, partEnd: 3300, rate: 1,
+                                        keepSpeed: false, labels: true, sides: ("You", "Alex"), quality: nil,
+                                        skipping: [2700...2890])
+        XCTAssertEqual(plan?.ranges, [2220...2700, 2890...3300])
+        XCTAssertEqual(plan?.sourceSec, 890, "the summary's length is played time")
+        XCTAssertEqual(plan?.labels.map(\.start), [80, 480 + 60], "labels on the joined copy's clock")
+        // Rallies only and a single rally are unaffected.
+        let only = RacketSharePlan.make(.ralliesOnly, rallies: rs, position: 2300, partStart: 2220, partEnd: 3300, rate: 1,
+                                        keepSpeed: false, labels: false, sides: ("You", "Alex"), quality: nil, skipping: [2700...2890])
+        XCTAssertEqual(only?.ranges.count, 2)
+        XCTAssertEqual(RacketSharePlan.make(.rally, rallies: rs, position: 2301, partStart: 2220, partEnd: 3300, rate: 1,
+                                            keepSpeed: false, labels: false, sides: ("You", "Alex"), quality: nil,
+                                            skipping: [2700...2890])?.ranges, [2300...2308])
+    }
+
+    func testAMarkCantBePlacedInATimeoutAndStopsAtItsEdge() {
+        XCTAssertEqual(RacketEditMark.canStart(at: 2750, rallies: [], skips: [2700...2890]), .inTimeout)
+        XCTAssertNil(RacketEditMark.canStart(at: 2650, rallies: [], skips: [2700...2890]))
+        guard case .success(let m) = RacketEditMark.finish(start: 2690, end: 2720, rallies: [], lo: 2220, hi: 3300,
+                                                           skips: [2700...2890]) else { return XCTFail() }
+        XCTAssertEqual(m.range, 2690...2700, "clamped to its half")
+        XCTAssertTrue(m.clamped)
+    }
+
+    func testTheOtherAIAppGetsTheGameWithoutItsTimeout() {
+        let clip = RacketAIClip.whole(2220, 3300, skipping: [2700...2890])
+        XCTAssertEqual(clip.pieces.map { [$0.startSec, $0.endSec] }, [[2220, 2700], [2890, 3300]])
+        XCTAssertEqual(clip.lengthSec, 890)
+        XCTAssertEqual(RacketAIClip.whole(0, 10, skipping: []).pieces.count, 1)
+    }
+
+    func testKeepRalliesOnlyLeavesTheTimeoutsHitsOut() {
+        var e = match(scored: false)
+        var parts = e.racketRecordingLog!.split!.parts
+        parts = RacketSplitEditor.setKind(parts, id: parts[6].id, kind: .timeout)
+        _ = save(&e, parts)
+        var log = e.racketRecordingLog!
+        XCTAssertEqual(log.keptRallies.count, 5, "the hit at 45:50, inside the timeout, isn't kept")
+        log.assets = [.init(localIdentifier: "orig", startSec: 0, durationSec: 4000)]
+        e.racketRecordingLog = log
+        XCTAssertEqual(RacketKeepRallies.plan([e]).rallies, 5)
+    }
+
+    @MainActor
+    func testThePlayerSkipsATimeoutPlayingSeekingAndSkipping() {
+        let pb = RacketPlayback(partStart: 2220, partEnd: 3300)
+        pb.playedClock = RacketPlayedTime(start: 2220, end: 3300, skips: [2700...2890])
+        pb.seek(to: 2750)
+        XCTAssertEqual(pb.position, 2890, "a seek into the timeout lands after it")
+        pb.seek(to: 2795)
+        XCTAssertEqual(pb.position, 2700, "going back into it lands before it")
+        pb.seek(to: 2695)
+        pb.step(10)
+        XCTAssertEqual(pb.position, 2895, accuracy: 0.001, "+10 s across the timeout is 10 s of play")
+        pb.step(-10)
+        XCTAssertEqual(pb.position, 2695, accuracy: 0.001)
+        pb.scrub(to: 2800, tolerance: 0.1)
+        XCTAssertFalse(pb.playedClock!.skip(at: pb.position) != nil, "a scrub never rests inside the timeout")
+    }
 }
