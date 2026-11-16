@@ -160,6 +160,7 @@ struct RacketWatchPlayerScreen: View {
         }
         #endif
         let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
+        pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
         // The look chosen in Edit (prompt 254): this video's, else the match's, else Always.
         pb.look = RacketLookStore.resolve(partStart: ref.startSec, log: ex?.racketRecordingLog,
                                           always: UserDefaults.standard.string(forKey: RacketLookStore.alwaysKey)
@@ -185,7 +186,8 @@ struct RacketWatchPlayerScreen: View {
     // MARK: Stage
 
     @ViewBuilder private func stage(_ pb: RacketPlayback, full: CGSize, insets: EdgeInsets, landscape: Bool) -> some View {
-        let videoSize = pb.videoSize ?? pb.poster?.size
+        // Turned by the recording's Rotate (prompt 257): fit, letterbox and the turn hint follow the picture as shown.
+        let videoSize = pb.displayedSize
         let fit = RacketPlayerFit.fitted(video: videoSize ?? full, in: full)
         let sideways = RacketPlayerFit.showsTurnHint(video: videoSize, view: full)
         ZStack {
@@ -214,15 +216,19 @@ struct RacketWatchPlayerScreen: View {
     /// The video: the player's layer, else the poster while it opens, else the stand-in / a message.
     @ViewBuilder private func video(_ pb: RacketPlayback, full: CGSize) -> some View {
         if let player = pb.player {
-            RacketPlayerLayerView(player: player, target: pb.position - pb.partStart)
+            RacketTurned(turns: pb.quarterTurns) {
+                RacketPlayerLayerView(player: player, target: pb.position - pb.partStart)
+            }
                 .overlay(alignment: .top) {
                     if let line = pb.loadState.line {
                         pill(line).padding(.top, 60).accessibilityIdentifier("racket.player.partial")
                     }
                 }
         } else if let poster = pb.poster {
-            Image(uiImage: poster).resizable().scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            RacketTurned(turns: pb.quarterTurns) {
+                Image(uiImage: poster).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
                 .background(Color.black)
         } else {
             ZStack {

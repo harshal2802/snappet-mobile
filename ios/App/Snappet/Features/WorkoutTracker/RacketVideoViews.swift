@@ -588,6 +588,7 @@ struct RacketVideosCover: View {
         reviewFor = id
         let total = log.timelineSec
         let pb = RacketPlayback(partStart: 0, partEnd: max(1, total))
+        pb.quarterTurns = RacketVideoTurn.normalized(log.quarterTurns)
         reviewPlayback = pb
         Task { await pb.load(RacketVideoMap.segments(start: 0, end: total, log: log)) }
     }
