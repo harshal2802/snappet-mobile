@@ -69,6 +69,9 @@ struct SessionDetailView: View {
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
     @FocusState private var keypadFocused: Bool
+    /// Set when the user chose Delete session (prompt 262): the cascade runs in `onDisappear`, after the pop.
+    @State private var deleteOnDisappear = false
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
     @Environment(AppModel.self) private var app
@@ -193,19 +196,33 @@ struct SessionDetailView: View {
         }
         // Remove one exercise / match from a finished session — hosted on the List (a stable host), confirmed.
         .confirmationDialog(
-            "Remove \(pendingExerciseRemoval.map(removalNoun) ?? "this")?",
+            pendingExerciseRemoval.map { SessionSetEditing.isLastExercise($0.id, in: session.exercises) } == true
+            ? "Delete this session?"
+            : "Remove \(pendingExerciseRemoval.map(removalNoun) ?? "this")?",
             isPresented: Binding(get: { pendingExerciseRemoval != nil },
                                  set: { if !$0 { pendingExerciseRemoval = nil } }),
             titleVisibility: .visible, presenting: pendingExerciseRemoval
         ) { ex in
-            Button("Remove \(removalNoun(ex))", role: .destructive) { removeExercise(ex) }
-                .accessibilityIdentifier("session.confirmRemoveExercise")
+            if SessionSetEditing.isLastExercise(ex.id, in: session.exercises) {
+                // Prompt 262: the only entity — removing it would leave an empty session in History, so the choice is
+                // the whole session, through the same cascade as History's delete.
+                Button("Delete session", role: .destructive) { deleteWholeSession() }
+                    .accessibilityIdentifier("session.confirmDeleteSession")
+            } else {
+                Button("Remove \(removalNoun(ex))", role: .destructive) { removeExercise(ex) }
+                    .accessibilityIdentifier("session.confirmRemoveExercise")
+            }
             Button("Cancel", role: .cancel) {}
         } message: { ex in
-            // Prompt 260: a match's recording is never deleted with it (it stays in Photos).
-            Text(ex.racketRecordingLog != nil
-                 ? "Its games are deleted from this session. Its photos and videos stay, under General, and its recording stays in your Photos library."
-                 : "Its sets are deleted from this session. Its photos and videos stay, under General.")
+            if SessionSetEditing.isLastExercise(ex.id, in: session.exercises) {
+                // `SessionCascade` deletes Snappet's rows only; it never touches the Photos library.
+                Text("It's the only \(entityNoun(ex)) in this session, so removing it would leave an empty session. The session and its \(ex.isRacketMatch ? "games" : ex.isRacketDrill ? "blocks" : "sets") are deleted from Snappet. Your photos and videos stay in your Photos library.")
+            } else {
+                // Prompt 260: a match's recording is never deleted with it (it stays in Photos).
+                Text(ex.racketRecordingLog != nil
+                     ? "Its games are deleted from this session. Its photos and videos stay, under General, and its recording stays in your Photos library."
+                     : "Its sets are deleted from this session. Its photos and videos stay, under General.")
+            }
         }
         // A racket game's heart-rate sheet — owned here, not inside the lazy list, so a re-render can't drop it.
         .sheet(item: $gameTarget) {
@@ -225,6 +242,13 @@ struct SessionDetailView: View {
                              onMatch: { params in updateMatch(target.editingExerciseID, params) },
                              onDrill: { _, _, _, _ in })
         }
+        .onDisappear {
+            guard deleteOnDisappear else { return }
+            deleteOnDisappear = false
+            // History's delete path: media / studio / festival rows go with it; the Photos library is untouched.
+            SessionCascade.deleteWorkoutSession(session, in: context)
+            try? context.save()
+        }
         // A wearable that synced since the session (Fitbit / Google Health …) fills in its HR (prompt 203).
         .task { await app.backfillWorkoutHR(sessionID: session.id) }
         .task {
@@ -234,6 +258,17 @@ struct SessionDetailView: View {
                                                        media: ActivityMediaStore.snapshot(context: context),
                                                        excludingSession: session.id, identity: identity)
         }
+    }
+
+    private func entityNoun(_ ex: SessionExercise) -> String {
+        ex.isRacketMatch ? "match" : ex.isRacketDrill ? "drill" : "exercise"
+    }
+
+    /// Delete the whole session (prompt 262 — its last exercise was being removed). Leave the detail first; the
+    /// cascade runs once the screen has gone, so nothing renders a deleted model on the way out.
+    private func deleteWholeSession() {
+        deleteOnDisappear = true
+        dismiss()
     }
 
     private func removalNoun(_ ex: SessionExercise) -> String {
@@ -265,12 +300,21 @@ struct SessionDetailView: View {
     /// The per-workout-type detail under the insights header (prompt 146): strength compares each
     /// exercise with last time, hangboard shows force per hang, climbing its pyramid vs 30 days; the
     /// recap cards stay for everything else (and alongside hangboard/climbing).
+    ///
+    /// Prompt 262: a racket match or drill shows its card in every branch (after the type's own cards), and every branch
+    /// hands the racket card's sheets to this view (outside the lazy list), so Your videos / Edit match / Keep rallies /
+    /// game heart rate open whichever discipline dominates.
     @ViewBuilder private var typeDetail: some View {
-        switch SessionInsights.Kind.of(session) {
+        let kind = SessionInsights.Kind.of(session)
+        switch kind {
         case .strength:
             let rows = SessionInsights.exerciseCompares(session, history: history, unit: unit,
                                                         resolve: { resolver.name(for: $0.exerciseId, override: $0.displayName) })
             ForEach(rows) { ExerciseCompareCard(row: $0) }
+            if RacketRecapReach.detailAddsRacketCard(kind: kind, exercises: session.exercises) {
+                RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: { gameTarget = $0 },
+                                 onOpenVideos: { racketVideos = $0 }, onEditMatch: { racketMatchEdit = $0 })
+            }
         case .hangboard:
             if let grid = SessionInsights.forceGrid(session) {
                 let last = SessionInsights.comparable(for: session, in: history).lazy
@@ -278,13 +322,15 @@ struct SessionDetailView: View {
                 ForceGridCard(grid: grid, lastFatigue: last)
             }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 })
+                              milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 },
+                              onOpenVideos: { racketVideos = $0 }, onEditMatch: { racketMatchEdit = $0 })
         case .climb:
             let rows = SessionInsights.pyramid(session, history: history)
             if !rows.isEmpty { PyramidCompareCard(rows: rows) }
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
                               milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty,
-                              onOpenGame: { gameTarget = $0 })
+                              onOpenGame: { gameTarget = $0 },
+                              onOpenVideos: { racketVideos = $0 }, onEditMatch: { racketMatchEdit = $0 })
         case .timed, .run, .other:
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
                               milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 },

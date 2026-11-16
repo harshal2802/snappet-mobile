@@ -161,10 +161,17 @@ struct SessionRecapCards: View {
         case .lifting:  strengthCards
         case .running:  runningCards
         case .dance, .other: timedCards
-        case .racket:   RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame, onOpenVideos: onOpenVideos,
-                                         onMakeReel: onMakeReel, onEditMatch: onEditMatch)
+        case .racket:   racketCard
         case .none:     EmptyView()
         }
+        // Prompt 262: a match or drill in a session another discipline dominates still gets its card (Your videos,
+        // Edit match, Keep rallies, game heart rate), after that discipline's own cards — never twice.
+        if RacketRecapReach.addsRacketCard(dominant: dominant, exercises: session.exercises) { racketCard }
+    }
+
+    private var racketCard: some View {
+        RacketRecapCards(session: session, maxHR: maxHR, onOpenGame: onOpenGame, onOpenVideos: onOpenVideos,
+                         onMakeReel: onMakeReel, onEditMatch: onEditMatch)
     }
 
     @ViewBuilder private var climbingCards: some View {
