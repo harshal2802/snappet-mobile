@@ -88,7 +88,9 @@ struct SnappetApp: App {
                         "library.mode", "library.sorts", "library.counts",
                         ActivityIdentity.resetDaysKey, CameraSettings.storageKey, ClipFeedLevel.storageKey,
                         // Racket "After a session" (prompt 248): every run starts on "Ask me".
-                        RacketAutoScan.storageKey] {
+                        RacketAutoScan.storageKey,
+                        // The pro camera's Grid / Level / Court guide (prompt 255): every run starts on Grid + Level.
+                        RacketFraming.storageKey] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

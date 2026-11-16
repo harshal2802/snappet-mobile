@@ -324,6 +324,8 @@ struct RacketRecordingTarget: Identifiable {
     let id = UUID()
     let exerciseID: UUID
     let quality: RacketRecordingQuality
+    /// The pro camera's setup (prompt 255) when it led here: format, zoom, focus / exposure lock and look carry over.
+    var camera: RacketCameraSetup? = nil
 }
 
 struct RacketRecordingCover: View {
@@ -331,6 +333,8 @@ struct RacketRecordingCover: View {
     let ex: SessionExercise
     let quality: RacketRecordingQuality
     let defaults: RacketRecordingDefaults
+    /// The pro camera's setup (prompt 255); nil ⇒ the quality at 30 fps, auto focus, 1×.
+    var camera: RacketCameraSetup? = nil
     /// A Photos part was saved: attach it to the entity.
     let onPartSaved: (RecordedClip) -> Void
     /// The recording log changed: persist it on the entity.
@@ -432,7 +436,9 @@ struct RacketRecordingCover: View {
     }
 
     /// The config the camera writes, and "space left" from the measured rate once it has warmed up.
-    private var captureConfig: RacketCaptureConfig { RacketCaptureConfig(quality: quality, codec: recorder.codec) }
+    private var captureConfig: RacketCaptureConfig {
+        RacketCaptureConfig(quality: quality, fps: recorder.setup.format.fps, codec: recorder.codec)
+    }
     /// Never rises while recording (`RacketSpaceLeft`, round 3).
     private var spaceLeftSec: TimeInterval? {
         if let shown = spaceLeft.shown { return shown }
@@ -465,6 +471,10 @@ struct RacketRecordingCover: View {
                                        stillPlayingMinutes: defaults.stillPlayingMinutes(for: .everything), now: Date())
         m.baseSetIndex = baseSets
         m.quality = quality
+        if let camera {
+            m.fps = camera.format.fps
+            m.lookRaw = camera.look.isOriginal ? nil : camera.look.rawValue
+        }
         recorder.onPartSaved = { clip in
             onPartSaved(clip)
             act { m in
@@ -478,7 +488,8 @@ struct RacketRecordingCover: View {
         }
         recorder.onThermal = { level in thermal = level }
         thermal = recorder.thermal
-        recorder.startPreview(quality: quality)
+        // The camera applies the carried setup before its first frame (it is set up on the same queue that starts the part).
+        if let camera { recorder.startPreview(setup: camera.with(quality: quality)) } else { recorder.startPreview(quality: quality) }
         if ex.isRacketMatch { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets)) }
         RacketWatchRelay.shared.attach(ex.id) { command, now in handleWatch(command, now: now) }
         // "A match starts recording now"; a drill waits on the camera for "Start block 1".
@@ -907,11 +918,19 @@ extension View {
 
     /// The screen's one camera preview, drawn behind the content at the marked slot. Apply at the screen's root, under
     /// its black background.
-    func racketPersistentPreview(session: AVCaptureSession, fake: Bool) -> some View {
+    /// `look` (the pro camera, prompt 255): the live picture shows a look, preview only. A screen passes it always (Original
+    /// = neutral) or never, so the preview view under it is never rebuilt (rebuilding it mid-recording ends the part).
+    func racketPersistentPreview(session: AVCaptureSession, fake: Bool, look: RacketLookPreview? = nil) -> some View {
         backgroundPreferenceValue(RacketPreviewSlotKey.self) { anchor in
             GeometryReader { g in
                 let rect = anchor.map { g[$0] } ?? CGRect(x: 0, y: 0, width: 2, height: 2)
-                RacketCameraPreview(session: session, fake: fake)
+                Group {
+                    if let look {
+                        RacketCameraPreview(session: session, fake: fake).modifier(RacketLookPreviewEffect(preview: look))
+                    } else {
+                        RacketCameraPreview(session: session, fake: fake)
+                    }
+                }
                     .frame(width: max(2, rect.width), height: max(2, rect.height))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .position(x: rect.midX, y: rect.midY)
