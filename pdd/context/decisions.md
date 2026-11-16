@@ -11695,3 +11695,20 @@ screen could remove it without breaking `baseSetIndex` and the split's links.
 - **Verified on the simulator**: SnappetTests 3137 / 0 failures (5 skipped; 18 new in `RacketMatchEditorTests`, the
   random test 3000 sequences). UI suites alone, app uninstalled first: RacketEditMatch 3 (new), RacketVideos 2,
   RacketSplitTimeout 3, RacketTagging 15, RacketMatch 14, RacketPlayer 7, RacketEdit 8, RacketGameHR 1 — all green.
+
+## 2026-11-16 — CI: the UI suite runs as six parallel legs (prompt 261)
+
+- **Why**: the one UI leg was cancelled at the 90-minute ceiling on every run since at least 2026-11-05, on main and
+  on PRs. No test failed (PR #439: 106 ran, 106 passed, then the cut). About 45 s per test on the runner × 272 tests
+  ≈ 200 min, so no ceiling fits; classes run alphabetically, so everything after "N" — every racket UI test — had never
+  run on CI.
+- **Split, not a higher ceiling**: `scripts/ci-ui-shard.py` reads the test sources and deals the 89 classes into
+  shards by number of tests, heaviest first onto the lightest shard, deterministic. No list to maintain: a new class
+  lands in a leg by itself; `--check` (run by every leg) fails if a class is in no shard or in two.
+- **Six legs** (`UI_SHARDS` in the `changes` job, mirrored in the `app` matrix fallback): 45–46 tests each, about
+  35–45 min of tests plus the build, which leaves room for `-test-iterations 3` retries under the unchanged 90 min.
+- **Each leg builds the app** (no build-once artifact): simpler, and the build is ~8 min of each leg. Cost: six macOS
+  runners at once and six builds per run that touches `ios/**`.
+- **Weights are test counts, not measured times**: good enough at this size; if one leg runs long, raise
+  `UI_SHARDS` first.
+- **Check names changed** to `App tests (SnappetUITests-KofN)`. Main has no required checks, so nothing blocks.
