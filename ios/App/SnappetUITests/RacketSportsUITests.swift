@@ -135,6 +135,9 @@ final class RacketSportsUITests: XCTestCase {
         XCTAssertTrue(drill.waitForExistence(timeout: 5), "suggested drills should list")
         shot("07-drill-picker")
         drill.tap()
+        // The drill's plan + recording step (prompt 244): block by block keeps the log-a-block page.
+        tapWhenHittable(app.buttons["racket.recording.byUnit"])
+        tapWhenHittable(app.buttons["racket.plan.start"])
         let logBlock = app.buttons["racket.logBlock"]
         XCTAssertTrue(logBlock.waitForExistence(timeout: 5), "the drill page should show")
         shot("08-drill")

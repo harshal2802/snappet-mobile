@@ -72,6 +72,8 @@ enum QuickSessionPager {
     static func startsRestAfterLog(_ ex: SessionExercise) -> Bool {
         // A match's games run back to back with their own change of ends — no rest timer (prompt 203).
         if ex.isRacketMatch { return false }
+        // A drill recording everything runs its own rest timer on the recording screen (prompt 244).
+        if ex.isRacketDrill && ex.racketRecording == .everything { return false }
         return !(ex.discipline == .timed && ex.timedSpec?.mode.isStructured == true)
     }
 

@@ -360,6 +360,9 @@ struct SetLog: Codable, Hashable, Sendable {
     var drillMade: Int?
     var drillTried: Int?
     var longestRally: Int?
+    /// A game recorded (prompt 244, record everything) whose score was left for later: it shows as "Score
+    /// unconfirmed" until confirmed, and counts for neither side. `nil` ⇒ not pending. Cleared when a score is saved.
+    var scoreUnconfirmed: Bool?
 }
 
 /// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.
@@ -458,6 +461,19 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var racketEndRaw: String?
     /// `RacketDrillMeasure.rawValue` for a drill; `nil` ⇒ time only.
     var drillMeasureRaw: String?
+
+    // Racket recording (prompt 244) — additive Optionals like the fields above.
+    /// `RacketRecordingMode.rawValue` chosen for this match / drill; `nil` ⇒ game / block by block.
+    var racketRecordingRaw: String?
+    /// A drill block's planned length in seconds (the block count is `plannedSets`, the rest `targetRestSeconds`).
+    var drillBlockSec: Int?
+    /// Start the next block when the rest timer ends; `nil` ⇒ the Settings default.
+    var drillAutoStart: Bool?
+    /// The countdown before a block; `nil` ⇒ the Settings default.
+    var drillCountdownSec: Int?
+    /// The record-everything recording of this match / drill: its Photos parts and the block / rest / game marks
+    /// as time ranges on it. `nil` ⇒ never recorded everything.
+    var racketRecordingLog: RacketRecordingLog?
 
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
 

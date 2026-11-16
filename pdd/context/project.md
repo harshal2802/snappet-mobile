@@ -651,6 +651,19 @@ reported regression as a round-trip) + `KilterGradeRangeTests`. KG nodes/edges u
 on a Linux box — type-check + `SnappetTests`/UITests need macOS/Xcode; the BLE strip/pill transitions and
 a real re-light need a physical board. Android mirror is a follow-up (iOS is the lead platform).
 
+🟡 **Racket recording core (2026-11-06, prompt 244 — issue #438 step 1).** iOS. Builds on racket sports (prompt
+203). Each match and drill now chooses how it's filmed in setup (game / block by block · everything · don't film),
+defaulted from Settings → Workout → Racket recording (mode per match / drill, quality, rest, auto-start, countdown,
+"Still playing?" per mode). Picking a drill goes through a plan step (blocks × length, recording, rest, auto-start,
+countdown). "Record everything" checks storage, then records a whole match (marks, Stop and split → a saved
+placeholder until step 3) or a whole drill (camera → countdown → block ring → rest → review), saved to Photos in
+10-minute parts; drill blocks are logged from the timers and marked as time ranges on the one recording
+(`SessionExercise.racketRecordingLog`). Interruptions resume as a new part (call / app left) or stop (storage full /
+too hot), with End routed by mode; "Still playing?" uses the configured threshold. The state machine is pure
+(`RacketRecording.swift`, `RacketRecordingTests`); capture is `Services/RacketRecorder.swift`. UI tests run the flows with
+the fake camera. **Device-pending:** real long recordings, part boundaries in Photos, calls / backgrounding, storage-full
+and thermal stops. Next (#438): Watch scoring (step 2), then videos / tagging / split (step 3).
+
 ## License
 
 TBD.

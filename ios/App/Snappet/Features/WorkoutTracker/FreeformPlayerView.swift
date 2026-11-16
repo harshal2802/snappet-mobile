@@ -59,6 +59,11 @@ struct FreeformPlayerView: View {
     @State private var racketTimers: [UUID: Date] = [:]
     @AppStorage("racket.lastSport") private var lastRacketSportRaw = ""
     @AppStorage("racket.lastMode") private var lastRacketModeRaw = ""
+    // Racket recording (prompt 244): Settings → Racket recording, the storage check, the record-everything cover.
+    @AppStorage(RacketRecordingDefaults.storageKey) private var racketRecordingDefaultsData = Data()
+    @State private var racketStorageFor: RacketStorageTarget?
+    @State private var racketRecordingFor: RacketRecordingTarget?
+    private var racketRecordingDefaults: RacketRecordingDefaults { RacketRecordingDefaults.load(from: racketRecordingDefaultsData) }
     // MARK: Pager state (prompt 109)
     /// The current pager page — overview · one page per exercise (added order) · the add page.
     /// Simple value state; the pages themselves are light (no players), so the Clips-feed
@@ -229,7 +234,50 @@ struct FreeformPlayerView: View {
                 onMatch: { params in
                     if let exID = target.editingExerciseID { updateRacketMatch(exID, params) } else { addRacketMatch(params) }
                 },
-                onDrill: { sport, name, measure in addRacketDrill(sport: sport, name: name, measure: measure) })
+                onDrill: { sport, name, measure, plan in addRacketDrill(sport: sport, name: name, measure: measure, plan: plan) },
+                recordingDefaults: racketRecordingDefaults,
+                rememberedPlan: { sport, name in
+                    // Newest first: this session's drills (latest added first), then past sessions.
+                    let past = history.sorted { $0.startedAt > $1.startedAt }.flatMap { $0.exercises.reversed() }
+                    return RacketDrillPlanMemory.lastPlan(sport: sport, name: name,
+                                                          candidates: session.exercises.reversed() + past,
+                                                          defaults: racketRecordingDefaults)
+                })
+        }
+        // Record everything (prompt 244): the storage check, then the recording screen for that match / drill.
+        .sheet(item: $racketStorageFor) { target in
+            RacketStorageSheet(mode: target.mode, defaultQuality: racketRecordingDefaults.quality) { quality in
+                // Present after the sheet has gone (the suite's dismiss-then-present race).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    racketRecordingFor = RacketRecordingTarget(exerciseID: target.exerciseID, quality: quality)
+                }
+            }
+            .presentationDetents([.large])
+        }
+        .fullScreenCover(item: $racketRecordingFor) { target in
+            if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
+                RacketRecordingCover(
+                    ex: ex, quality: target.quality, defaults: racketRecordingDefaults,
+                    onPartSaved: { clip in attachRacketRecordingPart(clip, exerciseID: target.exerciseID) },
+                    onLog: { log in saveRacketRecordingLog(log, exerciseID: target.exerciseID) },
+                    onBlockLogged: { _, sec in logRacketRecordedBlock(exerciseID: target.exerciseID, durationSec: sec) },
+                    onScore: {
+                        // After the cover has gone (the dismiss-then-present race).
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                            let ex = session.exercises.first { $0.id == target.exerciseID }
+                            racketScoring = RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: ex?.sets.count ?? 0, durationSec: nil)
+                        }
+                    },
+                    onSaveScore: { log, index in
+                        saveRacketUnit(log, target: RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: index, durationSec: nil))
+                    },
+                    onScoreLater: {
+                        var pending = SetLog()
+                        pending.scoreUnconfirmed = true   // "Score unconfirmed" until confirmed (review5 M5)
+                        appendLog(pending, toExerciseID: target.exerciseID)
+                    },
+                    onClose: { racketRecordingFor = nil })
+            }
         }
         .sheet(item: $racketScoring) { target in
             if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
@@ -812,6 +860,10 @@ struct FreeformPlayerView: View {
                 // "Stop attempt" logs it with the clip (a climb asks how it went). Done without logging leaves the clip
                 // on the exercise for its next logged set (prompt 191); a set logged meanwhile (the watch) ends it.
                 let noun = QuickSessionPager.effortNoun(for: ex)
+                if ex.discipline == .racket && ex.racketRecording != .byUnit {
+                    // Prompt 244: a match / drill set to record everything (or not to film) has its own control.
+                    racketRecordingControl(ex)
+                } else {
                 RecordClipButton(recordedClips: Binding(get: { pageClips[ex.id] ?? [] },
                                                         set: { pageClips[ex.id] = $0 }),
                                  savingClip: $savingPageClip,
@@ -823,6 +875,7 @@ struct FreeformPlayerView: View {
                                                         logLabel: ex.discipline == .climb ? "Stop attempt" : "Stop & log \(noun)",
                                                         loggedCount: ex.sets.count),
                                  logAction: { logRecordedEffort(exerciseID: ex.id) })
+                }
                 ghostLedger(ex)
             }
             .padding(.horizontal, 16)
@@ -1232,7 +1285,7 @@ struct FreeformPlayerView: View {
         case .strength: return SetMeasure.summary(set, kind: .repsWeight, unit: unit)
         case .racket:
             if ex.isRacketDrill { return RacketStats.blockLine(set, measure: ex.drillMeasure) }
-            return set.racketScore.map { $0.superTiebreak ? "STB \($0.label)" : $0.label } ?? "—"
+            return set.racketScoreState?.label ?? "—"
         default:        return SetMeasure.summary(set, kind: .duration, unit: unit)
         }
     }
@@ -1579,6 +1632,7 @@ struct FreeformPlayerView: View {
         lastRacketModeRaw = RacketMode.match.rawValue
         persist()
         pushLiveActivity()
+        if params.recording == .everything { openRacketStorage(entity.id, mode: .match) }
     }
 
     private func updateRacketMatch(_ exID: UUID, _ params: RacketMatchParams) {
@@ -1589,7 +1643,7 @@ struct FreeformPlayerView: View {
         pushLiveActivity()
     }
 
-    private func addRacketDrill(sport: RacketSport, name: String, measure: RacketDrillMeasure) {
+    private func addRacketDrill(sport: RacketSport, name: String, measure: RacketDrillMeasure, plan: RacketDrillPlan) {
         var entity = SessionExercise(
             exerciseId: RacketStats.drillExerciseId(sport), targetSets: 0, targetReps: "",
             targetRestSeconds: 0, sets: [], displayName: name, kindRaw: SetKind.duration.rawValue)
@@ -1597,11 +1651,81 @@ struct FreeformPlayerView: View {
         entity.racketSportRaw = sport.rawValue
         entity.racketModeRaw = RacketMode.drill.rawValue
         entity.drillMeasureRaw = measure.rawValue
+        plan.apply(to: &entity)   // blocks × length, rest, auto-start, countdown, recording (prompt 244)
         session.exercises.append(entity)
         lastRacketSportRaw = sport.rawValue
         lastRacketModeRaw = RacketMode.drill.rawValue
         persist()
         pushLiveActivity()
+        if plan.recording == .everything { openRacketStorage(entity.id, mode: .drill) }
+    }
+
+    /// Setup → Storage (PracticeSetup "Set up camera", Warmup "Everything, split later"): recording everything goes
+    /// straight to the storage check once the setup sheet has gone.
+    private func openRacketStorage(_ exerciseID: UUID, mode: RacketMode) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            racketStorageFor = RacketStorageTarget(exerciseID: exerciseID, mode: mode)
+        }
+    }
+
+    // MARK: - Racket recording (prompt 244)
+
+    /// The page's recording control for a match / drill that records everything or isn't filmed. "Game / block by
+    /// block" keeps prompt 203's record button.
+    @ViewBuilder
+    private func racketRecordingControl(_ ex: SessionExercise) -> some View {
+        let mode = ex.racketMode
+        let unit = ex.racketFormat.sport.unit
+        if ex.racketRecording == .off {
+            Text(mode == .match ? "Not filming this match. Change it in ⋯ → Match details." : "Not filming this drill.")
+                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("racket.recording.offNote")
+        } else {
+            let log = ex.racketRecordingLog
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    racketStorageFor = RacketStorageTarget(exerciseID: ex.id, mode: mode)
+                } label: {
+                    Label(log == nil ? "Record everything" : "Record everything again", systemImage: "record.circle")
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                }
+                .buttonStyle(SnappetWidePrimaryStyle())
+                .accessibilityIdentifier("racket.recordEverything")
+                Text(log.map { l in
+                    mode == .drill ? l.drillSummaryLine
+                        : "1 recording · \(RacketClock.elapsed(l.recordedSec(now: l.endedAt ?? .now))) · \(l.userMarkCount) marks"
+                } ?? RacketRecordingMode.everything.helper(for: mode, unit: unit))
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("racket.recording.line")
+            }
+        }
+    }
+
+    /// A Photos part of a record-everything recording: on the entity's media shelf, never claimed by one block / game
+    /// (`claimFilmedClips` skips the recording's own parts).
+    private func attachRacketRecordingPart(_ clip: RecordedClip, exerciseID: UUID) {
+        attachRecordedClips([clip], toExerciseID: exerciseID, setIndex: nil)
+        persist()
+    }
+
+    private func saveRacketRecordingLog(_ log: RacketRecordingLog, exerciseID: UUID) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
+        session.exercises[idx].racketRecordingLog = log
+        persist()
+    }
+
+    /// A drill block timed by the recording screen: logged with its length and last block's counts (like a filmed
+    /// block, prompt 203); the counts can be corrected on the drill page.
+    private func logRacketRecordedBlock(exerciseID: UUID, durationSec: TimeInterval) {
+        guard let ex = session.exercises.first(where: { $0.id == exerciseID }) else { return }
+        var log = SetLog(durationSec: durationSec)
+        log.drillMade = ex.sets.last?.drillMade
+        log.drillTried = ex.sets.last?.drillTried
+        log.longestRally = ex.sets.last?.longestRally
+        racketTimers[exerciseID] = nil
+        appendLog(log, toExerciseID: exerciseID)
     }
 
     /// Save a unit's score: a new unit appends through `appendLog` (stamp + clip claim + haptic); an edit
@@ -1616,6 +1740,7 @@ struct FreeformPlayerView: View {
             set.tiebreakFor = log.tiebreakFor
             set.tiebreakAgainst = log.tiebreakAgainst
             set.superTiebreak = log.superTiebreak
+            set.scoreUnconfirmed = nil   // confirmed now (prompt 244)
             session.exercises[idx].sets[target.unitIndex] = set
             persist()
             pushLiveActivity()
@@ -1978,8 +2103,11 @@ struct FreeformPlayerView: View {
     /// left behind by a timed set / attempt closed without logging, since the previous set (`ClipSetClaim`).
     private func claimFilmedClips(exerciseID id: UUID) {
         guard let ex = session.exercises.first(where: { $0.id == id }), !ex.sets.isEmpty else { return }
+        // A record-everything recording's parts span many blocks / games: never claimed by one (prompt 244).
+        let recordingParts = Set(ex.racketRecordingLog?.assets.map(\.localIdentifier) ?? [])
         let pending = mediaRows(assignedTo: id).filter {
             $0.assignedSetIndex == nil && $0.addedManually && $0.assignmentSource == .manual
+                && !recordingParts.contains($0.localIdentifier)
         }
         guard !pending.isEmpty else { return }
         let start = session.startedAt

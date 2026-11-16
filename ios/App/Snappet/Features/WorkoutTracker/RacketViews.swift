@@ -21,12 +21,15 @@ struct RacketMatchParams: Equatable {
     var superTiebreak: Bool = false
     var event: String = ""
     var round: String = ""
+    /// How this match is filmed (prompt 244) — chosen here, defaulted from Settings → Racket recording.
+    var recording: RacketRecordingMode = .byUnit
 
-    init(sport: RacketSport) {
+    init(sport: RacketSport, recording: RacketRecordingMode = .byUnit) {
         self.sport = sport
         doubles = sport.defaultsToDoubles
         bestOf = sport.defaultBestOf
         pointsTo = sport.defaultPointsTo
+        self.recording = recording
     }
 
     init(from ex: SessionExercise) {
@@ -40,6 +43,7 @@ struct RacketMatchParams: Equatable {
         superTiebreak = format.superTiebreak
         event = ex.racketEvent ?? ""
         round = ex.racketRound ?? ""
+        recording = ex.racketRecording
     }
 
     /// "Next match": same sport, format, event and partner; the next round; a new opponent.
@@ -65,6 +69,7 @@ struct RacketMatchParams: Equatable {
         ex.racketSuperTiebreak = sport.usesSets && superTiebreak ? true : nil
         ex.racketEvent = clean(event)
         ex.racketRound = clean(round)
+        ex.racketRecordingRaw = recording == .byUnit ? nil : recording.rawValue
     }
 }
 
@@ -83,9 +88,13 @@ struct RacketSetupSheet: View {
     let recentEvents: [String]
     let recentDrills: (RacketSport) -> [(name: String, measure: RacketDrillMeasure)]
     let onMatch: (RacketMatchParams) -> Void
-    let onDrill: (RacketSport, String, RacketDrillMeasure) -> Void
+    let onDrill: (RacketSport, String, RacketDrillMeasure, RacketDrillPlan) -> Void
+    /// Settings → Racket recording: the recording mode, drill plan and timers a new match / drill starts with.
+    var recordingDefaults = RacketRecordingDefaults()
+    /// The plan last used for this drill (sport, name) — the plan step opens on it so one tap starts the drill.
+    var rememberedPlan: (RacketSport, String) -> RacketDrillPlan? = { _, _ in nil }
 
-    private enum Step { case sport, match, drill, newDrill }
+    private enum Step { case sport, match, drill, newDrill, drillPlan }
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .sport
@@ -96,6 +105,11 @@ struct RacketSetupSheet: View {
     @State private var newDrillName = ""
     @State private var newDrillMeasure: RacketDrillMeasure = .madeTried
     @State private var started = false
+    /// The drill picked (or created), set up on the plan step before it starts (prompt 244).
+    @State private var pickedDrill: (name: String, measure: RacketDrillMeasure)?
+    @State private var drillPlan = RacketDrillPlan()
+    @State private var pickedDrillIsNew = false
+    @State private var planIsLastTime = false
 
     private var accent: Color { SnappetColor.brand }
     private var isEditing: Bool { if case .editMatch = start { return true } else { return false } }
@@ -108,6 +122,7 @@ struct RacketSetupSheet: View {
                 case .match: matchStep
                 case .drill: drillStep
                 case .newDrill: newDrillStep
+                case .drillPlan: drillPlanStep
                 }
             }
             .toolbar {
@@ -115,7 +130,7 @@ struct RacketSetupSheet: View {
                     if step == .sport || isEditing || isNext {
                         Button("Cancel") { dismiss() }
                     } else {
-                        Button { withAnimation { step = step == .newDrill ? .drill : .sport } } label: {
+                        Button { withAnimation { step = backStep } } label: {
                             Label("Back", systemImage: "chevron.left")
                         }
                         .accessibilityIdentifier("racket.back")
@@ -130,6 +145,14 @@ struct RacketSetupSheet: View {
 
     private var isNext: Bool { if case .nextMatch = start { return true } else { return false } }
 
+    private var backStep: Step {
+        switch step {
+        case .newDrill: return .drill
+        case .drillPlan: return pickedDrillIsNew ? .newDrill : .drill
+        default: return .sport
+        }
+    }
+
     private func configure() {
         guard !started else { return }
         started = true
@@ -137,7 +160,7 @@ struct RacketSetupSheet: View {
         case .new(let lastSport, let lastMode):
             sport = lastSport ?? .tableTennis
             mode = lastMode ?? .match
-            params = RacketMatchParams(sport: sport)
+            params = RacketMatchParams(sport: sport, recording: recordingDefaults.matchMode)
         case .editMatch(let p), .nextMatch(let p):
             sport = p.sport
             params = p
@@ -180,7 +203,7 @@ struct RacketSetupSheet: View {
                 Text(mode == .match ? "Against an opponent — scored game by game." : "Practice — timed blocks, made / tried or longest rally.")
                     .font(.caption).foregroundStyle(SnappetColor.textSecondary)
                 Button {
-                    params = RacketMatchParams(sport: sport)
+                    params = RacketMatchParams(sport: sport, recording: recordingDefaults.matchMode)
                     withAnimation { step = mode == .match ? .match : .drill }
                 } label: {
                     Text("Next").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
@@ -250,6 +273,9 @@ struct RacketSetupSheet: View {
             } footer: {
                 Text("Optional. Matches with the same event read as one tournament.")
             }
+            Section("Recording") {
+                RacketRecordingChoice(selection: $params.recording, mode: .match, unit: params.sport.unit)
+            }
             Section {
                 Button {
                     onMatch(params)
@@ -296,8 +322,7 @@ struct RacketSetupSheet: View {
 
     private func drillRow(_ name: String, _ measure: RacketDrillMeasure) -> some View {
         Button {
-            onDrill(sport, name, measure)
-            dismiss()
+            pickDrill(name, measure, isNew: false)
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -328,15 +353,84 @@ struct RacketSetupSheet: View {
             Section {
                 Button {
                     let name = newDrillName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    onDrill(sport, name.isEmpty ? "\(sport.label) drill" : name, newDrillMeasure)
-                    dismiss()
+                    pickDrill(name.isEmpty ? "\(sport.label) drill" : name, newDrillMeasure, isNew: true)
                 } label: {
-                    Text("Start drill").font(.headline).frame(maxWidth: .infinity)
+                    Text("Next").font(.headline).frame(maxWidth: .infinity)
                 }
                 .accessibilityIdentifier("racket.startDrill")
             }
         }
         .navigationTitle("New drill")
+    }
+
+    private func pickDrill(_ name: String, _ measure: RacketDrillMeasure, isNew: Bool) {
+        pickedDrill = (name, measure)
+        pickedDrillIsNew = isNew
+        let remembered = isNew ? nil : rememberedPlan(sport, name)
+        planIsLastTime = remembered != nil
+        drillPlan = remembered ?? RacketDrillPlan(defaults: recordingDefaults)
+        withAnimation { step = .drillPlan }
+    }
+
+    // MARK: Step 3 — drill plan + recording (PracticeSetup, prompt 244)
+
+    private var drillPlanStep: some View {
+        Form {
+            // PracticeSetup: "Ready to start · Same as last time", one tap to go.
+            Section {
+                Button {
+                    guard let d = pickedDrill else { return }
+                    onDrill(sport, d.name, d.measure, drillPlan)
+                    dismiss()
+                } label: {
+                    Text(drillPlan.recording == .everything ? "Set up camera" : "Start drill")
+                        .font(.headline).frame(maxWidth: .infinity)
+                }
+                .accessibilityIdentifier("racket.plan.start")
+            } header: {
+                Text("Ready to start")
+            } footer: {
+                Text(planIsLastTime ? "Same as last time · \(drillPlan.summary)" : "Suggested plan · \(drillPlan.summary)")
+                    .accessibilityIdentifier("racket.plan.source")
+            }
+            Section {
+                Stepper("\(drillPlan.blocks) \(drillPlan.blocks == 1 ? "block" : "blocks")",
+                        value: $drillPlan.blocks, in: 1...12)
+                    .accessibilityIdentifier("racket.plan.blocks")
+                Picker("Each block", selection: $drillPlan.blockSec) {
+                    ForEach(RacketRecordingDefaults.blockLengthOptions, id: \.self) {
+                        Text(RacketClock.mmss(TimeInterval($0))).tag($0)
+                    }
+                }
+                .accessibilityIdentifier("racket.plan.blockLength")
+            } header: {
+                Text("Plan")
+            } footer: {
+                Text(pickedDrill.map { "\($0.name) · \($0.measure.label)" } ?? "")
+            }
+            Section("Recording") {
+                RacketRecordingChoice(selection: $drillPlan.recording, mode: .drill)
+            }
+            Section {
+                Picker("Rest time", selection: $drillPlan.restSec) {
+                    ForEach(RacketRecordingDefaults.restOptions, id: \.self) {
+                        Text(RacketClock.mmss(TimeInterval($0))).tag($0)
+                    }
+                }
+                .accessibilityIdentifier("racket.plan.rest")
+                Toggle("Start next block automatically", isOn: $drillPlan.autoStart)
+                    .accessibilityIdentifier("racket.plan.autoStart")
+                Picker("Countdown before a block", selection: $drillPlan.countdownSec) {
+                    ForEach(RacketRecordingDefaults.countdownOptions, id: \.self) { Text("\($0) s").tag($0) }
+                }
+                .accessibilityIdentifier("racket.plan.countdown")
+            } header: {
+                Text("Between blocks")
+            } footer: {
+                Text("Defaults come from Settings → Racket recording.")
+            }
+        }
+        .navigationTitle(pickedDrill?.name ?? "Drill")
     }
 
     private func chipRow(_ values: [String], pick: @escaping (String) -> Void) -> some View {
@@ -431,13 +525,22 @@ struct RacketMatchHero: View {
     }
 
     private var chipItems: [RacketUnitChips.Item] {
-        var items: [RacketUnitChips.Item] = state.units.enumerated().map { i, u in
-            let prefix = u.superTiebreak ? "STB" : "\(unit.shortPrefix)\(i + 1)"
-            return RacketUnitChips.Item(id: "u\(i)", text: "\(prefix) \(u.label)", camera: clipUnits.contains(i),
-                                  tone: u.won == true ? .won : u.won == false ? .lost : .neutral)
+        // One chip per logged unit, scored or "Score unconfirmed" (review5 M5); the id is the set index.
+        var items: [RacketUnitChips.Item] = ex.sets.enumerated().compactMap { i, set in
+            switch set.racketScoreState {
+            case .confirmed(let u):
+                let prefix = u.superTiebreak ? "STB" : "\(unit.shortPrefix)\(i + 1)"
+                return RacketUnitChips.Item(id: "u\(i)", text: "\(prefix) \(u.label)", camera: clipUnits.contains(i),
+                                            tone: u.won == true ? .won : u.won == false ? .lost : .neutral)
+            case .unconfirmed:
+                return RacketUnitChips.Item(id: "u\(i)", text: "\(unit.shortPrefix)\(i + 1) \(RacketScoreState.unconfirmedLabel)",
+                                            camera: clipUnits.contains(i), tone: .unconfirmed)
+            case nil:
+                return nil
+            }
         }
         if !state.isDecided {
-            let next = state.units.count
+            let next = ex.sets.count
             let label = format.isSuperTiebreak(index: next) ? "Super TB" : "\(unit.shortPrefix)\(next + 1)"
             items.append(.init(id: "cur", text: "\(label) …", camera: false, tone: .current))
         }
@@ -445,7 +548,7 @@ struct RacketMatchHero: View {
     }
 
     private var currentUnit: some View {
-        let next = state.units.count
+        let next = ex.sets.count
         let isSTB = format.isSuperTiebreak(index: next)
         let noun = isSTB ? "super tiebreak" : unit.noun
         return VStack(spacing: 10) {
@@ -550,7 +653,7 @@ struct RacketMatchHero: View {
 
 /// Wrapping result chips ("G1 11–7 🎥").
 struct RacketUnitChips: View {
-    enum Tone { case won, lost, neutral, current }
+    enum Tone { case won, lost, neutral, current, unconfirmed }
     struct Item: Identifiable, Equatable {
         var id: String
         var text: String
@@ -594,6 +697,7 @@ struct RacketUnitChips: View {
         case .lost: return SnappetColor.perfHard
         case .neutral: return SnappetColor.textSecondary
         case .current: return SnappetColor.ink
+        case .unconfirmed: return SnappetColor.perfModerate
         }
     }
     private func background(_ t: Tone) -> Color {
@@ -602,6 +706,7 @@ struct RacketUnitChips: View {
         case .lost: return SnappetColor.perfHard.opacity(0.11)
         case .neutral: return .white.opacity(0.05)
         case .current: return .clear
+        case .unconfirmed: return SnappetColor.perfModerate.opacity(0.11)
         }
     }
 }
@@ -666,9 +771,10 @@ struct RacketScoreSheet: View {
     }
     private var check: RacketScoreCheck { RacketScoring.check(score, format: format) }
     private var after: RacketScoring.MatchState {
-        var units = ex.racketUnits
-        if unitIndex < units.count { units[unitIndex] = score } else { units.append(score) }
-        return RacketScoring.state(units: units, format: format, end: ex.racketEnd)
+        // By set index, so a game confirmed after "Score unconfirmed" lands in its own place.
+        var sets = ex.sets.map(\.racketScore)
+        if unitIndex < sets.count { sets[unitIndex] = score } else { sets.append(score) }
+        return RacketScoring.state(units: sets.compactMap { $0 }, format: format, end: ex.racketEnd)
     }
     private var themLabel: String {
         if ex.isDoubles { return "Them" }
@@ -986,7 +1092,7 @@ struct RacketRecapCards: View {
                 .foregroundStyle(SnappetColor.textSecondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(RacketStats.matchRowTitle(ex)).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                Text(state.units.isEmpty ? (state.end?.label ?? "Not started") : RacketStats.unitsLine(ex))
+                Text(ex.sets.isEmpty ? (state.end?.label ?? "Not started") : RacketStats.unitsLine(ex))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -1044,7 +1150,7 @@ struct RacketRecapCards: View {
 
     private func unitHRRow(_ ex: SessionExercise, _ u: RacketStats.UnitHR, hrv: HRVMetrics) -> some View {
         let unit = ex.racketFormat.sport.unit
-        let score = u.index < ex.sets.count ? ex.sets[u.index].racketScore?.label : nil
+        let score = u.index < ex.sets.count ? ex.sets[u.index].racketScoreState?.label : nil
         let total = max(1, u.zoneSeconds.reduce(0, +))
         return Button {
             let t = RacketGameTarget(exerciseID: ex.id, index: u.index)

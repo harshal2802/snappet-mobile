@@ -78,6 +78,19 @@ struct WorkoutSettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    RacketRecordingSettingsView()
+                } label: {
+                    Text("Racket recording")
+                }
+                .accessibilityIdentifier("openRacketRecording")
+            } header: {
+                Text("Racket sports")
+            } footer: {
+                Text("How matches and drills are filmed by default, the timers between drill blocks, and when to ask “Still playing?”.")
+            }
+
+            Section {
                 Picker("Climbs reset after", selection: $climbResetDays) {
                     ForEach([14, 21, 28, 42, 56, 84], id: \.self) { d in Text("\(d / 7) weeks").tag(d) }
                     Text("Never").tag(3650)

@@ -58,7 +58,7 @@ struct RacketGameHRSheet: View {
 
     private func page(_ ex: SessionExercise, _ g: RacketStats.GameHR, previous: RacketStats.GameHR?) -> some View {
         let unit = ex.racketFormat.sport.unit
-        let score = g.index < ex.sets.count ? ex.sets[g.index].racketScore?.label : nil
+        let score = g.index < ex.sets.count ? ex.sets[g.index].racketScoreState?.label : nil
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
