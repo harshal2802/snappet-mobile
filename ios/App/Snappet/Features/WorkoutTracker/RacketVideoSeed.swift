@@ -181,6 +181,33 @@ enum RacketVideoSeed {
         return (log, sets)
     }
 
+    /// With the seed (prompt 262): `-uiTestRacketMixedSession strength|timed` — the session holds the recorded match
+    /// and, instead of the drill, two lifts × 3 sets (`strength`: strength dominant, workout type strength) or two
+    /// planks × 3 holds (`timed`: timed dominant, workout type timed), plus a synthetic heart-rate series.
+    static let mixedSessionArgument = "-uiTestRacketMixedSession"
+
+    static func mixedExtras(variant: String, start: Date) -> [SessionExercise] {
+        func entity(_ id: String, _ name: String, _ d: WorkoutDiscipline, at base: Double) -> SessionExercise {
+            var ex = SessionExercise(exerciseId: id, targetSets: 3, targetReps: d == .strength ? "8" : "",
+                                     targetRestSeconds: 90, sets: [], displayName: name,
+                                     kindRaw: d.defaultSetKind.rawValue)
+            ex.disciplineRaw = d.rawValue
+            for k in 0..<3 {
+                let at = start.addingTimeInterval(base + Double(k) * 180)
+                ex.sets.append(d == .strength
+                               ? SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg, completedAt: at)
+                               : SetLog(completedAt: at, durationSec: 45))
+            }
+            return ex
+        }
+        if variant == "timed" {
+            return [entity("timed.uitest:plank", "Plank", .timed, at: 4600),
+                    entity("timed.uitest:sideplank", "Side plank", .timed, at: 5200)]
+        }
+        return [entity("Barbell_Bench_Press_-_Medium_Grip", "Bench press", .strength, at: 4600),
+                entity("Pullups", "Pull-ups", .strength, at: 5200)]
+    }
+
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
@@ -310,9 +337,19 @@ enum RacketVideoSeed {
             sam.racketBestOf = 3
             exercises.insert(sam, at: 0)
         }
+        let mixed = UserDefaults.standard.string(forKey: String(mixedSessionArgument.dropFirst()))
+        if let mixed {
+            // Prompt 262: the recorded match (no drill) plus other work that outweighs it, so racket isn't dominant.
+            exercises = [match] + mixedExtras(variant: mixed, start: start)
+        }
         let session = WorkoutSession(routineID: nil, routineName: "Racket videos", exercises: exercises)
         session.startedAt = start
         session.completedAt = start.addingTimeInterval(5700)
+        if mixed != nil {
+            // A steady synthetic series, so each game has a heart-rate row on the racket card.
+            session.maxHR = 190
+            session.hrSeries = stride(from: 0.0, through: 5700, by: 5).map { HRPoint(t: $0, bpm: 130 + ($0.truncatingRemainder(dividingBy: 600)) / 30) }
+        }
         context.insert(session)
         try? context.save()
     }

@@ -11695,3 +11695,42 @@ screen could remove it without breaking `baseSetIndex` and the split's links.
 - **Verified on the simulator**: SnappetTests 3137 / 0 failures (5 skipped; 18 new in `RacketMatchEditorTests`, the
   random test 3000 sequences). UI suites alone, app uninstalled first: RacketEditMatch 3 (new), RacketVideos 2,
   RacketSplitTimeout 3, RacketTagging 15, RacketMatch 14, RacketPlayer 7, RacketEdit 8, RacketGameHR 1 — all green.
+
+## 2026-11-16 — Racket screens reachable on any finished session; removing the last exercise (prompt 262)
+
+- **Context**: state-machine review findings F9 and F16. Your videos, Edit match, Keep rallies only… and a game's heart
+  rate are offered only by `RacketRecapCards`. `SessionRecapCards` rendered it only when racket was the dominant
+  discipline (most completed sets), and `SessionDetailView` rendered `SessionRecapCards` (and passed the racket sheet
+  closures) only for workout types timed / run / other (most exercises). A match plus two lifts is type strength: no
+  racket card, so the match's videos and editor were unreachable.
+- **The racket card shows whenever the session holds a racket entity** (`discipline == .racket`, i.e. a match or a
+  drill — `racketMode` defaults to match; the same test `RacketStats.summary` uses), after the dominant discipline's
+  own cards. Racket dominant still renders it as the dominant card and it is never added a second time. The decision is
+  pure (`RacketRecapReach.addsRacketCard` for `SessionRecapCards`, `detailAddsRacketCard` for the detail's strength
+  branch, which renders no `SessionRecapCards`). Considered: making racket win the dominant pick whenever present —
+  rejected, it would replace the lifts' cards and hero.
+- **Every detail branch hands the racket sheets to the detail** (`onOpenGame` / `onOpenVideos` / `onEditMatch`), not
+  only timed / run / other: the card sits in a lazy `List`, where a sheet owned by the row can be dropped on re-render
+  (the reason the host owns them since prompt 246).
+- **The Finish summary** gets the card through the same `SessionRecapCards` change. Edit match stays hidden there: the
+  session is still active until Done (`RacketMatchEditAvailability`, unchanged).
+- **Removing the only exercise of a finished session offers deleting the session** ("Delete this session?", Delete
+  session / Cancel) instead of leaving an empty session in History. It goes through `SessionCascade.deleteWorkoutSession`
+  (History's delete): the session row and its `SessionMedia` / `StudioProject` / festival rows. It never calls Photos,
+  so the message says photos and videos stay in the Photos library. The detail pops first; the cascade runs in
+  `onDisappear` so nothing renders a deleted model on the way out. New id `session.confirmDeleteSession`; the existing
+  `session.confirmRemoveExercise` is unchanged for the other cases.
+- **Test seed**: `-uiTestRacketMixedSession strength|timed` (with `-uiTestSeedRacketVideos`) replaces the seed's drill
+  with two lifts or two planks × 3 sets and adds a synthetic HR series; without the argument the seed is unchanged.
+- **Found, not changed**: on a timed-dominant session the timed card's "Exercises" rows list the match too ("Table
+  tennis match · 2 sets · 0:00 total"), because the match is a `.duration`-kind entity (pre-existing; now next to the
+  racket card).
+- **Verified on the simulator**: SnappetTests 3144 / 0 failures (5 skipped; 7 new in `RacketRecapReachTests`).
+  `RacketMixedSessionUITests` 3 / 3 (strength and timed mixed sessions open Your videos, Edit match, a game's heart
+  rate, and Keep rallies on the timed one; last-exercise Delete session / Cancel). Existing UI suites run alone, app
+  uninstalled first, all green: RacketEditMatch 3, RacketVideos 2, RacketGameHR 1, RacketSports 10, SessionInsights 1,
+  CompletionMoment 3, FreeformFlowWalkthrough 2, WorkoutWalkthrough 1, ActivityProgress 6, Progression 5,
+  TrackingTypeFilter 1, LiveWorkoutStudioWalkthrough 1, RacketEdit 8, RacketSplitTimeout 3, RacketTagging 15,
+  RacketPlayer 7, RacketRallyVideo 5, RacketModel 2, RacketAI 2 (RacketRealMatchWalk 8 skipped, as before). The Finish
+  summary with a mixed session was not driven on the simulator; it renders the same `SessionRecapCards` the timed
+  detail test covers.

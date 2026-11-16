@@ -803,6 +803,14 @@ splitting matches is not built (one recording per match). Pure: `RacketMatchEdit
 3000 random sequences); views `RacketMatchEditViews.swift`; UI `RacketEditMatchUITests`. **Device-pending:** the user's
 real match on the phone.
 
+✅ **Racket screens on any finished session; removing the last exercise (2026-11-16, prompt 262).** iOS. A session with
+a match or drill shows the racket card (Your videos, Edit match, Keep rallies only…, game heart rate) on its detail and
+on the Finish summary whatever discipline dominates — after that discipline's own cards, never twice (was: only when
+racket was dominant, so a match plus two lifts could not reach its videos or editor). Removing a finished session's
+only exercise asks "Delete this session?" (Delete session / Cancel) and deletes through `SessionCascade`, leaving the
+detail; photos and videos stay in Photos. Pure: `RacketRecapReach`, `SessionSetEditing.isLastExercise`
+(`RacketRecapReachTests`); UI `RacketMixedSessionUITests` (seed `-uiTestRacketMixedSession strength|timed`).
+
 ## License
 
 TBD.
