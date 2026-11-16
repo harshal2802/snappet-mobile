@@ -55,6 +55,15 @@ struct RacketDrillCover: View {
     @State private var findAfter: Set<Int> = []
     @State private var videos: RacketVideosTarget?
     @State private var reviewPath: [RacketDrillRoute] = []
+    // Prompt 256: the pro camera for drills (before block 1 and during a block).
+    @State private var choice: RacketRecordingMode = .byUnit
+    @State private var useWatch = true
+    @State private var watchWasLinked = false
+    @State private var storageFree: Int64?
+    @State private var battery: Int?
+    @State private var charging = false
+    @State private var ticks = 0
+    @State private var pendingFormat = RacketPendingFormat()
 
     private var sport: RacketSport { ex.racketSport ?? ex.racketFormat.sport }
     private var title: String { ex.displayName ?? "Drill" }
@@ -83,6 +92,15 @@ struct RacketDrillCover: View {
                 now = Date()
                 act { $0.tick(now: now) }
                 if let m = machine, m.interruption == nil, !m.isEnded { recorder.ensureCapturing(m.capturing) }
+                ticks += 1
+                if ticks % 20 == 1 {
+                    storageFree = RacketRecorder.storage()?.free ?? storageFree
+                    battery = RacketRecorder.batteryPercent()
+                    charging = RacketRecorder.isCharging()
+                }
+                if let m = machine, m.capturing, m.interruption == nil, RacketSpaceGuard.mustStop(roomSec: roomSec) {
+                    act { $0.interrupt(.storageFull, now: Date()); return [.stopCapture] }
+                }
             }
         }
         .confirmationDialog("Finish the drill?", isPresented: $confirmFinish, titleVisibility: .visible) {
@@ -128,10 +146,17 @@ struct RacketDrillCover: View {
                 act { m in m.interrupt(reason, now: Date()); return [] }
                 Haptics.warning()
             }
+            recorder.onInterruptionEnded = {
+                if let r = machine?.interruption, RacketInterruptionCopy.autoResumes(r) { act { $0.resume(now: Date()) } }
+            }
+            watchWasLinked = RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady")
             Task {
                 let ok = await RacketRecorder.requestAccess()
-                accessDenied = !ok
-                if ok { recorder.startPreview(quality: quality ?? defaults.quality) }
+                accessDenied = !ok || ProcessInfo.processInfo.arguments.contains("-uiTestCameraDenied")
+                // The camera opens on the quality saved for every match (or the storage check's), at its frame rate.
+                var initial = RacketCameraSetup(format: defaults.cameraFormat)
+                if let quality { initial = initial.with(quality: quality) }
+                if ok { recorder.startPreview(setup: initial) }
             }
             machine = m
         } else {
@@ -166,7 +191,10 @@ struct RacketDrillCover: View {
     private func perform(_ effects: [RacketRecordingMachine.Effect]) {
         for e in effects {
             switch e {
-            case .startCapture: recorder.startCapture()
+            case .startCapture:
+                // A lighter quality chosen during a block starts with the next block (never mid-file).
+                if !recorder.isCapturing, let f = pendingFormat.takeAtBoundary() { recorder.setFormat(f) }
+                recorder.startCapture()
             case .stopCapture: recorder.stopCapture()
             case .logBlock(let i, let sec): onBlockLogged(i, sec)
             case .askStillPlaying: Haptics.warning()
@@ -195,6 +223,122 @@ struct RacketDrillCover: View {
     // MARK: The screen by phase
 
     @ViewBuilder private func screen(_ m: RacketRecordingMachine) -> some View {
+        if filming, usesCamera(m) {
+            ZStack {
+                drillCamera(m)
+                if m.interruption == nil, let asked = m.stillPlayingAskedAt {
+                    let minutes = Int((m.stillPlayingSec ?? 1800) / 60)
+                    RacketOverlay {
+                        RacketStillPlayingPanel(
+                            minutes: minutes,
+                            secondsLeft: max(0, RacketStillPlaying.answerWindowSec - now.timeIntervalSince(asked)),
+                            againLine: RacketStillPlaying.again(minutes: minutes),
+                            onKeep: { act { $0.keepPlaying(now: Date()); return [] } },
+                            onStop: { act { $0.end(now: Date()) } })
+                    }
+                }
+            }
+        } else {
+            oldScreen(m)
+        }
+    }
+
+    // MARK: The pro camera for drills (prompt 256: the camera before block 1, ProCameraDrill during a block)
+
+    private func usesCamera(_ m: RacketRecordingMachine) -> Bool {
+        switch m.phase {
+        case .ready, .block: return true
+        default: return false
+        }
+    }
+
+    private var roomSec: TimeInterval? {
+        guard let free = storageFree else { return nil }
+        return RacketStorageCheck.roomSec(freeBytes: free,
+                                          bytesPerSec: RacketBitrate.bytesPerSecond(recorder.setup.format.config(codec: recorder.codec)))
+    }
+
+    @ViewBuilder private func drillCamera(_ m: RacketRecordingMachine) -> some View {
+        RacketProCameraView(
+            recorder: recorder, sport: sport, unit: sport.unit, modes: [],
+            mode: $choice, accessDenied: accessDenied,
+            show: $show, useWatch: $useWatch, watchAvailable: watchWasLinked,
+            thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            onVideos: { videos = RacketVideosTarget(start: .drillVideos(ex.id)) },
+            onShutter: { act { $0.startNextBlock(now: Date()) } },
+            onClose: onClose,
+            onPlayWithoutVideo: onClose,
+            live: blockLive(m), testOverlay: testOverlay)
+    }
+
+    private var testOverlay: AnyView? {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestCameraTrouble") else { return nil }
+        return AnyView(RacketCameraTroubleButtons(recorder: recorder).font(.system(size: 10)).opacity(0.5))
+        #else
+        return nil
+        #endif
+    }
+
+    private func blockLive(_ m: RacketRecordingMachine) -> RacketCameraLive? {
+        guard case .block(let b, _) = m.phase else { return nil }
+        var c = RacketCameraConditions()
+        c.thermal = thermal
+        c.interruption = m.interruption
+        c.roomSec = roomSec
+        c.batteryPercent = battery
+        c.charging = charging
+        c.watchOff = watchWasLinked && (!useWatch || !(RacketWatchRelay.shared.isAvailable
+            || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady")))
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestWatchOff") { c.watchOff = true }
+        #endif
+        c.format = recorder.setup.format
+        let saved = m.log?.savedUpToSec ?? 0
+        let banner = RacketCameraBanner.decide(c, savedUpToSec: saved)
+        let end = (title: RacketRecordingRoutes.endLabel(.drillReview), action: { act { $0.end(now: Date()) } })
+        let card = RacketCameraLive.card(banner, onResume: { act { $0.resume(now: Date(), cooled: true) } },
+                                         keepScoring: nil, onEnd: end)
+        let next: RacketCameraLive.Action? = {
+            guard m.recording == .byUnit, RacketPendingFormat.offers(current: recorder.setup.format, pending: nil) else { return nil }
+            let chosen = pendingFormat.pending == RacketPendingFormat.relief
+            return .init(title: RacketPendingFormat.label(boundary: .block, chosen: chosen), id: "racket.camera.nextFormat",
+                         enabled: !chosen) { pendingFormat.choose(RacketPendingFormat.relief) }
+        }()
+        let left = m.display(now: now)?.seconds ?? 0
+        var live = RacketCameraLive(
+            title: RacketCameraTrouble.pill(c) ?? "Block \(b + 1) of \(blocks)",
+            titleID: "racket.drill.header",
+            titleTone: RacketCameraTrouble.pill(c) == nil ? .plain : .amber,
+            centre: card != nil ? .stopped(RacketCameraRecordingCopy.stoppedAt(saved), id: "racket.rec.status")
+                : .timer(RacketCameraRecordingCopy.left(left), a11y: RacketDrillCopy.statusText(status(m)), id: "racket.rec.status"),
+            views: $show,
+            banner: RacketCameraLive.banner(banner, nextFormat: next, onDim: { show = .dim },
+                                            onResume: { act { $0.resume(now: Date()) } }, onEnd: end, onFreeSpace: {}),
+            card: card,
+            left: .init(title: "Pause", id: "racket.rec.pause", label: "Pause the block") { act { $0.pauseBlock(now: Date()) } },
+            right: .init(title: "Mark", id: "racket.rec.mark", label: "Mark this moment") {
+                act { $0.mark(.moment, now: Date()); return [] }
+            },
+            shutter: .init(title: "End block", id: "racket.rec.endBlock", label: "End block \(b + 1)") {
+                act { $0.endBlock(now: Date()) }
+            })
+        if case .lowSpace = banner { live.banner?.secondary = nil }   // the drill has no storage screen of its own here
+        switch show {
+        case .dim:
+            // The time left on black, with the block's line (the old Dim's words).
+            live.dim = (RacketCameraRecordingCopy.left(left),
+                        m.recording == .everything ? RacketDrillCopy.everythingFootnote
+                            : RacketDrillCopy.blockLine(measure: ex.drillMeasure, recording: m.recording))
+            live.dimScoreID = "racket.rec.clock"
+            live.dimCaptionID = "racket.drill.line"
+        case .stats: live.middle = AnyView(drillStats(m, block: b))
+        case .camera: break
+        }
+        return live
+    }
+
+    @ViewBuilder private func oldScreen(_ m: RacketRecordingMachine) -> some View {
         ZStack {
             VStack(spacing: 12) {
                 switch m.phase {

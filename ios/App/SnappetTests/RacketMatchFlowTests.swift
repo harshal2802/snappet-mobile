@@ -273,7 +273,7 @@ final class RacketMatchFlowTests: XCTestCase {
         XCTAssertEqual(RacketGameCopy.scoreSubtitle(sport: .badminton, fromWatch: true, cap: 30),
                        "Win by 2, capped at 30. Filled in from your Watch.")
         XCTAssertEqual(RacketGameCopy.scoreSubtitle(sport: .tableTennis, fromWatch: true, cap: nil),
-                       "Filled in from your Watch taps. Fix it now or later.")
+                       "From your Watch. Fix it now or later.")
         XCTAssertEqual(RacketGameCopy.scoreSubtitle(sport: .padel, fromWatch: true, cap: nil), "Games in this set. Filled in from your Watch.")
         XCTAssertEqual(RacketGameCopy.scoreSubtitle(sport: .squash, fromWatch: false, cap: nil), "Win by 2.")
         XCTAssertEqual(RacketGameCopy.breakChips(.tableTennis), [30, 60, 120, 300])

@@ -758,6 +758,15 @@ everything). Pure: `RacketProCamera.swift` (`RacketProCameraTests`); screens `Ra
 camera check until the next job. **Device-pending:** see the prompt 255 entry in `decisions.md` for what the phone run
 verified.
 
+🟡 **Racket pro camera, while recording (2026-11-14, prompt 256 — issue #448 part 2).** iOS. Every recording screen
+(game by game, record everything, a drill block) records on the camera from prompt 255: game and score, a red timer, the
+quality locked; lenses, zoom, focus and AE/AF lock keep working; DIM / CAMERA / STATS; Tag · stop square · Mark. One tap
+on stop opens the score sheet, whose "That was a mistake, keep playing game 1" returns to the same game. The break, record
+everything's "New game starts" and a drill block's timer sit on the camera; warm, too hot, interrupted, low space /
+battery / Watch off each show one banner or stop card; the camera lays out sideways. Drills now use the camera before
+block 1 too. Pure: `RacketProCameraRecording.swift` (`RacketProCameraRecordingTests`); `RacketProCameraLive.swift`; UI
+`RacketProCameraRecordingUITests`. **Device-pending:** everything that needs the real camera (see `decisions.md`).
+
 ## License
 
 TBD.

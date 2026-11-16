@@ -52,7 +52,14 @@ final class RacketRecorder: NSObject {
     /// back to fair / nominal ⇒ ok. Critical still stops the recording (`onInterrupted(.tooHot)`).
     var onThermal: ((RacketThermalLevel) -> Void)?
     /// The level now, for a screen that opens while the phone is already warm.
-    var thermal: RacketThermalLevel { RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue) }
+    var thermal: RacketThermalLevel {
+        fakeThermal ?? RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
+    }
+    /// iOS says an interruption (a call, another app on the camera, leaving the app) is over (prompt 256): the screen
+    /// starts a new part by itself when the reason allows (`RacketInterruptionCopy.autoResumes`).
+    var onInterruptionEnded: (() -> Void)?
+    /// The fake's thermal state, forced by UI tests (`simulate`).
+    private var fakeThermal: RacketThermalLevel?
 
     private let movie = AVCaptureMovieFileOutput()
     private let library = MediaLibraryService()
@@ -76,7 +83,11 @@ final class RacketRecorder: NSObject {
         self.fake = fake
         capabilities = fake ? Self.fakeCapabilities : RacketCameraCapabilities.sample
         super.init()
-        if fake { previewAspect = setup.format.portraitAspect }
+        if fake {
+            previewAspect = setup.format.portraitAspect
+            // The fake camera's heat comes only from the test, so a test phone that is really warm doesn't change it.
+            fakeThermal = .ok
+        }
         Self.trace("recorder init session=\(Unmanaged.passUnretained(self.session).toOpaque())")
     }
 
@@ -274,6 +285,12 @@ final class RacketRecorder: NSObject {
             // The exact format and frame rate (the session's preset then becomes input priority).
             Self.applyFormat(s.format, infos: formatInfos, on: cam)
             Self.applyCamera(s, caps: caps, on: cam)
+            #if DEBUG
+            // What the sensor is doing two seconds in: a black picture with the gain at its ceiling is a covered lens.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                Self.trace("sensor iso=\(cam.iso) max=\(cam.activeFormat.maxISO) shutter=\(cam.exposureDuration.seconds) offset=\(cam.exposureTargetOffset) zoom=\(cam.videoZoomFactor) active=\(cam.activeFormat) connections=\(p.session.connections.map { "\($0.isActive)/\($0.isEnabled)" })")
+            }
+            #endif
             let dims = CMVideoFormatDescriptionGetDimensions(cam.activeFormat.formatDescription)
             let refreshed = RacketCameraCapabilities(device: Self.info(cam))
             Task { @MainActor in
@@ -447,6 +464,30 @@ final class RacketRecorder: NSObject {
     /// The look shown on the live preview (never recorded).
     func setLook(_ look: RacketLook) { setup.look = look }
 
+    /// UI tests (DEBUG, the fake camera only): force what a phone would report — heat, a call starting and ending.
+    enum Simulated: String, CaseIterable { case warm, hot, cool, call, callEnded }
+
+    func simulate(_ s: Simulated) {
+        guard fake else { return }
+        switch s {
+        case .warm: fakeThermal = .warm; onThermal?(.warm)
+        case .hot: fakeThermal = .tooHot; onThermal?(.tooHot); report(.tooHot)
+        case .cool: fakeThermal = .ok; onThermal?(.ok)
+        case .call: report(.call)
+        case .callEnded: onInterruptionEnded?()
+        }
+    }
+
+    /// The battery is charging (low battery isn't trouble then).
+    static func isCharging() -> Bool {
+        #if DEBUG
+        // A test that sets the battery level means an unplugged phone, even when the test phone is on a cable.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestCameraBattery") { return false }
+        #endif
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        return UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
+    }
+
     /// The battery, when the phone reports one (the simulator doesn't; UI tests may pass `-uiTestCameraBattery 82`).
     static func batteryPercent() -> Int? {
         #if DEBUG
@@ -558,7 +599,10 @@ final class RacketRecorder: NSObject {
             MainActor.assumeIsolated { self?.report(.cameraError) }
         })
         observers.append(nc.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session,
-                                        queue: .main) { _ in Self.trace("session interruption ended") })
+                                        queue: .main) { [weak self] _ in
+            Self.trace("session interruption ended")
+            MainActor.assumeIsolated { self?.onInterruptionEnded?() }
+        })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session,
                                         queue: .main) { n in Self.trace("session didStartRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
         observers.append(nc.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session,
@@ -567,6 +611,7 @@ final class RacketRecorder: NSObject {
                                         queue: .main) { [weak self] _ in
             let level = RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
             MainActor.assumeIsolated {
+                guard self?.fake == false else { return }
                 self?.onThermal?(level)
                 if level == .tooHot { self?.report(.tooHot) }
             }

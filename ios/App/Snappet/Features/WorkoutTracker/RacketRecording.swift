@@ -1033,10 +1033,11 @@ struct RacketRecordingMachine: Equatable, Sendable {
         stillPlayingAskedAt = nil
     }
 
-    /// "Resume recording": a new part of the same recording. Only when the reason allows it.
+    /// "Resume recording": a new part of the same recording. Only when the reason allows it — or, after a heat stop,
+    /// once the phone has cooled ("Resume filming when cool", prompt 256: `cooled`).
     @discardableResult
-    mutating func resume(now: Date) -> [Effect] {
-        guard let i = interruption, i.canResume, !isEnded else { return [] }
+    mutating func resume(now: Date, cooled: Bool = false) -> [Effect] {
+        guard let i = interruption, i.canResume || (cooled && i == .tooHot), !isEnded else { return [] }
         touch(now)
         interruption = nil
         // A drill between blocks keeps recording too (everything includes rests), unless it hasn't started yet. A paused

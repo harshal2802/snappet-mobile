@@ -98,11 +98,10 @@ final class RacketDrillUITests: XCTestCase {
         shot("tt-04-setup")
         app.buttons["racket.plan.start"].tap()
 
-        // Camera check (guide placeholder) → BlockStart.
-        let cont = app.buttons["racket.camera.continue"]
+        // The pro camera (prompt 256, in place of the camera check) → BlockStart.
+        let cont = app.buttons["racket.camera.shutter"]
         XCTAssertTrue(cont.waitForExistence(timeout: 8))
-        XCTAssertTrue(any("racket.camera.guide").exists)
-        XCTAssertEqual(any("racket.camera.next").label, "Next: warmup for a match, or a countdown to block 1 for a drill.")
+        XCTAssertTrue(app.buttons["racket.camera.lens.1"].exists)
         shot("tt-05-camera")
         cont.tap()
         XCTAssertTrue(any("racket.rec.countdown").waitForExistence(timeout: 4))
@@ -114,13 +113,11 @@ final class RacketDrillUITests: XCTestCase {
         XCTAssertTrue(pause.waitForExistence(timeout: 12))
         XCTAssertTrue(any("racket.rec.status").label.hasPrefix("● Recording"), any("racket.rec.status").label)
         XCTAssertEqual(any("racket.drill.header").label, "Block 1 of 3")
-        XCTAssertEqual(any("racket.rec.phone").label, "Phone OK")
-        XCTAssertTrue(any("racket.rec.preview").exists, "the block opens on the camera")
+        XCTAssertTrue(any("racket.camera.preview").exists, "the block opens on the camera (ProCameraDrill)")
         app.buttons["racket.rec.show.dim"].tap()
         XCTAssertEqual(any("racket.drill.line").label,
                        "Recording. Log your longest rally at the end of the block, or find rallies afterwards.")
-        XCTAssertEqual(app.buttons["racket.rec.trackingTurnOn"].label, "Not available yet")
-        XCTAssertFalse(app.buttons["racket.rec.trackingTurnOn"].isEnabled)
+        XCTAssertTrue(any("racket.rec.clock").label.hasSuffix(" left"), any("racket.rec.clock").label)
         shot("tt-07-block-off")
         app.buttons["racket.rec.show.stats"].tap()
         XCTAssertTrue(any("racket.drill.liveCounts").waitForExistence(timeout: 3), "live counts: not available yet")
@@ -224,8 +221,8 @@ final class RacketDrillUITests: XCTestCase {
             tapWhenHittable(app.buttons["racket.recording.byUnit"])
             shot("\(s.id)-03-setup")
             tapWhenHittable(app.buttons["racket.plan.start"])
-            XCTAssertTrue(app.buttons["racket.camera.continue"].waitForExistence(timeout: 8))
-            app.buttons["racket.camera.continue"].tap()
+            XCTAssertTrue(app.buttons["racket.camera.shutter"].waitForExistence(timeout: 8))
+            app.buttons["racket.camera.shutter"].tap()
             XCTAssertTrue(app.buttons["racket.rec.pause"].waitForExistence(timeout: 12))
             app.buttons["racket.rec.show.dim"].tap()
             shot("\(s.id)-04-block")

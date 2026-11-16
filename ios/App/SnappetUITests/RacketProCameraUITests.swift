@@ -35,6 +35,11 @@ final class RacketProCameraUITests: XCTestCase {
     }
 
     private func shot(_ name: String) {
+        if onPhone, app.state == .runningForeground {
+            // On a phone there is no shared folder: keep the app's own window in the result bundle.
+            let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            a.name = name; a.lifetime = .keepAlways; add(a)
+        }
         guard let dir = ProcessInfo.processInfo.environment["RACKET_SHOTS"] else { return }
         let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: url)
@@ -87,7 +92,8 @@ final class RacketProCameraUITests: XCTestCase {
 
     // MARK: - ProCamera, ProCameraZoom
 
-    func testCameraReadyWithLensesDialAndPinch() {
+    func testCameraReadyWithLensesDialAndPinch() throws {
+        try XCTSkipIf(onPhone, "it checks the fake camera's numbers; the phone's own are covered by testReportsWhatThisCameraHas")
         launch(["-uiTestCameraLenses", "0.5,1,2,3"])
         openCamera()
         let shutter = app.buttons["racket.camera.shutter"]
@@ -138,7 +144,8 @@ final class RacketProCameraUITests: XCTestCase {
         XCTAssertNotEqual(pinched.label, "Zoom 1×", "pinching changed the zoom")
     }
 
-    func testOnlyTheLensesThePhoneHasAreShown() {
+    func testOnlyTheLensesThePhoneHasAreShown() throws {
+        try XCTSkipIf(onPhone, "it checks the fake camera's numbers; the phone's own are covered by testReportsWhatThisCameraHas")
         launch(["-uiTestCameraLenses", "1"])
         openCamera()
         XCTAssertTrue(app.buttons["racket.camera.shutter"].waitForExistence(timeout: 10))
@@ -183,7 +190,8 @@ final class RacketProCameraUITests: XCTestCase {
 
     // MARK: - ProCameraQuality
 
-    func testQualityPageListsOnlySupportedFormatsWithEstimates() {
+    func testQualityPageListsOnlySupportedFormatsWithEstimates() throws {
+        try XCTSkipIf(onPhone, "it checks the fake camera's numbers; the phone's own are covered by testReportsWhatThisCameraHas")
         launch(["-uiTestCameraFormats", "hd1080-30,hd1080-60,uhd4k-30"])
         openCamera()
         let quality = app.buttons["racket.camera.quality"]

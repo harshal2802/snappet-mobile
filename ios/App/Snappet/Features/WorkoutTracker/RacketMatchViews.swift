@@ -78,6 +78,17 @@ struct RacketGameCover: View {
     @State private var useWatch = true
     /// Your videos over the camera (the thumbnail).
     @State private var videos: RacketVideosTarget?
+    /// While recording (prompt 256): free space and battery for the status and the low-space guard, sampled every 10 s.
+    @State private var storageFree: Int64?
+    @State private var battery: Int?
+    @State private var charging = false
+    @State private var ticks = 0
+    /// "HD · 30 from next game": applied when the next game starts, never mid-file.
+    @State private var pendingFormat = RacketPendingFormat()
+    /// ProCameraSpace "Free space": the storage screen.
+    @State private var freeSpace = false
+    /// A Watch was linked when the camera opened (so its loss is "Watch off").
+    @State private var watchWasLinked = false
 
     private var sport: RacketSport { ex.racketSport ?? ex.racketFormat.sport }
     private var unit: RacketUnit { sport.unit }
@@ -100,6 +111,14 @@ struct RacketGameCover: View {
         .statusBarHidden()
         .onAppear { recorder.screenAppeared(); setUp() }
         .onChange(of: useWatch) { _, on in setWatch(on) }
+        .sheet(isPresented: $freeSpace) {
+            // "Free space" (ProCameraSpace): the storage screen, in the app — opening Settings would leave Snappet, which
+            // stops the recording. Its quality becomes the next game's.
+            RacketStorageSheet(mode: .match, defaultQuality: recorder.setup.format.quality, cancelLabel: "Back") { q in
+                pendingFormat.choose(RacketCameraFormat(quality: q, fps: 30))
+            }
+            .presentationDetents([.large])
+        }
         .sheet(item: $videos) { t in
             if let session { RacketVideosCover(session: session, start: t.start) { videos = nil } }
         }
@@ -121,7 +140,7 @@ struct RacketGameCover: View {
                                 filming: flow.filming, options: $flow.options,
                                 durationSec: flow.gameStartedAt.map { Date().timeIntervalSince($0) },
                                 onSave: { log, startBreak in saveGame(log, startBreak: startBreak) },
-                                onCancel: { flow.cancelScore() })
+                                onCancel: { step { $0.cancelScore() } })
                 .interactiveDismissDisabled()
         }
         .sheet(isPresented: $storageCheck) {
@@ -174,6 +193,11 @@ struct RacketGameCover: View {
             machine = m
             persistLog()
         }
+        recorder.onInterruptionEnded = {
+            // A call / another app / leaving the app ended: a new part of the same game, by itself (ProCameraInterrupted).
+            if let r = machine?.interruption, RacketInterruptionCopy.autoResumes(r) { machineAct { $0.resume(now: Date()) } }
+        }
+        watchWasLinked = watchLinked
         recorder.onInterrupted = { reason in
             guard var m = machine else { return }
             m.interrupt(reason, now: Date())
@@ -211,7 +235,10 @@ struct RacketGameCover: View {
             var machineEffects: [RacketRecordingMachine.Effect] = []
             for e in effects {
                 switch e {
-                case .resumeCapture: machineEffects += m.resumeCapture(now: at)
+                case .resumeCapture:
+                    // A lighter quality chosen while recording starts with the next game (never mid-file).
+                    if !recorder.isCapturing, let f = pendingFormat.takeAtBoundary() { recorder.setFormat(f) }
+                    machineEffects += m.resumeCapture(now: at)
                 case .pauseCapture: machineEffects += m.pauseCapture(now: at)
                 case .openScore, .matchOver: break
                 }
@@ -277,6 +304,16 @@ struct RacketGameCover: View {
     }
 
     private func tick() {
+        ticks += 1
+        if ticks % 20 == 1 {
+            storageFree = RacketRecorder.storage()?.free ?? storageFree
+            battery = RacketRecorder.batteryPercent()
+            charging = RacketRecorder.isCharging()
+        }
+        // Low space (prompt 256): stop cleanly before the disk fills (`RacketSpaceGuard.stopSec` of room left).
+        if let m = machine, m.capturing, m.interruption == nil, RacketSpaceGuard.mustStop(roomSec: roomSec) {
+            machineAct { $0.interrupt(.storageFull, now: Date()); return [.stopCapture] }
+        }
         step { $0.tick(now: now) }
         machineAct { $0.tick(now: now) }
         if let m = machine, m.interruption == nil, !m.isEnded { recorder.ensureCapturing(m.capturing) }
@@ -482,16 +519,21 @@ struct RacketGameCover: View {
 
     @ViewBuilder private var game: some View {
         ZStack {
-            VStack(spacing: 12) {
-                gameHeader
-                if flow.filming { filmingContent } else { scoreOnlyContent }
+            if usesCamera {
+                liveCamera
+            } else {
+                VStack(spacing: 12) {
+                    gameHeader
+                    if flow.filming { filmingContent } else { scoreOnlyContent }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+
             #if DEBUG
             // UI tests only (`-uiTestWatchTaps`): stand-ins for the Watch's score taps, which the simulator can't send —
             // the game screen has no score buttons of its own (DimOff), so PbSideOut is reached this way.
-            if ProcessInfo.processInfo.arguments.contains("-uiTestWatchTaps"), flow.filming {
+            if ProcessInfo.processInfo.arguments.contains("-uiTestWatchTaps"), flow.filming, !usesCamera {
                 HStack {
                     Button("W+us") { point(us: true, fromWatch: true) }.accessibilityIdentifier("racket.test.watchUs")
                     Button("W+them") { point(us: false, fromWatch: true) }.accessibilityIdentifier("racket.test.watchThem")
@@ -501,7 +543,7 @@ struct RacketGameCover: View {
                 .padding(.top, 44).padding(.trailing, 16)
             }
             #endif
-            if let m = machine, flow.filming, !m.isEnded, let reason = m.interruption {
+            if !usesCamera, let m = machine, flow.filming, !m.isEnded, let reason = m.interruption {
                 RacketOverlay {
                     RacketInterruptionPanel(
                         header: RacketRecordingRoutes.header(mode: .match, recording: .byUnit, unit: unit,
@@ -526,6 +568,195 @@ struct RacketGameCover: View {
                 }
             }
         }
+    }
+
+    // MARK: The camera while recording (prompt 256: ProCameraRecording → ProCameraSpace, ProCameraBreak)
+
+    /// The camera draws the game and the break; the interval, the countdown, ScoreOnly, the side-out panel and live
+    /// tagging keep their own screens.
+    private var usesCamera: Bool {
+        guard flow.filming, liveTag == nil, !showsSideOut else { return false }
+        switch flow.phase {
+        case .playing, .scoring, .breakTime, .breakPaused, .breakDone: return true
+        default: return false
+        }
+    }
+
+    private var inBreak: Bool {
+        switch flow.phase {
+        case .breakTime, .breakPaused, .breakDone: return true
+        default: return false
+        }
+    }
+
+    private var watchLinked: Bool {
+        RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady")
+    }
+
+    /// Seconds of room at the current quality (the estimate; the game-by-game screen doesn't meter writes).
+    private var roomSec: TimeInterval? {
+        guard let free = storageFree else { return nil }
+        return RacketStorageCheck.roomSec(freeBytes: free,
+                                          bytesPerSec: RacketBitrate.bytesPerSecond(recorder.setup.format.config(codec: recorder.codec)))
+    }
+
+    private var conditions: RacketCameraConditions {
+        var c = RacketCameraConditions()
+        c.thermal = thermal
+        c.interruption = machine?.interruption
+        c.roomSec = roomSec
+        c.batteryPercent = battery
+        c.charging = charging
+        c.watchOff = watchWasLinked && (!useWatch || !watchLinked)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestWatchOff") { c.watchOff = true }
+        #endif
+        c.format = recorder.setup.format
+        return c
+    }
+
+    /// The timer's accessibility label (and what the old header said): "Recording 09:41", "Ⅱ Recording paused".
+    private var statusText: String {
+        let recorded = machine?.log?.recordedSec(now: now) ?? 0
+        if machine == nil || machine?.isEnded == true { return "Not recording" }
+        if machine?.capturing == true { return "Recording \(RacketClock.recordingHeader(recorded))" }
+        if let i = machine?.interruption { return i.canResume ? "Ⅱ Recording stopped" : "■ Recording ended" }
+        return "Ⅱ Recording paused"
+    }
+
+    private var nextFormatAction: RacketCameraLive.Action? {
+        let boundary: RacketPendingFormat.Boundary = unit == .set ? .set : .game
+        guard RacketPendingFormat.offers(current: recorder.setup.format, pending: nil) else { return nil }
+        let chosen = pendingFormat.pending == RacketPendingFormat.relief
+        return .init(title: RacketPendingFormat.label(boundary: boundary, chosen: chosen), id: "racket.camera.nextFormat",
+                     enabled: !chosen) { pendingFormat.choose(RacketPendingFormat.relief) }
+    }
+
+    private var liveConfig: RacketCameraLive {
+        let saved = machine?.log?.savedUpToSec ?? 0
+        let banner = RacketCameraBanner.decide(conditions, savedUpToSec: saved)
+        let endGame = (title: "End game", action: {
+            step { $0.endGame(matchOver: true, now: Date()) }
+            machineAct { $0.end(now: Date()) }
+        })
+        if inBreak {
+            let capturing = machine?.capturing == true
+            return RacketCameraLive(
+                title: RacketCameraRecordingCopy.breakSaved(RacketGameCopy.unitTitle(unit, index: max(0, flow.unitIndex - 1)),
+                                                            score: lastUnitLabel),
+                titleID: "racket.camera.recTitle",
+                centre: .amber(RacketCameraRecordingCopy.breakCentre(next: unitTitle, phase: flow.phase, now: now),
+                               id: "racket.break.line"),
+                qualityLocked: capturing,
+                views: nil,
+                stripActions: [
+                    .init(title: "SKIP BREAK", id: "racket.break.skip", label: "Skip break") { step { $0.skipBreak(now: Date()); return [] } },
+                    .init(title: "+30 S", id: "racket.break.add30", label: "Add 30 seconds") { step { $0.addBreak(30); return [] } },
+                    .init(title: "MATCH OVER", id: "racket.break.endMatch", label: "Match over") { step { $0.endMatch() } },
+                ],
+                notice: capturing ? nil : RacketCameraRecordingCopy.breakNotice,
+                shutterStops: false,
+                shutter: .init(title: "Start \(unit.noun) \(flow.unitIndex + 1) now", id: "racket.break.start") {
+                    step { $0.startGame(now: Date()) }
+                },
+                thumbnailAndOptions: true)
+        }
+        let card = RacketCameraLive.card(banner, onResume: { machineAct { $0.resume(now: Date(), cooled: true) } },
+                                         keepScoring: .init(title: "Keep scoring without video", id: "racket.int.keepScoring",
+                                                            action: keepScoringWithoutVideo),
+                                         onEnd: endGame)
+        let trouble = RacketCameraTrouble.pill(conditions)
+        var live = RacketCameraLive(
+            title: trouble ?? RacketCameraRecordingCopy.gameTitle(unitTitle, score: score.display),
+            titleID: "racket.camera.recTitle",
+            titleTone: trouble == nil ? .plain : .amber,
+            centre: card != nil
+                ? .stopped(RacketCameraRecordingCopy.stoppedAt(saved), id: "racket.game.status")
+                : .timer(RacketCameraRecordingCopy.timer(machine?.log?.recordedSec(now: now) ?? 0), a11y: statusText,
+                         id: "racket.game.status"),
+            views: $show,
+            banner: RacketCameraLive.banner(banner, nextFormat: nextFormatAction, onDim: { show = .dim },
+                                            onResume: { machineAct { $0.resume(now: Date()) } }, onEnd: endGame,
+                                            onFreeSpace: { freeSpace = true }),
+            card: card,
+            left: .init(title: "Tag", id: "racket.game.tagLast", label: "Tag last rally", enabled: canTagLive) { startLiveTag() },
+            right: .init(title: "Mark", id: "racket.game.mark", label: "Mark this moment") { mark() },
+            shutter: .init(title: "Stop", id: "racket.game.stop", label: "Stop recording, end \(unitTitle.lowercased())",
+                           enabled: flow.phase == .playing || isInterval(flow.phase)) {
+                step { $0.endGame(matchOver: false, now: Date()) }
+            })
+        switch show {
+        case .dim:
+            if inTiebreak { live.middle = AnyView(tiebreakBanner) } else { live.dim = (score.display, dimCaption) }
+        case .stats:
+            let tags = RacketTagSummary.make(machine?.log?.allRallies ?? [], sport: sport)
+            live.middle = AnyView(RacketStatsOffPanel(score: score.display, tags: tags, sides: sides, unit: unit,
+                                                      gameSec: gameSec, sessionSec: machine?.log?.recordedSec(now: now) ?? 0,
+                                                      pointsLabel: RacketGameCopy.pointsLabel(sport),
+                                                      points: RacketRecordStats.pointsPlayed(score), heartRate: heartRate,
+                                                      afterLine: RacketGameCopy.statsAfterLine(sport)))
+        case .camera: break
+        }
+        return live
+    }
+
+    /// The break's own controls live in Options (pause, +1 min, auto-start): the strip has Skip break, +30 s, Match over.
+    private var breakOptions: AnyView? {
+        guard inBreak else { return nil }
+        return AnyView(VStack(alignment: .leading, spacing: 10) {
+            Text("Break").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+            HStack(spacing: 8) {
+                if case .breakPaused = flow.phase {
+                    RacketWideButton("Resume", id: "racket.break.resume", primary: false) { step { $0.resumeBreak(now: Date()); return [] } }
+                } else {
+                    RacketWideButton("Pause", id: "racket.break.pause", primary: false) { step { $0.pauseBreak(now: Date()); return [] } }
+                }
+                RacketWideButton("+1 min", id: "racket.break.add60", primary: false) { step { $0.addBreak(60); return [] } }
+            }
+            Toggle(isOn: Binding(get: { flow.breakAutoStart }, set: { on in step { $0.setBreakAutoStart(on); return [] } })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-start").font(.system(size: 15, weight: .semibold))
+                    Text("Off: you start the next \(unit.noun) yourself").font(SnappetType.detail)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+            }
+            .tint(SnappetColor.brand)
+            .accessibilityIdentifier("racket.break.autoStart")
+        })
+    }
+
+    private var liveCamera: some View {
+        RacketProCameraView(
+            recorder: recorder, sport: sport, unit: unit, modes: [],
+            mode: $choice, accessDenied: false,
+            firstServer: $firstServer,
+            ourFirstServer: ex.isDoubles && sport != .squash ? $ourFirstServer : nil,
+            sides: sides, partnerName: RacketServeCopy.name(.partner, partner: ex.partner),
+            show: $show, useWatch: $useWatch, watchAvailable: watchLinked,
+            thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            onVideos: session == nil ? nil : { videos = RacketVideosTarget(start: .videos) },
+            onShutter: {}, onClose: onClose, onPlayWithoutVideo: {},
+            live: liveConfig, optionsExtra: breakOptions, testOverlay: testOverlay)
+    }
+
+    /// UI tests (DEBUG): the Watch's score taps (`-uiTestWatchTaps`) and the phone's heat / call (`-uiTestCameraTrouble`).
+    private var testOverlay: AnyView? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-uiTestWatchTaps") || args.contains("-uiTestCameraTrouble") else { return nil }
+        return AnyView(HStack(alignment: .top, spacing: 6) {
+            if args.contains("-uiTestWatchTaps") {
+                VStack(spacing: 2) {
+                    Button("W+us") { point(us: true, fromWatch: true) }.accessibilityIdentifier("racket.test.watchUs")
+                    Button("W+them") { point(us: false, fromWatch: true) }.accessibilityIdentifier("racket.test.watchThem")
+                }
+            }
+            if args.contains("-uiTestCameraTrouble") { RacketCameraTroubleButtons(recorder: recorder) }
+        }
+        .font(.system(size: 10)).opacity(0.5))
+        #else
+        return nil
+        #endif
     }
 
     /// "● Recording 09:41 · Game 1 · Phone OK" / "Ⅱ Recording paused · Game 1 saved" / "Not recording · Game 1".
@@ -614,6 +845,13 @@ struct RacketGameCover: View {
         return RacketGameCopy.scoreCaption(sport: sport, unitIndex: flow.unitIndex, score: score, server: info?.side,
                                            them: sides.them, fromWatch: scoreFromWatch,
                                            player: info?.player.map { RacketServeCopy.name($0, partner: ex.partner) })
+    }
+
+    /// ProCameraDim: "Game 1 · Alex serving" — table tennis names the server once it's known (the board), where its
+    /// other screens say "Score from Watch"; the other sports already name the server or the set.
+    private var dimCaption: String {
+        guard sport == .tableTennis, let side = serveInfo?.side else { return caption }
+        return side == .us ? "\(unitTitle) · you’re serving" : "\(unitTitle) · \(sides.them) serving"
     }
 
     private var showsSideOut: Bool {
@@ -1061,25 +1299,25 @@ struct RacketSaveGameSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // ProCameraStop (prompt 256): "Game 1 · Later", the steppers, the line, the saves, the undo.
                 HStack {
-                    Button("Cancel") { onCancel(); dismiss() }.accessibilityIdentifier("racket.save.cancel")
+                    Text(isSTB ? "Super tiebreak" : RacketGameCopy.unitTitle(unit, index: unitIndex))
+                        .font(.system(size: 17, weight: .bold))
+                        .accessibilityIdentifier("racket.save.title")
                     Spacer()
-                    Text(isSTB ? "Super tiebreak" : RacketGameCopy.unitTitle(unit, index: unitIndex)).font(.headline)
-                    Spacer()
-                    Button("Later") { later() }.accessibilityIdentifier("racket.save.later")
+                    Button("Later") { later() }.font(.system(size: 16, weight: .semibold))
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("racket.save.later")
                 }
-                Text("Final score").font(.system(size: 28, weight: .bold))
+                HStack(spacing: 12) {
+                    column(sides.us, $mine, id: "mine")
+                    column(sides.them, $theirs, id: "theirs")
+                }
+                if needsTB { tiebreakRow }
                 Text(RacketGameCopy.scoreSubtitle(sport: sport, fromWatch: fromWatch, cap: format.cap))
                     .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("racket.save.subtitle")
-                HStack(spacing: 0) {
-                    column(sides.us, $mine, id: "mine")
-                    column(sides.them, $theirs, id: "theirs")
-                }
-                .padding(.vertical, 12)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                if needsTB { tiebreakRow }
                 if live.isEmpty && !touched {
                     Text(RacketScoreEntry.untouchedLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1089,6 +1327,20 @@ struct RacketSaveGameSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("racket.save.warning")
                 }
+                RacketWideButton("Save, start break", id: "racket.save.startBreak") { save(startBreak: true) }
+                HStack(spacing: 10) {
+                    RacketWideButton("Save, match over", id: "racket.save.matchOver", primary: false) { save(startBreak: false) }
+                    Button("Later") { later() }.font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                        .accessibilityIdentifier("racket.save.laterBottom")
+                }
+                // "That was a mistake, keep playing game 1": back to the same game, its score and rallies kept.
+                Button("That was a mistake, keep playing \(RacketGameCopy.unitTitle(unit, index: unitIndex).lowercased())") {
+                    onCancel(); dismiss()
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("racket.save.cancel")
                 RacketBox {
                     Toggle(isOn: $options.autoStart) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1124,15 +1376,16 @@ struct RacketSaveGameSheet: View {
                         .accessibilityIdentifier("racket.save.pauseRecording")
                     }
                 }
-                RacketWideButton("Save, start break", id: "racket.save.startBreak") { save(startBreak: true) }
-                RacketWideButton("Save, match over", id: "racket.save.matchOver", primary: false) { save(startBreak: false) }
                 Text("Auto-start stops once the score decides the match.")
                     .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     .frame(maxWidth: .infinity)
             }
             .padding(20)
         }
-        .presentationDetents([.large])
+        .presentationDetents([.fraction(0.62), .large])
+        // Opaque, as on ProCameraStop: the camera picture must not show through the score.
+        .presentationBackground(Color(white: 0.07))
+        .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
         .onAppear {
             guard !configured else { return }
@@ -1181,10 +1434,10 @@ struct RacketSaveGameSheet: View {
 
     private func column(_ who: String, _ value: Binding<Int>, id: String) -> some View {
         VStack(spacing: 8) {
-            Text(who).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
-            Text("\(value.wrappedValue)").font(.system(size: 52, weight: .light)).monospacedDigit()
+            Text(who).font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+            Text("\(value.wrappedValue)").font(.system(size: 44, weight: .light)).monospacedDigit()
                 .accessibilityIdentifier("racket.save.\(id)")
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 stepButton("−", id: "\(id).minus") { touched = true; value.wrappedValue = max(0, value.wrappedValue - 1) }
                 stepButton("+", id: "\(id).plus") { touched = true; value.wrappedValue = min(maxValue, value.wrappedValue + 1) }
             }
@@ -1194,9 +1447,10 @@ struct RacketSaveGameSheet: View {
 
     private func stepButton(_ symbol: String, id: String, action: @escaping () -> Void) -> some View {
         Button { action(); Haptics.tap() } label: {
-            Text(symbol).font(.system(size: 22, weight: .semibold))
-                .frame(width: 52, height: 40)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(symbol).font(.system(size: 20, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(SnappetColor.hairline))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("racket.save.\(id)")

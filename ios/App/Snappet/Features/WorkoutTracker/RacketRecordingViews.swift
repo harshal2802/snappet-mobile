@@ -372,6 +372,11 @@ struct RacketRecordingCover: View {
     @State private var watchUnitsLogged = 0
     /// LiveTag (prompt 251): the last rally's stretch while it's being tagged.
     @State private var liveTag: ClosedRange<Double>?
+    /// Prompt 256: battery, a Watch linked when recording began, and ProCameraSpace's "Free space".
+    @State private var battery: Int?
+    @State private var charging = false
+    @State private var watchWasLinked = false
+    @State private var freeSpace = false
 
     private var unit: RacketUnit { ex.racketFormat.sport.unit }
     private var title: String { ex.isRacketMatch ? ex.racketMatchTitle : (ex.displayName ?? "Drill") }
@@ -387,6 +392,15 @@ struct RacketRecordingCover: View {
 
     private var recordingBody: some View {
         ZStack {
+            if let m = machine, m.phase == .recordingMatch, liveTag == nil {
+                // The pro camera while recording everything (prompt 256, ProCameraEverything and its states).
+                RacketProCameraView(
+                    recorder: recorder, sport: ex.racketFormat.sport, unit: unit, modes: [],
+                    mode: .constant(.everything), accessDenied: false,
+                    show: $show, useWatch: .constant(true), watchAvailable: watchWasLinked,
+                    onShutter: {}, onClose: onClose, onPlayWithoutVideo: {},
+                    live: liveConfig(m), testOverlay: testOverlay)
+            } else {
             VStack(spacing: 12) {
                 topBar
                 if let m = machine {
@@ -403,7 +417,8 @@ struct RacketRecordingCover: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            if let m = machine, let reason = m.interruption {
+            }
+            if let m = machine, let reason = m.interruption, !(m.phase == .recordingMatch && liveTag == nil) {
                 overlayPanel { interruptedPanel(m, reason) }
             } else if let m = machine, m.stillPlayingAskedAt != nil {
                 overlayPanel { stillPlayingPanel(m) }
@@ -421,6 +436,11 @@ struct RacketRecordingCover: View {
                 RacketWatchRelay.shared.detach(id)
             }
         }
+        .sheet(isPresented: $freeSpace) {
+            // ProCameraSpace "Free space": the storage screen (opening Settings would leave Snappet and stop the recording).
+            RacketStorageSheet(mode: .match, defaultQuality: quality, cancelLabel: "Back") { _ in }
+                .presentationDetents([.large])
+        }
         // The Watch mirrors this screen (prompt 245): every change of what it should show is sent.
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .task {
@@ -431,6 +451,10 @@ struct RacketRecordingCover: View {
                 if let m = machine, m.interruption == nil { recorder.ensureCapturing(m.capturing) }
                 ticks += 1
                 if ticks % 10 == 0 { sampleStorage() }
+                // Low space: stop cleanly before the disk fills (prompt 256, `RacketSpaceGuard`).
+                if let m = machine, m.capturing, m.interruption == nil, RacketSpaceGuard.mustStop(roomSec: spaceLeftSec) {
+                    act { $0.interrupt(.storageFull, now: Date()); return [.stopCapture] }
+                }
             }
         }
     }
@@ -446,7 +470,87 @@ struct RacketRecordingCover: View {
         return RacketStorageCheck.roomSec(freeBytes: free, bytesPerSec: RacketBitrate.bytesPerSecond(captureConfig))
     }
 
+    // MARK: The camera while recording everything (prompt 256)
+
+    private var testOverlay: AnyView? {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestCameraTrouble") else { return nil }
+        return AnyView(RacketCameraTroubleButtons(recorder: recorder).font(.system(size: 10)).opacity(0.5))
+        #else
+        return nil
+        #endif
+    }
+
+    private func liveConfig(_ m: RacketRecordingMachine) -> RacketCameraLive {
+        var c = RacketCameraConditions()
+        c.thermal = thermal
+        c.interruption = m.interruption
+        c.roomSec = spaceLeftSec
+        c.batteryPercent = battery
+        c.charging = charging
+        c.watchOff = watchWasLinked && !RacketWatchRelay.shared.isAvailable
+            && !ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady")
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestWatchOff") { c.watchOff = true }
+        #endif
+        c.format = recorder.setup.format
+        let saved = m.log?.savedUpToSec ?? 0
+        let banner = RacketCameraBanner.decide(c, savedUpToSec: saved)
+        let end = (title: RacketRecordingRoutes.endLabel(.splitPrompt), action: { act { $0.end(now: Date()) } })
+        let card = RacketCameraLive.card(banner, onResume: { act { $0.resume(now: Date(), cooled: true) } },
+                                         keepScoring: .init(title: "Keep scoring without video", id: "racket.int.keepScoring") {
+                                             act { $0.continueWithoutVideo(now: Date()) }
+                                         },
+                                         onEnd: end)
+        let trouble = RacketCameraTrouble.pill(c)
+        let recorded = m.log?.recordedSec(now: now) ?? 0
+        let statusText: String = {
+            if let i = m.interruption { return i.canResume ? "Ⅱ Recording stopped" : "■ Recording ended" }
+            return m.capturing ? "Recording \(RacketClock.recordingHeader(recorded))" : "Not recording yet"
+        }()
+        var live = RacketCameraLive(
+            title: trouble ?? RacketCameraRecordingCopy.everythingStatus(savingParts: recorder.savingParts,
+                                                                         lastSavedAt: recorder.lastSavedAt, now: now),
+            titleID: "racket.camera.recTitle",
+            titleTone: trouble == nil ? .plain : .amber,
+            centre: card != nil ? .stopped(RacketCameraRecordingCopy.stoppedAt(saved), id: "racket.rec.status")
+                : .timer(RacketCameraRecordingCopy.timer(recorded), a11y: statusText, id: "racket.rec.status"),
+            views: $show,
+            above: .init(title: "New \(unit.noun) starts", id: "racket.rec.newGame") {
+                act { $0.mark(.newGame, now: Date()); return [] }
+                if liveScore != nil { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets + watchUnitsLogged)) }
+                Haptics.tap()
+            },
+            // A whole recording keeps one size (its split plays without rescaling): no "HD · 30 from next game" here.
+            banner: RacketCameraLive.banner(banner, nextFormat: nil, onDim: { show = .dim },
+                                            onResume: { act { $0.resume(now: Date()) } }, onEnd: end,
+                                            onFreeSpace: { freeSpace = true }),
+            card: card,
+            left: .init(title: "Tag", id: "racket.rec.tagLast", label: "Tag last rally", enabled: m.interruption == nil) {
+                guard let log = m.log else { return }
+                let t = log.offset(Date())
+                liveTag = RacketLiveTag.range(now: t, since: RacketLiveTag.boundary(log: log, before: t))
+            },
+            right: .init(title: "Mark", id: "racket.rec.mark", label: "Mark this moment") {
+                act { $0.mark(.moment, now: Date()); return [] }
+            },
+            shutter: .init(title: "Stop", id: "racket.rec.stop", label: "Stop recording and split") { act { $0.end(now: Date()) } })
+        switch show {
+        case .dim:
+            let state = ex.racketState
+            let big = RacketRecordStats.bigScore(live: liveScore, won: state.won, lost: state.lost, unit: unit)
+            live.dim = (big.value, big.caption)
+            live.dimScoreID = "racket.rec.score"
+            live.dimCaptionID = "racket.rec.scoreCaption"
+        case .stats: live.middle = AnyView(matchStatsPanel(m))
+        case .camera: break
+        }
+        return live
+    }
+
     private func sampleStorage() {
+        battery = RacketRecorder.batteryPercent()
+        charging = RacketRecorder.isCharging()
         if recorder.isCapturing, let bytes = recorder.bytesWritten {
             meter.sample(at: Date(), totalBytes: bytes)
         } else {
@@ -486,6 +590,10 @@ struct RacketRecordingCover: View {
             act { m in m.interrupt(reason, now: Date()); return [] }
             Haptics.warning()
         }
+        recorder.onInterruptionEnded = {
+            if let r = machine?.interruption, RacketInterruptionCopy.autoResumes(r) { act { $0.resume(now: Date()) } }
+        }
+        watchWasLinked = RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady")
         recorder.onThermal = { level in thermal = level }
         thermal = recorder.thermal
         // The camera applies the carried setup before its first frame (it is set up on the same queue that starts the part).
@@ -924,13 +1032,10 @@ extension View {
         backgroundPreferenceValue(RacketPreviewSlotKey.self) { anchor in
             GeometryReader { g in
                 let rect = anchor.map { g[$0] } ?? CGRect(x: 0, y: 0, width: 2, height: 2)
-                Group {
-                    if let look {
-                        RacketCameraPreview(session: session, fake: fake).modifier(RacketLookPreviewEffect(preview: look))
-                    } else {
-                        RacketCameraPreview(session: session, fake: fake)
-                    }
-                }
+                // No SwiftUI colour effects on this view: on a real phone they draw the camera layer black or dimmed
+                // (seen on an iPhone 13 Pro Max, 2026-11-15). A look therefore doesn't tint the real live picture yet;
+                // `look` is kept so callers don't change when a proper filtered preview arrives.
+                RacketCameraPreview(session: session, fake: fake)
                     .frame(width: max(2, rect.width), height: max(2, rect.height))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .position(x: rect.midX, y: rect.midY)
@@ -976,6 +1081,7 @@ struct RacketCameraPreview: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            RacketCameraPreview.orient(previewLayer, in: self)
             guard bounds.size != loggedSize else { return }
             loggedSize = bounds.size
             let c = previewLayer.connection
@@ -994,7 +1100,7 @@ struct RacketCameraPreview: UIViewRepresentable {
             v.previewLayer.session = session
             // The whole recorded frame, letterboxed: framing must show what's actually filmed.
             v.previewLayer.videoGravity = .resizeAspect
-            Self.portrait(v.previewLayer)
+            Self.orient(v.previewLayer, in: v)
         }
         return v
     }
@@ -1003,12 +1109,26 @@ struct RacketCameraPreview: UIViewRepresentable {
     /// app's viewfinder); the recording itself follows how the phone is held (`RacketRecorder`). The connection
     /// appears once the session has its input, so this is re-applied on update.
     func updateUIView(_ uiView: PreviewView, context: Context) {
-        if !fake { Self.portrait(uiView.previewLayer) }
+        if !fake { Self.orient(uiView.previewLayer, in: uiView) }
     }
 
-    private static func portrait(_ layer: AVCaptureVideoPreviewLayer) {
-        if let c = layer.connection, c.isVideoRotationAngleSupported(90), c.videoRotationAngle != 90 {
-            c.videoRotationAngle = 90
+    /// Upright to the screen: 90° on a portrait screen, and (prompt 256, ProCameraLandscape) 0° / 180° when the camera
+    /// screen is laid out sideways. The recording itself stays level with the horizon (`RacketRecorder`).
+    static func orient(_ layer: AVCaptureVideoPreviewLayer, in view: UIView) {
+        let angle = RacketCameraOrientation(view.window?.windowScene?.interfaceOrientation).previewRotation
+        if let c = layer.connection, c.isVideoRotationAngleSupported(angle), c.videoRotationAngle != angle {
+            c.videoRotationAngle = angle
+        }
+    }
+}
+
+extension RacketCameraOrientation {
+    /// From the window scene (unknown / upside down ⇒ portrait).
+    init(_ o: UIInterfaceOrientation?) {
+        switch o {
+        case .landscapeLeft?: self = .landscapeLeft
+        case .landscapeRight?: self = .landscapeRight
+        default: self = .portrait
         }
     }
 }

@@ -317,18 +317,24 @@ enum RacketFocusPoint {
     /// origin, as `AVCaptureDevice.focusPointOfInterest` wants). The preview is letterboxed (`videoAspect` = the shown
     /// picture's width / height) and turned 90° to portrait, so a picture point (u, v) is the sensor point (v, 1 − u).
     /// A tap on the black bars clamps to the picture's edge.
-    static func devicePoint(tap: CGPoint, in box: CGSize, videoAspect: CGFloat?) -> CGPoint {
+    /// Sideways (prompt 256), `orientation` maps the shown picture to the sensor (`RacketCameraOrientation`); `videoAspect`
+    /// is then the shown (landscape) aspect.
+    static func devicePoint(tap: CGPoint, in box: CGSize, videoAspect: CGFloat?,
+                            orientation: RacketCameraOrientation = .portrait) -> CGPoint {
         let r = RacketVideoOrientation.aspectFit(aspect: videoAspect, in: box)
         guard r.width > 0, r.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
         let u = min(1, max(0, (tap.x - r.minX) / r.width))
         let v = min(1, max(0, (tap.y - r.minY) / r.height))
-        return CGPoint(x: v, y: 1 - u)
+        let d = orientation.devicePoint(u: Double(u), v: Double(v))
+        return CGPoint(x: d.x, y: d.y)
     }
 
     /// The inverse: where a point of interest sits on the preview (to redraw the square after a carry-over).
-    static func viewPoint(device p: CGPoint, in box: CGSize, videoAspect: CGFloat?) -> CGPoint {
+    static func viewPoint(device p: CGPoint, in box: CGSize, videoAspect: CGFloat?,
+                          orientation: RacketCameraOrientation = .portrait) -> CGPoint {
         let r = RacketVideoOrientation.aspectFit(aspect: videoAspect, in: box)
-        return CGPoint(x: r.minX + (1 - p.y) * r.width, y: r.minY + p.x * r.height)
+        let q = orientation.viewPoint(x: Double(p.x), y: Double(p.y))
+        return CGPoint(x: r.minX + q.u * r.width, y: r.minY + q.v * r.height)
     }
 }
 
