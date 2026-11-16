@@ -10711,3 +10711,59 @@ stripes, and the panel read as an opaque slab.
   drill but not the board's Pause.
 - **Ring types are shared.** `RacketTimerTone` / `RacketTimerDisplay` / `RacketClock` moved to
   `Shared/RacketTimerDisplay.swift`; the Watch draws the same tones from `Surface.ring(now:)`.
+
+## 2026-11-07 — Racket videos, player, manual tagging and split (prompt 246, issue #438 step 3)
+
+- **A split is a list of parts that tile the recording.** `RacketSplit.parts` are sorted, contiguous time ranges
+  covering `[0, timeline length]` (gaps from interruptions included — they just have no video). Every edit keeps that
+  invariant (moving an edge moves the neighbour's; each part ≥ 5 s; clamped to the recording), so overlaps and gaps
+  can't be created. The originals are never changed; the split, rallies and derived videos live on
+  `RacketRecordingLog` as additive Optionals.
+- **The proposal uses marks only (no model).** New game starts a game, Break starts a break; a new `firstPoint` mark
+  (the Watch bridge adds it on a game's first point) means play started about 15 s earlier, so a stretch with no point
+  for more than 90 s is a warmup (at the start) or a break (after a Watch game end). An unscored game stretch ended by
+  another New game within 90 s is a break (Watch end-game mark, then the phone's New game). A break that runs to the end
+  is "Not play". Games beyond the format's room are unsure ("an extra game or practice?"). Short non-game slivers fold
+  into a neighbour; a game is never folded, so every New game mark stays a game (step 1's count). With the boards'
+  marks this reproduces TtSplitReview exactly (tested from the UI seed).
+- **Part ↔ game assignment.** Watch games are matched to the game part their `completedAt` falls in (20 s tolerance);
+  the recording's other games fill the remaining parts in order; a game part with no game gets a new `SetLog` with
+  `scoreUnconfirmed = true`, `completedAt` = the part's end and its length — prompt 244's one "Score unconfirmed" state.
+  Games are rebuilt in part order (only the recording's own games, `sets[baseSetIndex...]`; `baseSetIndex` is stamped
+  on the log when recording begins). Re-applying is idempotent. Risk: reordering can move per-set media assignments;
+  record-everything parts are never claimed by a set, so in practice nothing moves.
+- **Later and Keep as one video still log the games.** Step 1 logged the recorded games "Score unconfirmed" on Done;
+  to keep one state, the split prompt's Later / Keep as one video run the same assignment (games only) without applying
+  the split. Your videos then shows "Whole recording · not split yet" / "kept as one video" with "Split recording".
+- **"Extra game, this match" turns an unsure stretch into a game** (logged unconfirmed, titled "Extra game");
+  "Practice" keeps it unsure and uncounted. Unsure parts are kept on Delete original (they may be play).
+- **The recording screen's log save merges.** The recorder can save a last part after the split is applied; the host
+  keeps the existing split / rallies / derived / originalDeleted when the incoming log (same `startedAt`) lacks them.
+- **Playback maps recording time to Photos parts.** `RacketVideoMap` turns a part's range into segments across the
+  10-minute originals (a part with no stored duration runs to the next part or its run's end) and leaves interruption
+  gaps empty in the composition, so composition time = recording time − part start. Once the original is deleted the
+  derived videos are the source. With no saved video (the simulator's stand-in camera, the UI seed) the player runs a
+  virtual clock so marking and tagging still work.
+- **Delete the long original = save, then delete.** Each kept part (games, drill blocks, unsure; not warmup, breaks,
+  rests, not play, practice) is exported and saved to Photos first; only when all succeed are the originals deleted
+  (Snappet confirms, then iOS shows its own dialog). A failure keeps the original and any parts already saved.
+  Disabled when the needed space (keep length × the recording's HEVC 30 fps rate) exceeds free space. Drills never
+  offer it (review5 M2).
+- **Keep rallies only covers matches and drills** (review5 low): every marked rally (not "Not a rally") on the
+  session's record-everything recordings, padded 1 s, merged when within 2 s, saved as Photos videos, then the full
+  videos deleted. "Kept" means marked, not only winner-tagged: in a drill a rally has no winner. Game-by-game clips
+  (prompt 203) are not included yet.
+- **Rallies live on the recording's timeline**, not per part, so re-splitting never loses them; a part shows the
+  rallies that start inside it. Tagged = a winner picked, or a let / interruption (replayed, no winner). Nothing is
+  preselected (no model). Endings follow each sport's board list; doubles adds an optional "who made the last shot".
+- **No model yet, said plainly.** `RacketRallyFinding.availability` returns `.notYet` for every sport until step 5;
+  Your videos is the NoModelVideos board as the real state (no "Preview" label), and Find rallies / Re-scan / "Find
+  rallies in all" aren't shown. Another AI app is step 4.
+- **Tags count in history**: the recap line ("3 videos · 21 rallies tagged"), the activity dashboard's racket KPIs
+  (Rallies tagged, Points won from your tags, Longest rally marked) via `RacketTagTotals`. Scores are untouched by tags.
+- **Analyzed export burns your tags** ("Rally 3 · You won · Out" per rally) with the Studio overlay tool on a device;
+  the simulator can only pass through, so it exports the original there.
+- **Recap / session detail present the videos stack from the host** (`onOpenVideos`, like `onOpenGame`) so the lazy
+  list can't drop the cover.
+- **Deferred:** shot-by-shot tagging (ShotTags / DoublesShots), Add from Photos (SplitPhotos), game-by-game clips in
+  Your videos, serve details / wall / let sub-boards, model results (step 5), AI round trip (step 4).

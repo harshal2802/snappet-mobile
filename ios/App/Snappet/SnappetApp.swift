@@ -50,8 +50,10 @@ struct SnappetApp: App {
         let seedActivityClips = args.contains(ActivityClipsSeed.argument)
         // `-uiTestSeedRacketHR` (2026-10-26): a finished match with chest-strap HR + RR for the game sheet / HRV.
         let seedRacketHR = args.contains(RacketHRSeed.argument)
+        // `-uiTestSeedRacketVideos` (prompt 246): a finished match recorded everything + a drill, for split / tagging.
+        let seedRacketVideos = args.contains(RacketVideoSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip || seedRoutineHistory
-            || seedActivityClips || seedRacketHR
+            || seedActivityClips || seedRacketHR || seedRacketVideos
             || seedFestival || seedFestivalPlan
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
@@ -177,6 +179,9 @@ struct SnappetApp: App {
         }
         if seedRacketHR {
             RacketHRSeed.seedIfRequested(into: container.mainContext)
+        }
+        if seedRacketVideos {
+            RacketVideoSeed.seedIfRequested(into: container.mainContext)
         }
     }
 

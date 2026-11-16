@@ -1055,9 +1055,14 @@ struct RacketRecapCards: View {
     var showsHR: Bool = true
     /// Tapping a game row: the host presents the sheet (session detail — outside its lazy list); `nil` = this card does.
     var onOpenGame: ((RacketGameTarget) -> Void)? = nil
+    /// Your videos / Keep rallies only (TtSessionRecap, prompt 246): the host presents them (session detail — outside its
+    /// lazy list); `nil` = this card does.
+    var onOpenVideos: ((RacketVideosTarget) -> Void)? = nil
     @State private var gameTarget: RacketGameTarget?
+    @State private var videos: RacketVideosTarget?
 
     private var summary: RacketStats.SessionSummary? { RacketStats.summary(session.exercises) }
+    private var hasRecordings: Bool { session.exercises.contains { $0.discipline == .racket && $0.racketRecordingLog != nil } }
     private var matches: [SessionExercise] { session.exercises.filter(\.isRacketMatch) }
     private var drills: [SessionExercise] { session.exercises.filter(\.isRacketDrill) }
 
@@ -1067,10 +1072,14 @@ struct RacketRecapCards: View {
                 header(summary)
                 ForEach(matches) { matchRow($0) }
                 ForEach(drills) { drillRow($0) }
+                if hasRecordings { videoActions }
                 if showsHR { hrSection }
             }
             .snappetPanel()
             .sheet(item: $gameTarget) { RacketGameHRSheet(session: session, target: $0, maxHR: maxHR) }
+            .fullScreenCover(item: $videos) { t in
+                RacketVideosCover(session: session, start: t.start) { videos = nil }
+            }
         }
     }
 
@@ -1090,6 +1099,27 @@ struct RacketRecapCards: View {
         }
     }
 
+    private func open(_ start: RacketVideosStart) {
+        let t = RacketVideosTarget(start: start)
+        if let onOpenVideos { onOpenVideos(t) } else { videos = t }
+    }
+
+    /// "Keep rallies only…" and "Your videos" (TtSessionRecap).
+    private var videoActions: some View {
+        let keep = RacketKeepRallies.plan(session.exercises)
+        return HStack(spacing: 10) {
+            if keep.canKeep {
+                Button("Keep rallies only…") { open(.keepRallies) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("racket.recap.keepRallies")
+            }
+            Button("Your videos") { open(.videos) }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("racket.recap.videos")
+        }
+        .font(.system(size: 14, weight: .semibold))
+    }
+
     private func matchRow(_ ex: SessionExercise) -> some View {
         let state = ex.racketState
         return HStack(spacing: 10) {
@@ -1099,6 +1129,11 @@ struct RacketRecapCards: View {
                 Text(RacketStats.matchRowTitle(ex)).font(.system(size: 15, weight: .medium)).lineLimit(1)
                 Text(ex.sets.isEmpty ? (state.end?.label ?? "Not started") : RacketStats.unitsLine(ex))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                if let v = RacketVideoRows.recapLine(ex) {
+                    Text(v).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("racket.recap.videoLine")
+                }
             }
             Spacer(minLength: 4)
             Text(state.shortResult)
@@ -1117,7 +1152,8 @@ struct RacketRecapCards: View {
             Image(systemName: "target").foregroundStyle(SnappetColor.textSecondary).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(ex.displayName ?? "Drill").font(.system(size: 15, weight: .medium)).lineLimit(1)
-                Text("\(ex.completedSetCount) \(ex.completedSetCount == 1 ? "block" : "blocks")")
+                Text(RacketVideoRows.recapLine(ex)
+                     ?? "\(ex.completedSetCount) \(ex.completedSetCount == 1 ? "block" : "blocks")")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)

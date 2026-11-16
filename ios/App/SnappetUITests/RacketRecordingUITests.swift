@@ -104,7 +104,7 @@ final class RacketRecordingUITests: XCTestCase {
         XCTAssertEqual(any("racket.recording.line").label, "1 recording · 1 block part")
     }
 
-    func testMatchRecordsEverythingThenStopsToTheSplitPlaceholder() {
+    func testMatchRecordsEverythingThenStopsToTheSplitPrompt() {
         openRacketSetup()
         app.segmentedControls["racket.mode"].buttons["Match"].tap()
         app.buttons["racket.next"].tap()
@@ -127,19 +127,19 @@ final class RacketRecordingUITests: XCTestCase {
         mark.tap()
         app.buttons["racket.rec.newGame"].tap()
 
-        // Stop and split → the saved placeholder (H1: a whole-match recording ends at the split prompt).
+        // Stop and split → the split prompt (H1: a whole-match recording ends there; prompt 246 builds it).
         app.buttons["racket.rec.stop"].tap()
         confirmStop()
-        XCTAssertTrue(any("racket.rec.recorded").waitForExistence(timeout: 5), "the recording-saved screen should show")
+        XCTAssertTrue(any("racket.split.recorded").waitForExistence(timeout: 6), "the split prompt should show")
+        // One "New game starts" ⇒ two games proposed.
+        XCTAssertTrue(any("racket.split.line").label.hasPrefix("Looks like 2 games"), any("racket.split.line").label)
 
-        // Then the game scores: one "New game starts" ⇒ two games. Game 1 later, game 2 left for Done.
-        let later = app.buttons["racket.scores.later"]
-        XCTAssertTrue(later.waitForExistence(timeout: 4), "the scores step should ask for game 1")
-        XCTAssertTrue(app.buttons["racket.scores.enter"].exists)
-        later.tap()
-        XCTAssertEqual(any("racket.scores.state.0").label, "Score unconfirmed")
-        XCTAssertTrue(app.buttons["racket.scores.later"].waitForExistence(timeout: 3), "then game 2")
-        app.buttons["racket.rec.done"].tap()
+        // Later: both games are logged "Score unconfirmed" (step 1's one state), and Your videos opens.
+        app.buttons["racket.split.later"].tap()
+        let whole = any("racket.videos.line.0")
+        XCTAssertTrue(whole.waitForExistence(timeout: 5), "Your videos should open")
+        XCTAssertTrue(whole.label.hasSuffix("not split yet"), whole.label)
+        app.buttons["racket.videos.close"].tap()
 
         // Back on the match page: both games read "Score unconfirmed" and can be confirmed from their chips.
         let line = any("racket.recording.line")
