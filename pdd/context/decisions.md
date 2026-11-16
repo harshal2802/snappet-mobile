@@ -11593,3 +11593,8 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
 - **Game-by-game adopted clips** get a split (`RacketGameByGameSplit`) and the same Change the split chip, so a timeout
   works there too; a drill never offers the split.
 - **Scrub bar** (257 leftover): the rally is an accent bracket above the track; the played fill stays on the track.
+- **Verified on the simulator only**: SnappetTests 3103 / 0 failures (5 skipped; 31 new in `RacketSplitTimeoutTests`
+  incl. a randomised run of 3600 editor operations). UI suites alone, app uninstalled first: RacketSplitTimeout 3 (new),
+  Videos 2, Tagging 15, Player 7, Edit 7, Match 14, Recording 2, RallyVideo 5 — all green (one Player run stalled in
+  XCTest's event synthesis after hours on the box; the same test passed alone and in a clean rerun of the suite).
+  Device build (`generic/platform=iOS`) succeeds. Not verified on a phone: the user's real saved match, real video.
