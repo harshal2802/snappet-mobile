@@ -76,6 +76,13 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var tagSourceRaw: String?
     /// Shots the other app counted (its "shots" list), shown on Compare ("Yes, 5 shots"). Not used for stats.
     var aiShots: Int?
+    // Step 5 (prompt 248): a model's guess (`sourceRaw = "model:<id>@<version>"`).
+    /// How sure the model was, 0…1; below `RacketRallyGuessMerge.unsureBelow` it's "unsure".
+    var confidence: Double?
+    /// The winner the model suggests (from a score tap): shown "· suggested" on the tag sheet, never counted as a tag.
+    var guessWinnerRaw: String?
+    /// You tagged, checked or fixed this guess: it's yours now and counts in history.
+    var confirmed: Bool?
 
     init(id: UUID = UUID(), startSec: Double, endSec: Double, winner: RacketRallyWinner? = nil,
          ending: RacketRallyEnding? = nil, lastShotBy: String? = nil, notRally: Bool? = nil) {
@@ -104,6 +111,14 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var isFromAI: Bool { RacketAISource.isAI(sourceRaw) || RacketAISource.isAI(tagSourceRaw) }
     /// The app's name when it came from one.
     var aiName: String? { RacketAISource.name(tagSourceRaw) ?? RacketAISource.name(sourceRaw) }
+    /// Found by a model.
+    var isFromModel: Bool { RacketModelSource.isModel(sourceRaw) }
+    /// A model's guess you haven't tagged, checked or fixed yet ("Snappet guess"). Replaced by a re-scan; doesn't
+    /// count in history.
+    var isGuess: Bool { isFromModel && confirmed != true && !isTagged && notRally != true }
+    /// A guess the model wasn't sure of (dashed; "Check N unsure rallies").
+    var isUnsure: Bool { isGuess && (confidence ?? 1) < RacketRallyGuessMerge.unsureBelow }
+    var guessWinner: RacketRallyWinner? { guessWinnerRaw.flatMap(RacketRallyWinner.init(rawValue:)) }
 }
 
 // MARK: - Marking (TtNoModelTimeline: Mark start / Mark end · FixRally)
@@ -147,6 +162,8 @@ enum RacketRallyMarking {
         var out = rallies
         out[i].startSec = a
         out[i].endSec = b
+        // Fixing a guess's edges means you've looked at it (prompt 248).
+        if out[i].isFromModel { out[i].confirmed = true }
         return out.sorted { $0.startSec < $1.startSec }
     }
 
@@ -179,6 +196,18 @@ enum RacketRallyMarking {
         rallies.filter { $0.startSec >= lo - 0.01 && $0.startSec < hi }.sorted { $0.startSec < $1.startSec }
     }
 
+    /// "Check N unsure rallies": the next unsure guess after `id`, wrapping round.
+    static func nextUnsure(_ rallies: [RacketRally], after id: UUID?) -> RacketRally? {
+        let rs = rallies.filter(\.isRally).sorted { $0.startSec < $1.startSec }
+        guard !rs.isEmpty else { return nil }
+        let start = id.flatMap { cur in rs.firstIndex { $0.id == cur }.map { $0 + 1 } } ?? 0
+        for k in 0..<rs.count {
+            let r = rs[(start + k) % rs.count]
+            if r.isUnsure && r.id != id { return r }
+        }
+        return nil
+    }
+
     /// The next rally to tag after `id` (or from the start): the first one with no tag, wrapping round.
     static func nextUntagged(_ rallies: [RacketRally], after id: UUID?) -> RacketRally? {
         let rs = rallies.filter(\.isRally)
@@ -203,6 +232,8 @@ enum RacketRallyMarking {
             q.lastShotBy = notRally ? nil : lastShotBy
             // Tagged by you now, whoever tagged it before (prompt 247).
             q.tagSourceRaw = nil
+            // A model's guess you've checked is yours now (prompt 248).
+            if q.isFromModel { q.confirmed = true }
             return q
         }
     }
@@ -331,7 +362,8 @@ struct RacketTagTotals: Equatable, Sendable {
     static func of(_ exercises: [SessionExercise]) -> RacketTagTotals {
         var t = RacketTagTotals()
         for ex in exercises where ex.discipline == .racket {
-            let rs = (ex.racketRecordingLog?.rallies ?? []).filter(\.isRally)
+            // A model's guesses count once you've confirmed them (prompt 248): "Estimated from video until you confirm".
+            let rs = (ex.racketRecordingLog?.rallies ?? []).filter { $0.isRally && !$0.isGuess }
             t.marked += rs.count
             t.tagged += rs.filter(\.isTagged).count
             t.wonUs += rs.filter { $0.winner == .us }.count

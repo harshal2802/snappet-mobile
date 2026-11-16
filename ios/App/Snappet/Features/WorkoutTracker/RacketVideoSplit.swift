@@ -788,18 +788,7 @@ enum RacketKeepRallies {
 
 // MARK: - Your videos (FindRallies / TtNoModelVideos / TtDrillVideos)
 
-/// Whether a model can find rallies for a sport. Step 5 (model hooks) fills this from the per-sport capability
-/// registry; until then no sport has one, so every screen offers the by-hand path ("Mark rallies") and says so.
-enum RacketRallyFinding {
-    enum Availability: Equatable, Sendable { case notYet, available(modelName: String) }
-
-    static func availability(for sport: RacketSport) -> Availability { .notYet }
-
-    /// "Rally finding isn't available for table tennis yet."
-    static func notYetLine(_ sport: RacketSport) -> String {
-        "Rally finding isn’t available for \(sport.label.lowercased()) yet."
-    }
-}
+// `RacketRallyFinding` (the seam step 3 left here) now reads the capability registry: `RacketModelHooks.swift`.
 
 /// One row of Your videos / Drill videos.
 struct RacketVideoRow: Equatable, Identifiable, Sendable {

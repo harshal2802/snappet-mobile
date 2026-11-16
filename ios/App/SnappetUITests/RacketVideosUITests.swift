@@ -37,7 +37,7 @@ final class RacketVideosUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the seeded session")
         row.tap()
         tapWhenHittable(app.buttons["racket.recap.videos"])
-        XCTAssertTrue(any("racket.videos.notYet").waitForExistence(timeout: 6), "Your videos says rally finding isn't here yet")
+        XCTAssertTrue(any("racket.videos.header").waitForExistence(timeout: 6), "Your videos (FindRallies: every sport has the placeholder model, prompt 248)")
     }
 
     func testSplitTheMatchThenMarkAndTagARally() {
@@ -51,8 +51,15 @@ final class RacketVideosUITests: XCTestCase {
         let unsure = app.buttons["racket.split.part.6"]
         XCTAssertTrue(unsure.label.contains("an extra game or practice?"), unsure.label)
 
-        // TtSplitEdit: the unsure stretch is an extra game of this match; nudge its start.
-        unsure.tap()
+        // Device feedback round 1: the original plays above a segmented timeline; tapping a part plays it.
+        XCTAssertTrue(any("racket.split.timeline").exists, "the split as a segmented timeline")
+        XCTAssertTrue(any("racket.player.standIn").exists, "no Photos video in the simulator: the stand-in")
+        tapWhenHittable(unsure)
+        XCTAssertTrue(any("racket.split.playingPart").waitForExistence(timeout: 3))
+        XCTAssertEqual(any("racket.split.playingPart").label, "Rallies, no score")
+
+        // TtSplitEdit (Fix): the unsure stretch is an extra game of this match; nudge its start.
+        tapWhenHittable(app.buttons["racket.split.fix.6"])
         let save = app.buttons["racket.split.edit.save"]
         XCTAssertTrue(save.waitForExistence(timeout: 4))
         XCTAssertEqual(any("racket.split.edit.range").label, "1:06:30–1:12:00")

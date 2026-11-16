@@ -84,7 +84,9 @@ struct SnappetApp: App {
                         // The Library's Yours/Explore choice + per-discipline sorts (prompt 183) — a run that
                         // switches to Explore would make the next run open on Explore instead of the default.
                         "library.mode", "library.sorts", "library.counts",
-                        ActivityIdentity.resetDaysKey, CameraSettings.storageKey, ClipFeedLevel.storageKey] {
+                        ActivityIdentity.resetDaysKey, CameraSettings.storageKey, ClipFeedLevel.storageKey,
+                        // Racket "After a session" (prompt 248): every run starts on "Ask me".
+                        RacketAutoScan.storageKey] {
                 defaults.removeObject(forKey: key)
             }
             // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the

@@ -56,15 +56,20 @@ final class RacketVideoLibrary {
 
     /// One composition playing `segments` laid out on the part's own clock: segment `k` sits at
     /// `timelineStart − partStart`, and gaps stay empty, so composition time = recording time − part start.
-    func composition(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double) async -> AVMutableComposition? {
+    func composition(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
+                     progress: (@MainActor (String, Double) -> Void)? = nil) async -> AVMutableComposition? {
         guard !segments.isEmpty else { return nil }
         let comp = AVMutableComposition()
         guard let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         else { return nil }
         let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var inserted = false
+        var loaded: [String: AVAsset] = [:]
         for s in segments {
-            guard let asset = await avAsset(s.localIdentifier, network: true),
+            if loaded[s.localIdentifier] == nil {
+                loaded[s.localIdentifier] = await avAsset(s.localIdentifier, network: true, progress: progress)
+            }
+            guard let asset = loaded[s.localIdentifier],
                   let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
             let start = CMTime(seconds: s.assetStart, preferredTimescale: 600)
             let dur = CMTime(seconds: s.durationSec, preferredTimescale: 600)
@@ -82,12 +87,58 @@ final class RacketVideoLibrary {
         return inserted ? comp : nil
     }
 
-    func playerItem(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double) async -> AVPlayerItem? {
-        guard let comp = await composition(segments, partStart: partStart, partEnd: partEnd) else { return nil }
+    func playerItem(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
+                    progress: (@MainActor (String, Double) -> Void)? = nil) async -> AVPlayerItem? {
+        guard let comp = await composition(segments, partStart: partStart, partEnd: partEnd, progress: progress)
+        else { return nil }
         return AVPlayerItem(asset: comp)
     }
 
+    // MARK: iCloud-only originals (device feedback round 1)
+
+    /// Which of `ids` are in the library but not on the phone (iCloud only): Photos won't hand them over without the
+    /// network. Asked per video with network access off, so nothing downloads here.
+    func cloudOnly(_ ids: [String]) async -> Set<String> {
+        var out = Set<String>()
+        for id in ids where !id.hasPrefix(RecapClipSeed.bundledScheme) {
+            if await Self.request(id, network: false, progress: nil).inCloud { out.insert(id) }
+        }
+        return out
+    }
+
+    // MARK: Film strip (TtSplitEdit)
+
+    /// Small frames of the player's video at `times` (seconds on the player's own clock). A time with no video (an
+    /// interruption gap) gives nil. Off the main actor; the generator never leaves the helper.
+    func thumbnails(_ player: AVPlayer, times: [Double], maxSide: CGFloat = 160) async -> [UIImage?] {
+        guard let asset = player.currentItem?.asset, !times.isEmpty else { return times.map { _ in nil } }
+        let images = await Self.stills(Box(value: asset), times: times, maxSide: maxSide)
+        return images.value.map { $0.map { UIImage(cgImage: $0) } }
+    }
+
+    nonisolated private static func stills(_ boxed: Box<AVAsset>, times: [Double], maxSide: CGFloat) async -> Box<[CGImage?]> {
+        let g = AVAssetImageGenerator(asset: boxed.value)
+        g.appliesPreferredTrackTransform = true
+        g.maximumSize = CGSize(width: maxSide, height: maxSide)
+        let tol = CMTime(seconds: 1, preferredTimescale: 600)   // a film strip needs a nearby frame, not the exact one
+        g.requestedTimeToleranceBefore = tol
+        g.requestedTimeToleranceAfter = tol
+        var out: [CGImage?] = []
+        for t in times {
+            out.append(try? await g.image(at: CMTime(seconds: t, preferredTimescale: 600)).image)
+        }
+        return Box(value: out)
+    }
+
     // MARK: Export (TtPlayerExport · DeleteOriginal · KeepRallies)
+
+    /// The mutable composition is not Sendable, so it crosses the await in a box (same approach as
+    /// `ReelExporter.PlacedComposition`); it is not touched again until this returns.
+    private struct CompositionBox: @unchecked Sendable { let comp: AVMutableComposition }
+
+    private nonisolated static func propertiesComposition(_ box: CompositionBox) async -> AVMutableVideoComposition? {
+        try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: box.comp)
+    }
 
     /// Export `pieces` (each a list of segments for one recording range, joined end to end) to an .mp4. `captions`
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
@@ -123,7 +174,7 @@ final class RacketVideoLibrary {
         #else
         let preset = smaller ? AVAssetExportPreset1280x720 : AVAssetExportPresetHighestQuality
         var videoComposition: AVVideoComposition?
-        if !captions.isEmpty, let vc = try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: comp) {
+        if !captions.isEmpty, let vc = await Self.propertiesComposition(CompositionBox(comp: comp)) {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
                             position: CGPoint(x: 0.5, y: 0.1), scale: 0.9, highlightHex: "#000000")
@@ -195,20 +246,37 @@ final class RacketVideoLibrary {
 
     // MARK: Internals
 
-    private func avAsset(_ id: String, network: Bool) async -> AVAsset? {
+    private func avAsset(_ id: String, network: Bool, progress: (@MainActor (String, Double) -> Void)? = nil) async -> AVAsset? {
         if id.hasPrefix(RecapClipSeed.bundledScheme) {
             let name = String(id.dropFirst(RecapClipSeed.bundledScheme.count))
             let res = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
             return Bundle.main.url(forResource: res, withExtension: ext).map { AVURLAsset(url: $0) }
         }
-        guard let ph = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
-        let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in
+        let report: (@Sendable (Double) -> Void)? = progress.map { p in
+            { @Sendable f in Task { @MainActor in p(id, f) } }
+        }
+        let result = await Self.request(id, network: network, progress: report)
+        if result.asset.value != nil { progress?(id, 1) }
+        return result.asset.value
+    }
+
+    /// Ask Photos for one video. Nonisolated, so Photos' callbacks (on its own queues) never run main-actor closures.
+    /// `inCloud` = Photos said the video is in iCloud and wasn't sent (network access off, or the download failed).
+    nonisolated private static func request(_ id: String, network: Bool,
+                                            progress: (@Sendable (Double) -> Void)?) async -> (asset: Box<AVAsset?>, inCloud: Bool) {
+        guard let ph = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else {
+            return (Box(value: nil), false)
+        }
+        return await withCheckedContinuation { cont in
             let opts = PHVideoRequestOptions()
             opts.isNetworkAccessAllowed = network
             opts.deliveryMode = .highQualityFormat
-            PHImageManager.default().requestAVAsset(forVideo: ph, options: opts) { a, _, _ in cont.resume(returning: Box(value: a)) }
+            if let progress { opts.progressHandler = { f, _, _, _ in progress(f) } }
+            PHImageManager.default().requestAVAsset(forVideo: ph, options: opts) { a, _, info in
+                let cloud = (info?[PHImageResultIsInCloudKey] as? Bool) ?? false
+                cont.resume(returning: (Box(value: a), a == nil && cloud))
+            }
         }
-        return boxed.value
     }
 }
 
@@ -225,10 +293,19 @@ final class RacketPlayback {
     var rate: Float = 1 { didSet { if playing { player?.rate = rate } } }
     /// Ranges to play in "Rallies only" (set by the view).
     var ralliesOnly: [RacketRally]? = nil
+    /// Where `play(from:until:)` stops; cleared by a plain Play.
+    @ObservationIgnored private var stopAt: Double?
     private(set) var player: AVPlayer?
     private(set) var loaded = false
+    /// What the video area says while it checks Photos, downloads from iCloud, or finds nothing (device feedback round 1).
+    private(set) var loadState: RacketVideoLoad = .checking
     @ObservationIgnored private var observer: Any?
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var segments: [RacketVideoSegment] = []
+    @ObservationIgnored private var downloaded: [String: Double] = [:]
+    /// Scrubbing: one seek in flight at a time; the latest drag position waits here (smooth on long compositions).
+    @ObservationIgnored private var seeking = false
+    @ObservationIgnored private var pendingSeek: (time: Double, tolerance: Double)?
 
     init(partStart: Double, partEnd: Double, startAt: Double? = nil) {
         self.partStart = partStart
@@ -238,8 +315,27 @@ final class RacketPlayback {
 
     func load(_ segments: [RacketVideoSegment]) async {
         defer { loaded = true }
-        guard !segments.isEmpty,
-              let item = await RacketVideoLibrary.shared.playerItem(segments, partStart: partStart, partEnd: partEnd) else { return }
+        self.segments = segments
+        guard !segments.isEmpty else { loadState = .noVideo; return }
+        let lib = RacketVideoLibrary.shared
+        var ids: [String] = []
+        for s in segments where !ids.contains(s.localIdentifier) { ids.append(s.localIdentifier) }
+        let found = lib.found(ids)
+        let cloud = await lib.cloudOnly(ids.filter { found.contains($0) })
+        loadState = RacketVideoLoad.initial(needed: ids, found: found, cloudOnly: cloud)
+        if case .missing = loadState { return }
+        downloaded = [:]
+        let item = await lib.playerItem(segments, partStart: partStart, partEnd: partEnd) { [weak self] id, f in
+            guard let self else { return }
+            self.downloaded[id] = f
+            if cloud.contains(id) { self.loadState = .downloading(RacketVideoLoad.overall(self.downloaded, ids: cloud)) }
+        }
+        let failedCloud = cloud.filter { (downloaded[$0] ?? 0) < 1 }.count
+        guard let item else {
+            loadState = cloud.isEmpty ? .missing(count: ids.count) : .downloadFailed
+            return
+        }
+        loadState = .ready(missing: ids.count - found.count + failedCloud)
         let p = AVPlayer(playerItem: item)
         player = p
         seek(to: position)
@@ -249,6 +345,15 @@ final class RacketPlayback {
                 self.tick(self.partStart + t.seconds)
             }
         }
+    }
+
+    /// "Try again" after iCloud didn't send the video.
+    func retry() async {
+        stop()
+        player = nil
+        loaded = false
+        loadState = .checking
+        await load(segments)
     }
 
     func stop() {
@@ -262,6 +367,7 @@ final class RacketPlayback {
 
     func play() {
         if position >= partEnd - 0.05 { seek(to: partStart) }
+        stopAt = nil
         playing = true
         if let player { player.rate = rate; return }
         ticker?.cancel()
@@ -280,7 +386,36 @@ final class RacketPlayback {
         ticker?.cancel()
     }
 
+    /// Seek to `t` and play from there, stopping at `end` (a part tapped in the split review plays that part).
+    func play(from t: Double, until end: Double? = nil) {
+        seek(to: t)
+        play()
+        stopAt = end
+    }
+
+    /// A drag on a strip: pauses, moves the playhead at once, and seeks the video within `tolerance` — one seek in
+    /// flight, the newest position next. `seek(to:)` lands exactly when the drag ends.
+    func scrub(to t: Double, tolerance: Double) {
+        if playing { pause() }
+        position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
+        guard player != nil else { return }
+        pendingSeek = (position, tolerance)
+        if !seeking { nextSeek() }
+    }
+
+    private func nextSeek() {
+        guard let player, let next = pendingSeek else { seeking = false; return }
+        pendingSeek = nil
+        seeking = true
+        let tol = CMTime(seconds: next.tolerance, preferredTimescale: 600)
+        player.seek(to: CMTime(seconds: next.time - partStart, preferredTimescale: 600),
+                    toleranceBefore: tol, toleranceAfter: tol) { @Sendable [weak self] _ in
+            Task { @MainActor in self?.nextSeek() }
+        }
+    }
+
     func seek(to t: Double) {
+        pendingSeek = nil
         position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
         player?.seek(to: CMTime(seconds: position - partStart, preferredTimescale: 600),
                      toleranceBefore: .zero, toleranceAfter: .zero)
@@ -291,6 +426,7 @@ final class RacketPlayback {
     private func tick(_ t: Double) {
         position = min(partEnd, max(partStart, t))
         if position >= partEnd - 0.01 { pause(); return }
+        if let s = stopAt, position >= s - 0.01 { pause(); return }
         if let rallies = ralliesOnly, playing {
             switch RacketPlaybackPolicy.ralliesOnly(at: position, rallies: rallies) {
             case .to(let next): seek(to: next)
