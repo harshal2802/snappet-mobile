@@ -258,6 +258,38 @@ enum RacketStats {
         /// Seconds from session start.
         var start: Double
         var end: Double
+        /// The timeouts inside a game joined across timeouts (prompt 259), seconds from session start: shown on the
+        /// game's chart, left out of its averages, peak, zone time and HRV.
+        var gaps: [ClosedRange<Double>] = []
+
+        /// A moment of play: inside the window and not inside a timeout (a timeout's edges count as play).
+        func plays(_ t: Double) -> Bool {
+            t >= start && t <= end && !gaps.contains { t > $0.lowerBound && t < $0.upperBound }
+        }
+
+        /// Seconds of play in `[a, b]` (the timeouts taken out).
+        func played(_ a: Double, _ b: Double) -> Double {
+            guard b > a else { return 0 }
+            return gaps.reduce(b - a) { $0 - max(0, min(b, $1.upperBound) - max(a, $1.lowerBound)) }
+        }
+    }
+
+    /// A game joined across timeouts (prompt 258) on the session timeline: from its first half's start to its last
+    /// half's end, with the timeouts between. Read from the recording's applied split — the wall-clock times of the
+    /// halves are the recording's start plus the parts' times. Keyed by the game's set index; a recording with no
+    /// applied split, or a game with no timeout, has none (its window stays as before).
+    static func joinedStretches(_ log: RacketRecordingLog?, sessionStart: Date) -> [Int: UnitWindow] {
+        guard let log, let split = log.split, split.appliedAt != nil else { return [:] }
+        let ps = split.parts
+        let offset = log.startedAt.timeIntervalSince(sessionStart)
+        var out: [Int: UnitWindow] = [:]
+        for g in RacketGameGroups.groups(ps) where !g.timeouts.isEmpty {
+            guard let index = ps[g.first].setIndex else { continue }
+            let start = max(0, offset + ps[g.first].startSec), end = max(start, offset + ps[g.last].endSec)
+            let gaps = g.timeouts.map { max(start, offset + ps[$0].startSec)...min(end, max(start, offset + ps[$0].endSec)) }
+            out[index] = UnitWindow(index: index, start: start, end: end, gaps: gaps)
+        }
+        return out
     }
 
     /// Each logged unit's window on the session timeline. A unit ends when it was logged; it starts at its
@@ -278,12 +310,15 @@ enum RacketStats {
         let typical = median(lengths.filter { $0 > 0 }) ?? fallbackSec
         var out: [UnitWindow] = []
         var previousEnd: Double?
+        // A game joined across timeouts: its duration is played time, so `completedAt − duration` starts about a
+        // timeout late and takes the timeout in. Its real stretches replace that when the split has them (prompt 259).
+        let joined = joinedStretches(ex.racketRecordingLog, sessionStart: sessionStart)
         for u in logged {
             let start: Double
             if let d = u.duration, d > 0 { start = u.end - d }
             else if let p = previousEnd { start = p }
             else { start = u.end - typical }
-            out.append(UnitWindow(index: u.index, start: max(0, min(start, u.end)), end: max(0, u.end)))
+            out.append(joined[u.index] ?? UnitWindow(index: u.index, start: max(0, min(start, u.end)), end: max(0, u.end)))
             previousEnd = u.end
         }
         return out
@@ -308,14 +343,15 @@ enum RacketStats {
                        maxHR: Double) -> [UnitHR] {
         let pts = series.sorted { $0.t < $1.t }
         return unitWindows(ex, sessionStart: sessionStart).compactMap { w in
-            let inside = pts.filter { $0.t >= w.start && $0.t <= w.end }
+            // A joined game's timeouts are left out (prompt 259): readings in them, and the time they cover.
+            let inside = pts.filter { w.plays($0.t) }
             guard !inside.isEmpty else { return nil }
             let avg = inside.map(\.bpm).reduce(0, +) / Double(inside.count)
             var zones = [Double](repeating: 0, count: 5)
             for (j, p) in inside.enumerated() {
                 let next = j + 1 < inside.count ? inside[j + 1].t : min(w.end, p.t + 5)
                 let z = HeartRateZone.forBpm(p.bpm, maxHR: maxHR).rawValue
-                if z >= 1 && z <= 5 { zones[z - 1] += max(0, next - p.t) }
+                if z >= 1 && z <= 5 { zones[z - 1] += w.played(p.t, next) }
             }
             return UnitHR(index: w.index, avg: avg, peak: inside.map(\.bpm).max() ?? avg, zoneSeconds: zones)
         }
@@ -334,8 +370,13 @@ enum RacketStats {
         /// Seconds per zone 1…5.
         var zoneSeconds: [Double]
         var hrv: HRVMetrics
+        /// A joined game's timeouts on the game's timeline (prompt 259): the chart shades them; nothing counts them.
+        var timeouts: [ClosedRange<Double>] = []
         var id: Int { index }
+        /// From the start to the end, timeouts included (the chart's width).
         var duration: Double { max(1, end - start) }
+        /// The time played: the timeouts taken out.
+        var playedSec: Double { max(1, duration - timeouts.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }) }
         /// Median seconds between readings — a Health back-fill from a wrist band is ~25 s, a strap ~1 s.
         var medianGap: Double? {
             let ts = points.map(\.t).sorted()
@@ -355,9 +396,11 @@ enum RacketStats {
             let inside = pts.filter { $0.t >= w.start && $0.t <= w.end }
                 .map { HRPoint(t: $0.t - w.start, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
             let u = hr.first { $0.index == w.index }
+            let played = w.gaps.isEmpty ? samples : samples.filter { w.plays($0.t) }
             return GameHR(index: w.index, start: w.start, end: w.end, points: inside, avg: u?.avg, peak: u?.peak,
                           zoneSeconds: u?.zoneSeconds ?? Array(repeating: 0, count: 5),
-                          hrv: HRVMetrics.make(from: samples, start: w.start, end: w.end))
+                          hrv: HRVMetrics.make(from: played, start: w.start, end: w.end),
+                          timeouts: w.gaps.map { ($0.lowerBound - w.start)...($0.upperBound - w.start) })
         }
     }
 

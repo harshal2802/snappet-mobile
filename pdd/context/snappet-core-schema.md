@@ -36,6 +36,8 @@ Racket recordings and scores live in the app's `SessionExercise` blob, not in a 
 additive Optionals only. Prompt 258 added: `RacketPartKind.timeout` (raw `"timeout"`; older builds read it as Not play),
 `RacketVideoPart.joinedSetIndexes` (draft only, cleared on save) and `SetLog.suggestedFor` / `suggestedAgainst` (a
 suggested score on a game still "Score unconfirmed"; cleared when a score is saved). See `decisions.md` (prompt 258).
+Prompt 259 adds no field: `RacketRecordingLog.quarterTurns` (prompt 257) is relative to the videos the recording plays
+from now, so it is cleared when derived videos (saved turned) replace the originals.
 
 ## When the schema changes
 

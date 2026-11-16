@@ -32,7 +32,9 @@ enum HRVReads {
         var out = WorkoutHRStats.setRestHRV(for: exercises, sessionStart: sessionStart, hr: hr)
         for ex in exercises where ex.discipline == .racket {
             for w in RacketStats.unitWindows(ex, sessionStart: sessionStart) {
-                out[.init(exerciseID: ex.id, setIndex: w.index)] = HRVMetrics.make(from: hr, start: w.start, end: w.end)
+                // A joined game's timeouts are left out (prompt 259).
+                let played = w.gaps.isEmpty ? hr : hr.filter { w.plays($0.t) }
+                out[.init(exerciseID: ex.id, setIndex: w.index)] = HRVMetrics.make(from: played, start: w.start, end: w.end)
             }
         }
         return out

@@ -64,7 +64,8 @@ struct RacketGameHRSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(unit.noun.capitalized) \(g.index + 1)\(score.map { " · \($0)" } ?? "")")
                         .font(.title2.weight(.heavy))
-                    Text([RacketStats.matchRowTitle(ex), Self.clock(g.duration)].filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text(([RacketStats.matchRowTitle(ex), Self.clock(g.playedSec)] + Self.timeoutNote(g)).filter { !$0.isEmpty }
+                        .joined(separator: " · "))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 if g.points.isEmpty {
@@ -113,6 +114,16 @@ struct RacketGameHRSheet: View {
                     RectangleMark(yStart: .value("lo", a), yEnd: .value("hi", b))
                         .foregroundStyle((HeartRateZone(rawValue: z)?.color ?? .gray).opacity(0.08))
                 }
+            }
+            // A game joined across timeouts (prompt 259): each timeout shaded and named. The line runs through it
+            // (the readings are real), but the averages, peak, zone time and HRV leave it out.
+            ForEach(Array(g.timeouts.enumerated()), id: \.offset) { _, t in
+                RectangleMark(xStart: .value("from", t.lowerBound), xEnd: .value("to", t.upperBound))
+                    .foregroundStyle(.gray.opacity(0.22))
+                    .annotation(position: .overlay, alignment: .top, spacing: 4) {
+                        Text("Timeout").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("racket.gameHR.timeout")
+                    }
             }
             // The previous game, stretched to this game's length so the two read side by side. ONE series each:
             // per-segment series (for zone colours) got joined across to this dashed line (device, 2026-10-26).
@@ -229,6 +240,12 @@ struct RacketGameHRSheet: View {
             bpm = edge
         }
         return LinearGradient(stops: stops, startPoint: .bottom, endPoint: .top)
+    }
+
+    /// "1 timeout left out" under a joined game's title; nothing for a plain game.
+    nonisolated static func timeoutNote(_ g: RacketStats.GameHR) -> [String] {
+        let n = g.timeouts.count
+        return n == 0 ? [] : ["\(n) \(n == 1 ? "timeout" : "timeouts") left out"]
     }
 
     static func clock(_ seconds: Double) -> String {

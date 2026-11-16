@@ -24,6 +24,10 @@ struct RacketShareSheet: View {
     @State private var work: Task<Void, Never>?
     @State private var shareURL: URL?
     @State private var configured = false
+    /// UI tests only (`-uiTestShareName`): the last copy's size as any player shows it ("960×540"), shown when Share is
+    /// opened again (the system share sheet covers this sheet, then closes it).
+    @State private var madeSize: String?
+    @MainActor static var lastMadeSize: String?
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var rallies: [RacketRally] {
@@ -62,6 +66,9 @@ struct RacketShareSheet: View {
         .onAppear {
             guard !configured else { return }
             configured = true
+            #if DEBUG
+            madeSize = Self.lastMadeSize
+            #endif
             which = rallies.isEmpty ? .whole : .ralliesOnly
             applyLook = !look.isOriginal
         }
@@ -99,6 +106,10 @@ struct RacketShareSheet: View {
                 Text(p.sizeLine).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
                     .accessibilityIdentifier("racket.share.size")
             }
+        }
+        if let madeSize {
+            Text(madeSize).font(.system(size: 11)).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("racket.share.madeSize")
         }
         if let failure {
             Text(failure).font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
@@ -189,9 +200,15 @@ struct RacketShareSheet: View {
             #endif
             do {
                 let url = try await RacketVideoLibrary.shared.export(pieces, smaller: smaller, look: chosenLook, speed: p.speed,
-                                                                     labels: p.labels, progress: { f in fraction = f },
+                                                                     labels: p.labels, turns: log.copyTurns,
+                                                                     progress: { f in fraction = f },
                                                                      fileName: testFileName(p, look: chosenLook))
                 guard !Task.isCancelled else { return }
+                #if DEBUG
+                if testFileName(p, look: chosenLook) != nil, let s = await RacketVideoLibrary.displayedSize(of: url) {
+                    Self.lastMadeSize = "\(Int(s.width.rounded()))×\(Int(s.height.rounded()))"
+                }
+                #endif
                 fraction = nil
                 shareURL = url
                 Haptics.success()

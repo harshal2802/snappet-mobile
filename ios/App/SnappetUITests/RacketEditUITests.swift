@@ -348,7 +348,8 @@ final class RacketEditUITests: XCTestCase {
         _ = button("racket.share.go").waitForNonExistence(timeout: 5)
     }
 
-    private func share(_ which: String, keepSpeed: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+    private func share(_ which: String, keepSpeed: Bool = false, size: String? = nil,
+                       file: StaticString = #filePath, line: UInt = #line) {
         if !button("racket.player.share").exists { tapVideo() }
         button("racket.player.share").tap()
         XCTAssertTrue(any("racket.share.summary").waitForExistence(timeout: 4), file: file, line: line)
@@ -364,6 +365,16 @@ final class RacketEditUITests: XCTestCase {
         XCTAssertFalse(any("racket.share.error").exists, file: file, line: line)
         closeSystemShareSheet()
         Thread.sleep(forTimeInterval: 1)
+        if let size {
+            // Share again shows the last copy's size (UI tests only), then Cancel.
+            if !button("racket.player.share").exists { tapVideo() }
+            button("racket.player.share").tap()
+            let made = any("racket.share.madeSize")
+            XCTAssertTrue(made.waitForExistence(timeout: 4), "the copy's size", file: file, line: line)
+            XCTAssertEqual(made.label, size, "the copy (\(which)) shows turned", file: file, line: line)
+            button("racket.share.cancel").tap()
+            _ = button("racket.share.go").waitForNonExistence(timeout: 5)
+        }
     }
 
     /// Five copies, named `uitest-share-v2-…` in the app's tmp folder (`-uiTestShareName v2`): the whole game with labels,
@@ -397,5 +408,27 @@ final class RacketEditUITests: XCTestCase {
         button("racket.edit.done").tap()
         XCTAssertTrue(surface.waitForExistence(timeout: 5))
         share("rally")
+    }
+
+    /// Prompt 259: a recording turned with Rotate shares turned. The seeded portrait clip (540×960) with one quarter turn
+    /// makes copies 960×540 — this rally, and the whole game with labels (named `uitest-share-turned-…`).
+    func testShareTurnedRecording() {
+        launch(extra: ["-uiTestShareName", "turned", "-uiTestRacketTurns", "1"])
+        openPlayer()
+        pause()
+        goToRally(12)
+        share("rally", size: "960×540")
+        share("whole", size: "960×540")
+        // The re-rendered route on a phone: Warm with labels, still turned.
+        if controls.label == "Pause" { controls.tap() }
+        button("racket.player.edit").tap()
+        XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
+        button("racket.edit.tab.looks").tap()
+        button("racket.edit.look.warm").tap()
+        let done = button("racket.edit.done").frame, screen = app.windows.firstMatch.frame
+        XCTAssertTrue(done.minX >= 0 && done.maxX <= screen.maxX, "Edit fits the screen with wide look thumbnails: \(done)")
+        button("racket.edit.done").tap()
+        XCTAssertTrue(surface.waitForExistence(timeout: 5))
+        share("rally", size: "960×540")
     }
 }

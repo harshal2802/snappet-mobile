@@ -481,7 +481,10 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
 
     // Prompt 257 — additive Optional.
     /// Quarter turns clockwise the viewer chose with Rotate (`RacketVideoTurn`), for every part of this recording on
-    /// the tag, fix, timeline, split and player screens; `nil` ⇒ as saved. Playback only: shared copies aren't turned.
+    /// the tag, fix, timeline, split and player screens; `nil` ⇒ as saved. Prompt 259: shared copies, derived videos,
+    /// clips and frames for another AI app, and thumbnails carry it too. It is relative to the videos the recording
+    /// plays from now (`RacketVideoMap.sources`): derived videos are saved turned, so it is cleared when they replace
+    /// the originals (`playFromDerived`).
     var quarterTurns: Int?
 
     init(startedAt: Date) { self.startedAt = startedAt }

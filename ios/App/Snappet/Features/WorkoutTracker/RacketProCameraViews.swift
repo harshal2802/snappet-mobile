@@ -30,6 +30,8 @@ struct RacketProCameraView: View {
     let watchAvailable: Bool
     /// The newest video of this match, for the thumbnail; nil ⇒ an empty frame.
     var thumbnailID: String? = nil
+    /// The recording's turn (prompt 259): the thumbnail shows the video as the player does.
+    var thumbnailTurns: Int? = nil
     /// The thumbnail opens Your videos; nil ⇒ no thumbnail.
     var onVideos: (() -> Void)? = nil
     let onShutter: () -> Void
@@ -137,9 +139,9 @@ struct RacketProCameraView: View {
                 try? await Task.sleep(for: .seconds(15))
             }
         }
-        .task(id: thumbnailID) {
+        .task(id: "\(thumbnailID ?? "")-\(RacketVideoTurn.normalized(thumbnailTurns))") {
             guard let id = thumbnailID else { thumbnail = nil; return }
-            thumbnail = await RacketVideoLibrary.shared.poster(id)
+            thumbnail = await RacketVideoLibrary.shared.poster(id, turns: RacketVideoTurn.normalized(thumbnailTurns))
         }
         .task(id: focusTouch) {
             // The square and the sun fade after a few seconds (the AE/AF LOCK badge stays).

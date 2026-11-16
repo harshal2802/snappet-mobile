@@ -129,3 +129,58 @@ enum RacketVideoTurn {
         return max(180, min(visibleHeight * 0.66, visibleHeight - reserve))
     }
 }
+
+// MARK: - The turn in copies (prompt 259) — pure
+//
+// Shared copies, derived videos ("Delete the long original", "Keep rallies only") and clips for another AI app carry the
+// viewer's turn. The export puts each composition track's `preferredTransform` to "stored transform, then the turn": a
+// copy that isn't re-encoded keeps that as its track transform (any player shows it upright), and one drawn by a video
+// composition (a look, labels, captions, parts in different orientations) takes its render size and upright frames
+// from it. Turning is clockwise on screen (y down), the same direction as `RacketTurned`.
+
+extension RacketVideoTurn {
+    /// One quarter turn clockwise of a picture `height` tall sitting at the origin: (x, y) → (height − y, x).
+    static func quarter(height: CGFloat) -> CGAffineTransform {
+        CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: height, ty: 0)
+    }
+
+    /// The track transform of a copy turned `turns` quarter turns: the stored `preferred` transform (natural pixels →
+    /// upright), moved to the origin, then turned. 0 turns ⇒ `preferred` exactly as it was (nothing changes).
+    static func transform(natural: CGSize, preferred: CGAffineTransform, turns: Int?) -> CGAffineTransform {
+        let k = normalized(turns)
+        guard k > 0 else { return preferred }
+        let r = CGRect(origin: .zero, size: natural).applying(preferred)
+        var t = preferred.concatenating(CGAffineTransform(translationX: -r.minX, y: -r.minY))
+        var h = abs(r.height), w = abs(r.width)
+        for _ in 0..<k {
+            t = t.concatenating(quarter(height: h))
+            swap(&w, &h)
+        }
+        return t
+    }
+
+    /// The size a turned copy shows (and renders) at.
+    static func renderSize(natural: CGSize, preferred: CGAffineTransform, turns: Int?) -> CGSize {
+        displayed(RacketVideoOrientation.orientedSize(natural: natural, transform: preferred), turns: turns)
+    }
+
+    /// Where a point of the upright (stored) picture of `size` lands after `turns` — what the export test checks
+    /// against a marker in the frame.
+    static func point(_ p: CGPoint, in size: CGSize, turns: Int?) -> CGPoint {
+        p.applying(transform(natural: size, preferred: .identity, turns: turns))
+    }
+}
+
+// MARK: - A derived video is turned once (prompt 259) — pure
+
+extension RacketRecordingLog {
+    /// The turn a copy of this recording is made with: the viewer's turn of the videos it plays from now.
+    var copyTurns: Int { RacketVideoTurn.normalized(quarterTurns) }
+
+    /// The originals are gone and the recording plays from its derived videos, which were saved with `copyTurns`
+    /// baked in: they are upright, so the turn is cleared (it would otherwise turn them a second time).
+    mutating func playFromDerived() {
+        originalDeleted = true
+        quarterTurns = nil
+    }
+}

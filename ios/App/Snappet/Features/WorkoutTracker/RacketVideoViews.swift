@@ -1612,7 +1612,7 @@ struct RacketSplitEditSheet: View {
         let w = windowRange(p)
         let count = RacketScrub.thumbnailCount(width: Double(stripWidth), height: 56)
         let times = RacketScrub.thumbnailTimes(start: w.lowerBound, end: w.upperBound, count: count).map { $0 - pb.partStart }
-        let images = await RacketVideoLibrary.shared.thumbnails(player, times: times)
+        let images = await RacketVideoLibrary.shared.thumbnails(player, times: times, turns: pb.quarterTurns)
         if !Task.isCancelled { thumbnails = images }
     }
 
@@ -1937,13 +1937,14 @@ struct RacketDeleteOriginalSheet: View {
                 for (k, p) in plan.parts.enumerated() {
                     working = "Saving part \(k + 1) of \(plan.parts.count)…"
                     let segs = RacketVideoMap.segments(start: p.startSec, end: p.endSec, log: log)
-                    let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, p.startSec, p.endSec)])
+                    let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, p.startSec, p.endSec)], turns: log.copyTurns)
                     made.append(RacketDerivedVideo(localIdentifier: id, startSec: p.startSec, endSec: p.endSec))
                 }
                 store.updateLog(exerciseID) { $0.derived = ($0.derived ?? []) + made }
                 working = "Deleting the original…"
                 try await RacketVideoLibrary.shared.delete(log.assets.map(\.localIdentifier))
-                store.updateLog(exerciseID) { $0.originalDeleted = true }
+                // The parts were saved turned: they play upright, never turned again (prompt 259).
+                store.updateLog(exerciseID) { $0.playFromDerived() }
                 working = nil
                 Haptics.success()
                 dismiss()
@@ -2038,13 +2039,14 @@ struct RacketKeepRalliesSheet: View {
                     for (k, r) in ranges.enumerated() {
                         working = "Saving rally video \(k + 1) of \(ranges.count)…"
                         let segs = RacketVideoMap.segments(start: r.lowerBound, end: r.upperBound, log: log)
-                        let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, r.lowerBound, r.upperBound)])
+                        let id = try await RacketVideoLibrary.shared.saveToPhotos([(segs, r.lowerBound, r.upperBound)],
+                                                                                  turns: log.copyTurns)
                         made.append(RacketDerivedVideo(localIdentifier: id, startSec: r.lowerBound, endSec: r.upperBound))
                     }
                     store.updateLog(ex.id) { $0.derived = made }
                     working = "Deleting the full videos…"
                     try await RacketVideoLibrary.shared.delete(log.assets.map(\.localIdentifier))
-                    store.updateLog(ex.id) { $0.originalDeleted = true }
+                    store.updateLog(ex.id) { $0.playFromDerived() }   // saved turned (prompt 259)
                 }
                 working = nil
                 Haptics.success()

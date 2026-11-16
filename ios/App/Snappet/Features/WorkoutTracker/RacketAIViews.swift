@@ -286,12 +286,12 @@ struct RacketAISendScreen: View {
                     let shots = RacketAIFrames.times(ctx.clip).compactMap { f in
                         RacketVideoMap.segments(start: f.recSec, end: f.recSec + 0.5, log: log).first.map { (clipSec: f.clipSec, segment: $0) }
                     }
-                    items += try await RacketVideoLibrary.shared.frames(shots)
+                    items += try await RacketVideoLibrary.shared.frames(shots, turns: log.copyTurns)
                 } else {
                     let pieces = ctx.clip.pieces.map {
                         (segments: RacketVideoMap.segments(start: $0.startSec, end: $0.endSec, log: log), start: $0.startSec, end: $0.endSec)
                     }
-                    items.append(try await RacketVideoLibrary.shared.export(pieces, smaller: sentKind.smaller))
+                    items.append(try await RacketVideoLibrary.shared.export(pieces, smaller: sentKind.smaller, turns: log.copyTurns))
                 }
                 let request = RacketAIRequest(appRaw: chosen.rawValue, kindRaw: sentKind.rawValue, sentAt: .now,
                                               partStart: ref.startSec, partEnd: ref.endSec, clip: ctx.clip)
