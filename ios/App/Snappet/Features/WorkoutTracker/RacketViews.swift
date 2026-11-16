@@ -1608,8 +1608,12 @@ struct RacketRecapCards: View {
     var onOpenVideos: ((RacketVideosTarget) -> Void)? = nil
     /// "Make a reel" (TtSessionRecap, prompt 249): the host opens the session in Studio; nil ⇒ hidden.
     var onMakeReel: (() -> Void)? = nil
+    /// "Edit match" (prompt 260): the host presents the editor (session detail — outside its lazy list); `nil` = this
+    /// card does. Offered on a finished session only.
+    var onEditMatch: ((RacketMatchEditTarget) -> Void)? = nil
     @State private var gameTarget: RacketGameTarget?
     @State private var videos: RacketVideosTarget?
+    @State private var matchEdit: RacketMatchEditTarget?
 
     private var summary: RacketStats.SessionSummary? { RacketStats.summary(session.exercises) }
     private var hasRecordings: Bool { session.exercises.contains { $0.discipline == .racket && $0.racketRecordingLog != nil } }
@@ -1620,7 +1624,7 @@ struct RacketRecapCards: View {
         if let summary {
             VStack(alignment: .leading, spacing: 12) {
                 header(summary)
-                ForEach(matches) { matchRow($0) }
+                ForEach(Array(matches.enumerated()), id: \.element.id) { m, ex in matchRow(ex, ordinal: m) }
                 ForEach(drills) { drillRow($0) }
                 if hasRecordings || onMakeReel != nil { videoActions }
                 if showsHR { hrSection }
@@ -1630,6 +1634,7 @@ struct RacketRecapCards: View {
             .fullScreenCover(item: $videos) { t in
                 RacketVideosCover(session: session, start: t.start) { videos = nil }
             }
+            .sheet(item: $matchEdit) { t in RacketMatchEditSheet(session: session, exerciseID: t.exerciseID) }
         }
     }
 
@@ -1682,7 +1687,26 @@ struct RacketRecapCards: View {
         .font(.system(size: 14, weight: .semibold))
     }
 
-    private func matchRow(_ ex: SessionExercise) -> some View {
+    private func matchRow(_ ex: SessionExercise, ordinal m: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            matchLine(ex)
+            if RacketMatchEditAvailability.allowed(sessionActive: session.isActive, ex: ex) {
+                // Prompt 260: fix a game logged by mistake, its order, its video or the match's details, later.
+                Button("Edit match") {
+                    let t = RacketMatchEditTarget(exerciseID: ex.id)
+                    if let onEditMatch { onEditMatch(t) } else { matchEdit = t }
+                }
+                .buttonStyle(.bordered)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(minHeight: 44)
+                .padding(.leading, 32)
+                .accessibilityIdentifier(RacketMatchEditAvailability.id("racket.recap.editMatch", match: m))
+                .accessibilityLabel("Edit match \(RacketStats.matchRowTitle(ex))")
+            }
+        }
+    }
+
+    private func matchLine(_ ex: SessionExercise) -> some View {
         let state = ex.racketState
         return HStack(spacing: 10) {
             Image(systemName: ex.racketSport?.symbol ?? "tennis.racket")

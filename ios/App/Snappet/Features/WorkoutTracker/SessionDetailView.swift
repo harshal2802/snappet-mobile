@@ -64,6 +64,7 @@ struct SessionDetailView: View {
     /// A finished match's details being edited (opponent / round / event / format — prompt 203).
     @State private var gameTarget: RacketGameTarget?
     @State private var racketVideos: RacketVideosTarget?
+    @State private var racketMatchEdit: RacketMatchEditTarget?
     @State private var racketEdit: RacketSetupTarget?
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
     /// Done toolbar is the only way to dismiss it (the live player's pattern).
@@ -200,8 +201,11 @@ struct SessionDetailView: View {
             Button("Remove \(removalNoun(ex))", role: .destructive) { removeExercise(ex) }
                 .accessibilityIdentifier("session.confirmRemoveExercise")
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Its sets are deleted from this session. Its photos and videos stay, under General.")
+        } message: { ex in
+            // Prompt 260: a match's recording is never deleted with it (it stays in Photos).
+            Text(ex.racketRecordingLog != nil
+                 ? "Its games are deleted from this session. Its photos and videos stay, under General, and its recording stays in your Photos library."
+                 : "Its sets are deleted from this session. Its photos and videos stay, under General.")
         }
         // A racket game's heart-rate sheet — owned here, not inside the lazy list, so a re-render can't drop it.
         .sheet(item: $gameTarget) {
@@ -211,6 +215,8 @@ struct SessionDetailView: View {
         .fullScreenCover(item: $racketVideos) { t in
             RacketVideosCover(session: session, start: t.start) { racketVideos = nil }
         }
+        // Edit match (prompt 260) — owned here for the same reason.
+        .sheet(item: $racketMatchEdit) { t in RacketMatchEditSheet(session: session, exerciseID: t.exerciseID) }
         .sheet(item: $racketEdit) { target in
             RacketSetupSheet(start: target.start,
                              recentOpponents: { RacketStats.recentOpponents(sport: $0, history: history) },
@@ -282,7 +288,7 @@ struct SessionDetailView: View {
         case .timed, .run, .other:
             SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
                               milestones: recapMilestones, showsHR: false, onOpenGame: { gameTarget = $0 },
-                              onOpenVideos: { racketVideos = $0 })
+                              onOpenVideos: { racketVideos = $0 }, onEditMatch: { racketMatchEdit = $0 })
         }
     }
 

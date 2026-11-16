@@ -793,6 +793,16 @@ twice. A game joined across a timeout takes its heart rate from its real halves:
 `RacketEditUITests.testShareTurnedRecording`. **Device-pending:** the re-encoded routes (look, labels, Analyzed
 captions) on the phone; a real turned recording deleted to derived videos.
 
+🟡 **Racket: edit a logged match later (2026-11-15, prompt 260).** iOS. "Edit match" on the recap's match row and in
+Your videos (finished sessions) opens one draft: change / confirm / unknown a game's score, remove a game (with video:
+keep it as an extra stretch or mark it not play — video and tags never deleted), add a game at a position, move games
+(video games keep their video's order, with the reason when a move is off), link / unlink video, match details, and move
+a no-video game to another match. Save repairs, validates and renumbers everything that points at a game (base, links,
+game marks, photos / clips); Cancel changes nothing. The stop-sheet game now takes its video's length. Merging or
+splitting matches is not built (one recording per match). Pure: `RacketMatchEditor.swift` (`RacketMatchEditorTests`,
+3000 random sequences); views `RacketMatchEditViews.swift`; UI `RacketEditMatchUITests`. **Device-pending:** the user's
+real match on the phone.
+
 ## License
 
 TBD.

@@ -367,7 +367,12 @@ enum RacketSplitAssign {
         var added = 0
         for (gi, g) in groups.enumerated() {
             if let k = setFor[gi] {
-                rebuilt.append((gi, own[k], base + k))
+                // Prompt 260: a game whose length the video can't hold (the stop-sheet game carries the whole
+                // recording) takes its game's played time; a Watch game's own shorter length is kept.
+                var s = own[k]
+                s.durationSec = RacketGameDuration.fitted(s.durationSec, span: parts[g.last].endSec - parts[g.first].startSec,
+                                                          played: RacketGameGroups.playedSec(parts, g))
+                rebuilt.append((gi, s, base + k))
             } else {
                 var s = SetLog()
                 s.scoreUnconfirmed = true

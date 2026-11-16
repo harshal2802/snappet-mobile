@@ -11647,3 +11647,51 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
   clips and the turn → derive → share round trip, and is written to run unchanged on a device (re-encoded). Device build
   (`generic/platform=iOS`) succeeds; the re-encoded routes (look, labels, captions) are compile-checked only.
 
+
+## 2026-11-15 — Racket: edit a logged match later (prompt 260)
+
+The user: "make sure each match is editable in case someone made a mistake … make sure that side of the state machine is
+complete." Real case: a stray 9–11 at set 0 before the recording made the recap read "L 0–4" for a 0–3 match, and no
+screen could remove it without breaking `baseSetIndex` and the split's links.
+
+- **One draft with stable game ids** (`RacketMatchEditor.swift`, pure). `SetLog` has no id, so the draft gives each game
+  one and holds links as part id → game id and game-mark index → game id. Positions are written again only on commit
+  (`baseSetIndex`, `RacketVideoPart.setIndex`, `game` mark `index`, `SessionMedia.assignedSetIndex` via the remap).
+  Nothing else stores a game index: AI requests / imports, scans, part looks and rallies are time ranges. Considered:
+  editing `sets` in place with a remap per operation — every operation would have to keep five index stores in step.
+- **Transition table and invariants**: as in the prompt file (`260-ios-racket-edit-match.md`), each implemented and
+  unit-tested; `normalized` never loses a game, a score or video (a broken link leaves the game with no video; an
+  unlinked game part becomes "Rallies, no score"; video games are put back in video order in the same slots).
+- **The match editor never moves a part's edges.** It only changes kinds and links; a game-by-game split has gaps
+  between games on purpose, so the split's tiling rules are not this editor's to repair (`linkIssues`).
+- **Removing a game with video** asks: "Keep as an extra game (not counted in the match)" → the halves become unsure
+  ("Rallies, no score"), timeouts breaks; "Mark as not play" → halves and timeouts Not play. Video, rallies and tags stay
+  at their times; the dialog says how many tagged rallies stop counting. The only game: Remove match only.
+- **Unlink** makes the stretch "Rallies, no score" (not a new "Score unconfirmed" game): unlinking must never add a game
+  the player didn't ask for; the stretch can be linked again. **Link** logs the game at its video's end with its played
+  time, so heart rate follows the video.
+- **Base boundary**: an added game at or before the boundary is a game logged before the recording; a move keeps the
+  boundary where it is; it is clamped so a game with video is always on the recording's side.
+- **Move a game to another match** only without video (video belongs to its match's recording). It lands by time in
+  the target match, which is renumbered like any edit; its media moves with it. **Merge / split matches not built**: a
+  match holds one recording log, and two logs can't merge without rewriting one recording's times; splitting needs a new
+  entity and an owner for the log, and a finished session has no add-a-match path. The user moves no-video games one at
+  a time and uses Remove match / unlink instead.
+- **Duration rule** (`RacketGameDuration`): a linked game keeps its own length when it fits its video's span plus 20 s
+  (a Watch game timed on the wrist is shorter than its video, and real); a longer one (the stop-sheet game carrying the
+  whole recording) takes the video's played time; no length stays none. Applied by `RacketSplitAssign.apply` and by the
+  editor's `normalized` (so opening and saving an old match repairs it).
+- **Derived numbers, nothing stored**: result, games line, record, set count, stats, streak / XP / badge inputs and
+  history read the edited games. XP is a ledger re-derived from history (`ProgressionSnapshot.ledger`); no award is
+  stored, so an edit changes what it reads next time — no separate "take XP back" step exists or was added.
+- **Only on a finished session**: the live match page owns its games (unit index, Watch, Live Activity), so Edit match
+  is not offered while the session is active. No Watch / Live Activity message is persisted with a game index.
+- **Older builds**: no new field, no new raw value (unsure / notPlay / breakTime already exist), so an older build reads
+  an edited record as is.
+- **Your videos ids** are unique per match: the first recorded match keeps the plain ids, later ones add `.m<N>` (kept
+  the existing UI tests unchanged).
+- **Remove match** checked: drops only that entity, unties its media to General, leaves the recording in Photos (the
+  confirm now says so for a recorded match).
+- **Verified on the simulator**: SnappetTests 3137 / 0 failures (5 skipped; 18 new in `RacketMatchEditorTests`, the
+  random test 3000 sequences). UI suites alone, app uninstalled first: RacketEditMatch 3 (new), RacketVideos 2,
+  RacketSplitTimeout 3, RacketTagging 15, RacketMatch 14, RacketPlayer 7, RacketEdit 8, RacketGameHR 1 — all green.
