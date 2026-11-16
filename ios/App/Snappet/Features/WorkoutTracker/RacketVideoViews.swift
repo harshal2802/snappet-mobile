@@ -239,9 +239,10 @@ struct RacketVideosCover: View {
         case .done(let id): splitDone(id)
         case .drill(let id): drillVideos(id)
         case .player(let ref, let only):
-            RacketPlayerScreen(store: store, ref: ref, ralliesOnly: only) { path.append(.aiCompare(ref, $0)) }
+            // A new identity per part: "Game 2" at the end replaces this route, and must not reuse game 1's player.
+            watchPlayer(ref, ralliesOnly: only).id(ref)
         case .analyzed(let ref):
-            RacketPlayerScreen(store: store, ref: ref, ralliesOnly: false, startAnalyzed: true) { path.append(.aiCompare(ref, $0)) }
+            RacketAnalyzedPlayerScreen(store: store, ref: ref, ralliesOnly: false, startAnalyzed: true) { path.append(.aiCompare(ref, $0)) }
         case .aiSend(let ref):
             RacketAISendScreen(store: store, ref: ref, onPrompt: { path.append(.aiPrompt($0)) },
                                onSent: { replaceTop(with: .aiImport(ref)) }, onCancel: { path.removeLast() })
@@ -255,7 +256,7 @@ struct RacketVideosCover: View {
             onSummary: { path.append(.summary(ref)) }
         case .tagDone(let ref): tagDone(ref)
         case .summary(let ref): manualSummary(ref)
-        case .missing(let ref): originalMissing(ref)
+        case .missing(let ref): watchPlayer(ref, ralliesOnly: false)
         case .videos: videosList
         case .capabilities(let sport):
             RacketCapabilitiesScreen(sport: sport) { path.append(.noModelPreview(sport)) }
@@ -1317,33 +1318,35 @@ struct RacketVideosCover: View {
         }
     }
 
-    // MARK: TtOriginalMissing
+    // MARK: The player, Watch mode (prompt 253)
 
-    @ViewBuilder private func originalMissing(_ ref: RacketPartRef) -> some View {
-        let ids = store.ex(ref.exerciseID)?.racketRecordingLog.map(RacketVideoMap.neededIdentifiers) ?? []
-        VStack(alignment: .leading, spacing: 14) {
-            Text("This video isn’t on your phone").font(.system(size: 22, weight: .semibold))
-                .accessibilityIdentifier("racket.missing.title")
-            Text("Deleted, edited or stored only in iCloud").snappetLabel()
-            note("The parts and timeline point into Photos videos, and Snappet can’t find them right now.")
-            primary("Download from iCloud", id: "racket.missing.download") {
-                Task {
-                    _ = await RacketVideoLibrary.shared.download(ids)
-                    refreshFound()
-                    if case .available = RacketOriginalCheck.state(needed: ids, found: found) {
-                        path.removeLast()
-                        path.append(.player(ref, ralliesOnly: false))
-                    }
-                }
-            }
-            secondary("Find it in Photos", id: "racket.missing.photos") { RacketVideoLibrary.shared.openPhotos() }
-            secondary("Keep tags and stats only", id: "racket.missing.keep") { path.removeLast() }
-            note("Your scores, tags and stats are safe either way. Only playback needs the video.")
-            Spacer()
+    /// The Watch-mode player for a part. It shows PlayerMissing itself when the original is gone from Photos.
+    private func watchPlayer(_ ref: RacketPartRef, ralliesOnly: Bool) -> some View {
+        let ex = store.ex(ref.exerciseID)
+        let sport = ex?.racketSport ?? .tableTennis
+        let rows = ex.map(RacketVideoRows.rows(for:)) ?? []
+        let next = rows.firstIndex { abs($0.startSec - ref.startSec) < 0.01 }
+            .flatMap { $0 + 1 < rows.count ? rows[$0 + 1] : nil }
+            .flatMap { row in ex.map { self.ref($0, row) } }
+        var edits = [RacketPlayerEditAction(id: "rallies", label: "Rallies and tags") { path.append(.timeline(ref)) }]
+        if let i = ref.setIndex, ex?.isRacketMatch == true {
+            edits.append(RacketPlayerEditAction(id: "score", label: "Edit score") {
+                scoring = RacketScoreTarget(exerciseID: ref.exerciseID, unitIndex: i, durationSec: nil)
+            })
         }
-        .padding(20)
-        .navigationTitle(ref.title)
-        .navigationBarTitleDisplayMode(.inline)
+        edits.append(RacketPlayerEditAction(id: "analysis", label: "Analysis view") { path.append(.analyzed(ref)) })
+        if let imp = ex?.racketRecordingLog?.pendingAIImports(partStart: ref.startSec, partEnd: ref.endSec).last {
+            edits.append(RacketPlayerEditAction(id: "compare", label: "Compare \(imp.appName) suggestions") {
+                path.append(.aiCompare(ref, imp.id))
+            })
+        }
+        let canFind = RacketCapabilityRegistry.capabilities(for: sport).model != nil
+        return RacketWatchPlayerScreen(
+            store: store, ref: ref, ralliesOnly: ralliesOnly, nextPart: next,
+            onNextPart: { replaceTop(with: .player($0, ralliesOnly: false)) },
+            onFindRallies: canFind ? { findRallies([ref], sport: sport) } : nil,
+            onMarkByHand: { path.append(.timeline(ref)) },
+            editActions: edits)
     }
 }
 

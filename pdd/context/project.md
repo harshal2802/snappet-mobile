@@ -724,6 +724,16 @@ PbSideOut, the Watch's "We won / They won"), tennis No-ad, TnServe / PdWall / Sq
 score line, and doubles serve lines that name your server. Pure: `RacketSportRules.swift` (`RacketSportRulesTests`),
 `Shared/RacketLiveScore.swift`. **Device-pending:** the Watch's side-out taps on a real wrist.
 
+🟡 **Racket player, Watch mode (2026-11-14, prompt 253 — issue #448 part 1).** iOS. Play opens a full-screen,
+Photos-style player: the video with a score pill and a thin progress line of rally segments; a tap toggles the controls
+(Share, Edit, a filmstrip of real frames with rally bands under a fixed centre playhead, play/pause, mute, previous /
+next rally, speed); double-tap ±10 s, hold for 2×, pinch to zoom; Loop this rally and Rallies only in the speed menu;
+no-rallies, opening (iCloud), missing, end-of-game, letterbox and landscape states. Edit is a menu over today's
+timeline / score / analysis surfaces until Edit mode (next job). Pure: `RacketPlayerWatch.swift`
+(`RacketPlayerWatchTests`); screen: `RacketWatchPlayerViews.swift`; UI: `RacketPlayerUITests`. **Device-pending:**
+real Photos video, iCloud download, gestures and haptics in the hand, rotation, VoiceOver. **Deferred:** "Choose it
+again from Photos" (relink), shown disabled and labelled "Not available yet".
+
 ## License
 
 TBD.

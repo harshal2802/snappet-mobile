@@ -11252,3 +11252,51 @@ Found on the phone (checklist walk) and approved by the user.
   `RacketScoring.check` (game to N win by 2 with badminton's cap, sets 6–x / 7–5 / 7–6 with a tiebreak to 7 win by 2,
   super tiebreak to 10 win by 2, no ties) — prompt 203's "never blocked" stands. The score sheet shows it only after a
   stepper is touched, so the untouched line isn't doubled.
+
+## 2026-11-14 — Racket player, Watch mode (issue #448 part 1; prompt 253)
+
+Boards Main → PlayerLandscapeChrome (`racket-wireframes/boards2/`). Photos' video viewer with YouTube's gestures.
+
+- **A single tap toggles the controls at once; a quick second tap turns the pair into a skip.** No waiting to tell a
+  single tap from a double: the first tap toggles immediately, and a second tap within 0.3 s toggles back (undoing it)
+  and skips 10 s on that side; more taps on the same side within 0.7 s add 10 s each ("+20 s"). The flash of the
+  controls on a double tap is accepted for an instant single tap (`RacketPlayerTaps`).
+- **Opens playing, with the controls showing; they hide after 3 s while playing** (Photos). Paused, with the speed menu
+  open, or mid-drag they stay. If the viewer pauses or moves while the video is still opening, it does not start by
+  itself.
+- **The filmstrip shows about a minute across the visible strip** (a short part fills it), so a 6 s rally is a band
+  you can see; frames are generated once per part (at most 60, centre-out from the playhead, a few at a time) and
+  neighbouring tiles share one on long games. A slow drag seeks with zero tolerance (exact frames), a fast flick with a
+  little slack; one seek in flight, the newest waits (the existing `RacketPlayback.scrub`).
+- **While dragging, the strip keeps its place** (the other controls fade out around it) rather than widening to the
+  full width as PlayerScrub draws it: changing the strip's width mid-drag would move the frames under the finger.
+- **Hold plays at 2× even when paused**, and release restores both the speed and the pause. Pan works only while
+  zoomed, so an unzoomed drag never fights anything; zoom is clamped 1×–5× and the pan keeps the video's edge at the
+  screen's edge (a letterboxed video stays centred on its short axis).
+- **Loop this rally loops the rally at the playhead** (else the next, else the last); skipping, scrubbing or jumping
+  out of it ends the loop. A loop wins over Rallies only. "Rallies only" moved from a chip into the speed menu.
+- **The score pill is the running score from your tags** through the rally at (or last before) the playhead, so it
+  matches "7 – 5 · Rally 12"; it hides when nothing is tagged. PlayerEnd's line uses the logged game score
+  ("Game 1 ended · Won 11–9"); a game with no rallies shows its logged score, else "No score yet".
+- **PlayerOpening's "Scrubbing works on thumbnails meanwhile" is not true on iOS**: Photos hands over no frames of an
+  iCloud-only video until it has downloaded, only its still. The player shows that still at once (network off) and the
+  line reads "The video plays when the download finishes"; the strip shows empty tiles until then.
+- **"Choose it again from Photos" (PlayerMissing) is deferred**, shown disabled with "Not available yet". A recording
+  can span several Photos videos (10-minute parts, interruptions), so one pick can't safely replace them; a proper
+  relink needs a per-part picker with duration checks. "Keep the stats only" goes back. The old TtOriginalMissing page
+  (Download from iCloud / Find it in Photos) is removed: missing now means gone from Photos, and iCloud-only videos
+  download inside the player.
+- **Edit and Share keep everything that works today** until Edit mode and the new Share sheet (next job). Edit pauses and
+  opens a list (a confirmation dialog, so the controls can't hide under it): Rallies and tags (the timeline: mark, tag, Fix, Shots, add a missed rally), Edit score (a match game),
+  Analysis view (the old player, renamed `RacketAnalyzedPlayerScreen`: tags over video, AI suggestions, Compare) and
+  Compare <app> suggestions when a reply waits. Share opens today's Save or share.
+- **Mark by hand opens the part's timeline** (the existing manual path); Find rallies runs the sport's model (today the
+  placeholder) and shows Analyzing.
+- **PlayerEnd also comes from the item ending or a skip onto the end**, not only the periodic tick (AVPlayer may report
+  nothing more once it sits at the end); another skip forward there stays ended. A loop at the item's end wraps.
+- **Landscape in UI tests**: this Mac's simulator runs headless (no Simulator.app), and turning the device with
+  `XCUIDevice.orientation` doesn't turn the app there, so `-uiTestRacketLandscape YES` (DEBUG only) has the player ask its
+  scene to turn (`requestGeometryUpdate`). Turning a real phone is the device walk's job.
+- **The UI-test footage is synthetic**: two 6 s clips drawn with ffmpeg (a table, two players, a moving ball; portrait
+  and landscape), bundled in `Resources/TestAssets` beside the existing grey clip. No real footage.
+
