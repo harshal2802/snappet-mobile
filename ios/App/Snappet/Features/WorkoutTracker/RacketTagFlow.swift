@@ -110,6 +110,8 @@ struct RacketShot: Codable, Hashable, Identifiable, Sendable {
     var handRaw: String
     /// `RacketShotType` label for the sport ("Serve", "Push", …); nil = not chosen yet.
     var type: String?
+    /// Prompt 254 (additive): where it was added in Edit ("+ Shot at playhead"), seconds on the recording.
+    var atSec: Double?
 
     var side: RacketRallyWinner { RacketRallyWinner(rawValue: sideRaw) ?? .us }
     var isBackhand: Bool { handRaw == "bh" }

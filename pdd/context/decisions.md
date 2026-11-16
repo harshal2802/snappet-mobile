@@ -11300,3 +11300,57 @@ Boards Main → PlayerLandscapeChrome (`racket-wireframes/boards2/`). Photos' vi
 - **The UI-test footage is synthetic**: two 6 s clips drawn with ffmpeg (a table, two players, a moving ball; portrait
   and landscape), bundled in `Resources/TestAssets` beside the existing grey clip. No real footage.
 
+## 2026-11-14 — Racket player, Edit mode and Share (issue #448 part 1; prompt 254)
+
+Boards EditRallies → EditList, ShareSheet, ShareExport (`racket-wireframes/boards2/`). Photos' video Edit mode.
+
+- **Edit is a working copy** (`RacketEditSession`): rallies of the part, the look and edited scores. Done writes them to
+  the session; Cancel drops them (EditDiscard "You changed N rallies[, the score and the look]" when anything changed).
+  Undo / Redo cover every edit; a handle drag is one Undo step. Edit opens over the Watch player on the same playback.
+- **+ Rally (EditMarking) is clamped, not refused, when it runs into a rally**: the new rally ends where the next one
+  starts (or starts where the last one ended, if dragged back), and a line says so. It is refused only when the playhead is
+  inside a rally when + Rally is tapped ("There’s a rally here already…") or what's left is under 0.5 s. A new rally takes
+  the place of a hidden "Not a rally" stretch under it. The new rally is selected for tagging.
+- **Trim**: a handle stops at the neighbouring rally and at 0.5 s length (rallies never overlap); "Not a rally"
+  stretches don't stop it. While a handle moves, the playhead follows it so the video shows that exact frame (zero-tolerance
+  seek); a haptic tick at each whole second. Touching a handle enters EditTrim (readout + nudges on that handle); "Back to
+  rally" or a tap on the strip leaves it. The board's "the strip zooms in while you drag" is not built: the strip keeps the
+  zoom you pinched (pinch works any time).
+- **Tags reuse the tag sheet's rules**: `RacketRallyMarking.tag`, the sport's ending list, doubles' last shot, and the tag
+  sheet's score / serve lines now in `RacketTagLines` (one place for both). EditSport's header is "Point 12 · Games 4–3 ·
+  40–30" from your tags. Serve details / bounce / let open the existing detail sheets, writing to the working copy.
+- **Shots**: the existing shot rows; "+ Shot at playhead" adds a shot with its time (`RacketShot.atSec`, additive) in time
+  order. "Shot finding: not available yet".
+- **Find rallies in Edit** runs the scan queue as before (placeholder model). When it finishes, its guesses join the working
+  copy: earlier unconfirmed guesses are replaced, a guess that overlaps anything else is dropped, so yours are never replaced.
+  The scan itself writes its results to the session (as before), so Cancel after a scan restores the part's rallies.
+- **Looks**: presets as Core Image filters in an `AVVideoComposition` handler (playback reads the current look live, so
+  switching and "hold to see the original" are instant); thumbnails on the strip show the look. Warm / Cool move the white
+  point (4600 K / 8800 K), Vivid raises saturation and contrast, B&W removes colour. Scope: This video (`partLooks` on the
+  log), Whole match (`lookRaw` on the log, clearing parts' own), Always (UserDefaults, clearing this log's). A recording
+  mixing orientations already has its own composition and plays without a look (rare; noted, not hidden).
+- **Score tab** writes through the existing `RacketScoreEdit` on Done (confirmed; the unfinished-score warning shows, never
+  blocks). The player's old "Edit score" menu entry is gone; the old sheet stays for Your videos and the summary.
+- **Analysis view and Compare suggestions** (from the Watch player's temporary Edit list) are under Edit's rally list.
+  They leave Edit, so they are available only with no unsaved changes ("Done or Cancel your edits first").
+- **Share** replaces the Watch player's target: This rally / Rallies only (padded 1 s, as Keep rallies) / Whole game,
+  Apply the look, Score and rally labels ("Rally 12 · You won · 7 – 5", drawn by the same Core Image pass), Keep the speed
+  (off ⇒ normal speed). The size is an estimate (60 MB/min 1080p, 170 MB/min 4K). Always a new temporary file handed to the
+  system share sheet. Cancel stops the export; a failure keeps everything and offers Try again or a smaller size. **The
+  simulator can't re-encode**: there the copy is a passthrough without look, labels or speed; those are device-only and
+  were not verified on a device in this job.
+- **UI-test hooks (DEBUG only)**: `-uiTestShareSlow` holds ShareExport for 3 s so it can be seen; the Find rallies test uses
+  the existing `-uiTestStubRallySignal`.
+- **Phone-run fixes (same day).** (1) The device-only branch of `export` sent a non-Sendable composition across an
+  await; it now goes through `lookComposition(_:control:)` in a box, like `propertiesComposition`. Every job now also
+  passes a device build (the simulator never compiles that branch). (2) Share failed on the phone with "Operation
+  Stopped": a recording with no sound (the UI-test clip) left the composition's audio track **empty**, and a re-encoding
+  export stops at once on an empty track (passthrough on the simulator and playback don't mind). Empty audio tracks are
+  dropped in `assemble`. The Core Image pass itself was fine; its label text was black on the dark box, so the text is
+  now made white. The failure line is one sentence. Verified on the phone by pulling the copies (`uitest-share-v2-*`, named
+  by a DEBUG `-uiTestShareName` hook) and reading their frames. (3) Edit and Share are portrait boards, so they **lock to
+  portrait on iPhone** while they show (`SnappetOrientation`, an app-delegate orientation mask set per screen, with
+  `requestGeometryUpdate` to turn an already-sideways phone); the Watch player keeps rotating and the lock lifts when they
+  close. (4) EditDiscard is a real bottom sheet: the hand-made overlay carried the `.isModal` trait, which XCTest reports
+  as an "Alert" interruption it can't handle; that was the "Interrupting element Alert" in the phone run.
+

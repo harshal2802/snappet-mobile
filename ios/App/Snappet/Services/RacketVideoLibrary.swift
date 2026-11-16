@@ -118,6 +118,9 @@ final class RacketVideoLibrary {
             } catch { continue }
         }
         guard !placed.isEmpty else { return nil }
+        // A recording with no sound leaves the audio track empty. An empty track makes a re-encoding export stop at
+        // once ("Operation Stopped", found on the phone, prompt 254); passthrough and playback don't mind. Drop it.
+        if let a = aTrack, a.segments.isEmpty { comp.removeTrack(a) }
         guard order.count > 1, let first = tracks[order[0]] else { return (comp, nil) }
         let render = RacketVideoOrientation.orientedSize(natural: first.natural, transform: first.transform)
         let video = AVMutableVideoComposition()
@@ -231,10 +234,17 @@ final class RacketVideoLibrary {
         try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: box.comp)
     }
 
+    /// The look / label composition for a share copy, boxed the same way (device builds only reach this).
+    private nonisolated static func lookComposition(_ box: CompositionBox, control: RacketLookControl) async -> AVVideoComposition? {
+        await RacketLookRenderer.composition(for: box.comp, control: control)
+    }
+
     /// Export `pieces` (each a list of segments for one recording range, joined end to end) to an .mp4. `captions`
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
     func export(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
-                captions: [(start: Double, end: Double, text: String)] = []) async throws -> URL {
+                captions: [(start: Double, end: Double, text: String)] = [],
+                look: RacketLook = .original, speed: Double = 1, labels: [RacketSharePlan.Label] = [],
+                progress: (@MainActor (Double) -> Void)? = nil, fileName: String? = nil) async throws -> URL {
         // Pieces end to end, each part with its own orientation (round 3).
         var items: [(segment: RacketVideoSegment, atSec: Double)] = []
         var cursorSec = 0.0
@@ -250,16 +260,25 @@ final class RacketVideoLibrary {
         let cursor = comp.duration
 
         #if targetEnvironment(simulator)
-        let preset = AVAssetExportPresetPassthrough   // the simulator can't re-encode (see ReelExporter)
+        let preset = AVAssetExportPresetPassthrough   // the simulator can't re-encode (see ReelExporter): no look, labels or speed
         let videoComposition: AVVideoComposition? = nil
         _ = captions
         _ = cursor
+        _ = (look, speed, labels)
         #else
         let preset = smaller ? AVAssetExportPreset1280x720 : AVAssetExportPresetHighestQuality
         var videoComposition: AVVideoComposition? = built.video
         let base: AVMutableVideoComposition? = built.video == nil
             ? await Self.propertiesComposition(CompositionBox(comp: comp)) : built.video
-        if !captions.isEmpty, let vc = base {
+        // Share (prompt 254): keep the speed, then the look and the score / rally labels drawn by one Core Image pass.
+        // A recording mixing orientations keeps its own fitting composition and shares at normal speed, unfiltered.
+        if built.video == nil, speed > 0, abs(speed - 1) > 0.001 {
+            let all = CMTimeRange(start: .zero, duration: comp.duration)
+            comp.scaleTimeRange(all, toDuration: CMTimeMultiplyByFloat64(comp.duration, multiplier: 1 / speed))
+        }
+        if built.video == nil, !look.isOriginal || !labels.isEmpty {
+            videoComposition = await Self.lookComposition(CompositionBox(comp: comp), control: RacketLookControl(look: look, labels: labels))
+        } else if !captions.isEmpty, let vc = base {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
                             position: CGPoint(x: 0.5, y: 0.1), scale: 0.9, highlightHex: "#000000")
@@ -275,8 +294,31 @@ final class RacketVideoLibrary {
             throw VideoError.exportFailed("no export session")
         }
         session.videoComposition = videoComposition
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("racket-\(UUID().uuidString).mp4")
-        do { try await session.export(to: out, as: .mp4) } catch { throw VideoError.exportFailed(error.localizedDescription) }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent(fileName ?? "racket-\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: out)
+        let watcher = progress.map { report in
+            Task { @MainActor in
+                for await state in session.states(updateInterval: 0.2) {
+                    if case .exporting(let p) = state { report(p.fractionCompleted) }
+                }
+            }
+        }
+        defer { watcher?.cancel() }
+        do {
+            try await session.export(to: out, as: .mp4)
+        } catch is CancellationError {
+            try? FileManager.default.removeItem(at: out)
+            throw CancellationError()
+        } catch {
+            try? FileManager.default.removeItem(at: out)
+            if Task.isCancelled { throw CancellationError() }
+            #if DEBUG
+            let ns = error as NSError
+            print("RACKETEXPORT failed \(ns.domain) \(ns.code) \(ns.userInfo) underlying: \(String(describing: ns.userInfo[NSUnderlyingErrorKey]))")
+            #endif
+            throw VideoError.exportFailed(error.localizedDescription)
+        }
+        progress?(1)
         return out
     }
 
@@ -388,6 +430,15 @@ final class RacketPlayback {
     private(set) var videoSize: CGSize?
     /// A still of the video while it opens or downloads (PlayerOpening "an immediate first frame").
     private(set) var poster: UIImage?
+    /// The look it plays with (prompt 254): set any time, the next frame shows it. Playback only.
+    var look: RacketLook = .original {
+        didSet { lookControl.look = look; if !playing { redrawFrame() } }
+    }
+    /// EditLooks "Hold the video to see the original".
+    var showOriginal = false {
+        didSet { lookControl.bypassed = showOriginal; if !playing { redrawFrame() } }
+    }
+    @ObservationIgnored private let lookControl = RacketLookControl(look: .original)
     /// Where `play(from:until:)` stops; cleared by a plain Play.
     @ObservationIgnored private var stopAt: Double?
     private(set) var player: AVPlayer?
@@ -436,6 +487,12 @@ final class RacketPlayback {
             return
         }
         loadState = .ready(missing: ids.count - found.count + failedCloud)
+        // Looks (prompt 254): a filter while drawing, for a recording in one orientation (a mixed one already has its own
+        // composition fitting each part upright, and plays without a look).
+        if item.videoComposition == nil,
+           let vc = await RacketLookRenderer.composition(for: item.asset, control: lookControl) {
+            item.videoComposition = vc
+        }
         let p = AVPlayer(playerItem: item)
         p.isMuted = muted
         player = p

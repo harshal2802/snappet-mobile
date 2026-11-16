@@ -10,13 +10,6 @@ import UIKit
 // Edit and the new Share sheet are the next job (prompt 254): Edit opens today's rally / tag / score surfaces from a
 // menu, Share opens today's "Save or share".
 
-/// One entry of the Edit menu (until Edit mode lands): a label, an identifier suffix and what it opens.
-struct RacketPlayerEditAction: Identifiable {
-    let id: String
-    let label: String
-    let action: () -> Void
-}
-
 struct RacketWatchPlayerScreen: View {
     let store: RacketVideoStore
     let ref: RacketPartRef
@@ -28,7 +21,9 @@ struct RacketWatchPlayerScreen: View {
     var onFindRallies: (() -> Void)? = nil
     /// PlayerNoRallies "Mark by hand": the part's timeline.
     var onMarkByHand: (() -> Void)? = nil
-    var editActions: [RacketPlayerEditAction] = []
+    /// The analysis view and other apps' suggestions, reachable from Edit's rally list (prompt 254).
+    var onAnalysis: (() -> Void)? = nil
+    var compare: (label: String, action: () -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var playback: RacketPlayback?
@@ -43,7 +38,8 @@ struct RacketWatchPlayerScreen: View {
     @State private var pan: CGSize = .zero
     @State private var panAtStart: CGSize = .zero
     @State private var speedMenu = false
-    @State private var editMenu = false
+    /// Edit mode (prompt 254) over the player, on the same playback.
+    @State private var editing = false
     @State private var onlyRallies = false
     @State private var exporting = false
     @State private var dragging = false
@@ -111,14 +107,22 @@ struct RacketWatchPlayerScreen: View {
         .preferredColorScheme(.dark)
         .sheet(isPresented: $exporting) {
             if let pb = playback {
-                RacketExportSheet(store: store, ref: ref, position: pb.position, rallies: rallies.rallies, sides: sides)
+                RacketShareSheet(store: store, ref: ref, position: pb.position, rate: pb.rate, look: pb.look)
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            if let pb = playback {
+                RacketEditScreen(store: store, ref: ref, playback: pb, onAnalysis: onAnalysis, compare: compare) {
+                    editing = false
+                    withAnimation { chrome = true }
+                }
             }
         }
         .task(id: hideKey) {
             try? await Task.sleep(for: .seconds(RacketPlayerChrome.hideAfter))
             guard !Task.isCancelled, let pb = playback else { return }
             if RacketPlayerChrome.shouldHide(visible: chrome, playing: pb.playing, idleSec: RacketPlayerChrome.hideAfter,
-                                             dragging: dragging, menuOpen: speedMenu || editMenu) {
+                                             dragging: dragging, menuOpen: speedMenu || editing) {
                 withAnimation(.easeInOut(duration: 0.25)) { chrome = false }
             }
         }
@@ -141,7 +145,7 @@ struct RacketWatchPlayerScreen: View {
     }
 
     private var hideKey: String {
-        "\(chrome)-\(playback?.playing ?? false)-\(touches)-\(dragging)-\(speedMenu)-\(editMenu)"
+        "\(chrome)-\(playback?.playing ?? false)-\(touches)-\(dragging)-\(speedMenu)-\(editing)"
     }
 
     private func configure() async {
@@ -156,6 +160,10 @@ struct RacketWatchPlayerScreen: View {
         }
         #endif
         let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
+        // The look chosen in Edit (prompt 254): this video's, else the match's, else Always.
+        pb.look = RacketLookStore.resolve(partStart: ref.startSec, log: ex?.racketRecordingLog,
+                                          always: UserDefaults.standard.string(forKey: RacketLookStore.alwaysKey)
+                                              .flatMap(RacketLook.init(rawValue:))).look
         playback = pb
         onlyRallies = ralliesOnly && !rallies.isEmpty
         pb.ralliesOnly = onlyRallies ? rallies.rallies : nil
@@ -511,17 +519,12 @@ struct RacketWatchPlayerScreen: View {
                 }
                 .disabled(missing)
                 .accessibilityIdentifier("racket.player.share")
-                // Edit pauses (so the controls stay) and lists today's editing surfaces until Edit mode lands.
-                Button { pb.pause(); editMenu = true; touched() } label: {
+                // Edit mode (prompt 254): pauses and opens over the player on the same video.
+                Button { pb.pause(); editing = true; touched() } label: {
                     Text("Edit").font(.system(size: 16, weight: .semibold)).frame(minWidth: 44, minHeight: 44)
                 }
+                .disabled(missing)
                 .accessibilityIdentifier("racket.player.edit")
-                .confirmationDialog("Edit", isPresented: $editMenu, titleVisibility: .hidden) {
-                    ForEach(editActions) { a in
-                        Button(a.label) { a.action() }.accessibilityIdentifier("racket.player.edit.\(a.id)")
-                    }
-                    Button("Cancel", role: .cancel) {}
-                }
             }
             .foregroundStyle(SnappetColor.brand)
             .tint(SnappetColor.brand)

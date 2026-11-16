@@ -252,46 +252,10 @@ struct RacketTagSheet: View {
         }
     }
 
-    /// "Final 11–9": the game's score, when it has one.
-    private var finalLine: String? {
-        guard let i = ref.setIndex, let ex, i < ex.sets.count, let s = ex.sets[i].racketScore else { return nil }
-        return "Final \(s.label)"
-    }
+    private var lines: RacketTagLines { RacketTagLines(ex: ex, ref: ref, rallies: rallies) }
 
-    private func servingLine(_ r: RacketRally, sides: (us: String, them: String)) -> String? {
-        RacketTagScore.servingLine(sport: sport, firstServer: ex?.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
-                                   unitIndex: ref.setIndex, previous: ex?.racketUnits ?? [], rallyID: r.id,
-                                   rallies: rallies, sides: sides, rules: ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) },
-                                   ourFirst: ex?.racketOurFirstServer, partner: ex?.partner, doubles: doubles)
-    }
-
-    /// The doubles serve line, or why it isn't known.
-    private func doublesServeText(_ r: RacketRally, sides: (us: String, them: String)) -> String {
-        servingLine(r, sides: sides) ?? (ex?.racketFirstServerRaw == nil ? "Serving: choose who serves first at warmup"
-                                                                         : "Serving: not known until this is a game")
-    }
-
-    /// The tag sheet's score line for this sport: left (bold) and right (grey) with the right side's identifier.
     private func scoreLine(_ r: RacketRally, sides: (us: String, them: String)) -> (left: String?, right: String?, rightID: String) {
-        let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }
-        let before = RacketTagScore.points(before: r.id, in: rallies)
-        if sport.usesSets {
-            guard let rules else {
-                return (nil, doubles ? doublesServeText(r, sides: sides) : nil, "racket.tag.serving")
-            }
-            let l = RacketTagSportLine.sets(rules: rules, points: before)
-            return doubles ? (l.games, doublesServeText(r, sides: sides), "racket.tag.serving") : (l.games, l.point, "racket.tag.point")
-        }
-        if sport == .pickleball, let rules, rules.isSideOut, let i = ref.setIndex {
-            let l = RacketTagSportLine.pickleball(rules: rules, pointsBefore: before, winner: winner.map { $0 == .us ? .us : .them },
-                                                  ourFirst: ex?.racketOurFirstServer, unitIndex: i, partner: ex?.partner,
-                                                  sides: sides, doubles: doubles)
-            return (l.call, l.serve.isEmpty ? nil : l.serve, "racket.tag.serving")
-        }
-        let soFar = RacketTagScore.soFar(before: r.id, in: rallies)
-        let left = "So far \(soFar.us)–\(soFar.them)"
-        if doubles { return (left, doublesServeText(r, sides: sides), "racket.tag.serving") }
-        return (left, finalLine, "racket.tag.final")
+        lines.scoreLine(r, sides: sides, winner: winner)
     }
 
     // MARK: TnServe · PdWall · SqLet (prompt 252)
@@ -351,25 +315,9 @@ struct RacketTagSheet: View {
         }
     }
 
-    /// Who serves this rally, by side (TnServe), from Warmup's "Who serves first?" and your tags before it.
-    private func serverSide(_ r: RacketRally) -> RacketServe.Side? {
-        guard let i = ref.setIndex, let ex else { return nil }
-        return RacketServe.server(sport: sport, firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
-                                  unitIndex: i, previous: Array(ex.racketUnits.prefix(i)),
-                                  points: RacketTagScore.points(before: r.id, in: rallies), rules: ex.racketLiveRules(unitIndex: i))
-    }
+    private func serverSide(_ r: RacketRally) -> RacketServe.Side? { lines.serverSide(r) }
 
-    /// TnServe's "You’re serving" (doubles: "Mia serving"); why not, when it isn't known.
-    private func servingWho(_ r: RacketRally, sides: (us: String, them: String)) -> String {
-        guard let i = ref.setIndex, let ex else { return "Serving: not known until this is a set" }
-        guard let info = RacketDoublesServe.info(sport: sport, rules: ex.racketLiveRules(unitIndex: i),
-                                                 firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
-                                                 ourFirst: ex.racketOurFirstServer, unitIndex: i,
-                                                 previous: Array(ex.racketUnits.prefix(i)),
-                                                 points: RacketTagScore.points(before: r.id, in: rallies), doubles: doubles)
-        else { return "Serving: choose who serves first at warmup" }
-        return RacketServeCopy.serving(RacketServeCopy.who(info, partner: ex.partner, sides: sides))
-    }
+    private func servingWho(_ r: RacketRally, sides: (us: String, them: String)) -> String { lines.servingWho(r, sides: sides) }
 
     private func load(_ id: UUID) {
         currentID = id
@@ -1178,4 +1126,82 @@ struct RacketChoiceDetailSheet: View {
             picked = selected
         }
     }
+}
+
+// MARK: - The tag lines (shared by the tag sheet and Edit's inspector, prompt 254)
+
+/// The tag sheet's score and serve lines for a rally, from the session's entity, the part and its rallies — one place
+/// for the tag sheet (prompts 251 / 252) and Edit's inspector (prompt 254, which passes its working copy's rallies).
+@MainActor
+struct RacketTagLines {
+    let ex: SessionExercise?
+    let ref: RacketPartRef
+    /// The part's rallies ("Not a rally" excluded), in time order.
+    let rallies: [RacketRally]
+
+    var sport: RacketSport { ex?.racketSport ?? .tableTennis }
+    var doubles: Bool { ex?.isDoubles ?? false }
+
+    /// "Final 11–9": the game's score, when it has one.
+    var finalLine: String? {
+        guard let i = ref.setIndex, let ex, i < ex.sets.count, let s = ex.sets[i].racketScore else { return nil }
+        return "Final \(s.label)"
+    }
+
+    func servingLine(_ r: RacketRally, sides: (us: String, them: String)) -> String? {
+        RacketTagScore.servingLine(sport: sport, firstServer: ex?.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
+                                   unitIndex: ref.setIndex, previous: ex?.racketUnits ?? [], rallyID: r.id,
+                                   rallies: rallies, sides: sides, rules: ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) },
+                                   ourFirst: ex?.racketOurFirstServer, partner: ex?.partner, doubles: doubles)
+    }
+
+    /// The doubles serve line, or why it isn't known.
+    func doublesServeText(_ r: RacketRally, sides: (us: String, them: String)) -> String {
+        servingLine(r, sides: sides) ?? (ex?.racketFirstServerRaw == nil ? "Serving: choose who serves first at warmup"
+                                                                         : "Serving: not known until this is a game")
+    }
+
+    /// The tag sheet's score line for this sport: left (bold) and right (grey) with the right side's identifier.
+    func scoreLine(_ r: RacketRally, sides: (us: String, them: String), winner: RacketRallyWinner?) -> (left: String?, right: String?, rightID: String) {
+        let rules = ref.setIndex.flatMap { ex?.racketLiveRules(unitIndex: $0) }
+        let before = RacketTagScore.points(before: r.id, in: rallies)
+        if sport.usesSets {
+            guard let rules else {
+                return (nil, doubles ? doublesServeText(r, sides: sides) : nil, "racket.tag.serving")
+            }
+            let l = RacketTagSportLine.sets(rules: rules, points: before)
+            return doubles ? (l.games, doublesServeText(r, sides: sides), "racket.tag.serving") : (l.games, l.point, "racket.tag.point")
+        }
+        if sport == .pickleball, let rules, rules.isSideOut, let i = ref.setIndex {
+            let l = RacketTagSportLine.pickleball(rules: rules, pointsBefore: before, winner: winner.map { $0 == .us ? .us : .them },
+                                                  ourFirst: ex?.racketOurFirstServer, unitIndex: i, partner: ex?.partner,
+                                                  sides: sides, doubles: doubles)
+            return (l.call, l.serve.isEmpty ? nil : l.serve, "racket.tag.serving")
+        }
+        let soFar = RacketTagScore.soFar(before: r.id, in: rallies)
+        let left = "So far \(soFar.us)–\(soFar.them)"
+        if doubles { return (left, doublesServeText(r, sides: sides), "racket.tag.serving") }
+        return (left, finalLine, "racket.tag.final")
+    }
+
+    /// Who serves this rally, by side (TnServe), from Warmup's "Who serves first?" and your tags before it.
+    func serverSide(_ r: RacketRally) -> RacketServe.Side? {
+        guard let i = ref.setIndex, let ex else { return nil }
+        return RacketServe.server(sport: sport, firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
+                                  unitIndex: i, previous: Array(ex.racketUnits.prefix(i)),
+                                  points: RacketTagScore.points(before: r.id, in: rallies), rules: ex.racketLiveRules(unitIndex: i))
+    }
+
+    /// TnServe's "You’re serving" (doubles: "Mia serving"); why not, when it isn't known.
+    func servingWho(_ r: RacketRally, sides: (us: String, them: String)) -> String {
+        guard let i = ref.setIndex, let ex else { return "Serving: not known until this is a set" }
+        guard let info = RacketDoublesServe.info(sport: sport, rules: ex.racketLiveRules(unitIndex: i),
+                                                 firstServer: ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:)),
+                                                 ourFirst: ex.racketOurFirstServer, unitIndex: i,
+                                                 previous: Array(ex.racketUnits.prefix(i)),
+                                                 points: RacketTagScore.points(before: r.id, in: rallies), doubles: doubles)
+        else { return "Serving: choose who serves first at warmup" }
+        return RacketServeCopy.serving(RacketServeCopy.who(info, partner: ex.partner, sides: sides))
+    }
+
 }

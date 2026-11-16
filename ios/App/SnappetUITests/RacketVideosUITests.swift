@@ -127,8 +127,11 @@ final class RacketVideosUITests: XCTestCase {
         any("racket.player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)).tap()
         XCTAssertTrue(app.buttons["racket.player.edit"].waitForExistence(timeout: 3))
         app.buttons["racket.player.edit"].tap()
-        let analysis = app.buttons["racket.player.edit.analysis"].firstMatch
-        XCTAssertTrue(analysis.waitForExistence(timeout: 4), "Edit lists Analysis view")
+        // Edit mode (prompt 254): the analysis view is under the rally list.
+        XCTAssertTrue(app.buttons["racket.edit.list"].waitForExistence(timeout: 5))
+        app.buttons["racket.edit.list"].tap()
+        let analysis = app.buttons["racket.edit.analysis"].firstMatch
+        XCTAssertTrue(analysis.waitForExistence(timeout: 4), "the rally list offers Analysis view")
         analysis.tap()
         XCTAssertTrue(any("racket.player.overlay").waitForExistence(timeout: 3), "the tag shows over the rally")
         XCTAssertTrue(any("racket.player.overlay").label.hasPrefix("Rally 1 · You won · Out"), any("racket.player.overlay").label)

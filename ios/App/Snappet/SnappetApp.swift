@@ -9,6 +9,8 @@ struct SnappetApp: App {
     /// Whether the persistent store opened, or the in-memory fallback fired (issue #68) —
     /// `StoreHealthBanner` makes the fallback visible instead of a silent blank app.
     @State private var storeHealth: StoreHealth
+    /// Only for the orientation lock (`SnappetOrientation`, prompt 254): screens designed for portrait only.
+    @UIApplicationDelegateAdaptor(SnappetAppDelegate.self) private var appDelegate
 
     init() {
         // The shared on-device store for the whole suite (Snappet Core). A corrupt

@@ -734,6 +734,16 @@ timeline / score / analysis surfaces until Edit mode (next job). Pure: `RacketPl
 real Photos video, iCloud download, gestures and haptics in the hand, rotation, VoiceOver. **Deferred:** "Choose it
 again from Photos" (relink), shown disabled and labelled "Not available yet".
 
+🟡 **Racket player, Edit mode and Share (2026-11-14, prompt 254 — issue #448 part 1).** iOS. Edit (from the player) is
+Photos' video Edit mode: video, transport with frame steps, a ruler and a pinch-zoom filmstrip under a fixed playhead;
+tabs Rallies (select, trim with nudges, tag with the sport's rules, Shots, Split, Merge next, Not a rally, + Rally while
+playing, Find rallies in place, the rally list), Looks (five presets for playback and shares; this video / whole match /
+always; hold for the original) and Score; Cancel / Undo / Redo / Done over a pure working copy. Share makes a new copy
+(this rally / rallies only / whole game, look, labels, speed) with progress and cancel. Pure: `RacketEditSession.swift`
+(`RacketEditSessionTests`); screens `RacketEditViews.swift`, `RacketShareViews.swift`; renderer
+`Services/RacketLookRenderer.swift`; UI `RacketEditUITests`. **Device-pending:** looks on real footage, the shared copy's
+look / labels / speed (the simulator only passes through), haptic ticks, VoiceOver.
+
 ## License
 
 TBD.
