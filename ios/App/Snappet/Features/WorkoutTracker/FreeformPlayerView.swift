@@ -325,7 +325,7 @@ struct FreeformPlayerView: View {
                     ex: ex, start: target.start, defaults: racketRecordingDefaults,
                     heartRate: app.liveWorkout.latestHR,
                     onRecordingMode: { mode in setRacketRecording(target.exerciseID, mode) },
-                    onFirstServer: { side in setRacketFirstServer(target.exerciseID, side) },
+                    onFirstServer: { side, ours in setRacketFirstServer(target.exerciseID, side, ours: ours) },
                     onUnit: { log, index in
                         saveRacketUnit(log, target: RacketScoreTarget(exerciseID: target.exerciseID, unitIndex: index,
                                                                       durationSec: log.durationSec))
@@ -1745,10 +1745,11 @@ struct FreeformPlayerView: View {
         persist()
     }
 
-    /// Warmup's "Who serves first?" (prompt 249).
-    private func setRacketFirstServer(_ exID: UUID, _ side: RacketServe.Side?) {
+    /// Warmup's "Who serves first?" (prompt 249) and, in doubles, "Who serves first for us?" (prompt 252).
+    private func setRacketFirstServer(_ exID: UUID, _ side: RacketServe.Side?, ours: RacketDoublesServe.Player?) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
         session.exercises[idx].racketFirstServerRaw = side?.rawValue
+        session.exercises[idx].racketOurFirstServerRaw = session.exercises[idx].isDoubles ? ours?.rawValue : nil
         persist()
     }
 
@@ -1823,7 +1824,7 @@ struct FreeformPlayerView: View {
         relay.attach(new) { command, now in handleRacketWatch(command, now: now) }
         racketWatch = RacketWatchMatch(
             exerciseID: new, unitIndex: ex.sets.count,
-            rules: RacketLiveRules(format: ex.racketFormat, unitIndex: ex.sets.count),
+            rules: ex.racketLiveRules(unitIndex: ex.sets.count),
             breakSec: RacketWatchMatch.defaultBreakSec(ex.racketSport ?? .tableTennis),
             startedAt: racketTimers[new])
     }
@@ -1863,7 +1864,7 @@ struct FreeformPlayerView: View {
     private func racketWatchUnitsChanged(fromWatch: Bool) {
         guard let w = racketWatch, let ex = session.exercises.first(where: { $0.id == w.exerciseID }) else { return }
         let count = ex.sets.count
-        racketWatch?.logged(unitCount: count, rules: RacketLiveRules(format: ex.racketFormat, unitIndex: count),
+        racketWatch?.logged(unitCount: count, rules: ex.racketLiveRules(unitIndex: count),
                             lastLabel: ex.sets.last?.racketScore.map(\.label), decided: ex.racketState.isDecided,
                             fromWatch: fromWatch, now: .now)
     }

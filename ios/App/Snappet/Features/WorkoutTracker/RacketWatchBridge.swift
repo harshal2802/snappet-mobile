@@ -10,13 +10,15 @@ import Foundation
 // MARK: - Rules, sides, copy
 
 extension RacketLiveRules {
-    /// The tally rules for unit `unitIndex` (0-based) of a match in `format`.
-    init(format: RacketFormat, unitIndex: Int) {
+    /// The tally rules for unit `unitIndex` (0-based) of a match in `format`. Pickleball side-out (prompt 252) needs who
+    /// serves first (`RacketSideOut.servesFirst`) and whether it's doubles (a second server).
+    init(format: RacketFormat, unitIndex: Int, firstServer: RacketServe.Side? = nil, doubles: Bool = false) {
         if format.sport.usesSets {
             self.init(kind: .sets, pointsTo: format.pointsTo, superTiebreak: format.isSuperTiebreak(index: unitIndex),
                       goldenPoint: format.goldenPoint)
         } else {
-            self.init(kind: .rally, pointsTo: format.pointsTo, cap: format.cap)
+            self.init(kind: .rally, pointsTo: format.pointsTo, cap: format.cap, sideOut: format.sideOut, doubles: doubles,
+                      servesFirst: format.sideOut ? RacketSideOut.servesFirst(firstServer: firstServer, unitIndex: unitIndex) : nil)
         }
     }
 }
@@ -66,6 +68,14 @@ struct RacketWatchContext: Equatable, Sendable {
     /// "Games 1–0" once a unit is logged; "Won 3–1" once decided.
     var matchLine: String?
     var drillTitle: String?
+    // Prompt 252: what the Watch's note needs to say who serves (TnWatch "You’re serving · tap for the point winner")
+    // and pickleball side-out ("Winning while receiving doesn’t score").
+    var format: RacketFormat?
+    var firstServer: RacketServe.Side?
+    var ourFirstServer: RacketDoublesServe.Player?
+    var doubles = false
+    var partner: String?
+    var previous: [RacketUnitScore] = []
 
     init(sessionID: UUID, sport: RacketSport, sideUs: String, sideThem: String, unitNumber: Int,
          matchLine: String? = nil, drillTitle: String? = nil) {
@@ -86,6 +96,30 @@ struct RacketWatchContext: Equatable, Sendable {
                   unitNumber: ex.sets.count + 1,
                   matchLine: ex.isRacketMatch ? RacketWatchCopy.matchLine(state, unit: sport.unit) : nil,
                   drillTitle: ex.isRacketDrill ? ex.displayName : nil)
+        if ex.isRacketMatch {
+            format = ex.racketFormat
+            firstServer = ex.racketFirstServerRaw.flatMap(RacketServe.Side.init(rawValue:))
+            ourFirstServer = ex.racketOurFirstServer
+            doubles = ex.isDoubles
+            partner = ex.partner
+            previous = ex.racketUnits
+        }
+    }
+
+    /// The note under the Watch score for this match, with who serves where the sport's board says it.
+    func note(score: RacketLiveScore?) -> String {
+        RacketWatchCopy.note(sport, format: format, serving: score.flatMap(serveWho))
+    }
+
+    /// "You’re serving" / "Mia serving" / "Alex serving" for the next point of `score`; nil when not known.
+    func serveWho(_ score: RacketLiveScore) -> String? {
+        guard let format else { return nil }
+        let i = max(0, unitNumber - 1)
+        guard let info = RacketDoublesServe.info(sport: sport, rules: score.rules, firstServer: firstServer,
+                                                 ourFirst: ourFirstServer, unitIndex: i,
+                                                 previous: Array(previous.prefix(i)), points: score.points,
+                                                 doubles: doubles), format.sport == sport else { return nil }
+        return RacketServeCopy.serving(RacketServeCopy.who(info, partner: partner, sides: (sideUs, sideThem)))
     }
 }
 
@@ -97,14 +131,17 @@ enum RacketWatchCopy {
         return ("You", (first?.isEmpty == false ? first : nil) ?? "Them")
     }
 
-    /// The line under the Watch score (boards' `wnote`; table tennis's rally tag and serve tracking come later).
-    static func note(_ sport: RacketSport) -> String {
+    /// The line under the Watch score (boards' `wnote`; table tennis's rally tag comes later). Tennis says who serves
+    /// when it's known (TnWatch "You’re serving · tap for the point winner"); pickleball side-out says receiving
+    /// doesn't score (PbWatch).
+    static func note(_ sport: RacketSport, format: RacketFormat? = nil, serving: String? = nil) -> String {
         switch sport {
         case .tableTennis: return "Tap who won each point."
         case .badminton: return "The rally winner serves next"
-        case .tennis, .padel: return "Tap for the point winner"
+        case .tennis: return serving.map { "\($0) · tap for the point winner" } ?? "Tap for the point winner"
+        case .padel: return "Tap for the point winner"
         case .squash: return "Every rally scores unless it’s a let"
-        case .pickleball: return "Every rally scores"
+        case .pickleball: return format?.sideOut == true ? "Winning while receiving doesn’t score" : "Every rally scores"
         }
     }
 
@@ -168,7 +205,7 @@ enum RacketWatchBridge {
         }
         return RacketWatchState(sessionID: c.sessionID, revision: 0, sport: c.sport.label, unitNoun: c.sport.unit.noun,
                                 sideUs: c.sideUs, sideThem: c.sideThem,
-                                note: m.racketMode == .match ? RacketWatchCopy.note(c.sport) : nil,
+                                note: m.racketMode == .match ? c.note(score: score) : nil,
                                 surface: surface, stillPlaying: still, notice: notice)
     }
 
@@ -315,7 +352,7 @@ extension RacketWatchBridge {
             }
         }
         return RacketWatchState(sessionID: c.sessionID, revision: 0, sport: c.sport.label, unitNoun: noun,
-                                sideUs: c.sideUs, sideThem: c.sideThem, note: RacketWatchCopy.note(c.sport),
+                                sideUs: c.sideUs, sideThem: c.sideThem, note: c.note(score: score),
                                 surface: surface, stillPlaying: still, notice: notice)
     }
 
@@ -480,7 +517,7 @@ struct RacketWatchMatch: Equatable, Sendable {
             surface = .ended(.init(title: c.matchLine ?? "Match over", line: "Confirm the scores on the phone."))
         }
         return RacketWatchState(sessionID: c.sessionID, revision: 0, sport: c.sport.label, unitNoun: noun,
-                                sideUs: c.sideUs, sideThem: c.sideThem, note: RacketWatchCopy.note(c.sport),
+                                sideUs: c.sideUs, sideThem: c.sideThem, note: c.note(score: score),
                                 surface: surface, stillPlaying: nil, notice: nil)
     }
 }

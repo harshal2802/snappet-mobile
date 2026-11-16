@@ -19,7 +19,7 @@ struct RacketCameraProbe: View {
 
     var body: some View {
         RacketGameCover(ex: ex, start: .camera, defaults: RacketRecordingDefaults(),
-                        onRecordingMode: { _ in }, onFirstServer: { _ in }, onUnit: { _, _ in },
+                        onRecordingMode: { _ in }, onFirstServer: { _, _ in }, onUnit: { _, _ in },
                         onPartSaved: { _, _ in }, onLog: { _ in }, onRecordEverything: { _ in },
                         onMatchOver: { _ in }, onClose: {})
     }
