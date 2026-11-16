@@ -363,6 +363,9 @@ struct SetLog: Codable, Hashable, Sendable {
     /// A game recorded (prompt 244, record everything) whose score was left for later: it shows as "Score
     /// unconfirmed" until confirmed, and counts for neither side. `nil` ⇒ not pending. Cleared when a score is saved.
     var scoreUnconfirmed: Bool?
+    /// A unit tallied point by point on the Apple Watch (prompt 245) and not confirmed yet: it carries its score and
+    /// counts, but reads "from Watch" until a score is saved on the phone (which clears it). `nil` ⇒ entered on the phone.
+    var scoreFromWatch: Bool?
 }
 
 /// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.

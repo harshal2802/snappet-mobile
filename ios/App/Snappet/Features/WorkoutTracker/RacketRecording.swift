@@ -378,7 +378,8 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
         /// `RacketInterruption.rawValue` when this run ended because of one.
         var endReasonRaw: String?
     }
-    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame }
+    /// `breakStart`: "Break starts" from the Watch (XxWatchMark, prompt 245) — a break between games, for the split.
+    enum MarkKind: String, Codable, Sendable { case block, rest, moment, newGame, breakStart }
     struct Mark: Codable, Hashable, Sendable {
         var kindRaw: String
         /// The block's / rest's 0-based block index; nil for a moment.
@@ -407,7 +408,7 @@ struct RacketRecordingLog: Codable, Hashable, Sendable {
     var savedUpToSec: Double { runs.compactMap(\.endSec).max() ?? 0 }
 
     var blockMarks: [Mark] { marks.filter { $0.kind == .block } }
-    var userMarkCount: Int { marks.filter { $0.kind == .moment || $0.kind == .newGame }.count }
+    var userMarkCount: Int { marks.filter { $0.kind == .moment || $0.kind == .newGame || $0.kind == .breakStart }.count }
 
     /// "1 recording · 3 block parts" (review5 M2): what a drill recorded with everything ends as.
     var drillSummaryLine: String {
@@ -579,33 +580,8 @@ enum RacketStillPlaying {
 
 // MARK: - Timer display (word + ring)
 
-/// The phase word and ring tone: Work in the accent, Rest in grey, Done in green (#438 design).
-enum RacketTimerTone: Equatable, Sendable { case work, rest, restPaused, done }
-
-struct RacketTimerDisplay: Equatable, Sendable {
-    var word: String
-    var tone: RacketTimerTone
-    /// Seconds left (counting down) or elapsed (a match recording).
-    var seconds: TimeInterval
-    /// Ring fill, 0…1 (the part of the phase still to go).
-    var progress: Double
-}
-
-enum RacketClock {
-    /// "4:05", "1:02:04".
-    static func mmss(_ sec: TimeInterval) -> String {
-        let s = max(0, Int(sec.rounded(.up)))
-        if s >= 3600 { return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) }
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-
-    /// Elapsed clocks floor rather than round up.
-    static func elapsed(_ sec: TimeInterval) -> String {
-        let s = max(0, Int(sec))
-        if s >= 3600 { return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) }
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
+// `RacketTimerTone`, `RacketTimerDisplay` and `RacketClock` live in `Shared/RacketTimerDisplay.swift` (prompt 245) so the
+// phone and the Watch draw the same rings from one source.
 
 // MARK: - The state machine
 
@@ -658,6 +634,8 @@ struct RacketRecordingMachine: Equatable, Sendable {
     private(set) var stillPlayingAskedAt: Date?
     private(set) var lastActivity: Date
     private(set) var log: RacketRecordingLog?
+    /// The recording ended because "Still playing?" went unanswered (the Watch says so, prompt 245).
+    private(set) var endedByStillPlaying = false
 
     init(kind: Kind, recording: RacketRecordingMode = .everything, stillPlayingMinutes: Int?, now: Date) {
         self.kind = kind
@@ -784,9 +762,9 @@ struct RacketRecordingMachine: Equatable, Sendable {
 
     // MARK: Match marks
 
-    /// "Mark this moment" / "New game starts".
+    /// "Mark this moment" / "New game starts" / "Break starts" (the Watch, prompt 245).
     mutating func mark(_ kind: RacketRecordingLog.MarkKind, now: Date) {
-        guard phase == .recordingMatch, kind == .moment || kind == .newGame else { return }
+        guard phase == .recordingMatch, kind == .moment || kind == .newGame || kind == .breakStart else { return }
         touch(now)
         guard var l = log else { return }
         l.marks.append(.init(kindRaw: kind.rawValue, index: nil, startSec: l.offset(now), endSec: nil))
@@ -900,7 +878,10 @@ struct RacketRecordingMachine: Equatable, Sendable {
     private mutating func checkStillPlaying(now: Date) -> [Effect] {
         guard let threshold = stillPlayingSec, capturing, !isEnded, interruption == nil else { return [] }
         if let asked = stillPlayingAskedAt {
-            if now.timeIntervalSince(asked) >= RacketStillPlaying.answerWindowSec { return end(now: now) }
+            if now.timeIntervalSince(asked) >= RacketStillPlaying.answerWindowSec {
+                endedByStillPlaying = true
+                return end(now: now)
+            }
             return []
         }
         if now.timeIntervalSince(lastActivity) >= threshold {

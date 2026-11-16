@@ -126,6 +126,11 @@ enum SessionSetEditing {
         if discipline == .racket {
             if d.scoreFor != seed.scoreFor, let v = Int(d.scoreFor) { set.scoreFor = max(0, v) }
             if d.scoreAgainst != seed.scoreAgainst, let v = Int(d.scoreAgainst) { set.scoreAgainst = max(0, v) }
+            // Editing a score by hand confirms it (prompt 244's "unconfirmed", prompt 245's "from Watch").
+            if (d.scoreFor != seed.scoreFor || d.scoreAgainst != seed.scoreAgainst), set.scoreFor != nil, set.scoreAgainst != nil {
+                set.scoreUnconfirmed = nil
+                set.scoreFromWatch = nil
+            }
             if d.drillMade != seed.drillMade, let v = Int(d.drillMade) { set.drillMade = max(0, v) }
             if d.drillTried != seed.drillTried, let v = Int(d.drillTried) { set.drillTried = max(0, v) }
             if d.duration != seed.duration { set.durationSec = SetMeasure.parseDuration(d.duration) }
