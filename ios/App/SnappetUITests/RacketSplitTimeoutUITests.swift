@@ -137,6 +137,10 @@ final class RacketSplitTimeoutUITests: XCTestCase {
         XCTAssertTrue(app.buttons["racket.split.part.8"].label.contains("Game 5"), app.buttons["racket.split.part.8"].label)
         shot("06-review-with-timeout")
         tapWhenHittable(app.buttons["racket.split.apply"])
+        // On a phone the tap can land while the list is still settling after the scroll and be swallowed: once more.
+        if !any("racket.assign.row.4").waitForExistence(timeout: 5), app.buttons["racket.split.apply"].exists {
+            app.buttons["racket.split.apply"].tap()
+        }
         XCTAssertTrue(any("racket.assign.row.4").waitForExistence(timeout: 5))
         XCTAssertFalse(any("racket.assign.row.5").exists, "five games")
         XCTAssertTrue(any("racket.assign.row.3").label.contains("37:00–45:00 + 48:10–55:00"), any("racket.assign.row.3").label)

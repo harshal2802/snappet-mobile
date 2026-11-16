@@ -137,6 +137,50 @@ enum RacketVideoSeed {
         return (log, sets)
     }
 
+    /// With the seed (prompt 260, the user's real case): a stray 9–11 logged by mistake five minutes before the
+    /// recording (6.4 s, no video), then the recording's three games, 9–11 each, split and saved (`baseSetIndex` 1,
+    /// links 1, 2, 3, then a short not-play part), rallies tagged in each game. The last game was logged from the stop
+    /// sheet: its length is still the whole recording (792 s) though its video is 211 s. Best of 5: the recap reads
+    /// "L 0–4"; the truth is three games, 0–3. A second match ("vs Sam", game by game, one game) has a recording too.
+    static let editMatchArgument = "-uiTestRacketEditMatch"
+
+    /// The real case's parts (kind, start, end) and its recording's length.
+    static let strayParts: [(RacketPartKind, Double, Double)] = [(.game, 0, 270), (.game, 270, 540), (.game, 540, 751), (.notPlay, 751, 792)]
+    static let strayRecordingSec: Double = 792
+
+    static func strayGameMatch(recordingStart: Date) -> (log: RacketRecordingLog, sets: [SetLog]) {
+        var log = RacketRecordingLog(startedAt: recordingStart)
+        log.baseSetIndex = 1
+        log.qualityRaw = RacketRecordingQuality.hd1080.rawValue
+        log.runs = [.init(startSec: 0, endSec: strayRecordingSec, endReasonRaw: nil)]
+        log.endedAt = recordingStart.addingTimeInterval(strayRecordingSec)
+        func game(_ end: Date, _ duration: Double) -> SetLog {
+            var g = SetLog(completedAt: end, durationSec: duration)
+            g.scoreFor = 9; g.scoreAgainst = 11
+            return g
+        }
+        var sets = [game(recordingStart.addingTimeInterval(-300), 6.4)]
+        var parts: [RacketVideoPart] = []
+        var rallies: [RacketRally] = []
+        for (kind, a, b) in strayParts {
+            var p = RacketVideoPart(kind: kind, startSec: a, endSec: b)
+            if kind == .game {
+                p.setIndex = sets.count
+                // The stop-sheet game (the last) carries the whole recording.
+                let last = b == 751
+                sets.append(game(recordingStart.addingTimeInterval(last ? strayRecordingSec : b), last ? strayRecordingSec : b - a))
+                for (k, w) in [RacketRallyWinner.us, .them, .them].enumerated() {
+                    let t = a + 30 + Double(k) * 60
+                    rallies.append(RacketRally(startSec: t, endSec: t + 8, winner: w))
+                }
+            }
+            parts.append(p)
+        }
+        log.split = RacketSplit(parts: parts, appliedAt: recordingStart.addingTimeInterval(strayRecordingSec + 60))
+        log.rallies = rallies
+        return (log, sets)
+    }
+
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
@@ -190,6 +234,11 @@ enum RacketVideoSeed {
                 match.racketRecordingLog = log
                 match.sets = out.sets
             }
+        } else if ProcessInfo.processInfo.arguments.contains(editMatchArgument) {
+            let m = strayGameMatch(recordingStart: start.addingTimeInterval(600))
+            match.racketBestOf = 5
+            match.racketRecordingLog = m.log
+            match.sets = m.sets
         } else if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = taggedGameLog(startedAt: start)
@@ -228,6 +277,27 @@ enum RacketVideoSeed {
         drill.racketRecordingLog = dlog
 
         var exercises = [match, drill]
+        if ProcessInfo.processInfo.arguments.contains(editMatchArgument) {
+            // A second recorded match: Your videos ids stay unique per match (prompt 260).
+            var sam = match
+            sam.id = UUID()
+            sam.opponent = "Sam"
+            sam.racketBestOf = 3
+            sam.racketRecordingRaw = nil
+            let samStart = start.addingTimeInterval(2000)
+            var slog = RacketRecordingLog(startedAt: samStart)
+            slog.baseSetIndex = 0
+            slog.modeRaw = RacketRecordingMode.byUnit.rawValue
+            slog.runs = [.init(startSec: 0, endSec: 120, endReasonRaw: nil)]
+            slog.marks = [.init(kindRaw: RacketRecordingLog.MarkKind.game.rawValue, index: 0, startSec: 0, endSec: 120)]
+            slog.endedAt = samStart.addingTimeInterval(120)
+            slog.split = RacketGameByGameSplit.split(slog, now: samStart.addingTimeInterval(120))
+            sam.racketRecordingLog = slog
+            var g = SetLog(completedAt: samStart.addingTimeInterval(120), durationSec: 120)
+            g.scoreFor = 11; g.scoreAgainst = 5
+            sam.sets = [g]
+            exercises.insert(sam, at: 1)
+        }
         if ProcessInfo.processInfo.arguments.contains("-uiTestPickPhotosVideo") {
             // SplitPhotos: a match with no recording yet, for a video added from Photos.
             var sam = SessionExercise(exerciseId: RacketStats.matchExerciseId(.tableTennis), targetSets: 0, targetReps: "",

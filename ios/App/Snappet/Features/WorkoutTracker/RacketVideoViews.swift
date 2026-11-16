@@ -170,6 +170,8 @@ struct RacketVideosCover: View {
     @State private var photoPick: PhotosPickerItem?
     @State private var photoTarget: UUID?
     @State private var choosingTarget = false
+    /// Edit match (prompt 260), from a match's section.
+    @State private var matchEdit: RacketMatchEditTarget?
 
     private var store: RacketVideoStore { RacketVideoStore(session: session, context: context) }
 
@@ -204,6 +206,10 @@ struct RacketVideosCover: View {
         }
         .sheet(isPresented: $keeping) {
             RacketKeepRalliesSheet(store: store) { refreshFound() }
+        }
+        .sheet(item: $matchEdit) { t in
+            // A saved edit renumbers games: the split draft (if any) reloads from the saved split next time.
+            RacketMatchEditSheet(session: session, exerciseID: t.exerciseID) { draftFor = nil }
         }
         .sheet(item: $tagTarget) { t in
             RacketTagSheet(store: store, ref: t.ref, startID: startID(t), unsureOnly: t.unsureOnly) { finished in
@@ -908,11 +914,23 @@ struct RacketVideosCover: View {
                 Text("Original video not found").font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
                     .accessibilityIdentifier("racket.videos.missing")
             }
-            if !ex.isRacketDrill, log?.isSplit == true {
-                // Prompt 258: reopen a saved split (e.g. a break that was really a timeout).
-                chipButton("Change the split", id: "racket.videos.changeSplit") {
-                    draftFor = nil
-                    path.append(.review(ex.id))
+            let m = matchOrdinal(ex)
+            if !ex.isRacketDrill {
+                FlowRow {
+                    if log?.isSplit == true {
+                        // Prompt 258: reopen a saved split (e.g. a break that was really a timeout).
+                        chipButton("Change the split", id: RacketMatchEditAvailability.id("racket.videos.changeSplit", match: m)) {
+                            draftFor = nil
+                            path.append(.review(ex.id))
+                        }
+                    }
+                    if RacketMatchEditAvailability.allowed(sessionActive: session.isActive, ex: ex) {
+                        // Prompt 260: games, order, video links and details, on one draft.
+                        chipButton("Edit match", id: RacketMatchEditAvailability.id("racket.videos.editMatch", match: m)) {
+                            reviewPlayback?.pause()
+                            matchEdit = RacketMatchEditTarget(exerciseID: ex.id)
+                        }
+                    }
                 }
             }
             if ex.isRacketDrill {
@@ -923,10 +941,15 @@ struct RacketVideosCover: View {
                 }
             } else {
                 ForEach(Array(RacketVideoRows.rows(for: ex).enumerated()), id: \.element.id) { k, row in
-                    videoRow(ex, row, index: k, state: state, canFind: canFind)
+                    videoRow(ex, row, index: k, match: m, state: state, canFind: canFind)
                 }
             }
         }
+    }
+
+    /// This match's place among the session's recorded matches (prompt 260: control ids are unique per match).
+    private func matchOrdinal(_ ex: SessionExercise) -> Int {
+        racketEntities.filter { !$0.isRacketDrill }.firstIndex { $0.id == ex.id } ?? 0
     }
 
     private func ref(_ ex: SessionExercise, _ row: RacketVideoRow) -> RacketPartRef {
@@ -934,9 +957,12 @@ struct RacketVideosCover: View {
                       startSec: row.startSec, endSec: row.endSec, setIndex: row.setIndex)
     }
 
-    @ViewBuilder private func videoRow(_ ex: SessionExercise, _ row: RacketVideoRow, index k: Int,
+    @ViewBuilder private func videoRow(_ ex: SessionExercise, _ row: RacketVideoRow, index k: Int, match m: Int,
                                        state: RacketOriginalCheck.State, canFind: Bool) -> some View {
         let r = ref(ex, row)
+        // The first match keeps the plain ids ("racket.videos.play.0"); later matches add ".m1" (prompt 260).
+        let vid: (String) -> String = { RacketMatchEditAvailability.id($0, match: m, k) }
+        let sub = m == 0 ? "videos.\(k)" : "videos.m\(m).\(k)"
         let scan = ex.racketRecordingLog.map {
             RacketScanState.of($0, partStart: row.startSec, partEnd: row.endSec,
                                current: RacketCapabilityRegistry.capabilities(for: ex.racketFormat.sport).model)
@@ -947,39 +973,39 @@ struct RacketVideosCover: View {
                 Spacer()
                 if let chip = row.scoreChip {
                     Text(chip).font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.perfModerate)
-                        .accessibilityIdentifier("racket.videos.chip.\(k)")
+                        .accessibilityIdentifier(vid("racket.videos.chip"))
                 }
             }
             if canFind {
-                scanLine(scan, id: "racket.videos.scan.\(k)")
+                scanLine(scan, id: vid("racket.videos.scan"))
             }
             Text(row.line).font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
-                .accessibilityIdentifier("racket.videos.line.\(k)")
+                .accessibilityIdentifier(vid("racket.videos.line"))
             Text(row.tagLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                .accessibilityIdentifier("racket.videos.tags.\(k)")
+                .accessibilityIdentifier(vid("racket.videos.tags"))
             FlowRow {
-                chipButton("Play", id: "racket.videos.play.\(k)") {
+                chipButton("Play", id: vid("racket.videos.play")) {
                     if case .missing = state { path.append(.missing(r)) } else { path.append(.player(r, ralliesOnly: false)) }
                 }
-                chipButton(canFind ? "Open timeline" : "Mark rallies", id: "racket.videos.mark.\(k)") { path.append(.timeline(r)) }
-                if canFind { scanButtons(ex, r, scan, id: "videos.\(k)") }
+                chipButton(canFind ? "Open timeline" : "Mark rallies", id: vid("racket.videos.mark")) { path.append(.timeline(r)) }
+                if canFind { scanButtons(ex, r, scan, id: sub) }
                 if row.rallies > 0 {
-                    chipButton("See your tags", id: "racket.videos.seeTags.\(k)") { path.append(.summary(r)) }
+                    chipButton("See your tags", id: vid("racket.videos.seeTags")) { path.append(.summary(r)) }
                 }
                 if let i = row.setIndex, ex.isRacketMatch {
-                    chipButton("Edit score", id: "racket.videos.score.\(k)") {
+                    chipButton("Edit score", id: vid("racket.videos.score")) {
                         scoring = RacketScoreTarget(exerciseID: ex.id, unitIndex: i, durationSec: nil)
                     }
                 }
                 if row.kind == .whole {
-                    chipButton("Split recording", id: "racket.videos.split") { path.append(.review(ex.id)) }
+                    chipButton("Split recording", id: RacketMatchEditAvailability.id("racket.videos.split", match: m)) { path.append(.review(ex.id)) }
                 }
                 // Step 4 (prompt 247): the round trip with another AI app.
-                chipButton("Another AI app", id: "racket.videos.ai.\(k)") { path.append(.aiSend(r)) }
-                chipButton("Bring results back", id: "racket.videos.aiImport.\(k)") { path.append(.aiImport(r)) }
+                chipButton("Another AI app", id: vid("racket.videos.ai")) { path.append(.aiSend(r)) }
+                chipButton("Bring results back", id: vid("racket.videos.aiImport")) { path.append(.aiImport(r)) }
             }
-            aiPending(ex, r, id: "videos.\(k)")
-            aiWaiting(ex, r, id: "videos.\(k)")
+            aiPending(ex, r, id: sub)
+            aiWaiting(ex, r, id: sub)
         }
     }
 
