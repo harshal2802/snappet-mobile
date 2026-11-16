@@ -2,6 +2,7 @@ import AVFoundation
 import Photos
 import UIKit
 import Observation
+import os
 
 /// **Record everything's AVFoundation + Photos edge** (prompt 244). One back-camera capture session at the chosen
 /// quality, a movie output cut into parts of `RacketStorageCheck.partSec` (each saved to the Photos library as it
@@ -30,6 +31,9 @@ final class RacketRecorder: NSObject {
     private(set) var codec: RacketVideoCodec = .hevc
     /// Bytes of finished parts this session (read from each file before it's handed to Photos).
     private(set) var savedBytes: Int64 = 0
+    /// The shown picture's width / height (the preview is mapped portrait, so a 16:9 format shows 9:16); nil until the
+    /// camera is configured (and for the stand-in, which fills its box). The court guide fits itself to it.
+    private(set) var previewAspect: CGFloat?
 
     /// A part saved to Photos (asset id, when it started, its length).
     var onPartSaved: ((RecordedClip) -> Void)?
@@ -45,7 +49,9 @@ final class RacketRecorder: NSObject {
     private let library = MediaLibraryService()
     private let queue = DispatchQueue(label: "com.snappet.racket.recorder", qos: .userInitiated)
     /// The owner wants the camera writing — a part that closes at the limit rolls straight into the next one.
-    private var wantsCapture = false
+    private(set) var wantsCapture = false
+    /// Bumped on every appear / disappear of the screen that owns this recorder.
+    @ObservationIgnored private var lifeGeneration = 0
     private var configured = false
     /// Keeps each part level with the horizon however the phone is propped (device feedback round 1).
     @ObservationIgnored private var rotation: AVCaptureDevice.RotationCoordinator?
@@ -60,6 +66,7 @@ final class RacketRecorder: NSObject {
     init(fake: Bool = CameraController.fakeRequested || !CameraController.isAvailable) {
         self.fake = fake
         super.init()
+        Self.trace("recorder init session=\(Unmanaged.passUnretained(self.session).toOpaque())")
     }
 
     deinit {
@@ -86,15 +93,79 @@ final class RacketRecorder: NSObject {
 
     // MARK: - Session
 
+    /// `com.snappet` / `racket.camera`: session running, inputs, preview connection, thermal — read from the device log
+    /// (device feedback round 2: "the camera view is dark").
+    nonisolated static let log = Logger(subsystem: "com.snappet", category: "racket.camera")
+
+    /// The part length: `RacketStorageCheck.partSec` (10 min); Debug builds take `-racketPartSeconds N` to test the
+    /// rollover on a phone without waiting ten minutes.
+    nonisolated static var partSec: TimeInterval {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-racketPartSeconds"), i + 1 < args.count, let n = Double(args[i + 1]), n >= 5 { return n }
+        #endif
+        return RacketStorageCheck.partSec
+    }
+
+    nonisolated static func trace(_ message: String) {
+        log.notice("\(message, privacy: .public)")
+        #if DEBUG
+        print("[racket.camera] \(message)")
+        if ProcessInfo.processInfo.arguments.contains("-racketCameraDebug"),
+           let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("racket-camera.log")
+            let line = "\(Date().timeIntervalSince1970) \(message)\n"
+            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+            else { try? Data(line.utf8).write(to: url) }
+        }
+        #endif
+    }
+
     func startPreview(quality: RacketRecordingQuality) {
         observe()
+        Self.trace("startPreview session=\(Unmanaged.passUnretained(self.session).toOpaque()) fake=\(self.fake) configured=\(self.configured) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) camera=\(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
         guard !fake else { return }
         if !configured { configure(quality: quality) }
         let p = parts
-        queue.async { if !p.session.isRunning { p.session.startRunning() } }
+        queue.async {
+            if !p.session.isRunning { p.session.startRunning() }
+            Self.trace("session running=\(p.session.isRunning) interrupted=\(p.session.isInterrupted) inputs=\(p.session.inputs.count) outputs=\(p.session.outputs.count) preset=\(p.session.sessionPreset.rawValue)")
+        }
+    }
+
+    // MARK: - The owning screen's life (device feedback round 3)
+
+    /// SwiftUI can send a full-screen cover a spurious onDisappear → onAppear while another cover is still dismissing
+    /// (seen on the phone: the record-everything screen, opened 0.45 s after the warmup cover closed, got onDisappear
+    /// 0.06 s after it started recording; `stopPreview` stopped the session and the part, the preview froze on its last
+    /// frame, and the screen kept saying "● Recording"). So the owner's disappear only stops the camera if the screen
+    /// hasn't come back shortly after.
+    func screenAppeared() {
+        lifeGeneration += 1
+        Self.trace("screen appeared gen=\(lifeGeneration)")
+    }
+
+    func screenDisappeared(then finish: @escaping () -> Void) {
+        lifeGeneration += 1
+        let g = lifeGeneration
+        Self.trace("screen disappeared gen=\(g)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard self.lifeGeneration == g else { Self.trace("disappear was spurious: camera kept"); return }
+            self.stopPreview()
+            finish()
+        }
+    }
+
+    /// The machine says the camera should be writing but the recorder isn't (nothing pending): start a new part.
+    /// A guard against any future desync — the screen must never say "Recording" while nothing is written.
+    func ensureCapturing(_ shouldCapture: Bool) {
+        guard shouldCapture, !fake, !isCapturing, !wantsCapture else { return }
+        Self.trace("capture desync: restarting a part")
+        startCapture()
     }
 
     func stopPreview() {
+        Self.trace("stopPreview session=\(Unmanaged.passUnretained(self.session).toOpaque())")
         wantsCapture = false
         if isCapturing { stopCapture() }
         guard !fake else { return }
@@ -104,13 +175,21 @@ final class RacketRecorder: NSObject {
 
     private func configure(quality: RacketRecordingQuality) {
         configured = true
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: camera) else { return }
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            Self.trace("configure: no back wide camera")
+            return
+        }
+        let input: AVCaptureDeviceInput
+        do { input = try AVCaptureDeviceInput(device: camera) } catch {
+            Self.trace("configure: camera input failed \(error.localizedDescription)")
+            return
+        }
         rotation = AVCaptureDevice.RotationCoordinator(device: camera, previewLayer: nil)
         nonisolated(unsafe) let video = input
+        nonisolated(unsafe) let cam = camera
         nonisolated(unsafe) let mic = AVCaptureDevice.default(for: .audio).flatMap { try? AVCaptureDeviceInput(device: $0) }
         let preset: AVCaptureSession.Preset = quality == .uhd4k ? .hd4K3840x2160 : .hd1920x1080
-        let limit = CMTime(seconds: RacketStorageCheck.partSec, preferredTimescale: 600)
+        let limit = CMTime(seconds: Self.partSec, preferredTimescale: 600)
         let p = parts
         queue.async {
             p.session.beginConfiguration()
@@ -125,7 +204,11 @@ final class RacketRecorder: NSObject {
                                           for: connection)
             }
             p.session.commitConfiguration()
-            Task { @MainActor in self.codec = hevc ? .hevc : .h264 }
+            let dims = CMVideoFormatDescriptionGetDimensions(cam.activeFormat.formatDescription)
+            Task { @MainActor in
+                self.codec = hevc ? .hevc : .h264
+                if dims.width > 0, dims.height > 0 { self.previewAspect = CGFloat(dims.height) / CGFloat(dims.width) }
+            }
         }
     }
 
@@ -139,11 +222,13 @@ final class RacketRecorder: NSObject {
     // MARK: - Capture
 
     func startCapture() {
+        Self.trace("startCapture capturing=\(isCapturing) running=\(session.isRunning)")
         wantsCapture = true
         beginPart()
     }
 
     func stopCapture() {
+        Self.trace("stopCapture capturing=\(isCapturing)")
         wantsCapture = false
         guard isCapturing else { return }
         if fake { isCapturing = false; partStartedAt = nil; return }
@@ -164,6 +249,7 @@ final class RacketRecorder: NSObject {
                 c.videoRotationAngle = angle
             }
             p.movie.startRecording(to: url, recordingDelegate: self)
+            Self.trace("part started session=\(Unmanaged.passUnretained(p.session).toOpaque())")
         }
     }
 
@@ -201,12 +287,21 @@ final class RacketRecorder: NSObject {
         observers.append(nc.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session,
                                         queue: .main) { [weak self] note in
             let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? NSNumber)?.intValue ?? 0
+            Self.trace("session interrupted reason=\(raw) \(String(describing: (note.object as AnyObject?).map { Unmanaged.passUnretained($0).toOpaque() }))")
             MainActor.assumeIsolated { self?.report(RacketInterruption.fromCaptureInterruption(reasonRaw: raw)) }
         })
         observers.append(nc.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session,
-                                        queue: .main) { [weak self] _ in
+                                        queue: .main) { [weak self] note in
+            let err = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError).map { "\($0.domain) \($0.code)" } ?? "?"
+            Self.trace("session runtime error \(err)")
             MainActor.assumeIsolated { self?.report(.cameraError) }
         })
+        observers.append(nc.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session,
+                                        queue: .main) { _ in Self.trace("session interruption ended") })
+        observers.append(nc.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: session,
+                                        queue: .main) { n in Self.trace("session didStartRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
+        observers.append(nc.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: session,
+                                        queue: .main) { n in Self.trace("session didStopRunning \(String(describing: n.object.map { Unmanaged.passUnretained($0 as AnyObject).toOpaque() }))") })
         observers.append(nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil,
                                         queue: .main) { [weak self] _ in
             let level = RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
@@ -248,12 +343,27 @@ final class RacketRecorder: NSObject {
 }
 
 extension RacketRecorder: AVCaptureFileOutputRecordingDelegate {
+    /// The file really starts with its first frame, a moment after `startRecording` (≈0.3–1 s on a phone): re-stamp the
+    /// part's start then, so its video lines up with the recording's timeline (the split, rally marks and scrubbing
+    /// read part starts from it — device feedback round 2 split audit).
+    nonisolated func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL,
+                                from connections: [AVCaptureConnection]) {
+        let now = Date()
+        Task { @MainActor in
+            if self.isCapturing, let was = self.partStartedAt, now > was {
+                Self.trace("part first frame +\(String(format: "%.2f", now.timeIntervalSince(was))) s")
+                self.partStartedAt = now
+            }
+        }
+    }
+
     nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo url: URL,
                                 from connections: [AVCaptureConnection], error: Error?) {
         let ns = error as NSError?
         // A file that stopped for a reason (disk full, interruption, the part limit) is usually still playable.
         let usable = ns?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? (error == nil)
         let code = ns?.code
+        Self.trace("part finished error=\(ns.map { "\($0.domain) \($0.code) \($0.localizedDescription)" } ?? "none") usable=\(usable)")
         Task { @MainActor in
             let started = self.partStartedAt ?? Date()
             let reason = self.pendingInterruption ?? RacketInterruption.fromRecordingError(code: code)

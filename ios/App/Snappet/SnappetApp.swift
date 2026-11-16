@@ -189,6 +189,20 @@ struct SnappetApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if RacketCameraProbe.requested {
+                RacketCameraProbe()
+            } else {
+                shell
+            }
+            #else
+            shell
+            #endif
+        }
+        .modelContainer(container)
+    }
+
+    private var shell: some View {
             RootShell()
                 // Mounted here (not in RootShell) so the corrupt-store warning rides above
                 // whatever the shell shows; renders nothing while the store is healthy.
@@ -203,7 +217,5 @@ struct SnappetApp: App {
                 .environment(storeHealth)
                 // The user's accent + System/Dark/Light (Settings → Appearance, prompt 211): repaints live.
                 .snappetTheme()
-        }
-        .modelContainer(container)
     }
 }

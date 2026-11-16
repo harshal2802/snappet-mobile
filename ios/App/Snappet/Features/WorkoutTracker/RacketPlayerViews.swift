@@ -781,8 +781,8 @@ struct RacketTagSheet: View {
     private var players: [String] {
         var names = ["You"]
         if let p = ex?.partner, !p.isEmpty { names.append(p) }
-        let opp = (ex?.opponent ?? "").split(separator: "&").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return names + opp
+        return names + RacketOpponentTeam.players(player1: ex?.racketOpponentPlayer1, player2: ex?.racketOpponentPlayer2,
+                                                  team: ex?.opponent)
     }
 
     var body: some View {

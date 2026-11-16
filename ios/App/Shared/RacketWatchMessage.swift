@@ -147,6 +147,9 @@ struct RacketWatchState: Codable, Equatable, Sendable {
         var startedAt: Date
         var totalSec: TimeInterval
         var recording: Bool
+        /// Paused during the block (WatchBlock "Pause", prompt 250): the time left; `nil` ⇒ running. Optional on the
+        /// wire, so an older Watch reads a running block.
+        var pausedRemainingSec: TimeInterval? = nil
     }
 
     struct Rest: Codable, Equatable, Sendable {
@@ -202,6 +205,9 @@ extension RacketWatchState.Surface {
             return .init(word: "\(c.title ?? "Block \(c.block + 1)") starts", tone: .work, seconds: left,
                          progress: min(1, left / max(1, c.totalSec)))
         case .block(let b):
+            if let paused = b.pausedRemainingSec {
+                return .init(word: "Paused", tone: .restPaused, seconds: paused, progress: min(1, paused / max(1, b.totalSec)))
+            }
             let left = max(0, b.totalSec - now.timeIntervalSince(b.startedAt))
             return .init(word: "Block", tone: .work, seconds: left, progress: min(1, left / max(1, b.totalSec)))
         case .rest(let r):

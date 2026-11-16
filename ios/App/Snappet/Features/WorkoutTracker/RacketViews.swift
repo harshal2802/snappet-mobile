@@ -14,6 +14,8 @@ struct RacketMatchParams: Equatable {
     var sport: RacketSport
     var opponent: String = ""
     var doubles: Bool
+    /// Doubles (device feedback round 2): the other team's two players and its team name (auto from them until typed).
+    var opponents = RacketOpponentTeam()
     var partner: String = ""
     /// `nil` ⇒ open play.
     var bestOf: Int?
@@ -40,6 +42,12 @@ struct RacketMatchParams: Equatable {
         opponent = ex.opponent ?? ""
         partner = ex.partner ?? ""
         doubles = ex.isDoubles
+        if doubles {
+            let p1 = ex.racketOpponentPlayer1 ?? "", p2 = ex.racketOpponentPlayer2 ?? ""
+            // An older doubles match named only the team: it reads as typed by hand, so it's kept as is.
+            let hand = ex.racketOpponentTeamNameEdited == true || (p1.isEmpty && p2.isEmpty && !opponent.isEmpty)
+            opponents = RacketOpponentTeam(player1: p1, player2: p2, teamName: opponent, edited: hand)
+        }
         bestOf = format.bestOf
         pointsTo = format.pointsTo
         superTiebreak = format.superTiebreak
@@ -53,6 +61,7 @@ struct RacketMatchParams: Equatable {
     func next() -> RacketMatchParams {
         var p = self
         p.opponent = ""
+        p.opponents = RacketOpponentTeam()
         p.round = RacketRounds.next(after: round) ?? ""
         return p
     }
@@ -65,7 +74,10 @@ struct RacketMatchParams: Equatable {
         }
         ex.racketSportRaw = sport.rawValue
         ex.racketModeRaw = RacketMode.match.rawValue
-        ex.opponent = clean(opponent)
+        ex.opponent = clean(doubles ? opponents.teamName : opponent)
+        ex.racketOpponentPlayer1 = doubles ? clean(opponents.player1) : nil
+        ex.racketOpponentPlayer2 = doubles ? clean(opponents.player2) : nil
+        ex.racketOpponentTeamNameEdited = doubles && opponents.edited ? true : nil
         ex.partner = doubles ? (clean(partner) ?? "Partner") : nil
         ex.racketBestOf = bestOf ?? 0
         ex.racketPointsTo = pointsTo == sport.defaultPointsTo ? nil : pointsTo
@@ -104,8 +116,10 @@ struct RacketSetupSheet: View {
     var recordingDefaults = RacketRecordingDefaults()
     /// The plan last used for this drill (sport, name) — the plan step opens on it so one tap starts the drill.
     var rememberedPlan: (RacketSport, String) -> RacketDrillPlan? = { _, _ in nil }
+    /// Past sessions: the library's Recent / New, SetupFirst, "Last time" (prompt 250).
+    var drillHistory: [WorkoutSession] = []
 
-    private enum Step { case sport, padelRules, match, drill, newDrill, drillPlan }
+    private enum Step { case sport, padelRules, match, drill, newDrill, drillPlan, customize }
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .sport
@@ -121,6 +135,12 @@ struct RacketSetupSheet: View {
     @State private var drillPlan = RacketDrillPlan()
     @State private var pickedDrillIsNew = false
     @State private var planIsLastTime = false
+    @State private var drillIsFirstTime = false
+    @State private var drillCategory = RacketDrillLibrary.all
+    @State private var restCustom = false
+    /// Customize edits a copy; Save writes it back to the setup.
+    @State private var customizeDraft = RacketDrillPlan()
+    @State private var customizeMeasure: RacketDrillMeasure?
 
     private var accent: Color { SnappetColor.brand }
     private var isEditing: Bool { if case .editMatch = start { return true } else { return false } }
@@ -135,12 +155,17 @@ struct RacketSetupSheet: View {
                 case .drill: drillStep
                 case .newDrill: newDrillStep
                 case .drillPlan: drillPlanStep
+                case .customize: customizeStep
                 }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if step == .sport || isEditing || isNext {
                         Button("Cancel") { dismiss() }
+                    } else if step == .customize {
+                        // DrillCustomize: "Cancel · Drill details · Save" — Cancel drops the edits.
+                        Button("Cancel") { customizeMeasure = nil; withAnimation { step = .drillPlan } }
+                            .accessibilityIdentifier("racket.custom.cancel")
                     } else {
                         Button { withAnimation { step = backStep } } label: {
                             Label("Back", systemImage: "chevron.left")
@@ -161,6 +186,7 @@ struct RacketSetupSheet: View {
         switch step {
         case .newDrill: return .drill
         case .drillPlan: return pickedDrillIsNew ? .newDrill : .drill
+        case .customize: return .drillPlan
         case .match where sport == .padel && !isEditing && !isNext: return .padelRules
         default: return .sport
         }
@@ -371,24 +397,41 @@ struct RacketSetupSheet: View {
             Text("Players").font(.system(size: 15, weight: .semibold))
             RacketChips(options: [false, true], label: { $0 ? "Doubles" : "Singles" }, selection: $params.doubles,
                         idPrefix: "racket.doubles", idFor: { $0 ? "doubles" : "singles" })
-            Text("Opponent").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
-            TextField(params.doubles ? "Optional (e.g. Jordan & Lee)" : "Optional", text: $params.opponent)
-                .textInputAutocapitalization(.words)
-                .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .accessibilityIdentifier("racket.opponent")
             let recents = recentOpponents(params.sport)
-            if !recents.isEmpty { chipRow(recents) { params.opponent = $0 } }
             if params.doubles {
-                TextField("Your partner", text: $params.partner)
-                    .textInputAutocapitalization(.words)
-                    .padding(10)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityIdentifier("racket.partner")
+                // Doubles (device feedback round 2): your partner, then the other team — its name follows the two
+                // players until you type one (clear it to go back to automatic).
+                nameField("Your partner", text: $params.partner, id: "racket.partner")
+                Text("Opponents").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                nameField("Team name (e.g. Jordan & Lee)",
+                          text: Binding(get: { params.opponents.teamName }, set: { params.opponents.setTeamName($0) }),
+                          id: "racket.opponentTeam")
+                if !recents.isEmpty { chipRow(recents) { params.opponents.pickTeam($0) } }
+                nameField("Player 1", text: Binding(get: { params.opponents.player1 }, set: { params.opponents.setPlayer1($0) }),
+                          id: "racket.opponentPlayer1")
+                nameField("Player 2", text: Binding(get: { params.opponents.player2 }, set: { params.opponents.setPlayer2($0) }),
+                          id: "racket.opponentPlayer2")
+                Text(params.opponents.edited ? "Clear the team name to make it from the players’ names again."
+                                             : "The team name follows the players’ names until you type one.")
+                    .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("racket.opponentTeamHint")
+            } else {
+                Text("Opponent").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                nameField("Optional", text: $params.opponent, id: "racket.opponent")
+                if !recents.isEmpty { chipRow(recents) { params.opponent = $0 } }
             }
             Text(RacketGameCopy.doublesHelper).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func nameField(_ prompt: String, text: Binding<String>, id: String) -> some View {
+        TextField(prompt, text: text)
+            .textInputAutocapitalization(.words)
+            .padding(10)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityIdentifier(id)
     }
 
     // MARK: Step 2a′ — padel rules (PdDeuce "Match setup")
@@ -451,51 +494,91 @@ struct RacketSetupSheet: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
-    // MARK: Step 2b — drill picker
+    // MARK: Step 2b — drill library (DrillLibrary / XxDrills, prompt 250)
 
     private var drillStep: some View {
-        let yours = recentDrills(sport)
-        let yoursNames = Set(yours.map { RacketStats.normalize($0.name) })
-        let suggested = RacketDrillCatalog.suggestions(for: sport).filter { !yoursNames.contains(RacketStats.normalize($0.name)) }
-        let q = RacketStats.normalize(drillQuery)
-        let matches: (String) -> Bool = { q.isEmpty || RacketStats.normalize($0).contains(q) }
-        return List {
-            if !yours.filter({ matches($0.name) }).isEmpty {
-                Section("Yours") {
-                    ForEach(yours.filter { matches($0.name) }, id: \.name) { d in drillRow(d.name, d.measure) }
+        let recent = recentDrills(sport).map { d in
+            RacketDrillLibraryItem(name: d.name, measure: d.measure,
+                                   categories: RacketDrillLibrary.items(sport).first { RacketStats.normalize($0.name) == RacketStats.normalize(d.name) }?.categories ?? [])
+        }
+        let rows = RacketDrillLibrary.filtered(sport, category: drillCategory, query: drillQuery, recent: recent)
+        let recentNames = Set(recent.map { RacketStats.normalize($0.name) })
+        let showRecentSection = drillCategory == RacketDrillLibrary.all && drillQuery.isEmpty && !recent.isEmpty
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Search drills").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                TextField("Search", text: $drillQuery)
+                    .padding(.horizontal, 12).frame(minHeight: 44)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .accessibilityIdentifier("racket.drillSearch")
+                RacketWrapLayout(spacing: 8) {
+                    ForEach([RacketDrillLibrary.all, RacketDrillLibrary.recent] + RacketDrillLibrary.categories(sport), id: \.self) { c in
+                        formChip(c, on: drillCategory == c, id: "racket.drillCat.\(c)") { drillCategory = c }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("racket.drillCats")
+                if showRecentSection {
+                    Text("Recent").font(.system(size: 14, weight: .bold)).foregroundStyle(SnappetColor.textSecondary)
+                    ForEach(recent.prefix(2)) { d in libraryRow(d, recent: true, isNew: false) }
+                    Text("All drills").font(.system(size: 14, weight: .bold)).foregroundStyle(SnappetColor.textSecondary)
+                        .padding(.top, 2)
+                } else if drillCategory == RacketDrillLibrary.all {
+                    Text("All drills").font(.system(size: 14, weight: .bold)).foregroundStyle(SnappetColor.textSecondary)
+                }
+                ForEach(rows) { d in
+                    libraryRow(d, recent: drillCategory == RacketDrillLibrary.recent,
+                               isNew: !recentNames.contains(RacketStats.normalize(d.name))
+                                   && RacketDrillHistory.isFirstTime(sport: sport, name: d.name, history: drillHistory))
+                }
+                if rows.isEmpty {
+                    Text(drillCategory == RacketDrillLibrary.recent ? "No recent drills yet." : "No drills match.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                 }
             }
-            Section("Suggested") {
-                ForEach(suggested.filter { matches($0.name) }) { d in drillRow(d.name, d.measure) }
-            }
-            Section {
-                Button {
+            .padding(16)
+        }
+        .navigationTitle("\(sport.label) drill")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("+ New") {
                     newDrillName = drillQuery
                     withAnimation { step = .newDrill }
-                } label: {
-                    Label("New drill", systemImage: "plus.circle.fill")
                 }
                 .accessibilityIdentifier("racket.newDrill")
             }
         }
-        .searchable(text: $drillQuery, prompt: "Search \(sport.label.lowercased()) drills")
-        .navigationTitle("Pick a drill")
     }
 
-    private func drillRow(_ name: String, _ measure: RacketDrillMeasure) -> some View {
-        Button {
-            pickDrill(name, measure, isNew: false)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).foregroundStyle(SnappetColor.ink)
-                    Text(measure.label).font(.caption).foregroundStyle(SnappetColor.textSecondary)
+    private func libraryRow(_ d: RacketDrillLibraryItem, recent: Bool, isNew: Bool) -> some View {
+        let last = RacketDrillHistory.lastValue(sport: sport, name: d.name, measure: d.measure, history: drillHistory)
+        return Button { pickDrill(d.name, d.measure, isNew: false) } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(d.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                    Text(recent ? RacketDrillLibrary.recentDetail(d.measure, last: last) : d.measure.label)
+                        .font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
                 }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Spacer(minLength: 6)
+                if isNew { tagLabel("New", SnappetColor.brand) }
+                tagLabel(d.tag, SnappetColor.textSecondary)
             }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(SnappetColor.hairline))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("racket.drill")
+    }
+
+    private func tagLabel(_ s: String, _ c: Color) -> some View {
+        Text(s).font(.system(size: 12, weight: .bold)).foregroundStyle(c)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(c))
+            .fixedSize()
     }
 
     private var newDrillStep: some View {
@@ -530,69 +613,321 @@ struct RacketSetupSheet: View {
         pickedDrillIsNew = isNew
         let remembered = isNew ? nil : rememberedPlan(sport, name)
         planIsLastTime = remembered != nil
-        drillPlan = remembered ?? RacketDrillPlan(defaults: recordingDefaults)
+        drillIsFirstTime = isNew || RacketDrillHistory.isFirstTime(sport: sport, name: name, history: drillHistory)
+        var plan = remembered ?? RacketDrillPlan(defaults: recordingDefaults)
+        if remembered == nil || plan.details.goal == nil {
+            // "Beat 24 shots · Last time 24": the goal starts at last time's number; first time, there's none yet.
+            plan.details.goal = RacketDrillHistory.lastValue(sport: sport, name: name, measure: measure, history: drillHistory)
+        }
+        drillPlan = plan
         withAnimation { step = .drillPlan }
     }
 
-    // MARK: Step 3 — drill plan + recording (PracticeSetup, prompt 244)
+    // MARK: Step 3 — PracticeSetup / SetupFirst / SqSolo (prompts 244, 250)
+
+    private var isSolo: Bool {
+        RacketDrillLibrary.isSolo(sport: sport, name: pickedDrill?.name ?? "", practising: drillPlan.details.practising)
+    }
 
     private var drillPlanStep: some View {
-        Form {
-            // PracticeSetup: "Ready to start · Same as last time", one tap to go.
-            Section {
-                Button {
-                    guard let d = pickedDrill else { return }
-                    onDrill(sport, d.name, d.measure, drillPlan)
+        let measure = pickedDrill?.measure ?? .time
+        let d = drillPlan.details
+        let gated = drillIsFirstTime && !isSolo && !d.canStart
+        let last = pickedDrill.flatMap { RacketDrillHistory.lastValue(sport: sport, name: $0.name, measure: $0.measure, history: drillHistory) }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 11) {
+                // The start button sits at the top (user, 2026-11-06: one-tap start); the board has it at the bottom.
+                RacketWideButton(drillPlan.recording == .off ? "Start drill" : "Set up camera", id: "racket.plan.start") {
+                    guard let p = pickedDrill else { return }
+                    onDrill(sport, p.name, p.measure, drillPlan)
                     dismiss()
-                } label: {
-                    Text(drillPlan.recording == .everything ? "Set up camera" : "Start drill")
-                        .font(.headline).frame(maxWidth: .infinity)
                 }
-                .accessibilityIdentifier("racket.plan.start")
-            } header: {
-                Text("Ready to start")
-            } footer: {
-                Text(planIsLastTime ? "Same as last time · \(drillPlan.summary)" : "Suggested plan · \(drillPlan.summary)")
-                    .accessibilityIdentifier("racket.plan.source")
-            }
-            Section {
-                Stepper("\(drillPlan.blocks) \(drillPlan.blocks == 1 ? "block" : "blocks")",
-                        value: $drillPlan.blocks, in: 1...12)
-                    .accessibilityIdentifier("racket.plan.blocks")
-                Picker("Each block", selection: $drillPlan.blockSec) {
-                    ForEach(RacketRecordingDefaults.blockLengthOptions, id: \.self) {
-                        Text(RacketClock.mmss(TimeInterval($0))).tag($0)
+                .disabled(gated)
+                if gated {
+                    Text("Choose what you’re practising and your focus first.")
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.perfModerate)
+                        .accessibilityIdentifier("racket.plan.gate")
+                }
+                if isSolo {
+                    Text("Solo drill").font(.system(size: 22, weight: .bold)).accessibilityIdentifier("racket.plan.heading")
+                    Text("Just you on court, so there’s no opponent or winner.")
+                        .font(.system(size: 15)).foregroundStyle(SnappetColor.textSecondary)
+                } else if drillIsFirstTime {
+                    Text("First time with this drill").font(.system(size: 22, weight: .bold))
+                        .accessibilityIdentifier("racket.plan.heading")
+                    Text("We’ve suggested a plan. There’s no goal until you’ve done it once.")
+                        .font(.system(size: 15)).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack {
+                        Text(planIsLastTime ? "Same as last time" : "Suggested plan").font(.system(size: 22, weight: .bold))
+                            .accessibilityIdentifier("racket.plan.heading")
+                        Spacer()
+                        Button("Change all") { openCustomize() }.font(.system(size: 15))
+                            .accessibilityIdentifier("racket.plan.changeAll")
                     }
                 }
-                .accessibilityIdentifier("racket.plan.blockLength")
-            } header: {
-                Text("Plan")
-            } footer: {
-                Text(pickedDrill.map { "\($0.name) · \($0.measure.label)" } ?? "")
-            }
-            Section("Recording") {
-                RacketRecordingChoice(selection: $drillPlan.recording, mode: .drill)
-            }
-            Section {
-                Picker("Rest time", selection: $drillPlan.restSec) {
-                    ForEach(RacketRecordingDefaults.restOptions, id: \.self) {
-                        Text(RacketClock.mmss(TimeInterval($0))).tag($0)
+                VStack(spacing: 0) {
+                    if !isSolo {
+                        setRow("Practising", d.practising ?? (drillIsFirstTime ? "Choose" : "Not set"), id: "practising")
+                    }
+                    setRow("Focus", d.focusLine ?? (drillIsFirstTime ? "Choose" : "Not set"), id: "focus")
+                    setRow("Pattern", d.pattern ?? "Optional", id: "pattern")
+                    setRow("Plan", drillPlan.summary + (drillIsFirstTime && !planIsLastTime ? ", suggested" : ""), id: "plan")
+                    setRow("Measure", measure.label, id: "measure")
+                    if isSolo {
+                        setRow("Recording", drillPlan.recording.label(for: .drill), id: "recordingRow")
+                        setRow("Rest", "\(RacketClock.mmss(TimeInterval(drillPlan.restSec))) · auto-start \(drillPlan.autoStart ? "on" : "off")", id: "restRow")
+                    } else {
+                        setRow("Goal", RacketDrillGoal.text(d.goal, measure: measure) ?? (drillIsFirstTime ? "None yet" : "None"), id: "goal")
                     }
                 }
-                .accessibilityIdentifier("racket.plan.rest")
-                Toggle("Start next block automatically", isOn: $drillPlan.autoStart)
-                    .accessibilityIdentifier("racket.plan.autoStart")
-                Picker("Countdown before a block", selection: $drillPlan.countdownSec) {
-                    ForEach(RacketRecordingDefaults.countdownOptions, id: \.self) { Text("\($0) s").tag($0) }
+                if isSolo {
+                    // SqSolo: "Longest solo rally" — your goal for the solo rally.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Longest solo rally").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+                        HStack(spacing: 8) {
+                            soloStep("−", id: "racket.solo.minus") { drillPlan.details.goal = max(0, (drillPlan.details.goal ?? 0) - 1) }
+                            Text("\(drillPlan.details.goal ?? 0)").font(.system(size: 40, weight: .light)).monospacedDigit()
+                                .frame(maxWidth: .infinity).accessibilityIdentifier("racket.solo.value")
+                            soloStep("+", id: "racket.solo.plus") { drillPlan.details.goal = (drillPlan.details.goal ?? 0) + 1 }
+                        }
+                        Text(last == nil ? "You enter this" : "Last time \(last!)").font(.system(size: 12))
+                            .foregroundStyle(SnappetColor.textSecondary)
+                    }
+                    .padding(11)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else {
+                    recordingAndBetween
                 }
-                .accessibilityIdentifier("racket.plan.countdown")
-            } header: {
-                Text("Between blocks")
-            } footer: {
-                Text("Defaults come from Settings → Racket recording.")
             }
+            .padding(16)
         }
         .navigationTitle(pickedDrill?.name ?? "Drill")
+    }
+
+    @ViewBuilder private var recordingAndBetween: some View {
+        Text("Recording").font(.system(size: 17, weight: .bold)).padding(.top, 4)
+        RacketRecordingChoice(selection: $drillPlan.recording, mode: .drill)
+        if !drillIsFirstTime { liveTrackingSwitch }
+        Text("Between blocks").font(.system(size: 17, weight: .bold)).padding(.top, 4)
+        RacketBox {
+            Text("Rest time").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+            RacketWrapLayout(spacing: 8) {
+                ForEach(RacketRecordingDefaults.restOptions, id: \.self) { sec in
+                    formChip(RacketClock.mmss(TimeInterval(sec)), on: !restCustom && drillPlan.restSec == sec, id: "racket.plan.rest.\(sec)") {
+                        restCustom = false; drillPlan.restSec = sec
+                    }
+                }
+                formChip("Custom", on: restCustom, id: "racket.plan.rest.custom") { restCustom = true }
+            }
+            if restCustom {
+                Stepper("Rest \(RacketClock.mmss(TimeInterval(drillPlan.restSec)))", value: $drillPlan.restSec, in: 15...600, step: 15)
+                    .accessibilityIdentifier("racket.plan.rest.customStepper")
+            }
+            Toggle(isOn: $drillPlan.autoStart) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start next block automatically").font(.system(size: 15, weight: .semibold))
+                    Text("When the rest timer ends").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                }
+            }
+            .tint(SnappetColor.brand)
+            .accessibilityIdentifier("racket.plan.autoStart")
+            Text("Countdown before it starts").font(.system(size: 14, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+            RacketChips(options: RacketRecordingDefaults.countdownOptions, label: { "\($0) s" }, selection: $drillPlan.countdownSec,
+                        idPrefix: "racket.plan.countdown")
+        }
+        if drillIsFirstTime { liveTrackingSwitch }
+    }
+
+    /// "Live tracking · Off: rallies are found after the drill" — not built (step 6): off, disabled, says so.
+    private var liveTrackingSwitch: some View {
+        RacketBox {
+            Toggle(isOn: .constant(false)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live tracking").font(.system(size: 15, weight: .semibold))
+                    Text("Off: rallies are found after the drill").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                    Text(RacketFeatureState.notAvailableYet.label).font(SnappetType.detail.weight(.semibold))
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+            }
+            .disabled(true)
+            .accessibilityIdentifier("racket.plan.tracking")
+        }
+    }
+
+    private func setRow(_ label: String, _ value: String, id: String) -> some View {
+        Button { openCustomize() } label: {
+            HStack(spacing: 12) {
+                Text(label).font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
+                Spacer()
+                Text("\(value) ›").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.ink)
+                    .multilineTextAlignment(.trailing)
+            }
+            .frame(minHeight: 46)
+            .overlay(alignment: .bottom) { Rectangle().fill(SnappetColor.hairline).frame(height: 1) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("racket.plan.row.\(id)")
+    }
+
+    private func soloStep(_ s: String, id: String, action: @escaping () -> Void) -> some View {
+        Button { action(); Haptics.tap() } label: {
+            Text(s).font(.system(size: 22, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 48)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    private func openCustomize() {
+        customizeDraft = drillPlan
+        withAnimation { step = .customize }
+    }
+
+    // MARK: Step 3′ — Customize (DrillCustomize · XxCustomize)
+
+    private var customizeStep: some View {
+        let measure = pickedDrill?.measure ?? .time
+        let last = pickedDrill.flatMap { RacketDrillHistory.lastValue(sport: sport, name: $0.name, measure: $0.measure, history: drillHistory) }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                section("How are you practising?") {
+                    RacketWrapLayout(spacing: 8) {
+                        ForEach(RacketDrillChoices.practising(sport), id: \.self) { p in
+                            formChip(p, on: customizeDraft.details.practising == p, id: "racket.custom.practising.\(p)") {
+                                customizeDraft.details.practising = p
+                            }
+                        }
+                    }
+                }
+                section("Focus") {
+                    RacketWrapLayout(spacing: 8) {
+                        ForEach(RacketDrillChoices.hands, id: \.self) { h in
+                            formChip(h, on: customizeDraft.details.hand == h, id: "racket.custom.hand.\(h)") {
+                                customizeDraft.details.hand = customizeDraft.details.hand == h ? nil : h
+                            }
+                        }
+                    }
+                    RacketWrapLayout(spacing: 8) {
+                        ForEach(RacketDrillChoices.strokes(sport), id: \.self) { st in
+                            formChip(st, on: customizeDraft.details.stroke == st, id: "racket.custom.stroke.\(st)") {
+                                customizeDraft.details.stroke = customizeDraft.details.stroke == st ? nil : st
+                            }
+                        }
+                    }
+                }
+                section("Pattern", hint: "Optional") {
+                    RacketWrapLayout(spacing: 8) {
+                        ForEach(RacketDrillChoices.patterns(sport), id: \.self) { pt in
+                            formChip(pt, on: customizeDraft.details.pattern == pt, id: "racket.custom.pattern.\(pt)") {
+                                customizeDraft.details.pattern = customizeDraft.details.pattern == pt ? nil : pt
+                            }
+                        }
+                    }
+                    RacketCourtZones(sport: sport, from: $customizeDraft.details.fromZone, to: $customizeDraft.details.toZone)
+                    HStack {
+                        Text("From").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                        Spacer()
+                        Text("To").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                }
+                section("Plan") {
+                    HStack(alignment: .top, spacing: 10) {
+                        planStepper("Blocks", "\(customizeDraft.blocks)", id: "racket.custom.blocks") { up in
+                            customizeDraft.blocks = min(RacketDrillChoices.blockRange.upperBound,
+                                                        max(RacketDrillChoices.blockRange.lowerBound, customizeDraft.blocks + (up ? 1 : -1)))
+                        }
+                        planStepper("Each block", RacketClock.mmss(TimeInterval(customizeDraft.blockSec)), id: "racket.custom.blockSec") { up in
+                            let s = customizeDraft.blockSec + (up ? 1 : -1) * RacketDrillChoices.blockSecStep
+                            customizeDraft.blockSec = min(RacketDrillChoices.blockSecRange.upperBound,
+                                                          max(RacketDrillChoices.blockSecRange.lowerBound, s))
+                        }
+                        Text("Rest is set on the ready screen").font(.system(size: 12)).foregroundStyle(SnappetColor.textSecondary)
+                            .frame(maxWidth: .infinity).padding(.top, 20)
+                    }
+                    .padding(11)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                section("Measure each block by") {
+                    RacketWrapLayout(spacing: 8) {
+                        ForEach(RacketDrillMeasure.allCases, id: \.self) { m in
+                            formChip(m.label, on: (customizeMeasure ?? measure) == m, id: "racket.custom.measure.\(m.rawValue)") {
+                                customizeMeasure = m
+                            }
+                        }
+                    }
+                    // Longest rally from video is the placeholder model's (Capabilities: Placeholder): honest wording.
+                    Text((customizeMeasure ?? measure) == .time ? "Logged from the block timer."
+                         : "Suggested from video by the placeholder model. You confirm it.")
+                        .font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                }
+                section("Goal", hint: "Optional") {
+                    let m = customizeMeasure ?? measure
+                    HStack {
+                        Text(RacketDrillGoal.text(customizeDraft.details.goal, measure: m) ?? (m == .time ? "No goal for a timed drill" : "No goal"))
+                            .font(.system(size: 15, weight: .semibold))
+                            .accessibilityIdentifier("racket.custom.goal")
+                        Spacer()
+                        if let l = RacketDrillGoal.lastTime(last, measure: m) {
+                            Text(l).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    if m != .time {
+                        HStack(spacing: 8) {
+                            formChip("−", on: false, id: "racket.custom.goal.minus") {
+                                customizeDraft.details.goal = max(0, (customizeDraft.details.goal ?? last ?? 0) - RacketDrillGoal.step(m))
+                            }
+                            formChip("+", on: false, id: "racket.custom.goal.plus") {
+                                customizeDraft.details.goal = (customizeDraft.details.goal ?? last ?? 0) + RacketDrillGoal.step(m)
+                            }
+                            formChip("No goal", on: customizeDraft.details.goal == nil, id: "racket.custom.goal.none") {
+                                customizeDraft.details.goal = nil
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Drill details")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    drillPlan = customizeDraft
+                    if let m = customizeMeasure, let p = pickedDrill { pickedDrill = (p.name, m) }
+                    customizeMeasure = nil
+                    withAnimation { step = .drillPlan }
+                }
+                .accessibilityIdentifier("racket.custom.save")
+            }
+        }
+    }
+
+    private func section<C: View>(_ title: String, hint: String? = nil, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).font(.system(size: 16, weight: .bold))
+                if let hint { Text(hint).font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary) }
+            }
+            content()
+        }
+    }
+
+    private func planStepper(_ label: String, _ value: String, id: String, change: @escaping (Bool) -> Void) -> some View {
+        VStack(spacing: 4) {
+            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(SnappetColor.textSecondary)
+            Text(value).font(.system(size: 22, weight: .light)).monospacedDigit().accessibilityIdentifier(id)
+            HStack(spacing: 4) {
+                formChip("−", on: false, id: "\(id).minus") { change(false) }
+                formChip("+", on: false, id: "\(id).plus") { change(true) }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func chipRow(_ values: [String], pick: @escaping (String) -> Void) -> some View {

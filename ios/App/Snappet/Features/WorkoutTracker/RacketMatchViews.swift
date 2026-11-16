@@ -72,16 +72,18 @@ struct RacketGameCover: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
             switch stage {
             case .camera: cameraCheck
             case .warmup: warmup
             case .game: game
             }
         }
+        // One preview for the cover's life (device feedback round 2: attaching one mid-recording stopped the recording).
+        .racketPersistentPreview(session: recorder.session, fake: recorder.fake)
+        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear(perform: setUp)
+        .onAppear { recorder.screenAppeared(); setUp() }
         .onDisappear(perform: tearDown)
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .task {
@@ -111,6 +113,7 @@ struct RacketGameCover: View {
     // MARK: Set-up
 
     private func setUp() {
+        RacketRecorder.trace("game cover setUp configured=\(configured)")
         guard !configured else { return }
         configured = true
         idleTimerWas = UIApplication.shared.isIdleTimerDisabled
@@ -155,15 +158,18 @@ struct RacketGameCover: View {
         }
         Task {
             let ok = await RacketRecorder.requestAccess()
+            RacketRecorder.trace("camera check access ok=\(ok)")
             accessDenied = !ok
             if ok { recorder.startPreview(quality: defaults.quality) }
         }
     }
 
     private func tearDown() {
-        recorder.stopPreview()
-        UIApplication.shared.isIdleTimerDisabled = idleTimerWas
-        if let t = watchToken { RacketWatchRelay.shared.detach(ex.id, token: t) }
+        let was = idleTimerWas, id = ex.id, token = watchToken
+        recorder.screenDisappeared {
+            UIApplication.shared.isIdleTimerDisabled = was
+            if let token { RacketWatchRelay.shared.detach(id, token: token) }
+        }
     }
 
     // MARK: Flow plumbing
@@ -245,6 +251,7 @@ struct RacketGameCover: View {
     private func tick() {
         step { $0.tick(now: now) }
         machineAct { $0.tick(now: now) }
+        if let m = machine, m.interruption == nil, !m.isEnded { recorder.ensureCapturing(m.capturing) }
         // After a resumed interruption the flow says whether a break / interval is recording.
         if let m = machine, !m.isEnded, m.interruption == nil, m.capturing != flow.wantsCapture, m.phase == .recordingMatch {
             machineAct { flow.wantsCapture ? $0.resumeCapture(now: Date()) : $0.pauseCapture(now: Date()) }
@@ -386,54 +393,10 @@ struct RacketGameCover: View {
     // MARK: Camera check (NoModelCamera)
 
     private var cameraCheck: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Button("Cancel") { onClose() }.accessibilityIdentifier("racket.camera.cancel")
-                Spacer()
-                Text("Camera check").font(.system(size: 17, weight: .semibold))
-                Spacer()
-                Button("Cancel") {}.hidden()
-            }
-            RacketCameraPreview(session: recorder.session, fake: recorder.fake)
-                .overlay {
-                    if recorder.fake {
-                        Text("Camera preview shows here on a device")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .accessibilityIdentifier("racket.camera.preview")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Line up the view yourself").font(.system(size: 20, weight: .semibold))
-                        .accessibilityIdentifier("racket.camera.title")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Automatic court check isn’t available for \(sport.label.lowercased()) yet.")
-                            .font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.perfModerate)
-                        Text("Live tracking stays off, so play uses the tracking-off screens.")
-                        Text("Place the phone high, side-on or behind, so the whole playing area is in frame.")
-                    }
-                    .font(SnappetType.detail)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(SnappetColor.perfModerate.opacity(0.7), lineWidth: 1))
-                    Text("People nearby may be in the video. Check they’re OK with it.")
-                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if accessDenied {
-                        Text("Snappet needs the camera and your Photos library to record. You can allow them in Settings.")
-                            .font(SnappetType.detail).foregroundStyle(SnappetColor.perfHard)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            RacketWideButton("Continue to warmup", id: "racket.camera.continue") { stage = .warmup }
-                .disabled(accessDenied)
-        }
-        .padding(16)
+        RacketCameraCheckPanel(sport: sport, fake: recorder.fake, videoAspect: recorder.previewAspect,
+                               accessDenied: accessDenied, continueTitle: "Continue to warmup", onCancel: onClose,
+                               onContinue: { stage = .warmup })
+            .padding(16)
     }
 
     // MARK: Warmup
@@ -623,7 +586,7 @@ struct RacketGameCover: View {
             }
         case .camera:
             VStack(spacing: 10) {
-                RacketCameraPreview(session: recorder.session, fake: recorder.fake)
+                Color.clear.racketPreviewSlot()
                     .overlay {
                         if recorder.fake {
                             Text("Camera preview shows here on a device")
@@ -631,7 +594,7 @@ struct RacketGameCover: View {
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 180, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("racket.game.preview")
                 HStack(spacing: 10) {
                     RacketStat(value: score.display, label: inTiebreak ? "Tiebreak" : "Score").accessibilityIdentifier("racket.game.cameraScore")
@@ -866,8 +829,65 @@ struct RacketGameCover: View {
 }
 
 extension RacketRecordingShow {
-    /// The game-by-game screen opens on what Warmup's "During play, show" picked; the board's default is Dim.
-    static let initialGame: RacketRecordingShow = .dim
+    /// The game-by-game screen opens on what Warmup's "During play, show" picked. The board's default is Dim; device
+    /// feedback round 2 ("the camera view is dark — nothing visible") makes it the camera, as record everything already
+    /// does at the user's request (round 1).
+    static let initialGame: RacketRecordingShow = .camera
+}
+
+// MARK: - Court guide (placeholder for the court check)
+
+/// A placeholder for the court check, which isn't built (user, device feedback round 2): corner brackets and the
+/// sport's playing-area outline over the live preview, labelled as a guide — it detects nothing.
+struct RacketCourtGuide: View {
+    let sport: RacketSport
+    /// The picture's width / height: the guide and brackets frame the letterboxed video, not the whole box (round 3).
+    var videoAspect: CGFloat? = nil
+
+    private var label: String {
+        sport == .tableTennis ? "Guide only: fit the whole table inside" : "Guide only: fit the whole court inside"
+    }
+
+    var body: some View {
+        GeometryReader { g in
+            let r = RacketVideoOrientation.aspectFit(aspect: videoAspect, in: g.size)
+            let w = r.width, h = r.height
+            ZStack {
+                // Corner brackets.
+                Path { p in
+                    let inset: CGFloat = 12, len: CGFloat = 22
+                    for (x, y, dx, dy) in [(inset, inset, 1.0, 1.0), (w - inset, inset, -1.0, 1.0),
+                                           (inset, h - inset, 1.0, -1.0), (w - inset, h - inset, -1.0, -1.0)] {
+                        p.move(to: CGPoint(x: x + dx * len, y: y)); p.addLine(to: CGPoint(x: x, y: y))
+                        p.addLine(to: CGPoint(x: x, y: y + dy * len))
+                    }
+                }
+                .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                // The playing area seen from behind and above: a trapezoid, narrower at the far end.
+                Path { p in
+                    p.move(to: CGPoint(x: w * 0.12, y: h * 0.84))
+                    p.addLine(to: CGPoint(x: w * 0.88, y: h * 0.84))
+                    p.addLine(to: CGPoint(x: w * 0.72, y: h * 0.30))
+                    p.addLine(to: CGPoint(x: w * 0.28, y: h * 0.30))
+                    p.closeSubpath()
+                    p.move(to: CGPoint(x: w * 0.20, y: h * 0.57)); p.addLine(to: CGPoint(x: w * 0.80, y: h * 0.57))
+                }
+                .stroke(SnappetColor.brand.opacity(0.9), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                VStack {
+                    Spacer()
+                    Text(label).font(.system(size: 12, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.black.opacity(0.6), in: Capsule())
+                        .padding(.bottom, 4)
+                        .accessibilityIdentifier("racket.camera.guide")
+                }
+            }
+            .frame(width: w, height: h)
+            .position(x: r.midX, y: r.midY)
+        }
+        .allowsHitTesting(false)
+    }
 }
 
 // MARK: - Score after a game (SaveGame / XxScore)
@@ -1143,14 +1163,15 @@ struct RacketStatsOffPanel: View {
     }
 }
 
-/// "Live tracking off · Turn on". Live tracking during play isn't built (step 6): the row keeps the board's copy and
-/// Turn on stays disabled.
+/// "Live tracking off · Turn on" on the boards. Live tracking during play isn't built (step 6), so the row keeps its
+/// place and says so: "Live tracking off · Not available yet", disabled (device feedback round 2: placeholders say what
+/// isn't built, never pretend).
 struct RacketTrackingOffRow: View {
     var body: some View {
         HStack {
             Text("Live tracking off").font(.system(size: 14)).foregroundStyle(SnappetColor.textSecondary)
             Spacer()
-            Button("Turn on") {}
+            Button(RacketFeatureState.notAvailableYet.label) {}
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -1170,6 +1191,8 @@ struct RacketTrackingSwitchRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Live tracking").font(.system(size: 15, weight: .semibold))
                 Text(line).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                Text(RacketFeatureState.notAvailableYet.label).font(SnappetType.detail.weight(.semibold))
+                    .foregroundStyle(SnappetColor.textSecondary)
             }
         }
         .disabled(true)
