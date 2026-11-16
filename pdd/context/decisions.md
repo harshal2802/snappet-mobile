@@ -10767,3 +10767,61 @@ stripes, and the panel read as an opaque slab.
   list can't drop the cover.
 - **Deferred:** shot-by-shot tagging (ShotTags / DoublesShots), Add from Photos (SplitPhotos), game-by-game clips in
   Your videos, serve details / wall / let sub-boards, model results (step 5), AI round trip (step 4).
+
+## 2026-11-07 — Racket round trip with another AI app (prompt 247, issue #438 step 4)
+
+- **No network, no keys, no SDKs.** Snappet never talks to the other app. AISend exports the part (or stills), copies
+  the prompt to the clipboard and opens the system share sheet with both; the reply comes back by paste or a file. The
+  "Send to" list (ChatGPT / Gemini / Claude / Other apps) can't target an app — it names the app in the copy, decides
+  video vs stills, and labels the results; the share sheet is where the user actually picks it. The permission switch
+  resets every send (board: "Required each time").
+- **Claude gets stills.** Board: "Claude can't take video". Up to 40 JPEGs evenly spaced over the sent clip (about one
+  every 2 s), named by clip time (`frame-0012.5s.jpg`) so the reply's times line up; the prompt says so.
+- **The prompt is a fixed tail under an editable body.** Body = the board's first two lines, edited per sport and kept
+  (UserDefaults `racket.ai.prompt.<sport>`; an emptied or default body is the default). The tail can't be edited: the
+  clip's length and which part / recording range it is, "times in seconds from the start of this video, between 0 and
+  N", a line for rallies-only clips (dead time cut, times run straight through) and for stills, the sport's endings as
+  wire names, the JSON line with the board's example, "Fill in analyzer". Deterministic: same inputs, same text. The
+  time-range lines are an addition to the board.
+- **Times map back through the clip.** A send stores `RacketAIRequest` (part range + the clip's pieces of recording
+  time) on the recording log. "Rallies only" joins your marked rallies padded 1 s and merged within 2 s (like Keep
+  rallies only), so clip seconds map back piece by piece; a reply range crossing a cut ends where its first piece ends.
+  With no send from Snappet for that part, the reply's times are read from the part's start (the import says so).
+- **Tolerant parsing, strict validation.** Accepted: smart quotes / BOM, code fences, prose around the JSON, citation
+  brackets before it, JSON5 (trailing commas, comments, single quotes), a top-level array or rallies nested ≤ 3 deep
+  under rallies / points / results / …, key aliases (`start_s` / `start` / `from` / "Start Time", `winner` / `won_by` /
+  `point_to`, `ending` / `how` / `outcome`, a `time` "0:12–0:20" range, `duration`), times as seconds, "75s", mm:ss
+  (minutes may pass 59), h:mm:ss, "1m 05s"; with no JSON, lines with two times (a Markdown table, CSV or list; a
+  leading rally number is dropped). Rejected with a reason: no times, ends before it starts, shorter than 0.5 s, starts
+  after the video ends (1 s tolerance), overlaps the rally before (> 0.25 s), same as the rally before, more than 1000.
+  Clamped and said: a start before 0, an end past the video. A different sport is a warning, not a failure.
+- **Unknown endings: suggest, never apply silently.** Exact names and labels in any case / spacing map directly.
+  Other words get a synonym suggestion only if the sport has it ("long" / "wide" → Out, "netted" → Net or Tin in squash,
+  "ace" → Winner or Landed in, …), shown as "Count it as Out"; with no good guess the default is "Leave them out" and a
+  menu offers every ending. Board difference: table tennis's board says "Count it as Net" for "long" (it's the chip after
+  Out on every board); "long" is out, so Snappet suggests Out (review5 low: the AI "long" mapping).
+- **Imports never change your tags.** A reply becomes a `RacketAIImport` on the log. "Add as suggestions" keeps it
+  pending: dashed on the Analyzed timeline, labelled in the overlay ("ChatGPT suggests a rally · …"), "21 suggested by
+  ChatGPT, not compared yet" + Compare on Your videos; pending suggestions count nowhere.
+- **Compare is against your tags while there's no model.** The board compares "Snappet v2 vs ChatGPT" and hides
+  rallies you tagged. With no model (step 5) the only thing to compare with is your marks, so AICompare reads "Your tags
+  vs ChatGPT": the app's rallies are paired one to one with yours by overlap (IoU ≥ 0.3 or a midpoint inside); items
+  are "is it a rally?" (not marked by you, or you said Not a rally), winner and ending (not tagged or different; a let
+  isn't a winner disagreement). Every item starts on yours. "Use <app> for all" picks the app on every item except what
+  you tagged yourself (those change only by picking that item). Keep my choices / Done applies the picks, marks the
+  import reviewed and opens Analyzed. When step 5 adds the model, its guesses become the other side for rallies you
+  didn't tag, as on the board.
+- **Provenance and counting.** `RacketRally.sourceRaw` = who marked it, new `tagSourceRaw` = who set its tags (`nil` you,
+  `"ai:<app>"`). Accepted items count like your tags in history, the dashboard KPIs and "From your tags" — you chose
+  them — and every summary says so: "From your tags, 5 of 7 · 2 accepted from ChatGPT", "2 marked · 2 from ChatGPT",
+  TagDone "From other apps: 2 accepted", "Source: your tags and ChatGPT". Tagging a rally yourself clears
+  `tagSourceRaw`. `RacketTagTotals.fromAI` keeps the share visible for later trends.
+- **"Other apps" labels by the reply.** Its results take the reply's `analyzer.app` when given (≤ 30 chars), else
+  "Other app"; a named app keeps its own name whatever the reply says. "Change app" on the import fixes the label.
+- **Import is paste + Files.** `PasteButton` (no iOS paste prompt) plus a text box for long-press paste, and
+  `.fileImporter` for .json / .txt / .csv (≤ 2 MB). Board difference: "or share it to Snappet" needs a share extension
+  and document types the app doesn't have yet — follow-up; the copy says "paste it here, or save it as a file".
+- **Board copy changed:** "Compare with Snappet first" → "Compare with your tags first" (no model); the compare footnote
+  says your own tags change only if you pick the app's answer, instead of "aren't shown here".
+- **Deferred:** share-in (share extension / open-in), shot lists from replies (only the count is kept, for "Yes, 5
+  shots"), per-shot tags, confidence shown in the UI, model-vs-app compare (step 5).
