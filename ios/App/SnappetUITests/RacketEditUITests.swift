@@ -419,5 +419,16 @@ final class RacketEditUITests: XCTestCase {
         goToRally(12)
         share("rally", size: "960×540")
         share("whole", size: "960×540")
+        // The re-rendered route on a phone: Warm with labels, still turned.
+        if controls.label == "Pause" { controls.tap() }
+        button("racket.player.edit").tap()
+        XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
+        button("racket.edit.tab.looks").tap()
+        button("racket.edit.look.warm").tap()
+        let done = button("racket.edit.done").frame, screen = app.windows.firstMatch.frame
+        XCTAssertTrue(done.minX >= 0 && done.maxX <= screen.maxX, "Edit fits the screen with wide look thumbnails: \(done)")
+        button("racket.edit.done").tap()
+        XCTAssertTrue(surface.waitForExistence(timeout: 5))
+        share("rally", size: "960×540")
     }
 }

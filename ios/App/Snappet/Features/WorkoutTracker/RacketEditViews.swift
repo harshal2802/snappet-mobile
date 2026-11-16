@@ -931,14 +931,13 @@ struct RacketEditScreen: View {
                         Haptics.tap()
                     } label: {
                         VStack(spacing: 6) {
-                            Group {
-                                if let img = lookThumbs[l] {
-                                    Image(uiImage: img).resizable().scaledToFill()
-                                } else {
-                                    Color(white: 0.18)
+                            // The picture fills the tile as an overlay: a wide (landscape or turned) thumbnail laid
+                            // out directly asks for its own width and pushes the whole screen wider than the phone.
+                            Color(white: 0.18)
+                                .frame(maxWidth: .infinity).frame(height: 62)
+                                .overlay {
+                                    if let img = lookThumbs[l] { Image(uiImage: img).resizable().scaledToFill() }
                                 }
-                            }
-                            .frame(maxWidth: .infinity).frame(height: 62)
                             .clipShape(RoundedRectangle(cornerRadius: 9))
                             .overlay(RoundedRectangle(cornerRadius: 9)
                                 .strokeBorder(s.state.look == l ? SnappetColor.ink : SnappetColor.hairline, lineWidth: s.state.look == l ? 2 : 1))
