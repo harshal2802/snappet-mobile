@@ -209,6 +209,10 @@ struct RootShell: View {
     }
 
     private func dispatch(_ action: PendingAppAction) {
+        // Prompt 263 (F4): finishing while a racket recording, drill or game screen is open finishes nothing — and must
+        // not navigate either: opening the module replaces the stack, which rebuilds the gym tracker and drops the
+        // player with the recording screen on it. The open screen shows why instead.
+        if case .finishSession = action, RacketLiveCovers.shared.refuseFinishIfOpen() { return }
         // The action→navigation decision is the pure, unit-tested AppActionRouter; this is just glue.
         let route = AppActionRouter.route(for: action)
         if route.startPomodoro { router.pendingPomodoroStart = true }

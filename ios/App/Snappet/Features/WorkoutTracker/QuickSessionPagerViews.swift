@@ -471,6 +471,8 @@ struct HistoryDrawerView: View {
         let id: Int
         let summary: String
         let delta: QuickSessionPager.SetDelta?
+        /// Why this row can't be deleted (a racket game / block with video, prompt 263); nil ⇒ swipe to delete.
+        var deleteReason: String? = nil
     }
     let exerciseName: String
     let rows: [Row]
@@ -487,19 +489,28 @@ struct HistoryDrawerView: View {
                     Text("Nothing logged yet.").foregroundStyle(.secondary)
                 } else {
                     ForEach(rows) { row in
-                        HStack(spacing: 10) {
-                            Text("\(row.id + 1)")
-                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                .frame(width: 22, alignment: .leading)
-                            Text(row.summary).font(.body.weight(.medium)).monospacedDigit()
-                            Spacer()
-                            if let delta = row.delta {
-                                Text(delta.label)
-                                    .font(.caption.weight(.bold)).monospacedDigit()
-                                    .foregroundStyle(deltaColor(delta.direction))
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 10) {
+                                Text("\(row.id + 1)")
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    .frame(width: 22, alignment: .leading)
+                                Text(row.summary).font(.body.weight(.medium)).monospacedDigit()
+                                Spacer()
+                                if let delta = row.delta {
+                                    Text(delta.label)
+                                        .font(.caption.weight(.bold)).monospacedDigit()
+                                        .foregroundStyle(deltaColor(delta.direction))
+                                }
+                            }
+                            .accessibilityIdentifier("freeform.historyRow")
+                            if let reason = row.deleteReason {
+                                Text(reason)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("freeform.historyRow.keep.\(row.id)")
                             }
                         }
-                        .accessibilityIdentifier("freeform.historyRow")
+                        .deleteDisabled(row.deleteReason != nil)
                     }
                     .onDelete(perform: onDelete)
                 }

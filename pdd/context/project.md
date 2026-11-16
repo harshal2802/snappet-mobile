@@ -810,6 +810,16 @@ racket was dominant, so a match plus two lifts could not reach its videos or edi
 only exercise asks "Delete this session?" (Delete session / Cancel) and deletes through `SessionCascade`, leaving the
 detail; photos and videos stay in Photos. Pure: `RacketRecapReach`, `SessionSetEditing.isLastExercise`
 (`RacketRecapReachTests`); UI `RacketMixedSessionUITests` (seed `-uiTestRacketMixedSession strength|timed`).
+🟡 **The live session never loses work silently (2026-11-16, prompt 263).** iOS. From the workout state-machine review:
+Remove match / drill / exercise / climb in the live player asks (a recorded one says its split, rallies and tags go and
+the video stays in Photos); Finish with no completed set but a recording, photos / videos or logged sets asks Save
+session / Discard / Cancel instead of deleting, and the Finish intent / `snappet://finish` link saves it; that link
+while a racket recording, drill or game screen is open finishes nothing and the screen says why; the history drawer's
+delete on a racket game goes through Edit match's logic (a game with video can't be swiped away, with the reason), and
+drills keep their block marks right; one recording per entry ("Record everything" off with its reason once something
+was recorded; a record-everything drill continues its log); a recording left open by an app kill is closed at its last
+saved part. Pure: `LiveSessionSafety.swift` (`LiveSessionSafetyTests`); `RacketLiveCovers.swift`; UI
+`LiveSessionSafetyUITests`. **Device-pending:** the crash recovery and the finish link with real Photos parts.
 
 ## License
 

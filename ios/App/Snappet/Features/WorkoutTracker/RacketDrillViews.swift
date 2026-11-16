@@ -82,8 +82,16 @@ struct RacketDrillCover: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden(!(reviewOnly || machine?.isEnded == true))
-        .onAppear { recorder.screenAppeared(); setUp() }
-        .onDisappear(perform: tearDown)
+        .racketFinishRefusal(exerciseID: ex.id)
+        .onAppear {
+            // Prompt 263: an open drill (not Review drill from the page) holds off the Finish intent / link.
+            if !reviewOnly { RacketLiveCovers.shared.opened(ex.id, .drill) }
+            recorder.screenAppeared(); setUp()
+        }
+        .onDisappear {
+            if !reviewOnly { RacketLiveCovers.shared.closed(ex.id) }
+            tearDown()
+        }
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .task {
             guard !reviewOnly else { return }
@@ -128,7 +136,9 @@ struct RacketDrillCover: View {
         m.startingBlock = ex.sets.count
         m.baseSetIndex = 0
         m.quality = quality ?? defaults.quality
-        if plan.recording == .byUnit, let old = ex.racketRecordingLog, old.modeRaw == RacketRecordingMode.byUnit.rawValue {
+        // Prompt 263: a drill keeps one recording. Same mode ⇒ continue its log (block by block, and now everything);
+        // a different mode over a recorded log is blocked on the page (`RacketRecordingGuard.drillStart`).
+        if RacketRecordingGuard.drillStart(ex, recording: plan.recording) == .continueLog, let old = ex.racketRecordingLog {
             m.continueLog(old)
         }
         if plan.recording != .off {

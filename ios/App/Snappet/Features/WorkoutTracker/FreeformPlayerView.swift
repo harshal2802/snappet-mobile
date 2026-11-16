@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import HighlightEngine
+import OSLog
 
 /// The **single** session player — for every session, routine and freeform alike. A grow-as-you-go
 /// pager: swipe between exercises, add exercises and sets/attempts on the fly, of any `SetKind` (reps &
@@ -35,6 +36,8 @@ struct FreeformPlayerView: View {
     /// Photos library access for the deep-tap "Delete from Photos too" path (prompt 11) — the same
     /// stateless `Sendable` service `SessionDetailView` uses for its deletion confirmation.
     private let mediaLibrary = MediaLibraryService()
+    /// A refused recording-log replacement (prompt 263) is logged here.
+    private static let recordingLog = Logger(subsystem: "com.snappet.app", category: "racket.recording")
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
@@ -147,6 +150,10 @@ struct FreeformPlayerView: View {
     /// the single Photos-aware confirmation hosted on this view (ported from `SessionDetailView`). `nil` ⇒
     /// no deletion in flight.
     @State private var pendingClipDeletion: SessionMedia?
+    /// Remove match / drill / exercise / climb waiting for its confirmation (prompt 263, F5).
+    @State private var pendingRemoval: PendingRemoval?
+    /// Finish with something worth keeping but no completed set: what Discard would delete (prompt 263, F2).
+    @State private var finishAsk: String?
 
     // MARK: Remembered rest timer (Phase 7)
     /// Opt-in: when on, completing an attempt/set auto-starts a count-down rest in the command bar.
@@ -468,6 +475,34 @@ struct FreeformPlayerView: View {
         } message: { _ in
             Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
         }
+        // Remove match / drill / exercise / climb (prompt 263, F5): confirmed like the finished session's detail.
+        .confirmationDialog(
+            pendingRemoval?.prompt.title ?? "",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible, presenting: pendingRemoval
+        ) { item in
+            Button(item.prompt.confirm, role: .destructive) {
+                if let ex = session.exercises.first(where: { $0.id == item.exerciseID }) { removeExercise(ex) }
+            }
+            .accessibilityIdentifier("freeform.confirmRemoveExercise")
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text(item.prompt.message)
+        }
+        // Finish with something worth keeping but no completed set (prompt 263, F2): never a silent discard.
+        .confirmationDialog(
+            LiveFinish.askTitle,
+            isPresented: Binding(get: { finishAsk != nil }, set: { if !$0 { finishAsk = nil } }),
+            titleVisibility: .visible, presenting: finishAsk
+        ) { _ in
+            Button("Save session") { onClose(true) }
+                .accessibilityIdentifier("freeform.finishAsk.save")
+            Button("Discard", role: .destructive) { onClose(false) }
+                .accessibilityIdentifier("freeform.finishAsk.discard")
+            Button("Cancel", role: .cancel) {}
+        } message: { lost in
+            Text(lost)
+        }
         // The plan-editor sheet (prompt 109): tapping "of N" / the plan row sets the target; Save
         // writes `plannedSets` in place. Defaults to last session's set count for this exercise.
         .sheet(item: $planEditing) { target in
@@ -505,6 +540,7 @@ struct FreeformPlayerView: View {
             ActivityClipsSheet(target: target, history: history, excludingSession: session.id, unit: unit)
         }
         .onAppear {
+            recoverOpenRecordings()   // prompt 263, F14
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
             recomputeClimbStats()
@@ -1070,7 +1106,7 @@ struct FreeformPlayerView: View {
                     Label("Edit details", systemImage: "pencil")
                 }
                 .accessibilityIdentifier("freeform.editEntity")
-                Button(role: .destructive) { removeExercise(ex) } label: {
+                Button(role: .destructive) { requestRemoval(ex) } label: {
                     Label("Remove exercise", systemImage: "trash")
                 }
             } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
@@ -1082,7 +1118,7 @@ struct FreeformPlayerView: View {
                 .accessibilityLabel(ex.isRacketMatch ? "Match options" : "Drill options")
         default:
             Menu {
-                Button(role: .destructive) { removeExercise(ex) } label: {
+                Button(role: .destructive) { requestRemoval(ex) } label: {
                     Label("Remove exercise", systemImage: "trash")
                 }
             } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
@@ -1387,7 +1423,9 @@ struct FreeformPlayerView: View {
             exerciseId: ex.exerciseId, displayName: ex.displayName, history: history) ?? []
         let deltas = QuickSessionPager.deltas(current: ex.sets, previous: previous, kind: ex.kind)
         return ex.sets.enumerated().map { i, set in
-            .init(id: i, summary: ledgerText(set, ex: ex), delta: deltas[i])
+            // A racket game / block with video can't be swiped away here (prompt 263, F3): the row says why.
+            .init(id: i, summary: ledgerText(set, ex: ex), delta: deltas[i],
+                  deleteReason: RacketLiveDrawer.deleteBlock(ex, index: i))
         }
     }
 
@@ -1559,7 +1597,7 @@ struct FreeformPlayerView: View {
             }
             .accessibilityIdentifier("freeform.editAllClips")
         }
-        Button(role: .destructive) { removeExercise(ex) } label: {
+        Button(role: .destructive) { requestRemoval(ex) } label: {
             Label("Remove climb", systemImage: "trash")
         }
     }
@@ -1700,7 +1738,7 @@ struct FreeformPlayerView: View {
                 }
             } label: { Label("Retired / walkover", systemImage: "flag") }
         }
-        Button(role: .destructive) { removeExercise(ex) } label: {
+        Button(role: .destructive) { requestRemoval(ex) } label: {
             Label(ex.isRacketMatch ? "Remove match" : "Remove drill", systemImage: "trash")
         }
     }
@@ -1890,15 +1928,24 @@ struct FreeformPlayerView: View {
                 .accessibilityIdentifier("racket.recording.offNote")
         } else {
             let log = ex.racketRecordingLog
+            // One recording per entry (prompt 263, F1): a second one would replace this one's split, rallies and tags.
+            let blocked = RacketRecordingGuard.recordEverythingBlock(ex)
             VStack(alignment: .leading, spacing: 6) {
                 Button {
                     racketStorageFor = RacketStorageTarget(exerciseID: ex.id, mode: mode)
                 } label: {
-                    Label(log == nil ? "Record everything" : "Record everything again", systemImage: "record.circle")
+                    Label("Record everything", systemImage: "record.circle")
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(SnappetWidePrimaryStyle())
+                .disabled(blocked != nil)
                 .accessibilityIdentifier("racket.recordEverything")
+                if let blocked {
+                    Text(blocked)
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("racket.recordEverything.reason")
+                }
                 Text(log.map { l in
                     mode == .drill ? l.drillSummaryLine
                         : "1 recording · \(RacketClock.elapsed(l.recordedSec(now: l.endedAt ?? .now))) · \(l.userMarkCount) marks"
@@ -1932,6 +1979,12 @@ struct FreeformPlayerView: View {
         let sport = ex.racketFormat.sport
         let plan = RacketDrillPlan(from: ex, defaults: racketRecordingDefaults)
         let filming = ex.racketRecording != .off
+        // One recording per entry (prompt 263, F1): same mode continues the drill's log; another mode over a recording
+        // would replace it, so it is off with the reason.
+        let blocked: String? = {
+            if case .blocked(let reason) = RacketRecordingGuard.drillStart(ex, recording: plan.recording) { return reason }
+            return nil
+        }()
         VStack(alignment: .leading, spacing: 6) {
             if ex.sets.count < plan.blocks {
                 Button {
@@ -1946,7 +1999,14 @@ struct FreeformPlayerView: View {
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(SnappetWidePrimaryStyle())
+                .disabled(blocked != nil)
                 .accessibilityIdentifier("racket.page.drillStart")
+                if let blocked {
+                    Text(blocked)
+                        .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("racket.page.drillStart.reason")
+                }
             }
             Text(ex.racketRecordingLog.map(\.drillSummaryLine) ?? ex.racketRecording.helper(for: .drill))
                 .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
@@ -2032,6 +2092,12 @@ struct FreeformPlayerView: View {
 
     private func saveRacketRecordingLog(_ log: RacketRecordingLog, exerciseID: UUID) {
         guard let idx = session.exercises.firstIndex(where: { $0.id == exerciseID }) else { return }
+        // One recording per entry (prompt 263, F1): a recorded log is never replaced by another recording (the page
+        // and the covers block a second one; this is the last line of defence).
+        guard RacketRecordingGuard.mayReplace(session.exercises[idx].racketRecordingLog, with: log) else {
+            Self.recordingLog.error("Kept the existing recording of \(exerciseID, privacy: .public): refused a log started at \(log.startedAt, privacy: .public)")
+            return
+        }
         // The recording screen owns runs / parts / marks; the split, rallies, derived videos and other-AI sends /
         // replies and rally scans are written by the videos screens (prompts 246–248) and must survive a late part save.
         var merged = log
@@ -2135,11 +2201,44 @@ struct FreeformPlayerView: View {
     }
 
     /// Finish from the command bar: a logged session opens the completion summary (computing milestones
-    /// against prior history first); an empty session just exits (discarded — nothing to celebrate).
+    /// against prior history first); a session with nothing worth keeping just exits (discarded); one with a recording,
+    /// photos / videos or logged sets but no completed set asks (prompt 263, F2: never a silent delete).
     private func finishTapped() {
-        guard session.completedSetCount > 0 else { finish(saved: false); return }
-        doneMilestones = FreeformSummary.milestones(for: session, history: history)
-        showingSummary = true
+        switch LiveFinish.decide(exercises: session.exercises, completedSets: session.completedSetCount,
+                                 mediaCount: sessionMediaCount) {
+        case .summary:
+            doneMilestones = FreeformSummary.milestones(for: session, history: history)
+            showingSummary = true
+        case .discard:
+            finish(saved: false)
+        case .ask(let lost):
+            finishAsk = lost
+        }
+    }
+
+    /// Every photo / video row of this session (assigned or not), for the finish rule.
+    private var sessionMediaCount: Int {
+        let sid = session.id
+        return (try? context.fetchCount(FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sid }))) ?? 0
+    }
+
+    /// Remove from the ⋯ menu (prompt 263, F5): an exercise holding nothing goes at once; anything else is confirmed.
+    private func requestRemoval(_ ex: SessionExercise) {
+        let name = resolver.name(for: ex.exerciseId, override: ex.displayName)
+        if let prompt = LiveRemoval.prompt(for: ex, name: name, mediaCount: mediaRows(assignedTo: ex.id).count) {
+            pendingRemoval = PendingRemoval(exerciseID: ex.id, prompt: prompt)
+        } else {
+            removeExercise(ex)
+        }
+    }
+
+    /// A recording left open by an app kill (prompt 263, F14): close it at its last saved part, for every entry whose
+    /// cover isn't open right now (a live recording is never touched).
+    private func recoverOpenRecordings() {
+        guard let fixed = RacketRecordingRecovery.recoverAll(session.exercises,
+                                                            live: Set(RacketLiveCovers.shared.open.keys)) else { return }
+        session.exercises = fixed
+        persist()
     }
 
     // MARK: - Mutations
@@ -2601,6 +2700,10 @@ struct FreeformPlayerView: View {
 
     private func deleteSets(_ ex: SessionExercise, at offsets: IndexSet) {
         guard let idx = indexOf(ex) else { return }
+        if session.exercises[idx].discipline == .racket {
+            deleteRacketUnits(at: idx, offsets: offsets)
+            return
+        }
         session.exercises[idx].sets.remove(atOffsets: offsets)
         // Keep pinned media honest across the deletion: a clip pinned to a deleted set falls back to
         // the exercise as a whole; clips pinned to later sets shift down with them. Without this,
@@ -2609,6 +2712,29 @@ struct FreeformPlayerView: View {
             guard let pinned = row.assignedSetIndex else { continue }
             let remapped = SessionMediaAssignment.reindexAfterDeletion(pinned, removing: offsets)
             if remapped != pinned { row.assignedSetIndex = remapped }
+        }
+        persist()
+    }
+
+    /// The drawer's delete on a racket match / drill (prompt 263, F3): through `RacketLiveDrawer` (a match through
+    /// `RacketMatchEditor`), so the recording's base, split links, game / block marks and every photo / clip pinned to
+    /// a game stay right. A game / block with video is never removed here (its row can't be swiped; a stray offset is
+    /// skipped).
+    private func deleteRacketUnits(at idx: Int, offsets: IndexSet) {
+        var current = session.exercises[idx]
+        var moved: [Int: Int] = Dictionary(uniqueKeysWithValues: current.sets.indices.map { ($0, $0) })
+        for i in offsets.sorted(by: >) {
+            guard let r = RacketLiveDrawer.remove(current, at: i) else { continue }
+            current.sets = r.sets
+            current.racketRecordingLog = r.log
+            moved = moved.compactMapValues { r.remap[$0] }
+        }
+        session.exercises[idx].sets = current.sets
+        session.exercises[idx].racketRecordingLog = current.racketRecordingLog
+        for row in mediaRows(assignedTo: current.id) {
+            guard let pinned = row.assignedSetIndex else { continue }
+            let now = moved[pinned]
+            if now != pinned { row.assignedSetIndex = now }
         }
         persist()
     }
@@ -2890,6 +3016,12 @@ private struct FreeformStudioPresentation: Identifiable {
     /// a user-toggleable "Attempt #" option on the climb-name tag. `nil` when the clip isn't a single climb
     /// attempt (whole-session reel / non-climb / the combined "Edit all clips" view spanning many attempts).
     var suggestedAttemptNumber: Int? = nil
+}
+
+/// Remove match / drill / exercise / climb waiting for its confirmation (prompt 263).
+private struct PendingRemoval {
+    let exerciseID: UUID
+    let prompt: LiveRemovalPrompt
 }
 
 /// A climb being EDITED (prompt 09): the climb's `id` to overwrite + the prefill snapshot for the sheet.

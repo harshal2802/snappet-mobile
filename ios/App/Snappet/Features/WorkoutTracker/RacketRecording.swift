@@ -1064,9 +1064,14 @@ struct RacketRecordingMachine: Equatable, Sendable {
 
     /// Continue an earlier game-by-game recording of this match (the screen was closed between games): new games
     /// add runs and parts to the same log. Only before anything is recorded here. A block-by-block drill reopened
-    /// mid-way continues its log the same way (prompt 250).
+    /// mid-way continues its log the same way (prompt 250). Prompt 263: a drill recording everything, reopened with
+    /// "Continue drill", continues its log too (one recording per entry): new blocks add runs, parts and marks after
+    /// the earlier ones, which stay as they were; only a log recorded everything is continued that way (the callers
+    /// check the mode for block / game by game, as before).
     mutating func continueLog(_ l: RacketRecordingLog) {
-        guard log == nil, recording == .byUnit else { return }
+        guard log == nil else { return }
+        let drillEverything = recording == .everything && racketMode == .drill && RacketRecordingGuard.logMode(l) == .everything
+        guard recording == .byUnit || drillEverything else { return }
         log = l
         // A look picked on the camera (prompt 255) becomes the match's playback look, also on a continued log.
         if let lookRaw { log?.lookRaw = lookRaw }
