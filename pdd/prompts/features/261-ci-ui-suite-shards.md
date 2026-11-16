@@ -26,7 +26,7 @@ racket UI tests among them) has never run on CI.
   `class X: XCTestCase` with tests, weights it by its number of tests, places heaviest first on the lightest
   shard (deterministic), prints one `-only-testing:SnappetUITests/<Class>` per line. `--plan` prints the split,
   `--check` fails unless every class is in exactly one shard.
-- `changes` job: `UI_SHARDS: 6`; the matrix becomes `SnappetTests` plus `SnappetUITests-1of6 … 6of6`.
+- `changes` job: `UI_SHARDS: 8` (six was tried first; two legs still hit the ceiling); the matrix becomes `SnappetTests` plus `SnappetUITests-1of8 … 8of8`.
 - `app` job: a `SnappetUITests-KofN` leg runs `--check`, then passes the script's lines to `xcodebuild test`.
   The unit leg is unchanged. Each leg still builds the app itself.
 
@@ -36,7 +36,7 @@ racket UI tests among them) has never run on CI.
 
 ## Acceptance criteria
 
-- [ ] `scripts/ci-ui-shard.py --check 6` passes; the six shards hold 45–46 tests each.
+- [ ] `scripts/ci-ui-shard.py --check 8` passes; the eight shards hold 34 tests each.
 - [ ] On the PR's CI run every UI leg starts, runs only its classes and ends on its own (pass or real failures),
       not by the 90-minute cancel.
 - [ ] A PR that touches no `ios/**` still requests no UI runner.
@@ -45,10 +45,10 @@ racket UI tests among them) has never run on CI.
 ## Constraints
 
 - No app or test source changes in this PR. Tests that fail once they finally run on CI are reported, not fixed here.
-- Six concurrent macOS runners per run that touches `ios/**`: more runner minutes in total (six builds), shorter wall time.
+- Eight concurrent macOS runners per run that touches `ios/**`: more runner minutes in total (eight builds), shorter wall time.
 
 ## Test plan
 
-1. `python3 scripts/ci-ui-shard.py --check 6` and `--plan 6` locally.
+1. `python3 scripts/ci-ui-shard.py --check 8` and `--plan 8` locally.
 2. Dry-run the leg's shell step locally for one shard.
 3. Open the PR (it changes `ci.yml`, so the UI legs run) and read each leg's result and duration.

@@ -73,7 +73,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           IOS_CHANGED: ${{ steps.filter.outputs.ios }}
           # How many parallel legs the UI suite is split into. Keep the `app` matrix fallback below in step.
-          UI_SHARDS: 6
+          UI_SHARDS: 8
         run: |
           set -euo pipefail
           # Fail-OPEN: full suite on non-PR events (a `main` push is post-merge integration; a manual
@@ -117,17 +117,18 @@ jobs:
     # and the job was killed with ~2 suites left. Note `-test-iterations 3` below multiplies the
     # cost of any flake, so the ceiling has to clear the retried worst case, not the happy path.
     # The unit leg finishes in ~10 min and is unaffected by the larger number.
-    # 2026-11-16 (prompt 261): the ceiling stays, the UI suite is now split into legs of ~45 tests each
-    # (about 35–45 min of tests plus the build), because one leg could no longer fit under any sane ceiling.
+    # 2026-11-16 (prompt 261): the ceiling stays, the UI suite is now split into legs of ~34 tests each,
+    # because one leg could no longer fit under any sane ceiling. Six legs was tried first: four finished
+    # in 47–66 min, two hit 90 (one with 77 min of slow-but-green racket tests, one retrying real failures).
     timeout-minutes: 90
     strategy:
       fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
       matrix:
-        # ["SnappetTests","SnappetUITests-1of6",…,"SnappetUITests-6of6"] or just ["SnappetTests"] — see the
+        # ["SnappetTests","SnappetUITests-1of8",…,"SnappetUITests-8of8"] or just ["SnappetTests"] — see the
         # `changes` job. The UI legs are omitted (not skipped-in-place) when a PR doesn't touch ios/**, so
         # no macOS runner is spent. The `|| [...]` fallback expands the full matrix if `changes` produced
         # no output (job failed); it must list the same legs as `UI_SHARDS` there.
-        suite: ${{ fromJSON(needs.changes.outputs.suites || '["SnappetTests","SnappetUITests-1of6","SnappetUITests-2of6","SnappetUITests-3of6","SnappetUITests-4of6","SnappetUITests-5of6","SnappetUITests-6of6"]') }}
+        suite: ${{ fromJSON(needs.changes.outputs.suites || '["SnappetTests","SnappetUITests-1of8","SnappetUITests-2of8","SnappetUITests-3of8","SnappetUITests-4of8","SnappetUITests-5of8","SnappetUITests-6of8","SnappetUITests-7of8","SnappetUITests-8of8"]') }}
     env:
       SCHEME: Snappet
       SPM_CACHE: ${{ github.workspace }}/.spm-cache
