@@ -37,7 +37,9 @@ final class RacketSplitTimeoutUITests: XCTestCase {
         while !el.waitForExistence(timeout: tries == 0 ? 4 : 1) && tries < 10 { app.swipeUp(velocity: .slow); tries += 1 }
         XCTAssertTrue(el.exists, "\(el) should exist", file: file, line: line)
         tries = 0
-        while !el.isHittable && tries < 8 { app.swipeUp(velocity: .slow); tries += 1 }
+        // A button straddling the bottom edge counts as hittable but its centre is off screen: bring it fully in.
+        let bottom = app.windows.firstMatch.frame.maxY - 60
+        while (!el.isHittable || el.frame.maxY > bottom) && tries < 8 { app.swipeUp(velocity: .slow); tries += 1 }
         el.tap()
     }
 
@@ -77,21 +79,30 @@ final class RacketSplitTimeoutUITests: XCTestCase {
         XCTAssertTrue(any("racket.split.edit.speed").exists)
         app.buttons["racket.split.edit.end.-10"].tap()     // the playhead goes to the end (44:50)
         XCTAssertEqual(playhead(), 44 * 60 + 50)
-        app.buttons["racket.split.edit.playPart"].tap()
+        app.buttons["racket.split.edit.play"].tap()
         Thread.sleep(forTimeInterval: 2.5)
         let a = playhead()
         XCTAssertTrue(a > 37 * 60 && a < 37 * 60 + 10, "Play starts the part from its start and advances: \(a)")
         shot("01-play-after-end-handle")
         Thread.sleep(forTimeInterval: 6)
-        app.buttons["racket.split.edit.playPart"].tap()      // pause inside the part
+        app.buttons["racket.split.edit.play"].tap()      // pause inside the part
         let cut = playhead()
         XCTAssertGreaterThan(cut, 37 * 60 + 5)
-        app.buttons["racket.split.edit.splitHere"].tap()
-        XCTAssertEqual(any("racket.split.edit.range").label.hasPrefix("37:00–"), true, "the sheet stays on the first half")
-        app.buttons["racket.split.edit.playPart"].tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertEqual(playhead(), cut, "Pause holds the playhead")
+        let splitHere = app.buttons["racket.split.edit.splitHere"]
+        // Scroll by dragging the "Playhead" line (a swipe from the middle of the sheet would drag the range strip
+        // and move the playhead), until the button is clear of the bottom edge.
+        let handle = any("racket.split.edit.playhead").coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        handle.press(forDuration: 0.05, thenDragTo: handle.withOffset(CGVector(dx: 0, dy: -260)))
+        XCTAssertLessThan(splitHere.frame.maxY, app.windows.firstMatch.frame.maxY - 40, "Split here is on screen")
+        splitHere.tap()
+        let range = any("racket.split.edit.range").label
+        XCTAssertTrue(range.hasPrefix("37:00–") && !range.hasSuffix("44:50"), "the sheet stays on the first half, now shorter: \(range)")
+        app.buttons["racket.split.edit.play"].tap()
         Thread.sleep(forTimeInterval: 2.5)
         let b = playhead()
-        XCTAssertTrue(b > 37 * 60 && b < cut, "the first half plays from its start: \(b) (cut \(cut))")
+        XCTAssertTrue(b > 37 * 60 && b < cut, "the first half plays from its start: \(b) (cut \(cut)) range=\(any("racket.split.edit.range").label) playLabel=\(app.buttons["racket.split.edit.play"].label)")
         shot("02-play-after-split-here")
     }
 

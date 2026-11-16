@@ -1202,7 +1202,7 @@ struct RacketVideosCover: View {
     }
 
     private func bar(_ label: String, _ n: Int, of total: Int, id: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text(label).font(SnappetType.body).frame(width: 110, alignment: .leading).fixedSize(horizontal: false, vertical: true)
             GeometryReader { g in
                 Capsule().fill(SnappetColor.brand).frame(width: max(4, g.size.width * Double(n) / Double(total)))
@@ -1440,16 +1440,10 @@ struct RacketSplitEditSheet: View {
                         }
                         if let pb = playback {
                             RacketSplitVideo(playback: pb, sport: sport, start: p.startSec, end: p.endSec)
-                            HStack(spacing: 10) {
-                                Text("Playhead \(RacketVideoTime.clock(pb.position))")
-                                    .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
-                                    .accessibilityIdentifier("racket.split.edit.playhead")
-                                Spacer()
-                                Button(pb.playing ? "Pause" : "Play") { RacketSplitVideo.toggle(pb, start: p.startSec, end: p.endSec) }
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .buttonStyle(.bordered)
-                                    .accessibilityIdentifier("racket.split.edit.playPart")
-                            }
+                            // One play control: the button on the picture (a second "Play" pill sat here before).
+                            Text("Playhead \(RacketVideoTime.clock(pb.position))")
+                                .font(SnappetType.detail.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
+                                .accessibilityIdentifier("racket.split.edit.playhead")
                         }
                         Text("Drag to where it starts and ends").snappetLabel()
                         RacketRangeStrip(start: p.startSec, end: p.endSec, window: windowRange(p),
@@ -1645,14 +1639,15 @@ struct RacketSplitEditSheet: View {
     }
 
     private func edgeRow(_ label: String, value: Double, id: String, nudge: @escaping (Double) -> Void) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text(label).font(SnappetType.body)
             Text(RacketVideoTime.clock(value)).font(SnappetType.body.monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
             Spacer()
             ForEach([(-10.0, "−10 s"), (-1.0, "−1 s"), (1.0, "+1 s"), (10.0, "+10 s")], id: \.0) { d, t in
-                Button(t) { nudge(d) }
+                Button { nudge(d) } label: { Text(t).lineLimit(1).fixedSize() }
                     .font(.system(size: 13, weight: .semibold))
                     .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .accessibilityIdentifier("racket.split.edit.\(id).\(Int(d))")
             }
         }
