@@ -35,6 +35,11 @@ final class RacketRecorder: NSObject {
     var onPartSaved: ((RecordedClip) -> Void)?
     /// Recording stopped for a reason the owner must show.
     var onInterrupted: ((RacketInterruption) -> Void)?
+    /// How warm the phone is (prompt 249, Warm / PhoneWarm): serious ⇒ warm (keep recording, pause the camera view);
+    /// back to fair / nominal ⇒ ok. Critical still stops the recording (`onInterrupted(.tooHot)`).
+    var onThermal: ((RacketThermalLevel) -> Void)?
+    /// The level now, for a screen that opens while the phone is already warm.
+    var thermal: RacketThermalLevel { RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue) }
 
     private let movie = AVCaptureMovieFileOutput()
     private let library = MediaLibraryService()
@@ -204,8 +209,11 @@ final class RacketRecorder: NSObject {
         })
         observers.append(nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil,
                                         queue: .main) { [weak self] _ in
-            guard ProcessInfo.processInfo.thermalState == .critical else { return }
-            MainActor.assumeIsolated { self?.report(.tooHot) }
+            let level = RacketThermalLevel.from(rawValue: ProcessInfo.processInfo.thermalState.rawValue)
+            MainActor.assumeIsolated {
+                self?.onThermal?(level)
+                if level == .tooHot { self?.report(.tooHot) }
+            }
         })
         // The fake has no capture session to interrupt: leaving the app is the signal.
         observers.append(nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil,

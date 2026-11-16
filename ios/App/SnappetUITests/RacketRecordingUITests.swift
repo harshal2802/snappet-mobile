@@ -115,10 +115,16 @@ final class RacketRecordingUITests: XCTestCase {
         opponent.typeText("Alex\n")
         tapWhenHittable(app.buttons["racket.recording.everything"])
         XCTAssertEqual(app.buttons["racket.recording.everything"].label, "Everything, split later")
-        tapWhenHittable(app.buttons["racket.startMatch"])
-
-        // Everything → Storage straight from setup.
+        // Match → Camera → Warmup → Storage (prompt 249: the boards' "Set up camera" path).
+        tapWhenHittable(app.buttons["racket.match.setUpCamera"])
+        let toWarmup = app.buttons["racket.camera.continue"]
+        XCTAssertTrue(toWarmup.waitForExistence(timeout: 8), "Set up camera opens the camera check")
+        toWarmup.tap()
+        XCTAssertTrue(app.buttons["racket.warmup.mode.everything"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["racket.warmup.mode.everything"].isSelected, "warmup keeps the match's choice")
+        app.buttons["racket.warmup.start"].tap()
         XCTAssertTrue(app.buttons["racket.storage.continue"].waitForExistence(timeout: 6))
+        XCTAssertEqual(app.buttons["racket.storage.cancel"].label, "Back", "TtStorage: Back after setup")
         app.buttons["racket.storage.continue"].tap()
 
         // RecordAll: recording starts at once; marks count.
@@ -142,9 +148,8 @@ final class RacketRecordingUITests: XCTestCase {
         mark.tap()
         app.buttons["racket.rec.newGame"].tap()
 
-        // Stop and split → the split prompt (H1: a whole-match recording ends there; prompt 246 builds it).
+        // Stop and split → the split prompt straight away (V2.6: no extra confirm, as on the board).
         app.buttons["racket.rec.stop"].tap()
-        confirmStop()
         XCTAssertTrue(any("racket.split.recorded").waitForExistence(timeout: 6), "the split prompt should show")
         // One "New game starts" ⇒ two games proposed.
         XCTAssertTrue(any("racket.split.line").label.hasPrefix("Looks like 2 games"), any("racket.split.line").label)

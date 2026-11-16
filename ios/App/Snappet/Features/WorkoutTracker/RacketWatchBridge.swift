@@ -13,9 +13,10 @@ extension RacketLiveRules {
     /// The tally rules for unit `unitIndex` (0-based) of a match in `format`.
     init(format: RacketFormat, unitIndex: Int) {
         if format.sport.usesSets {
-            self.init(kind: .sets, pointsTo: format.pointsTo, superTiebreak: format.isSuperTiebreak(index: unitIndex))
+            self.init(kind: .sets, pointsTo: format.pointsTo, superTiebreak: format.isSuperTiebreak(index: unitIndex),
+                      goldenPoint: format.goldenPoint)
         } else {
-            self.init(kind: .rally, pointsTo: format.pointsTo, cap: format.sport.cap)
+            self.init(kind: .rally, pointsTo: format.pointsTo, cap: format.cap)
         }
     }
 }
@@ -257,6 +258,91 @@ enum RacketWatchBridge {
             m.keepPlaying(now: now)
         }
         return out
+    }
+}
+
+// MARK: - The game-by-game screen ↔ Watch (prompt 249)
+
+extension RacketWatchBridge {
+    /// The Watch's view of the game-by-game screen (and of scoring without video): Start on the warmup, the score
+    /// while a game is played, the break ring, the countdown, then match over. Interruptions and "Still playing?" come
+    /// from the recording machine as on the record-everything screen.
+    static func gameCoverState(_ flow: RacketGameFlow, machine m: RacketRecordingMachine?, context c: RacketWatchContext,
+                               score: RacketLiveScore, lastUnitLabel: String?, now: Date) -> RacketWatchState {
+        let noun = c.sport.unit.noun
+        let surface: RacketWatchState.Surface
+        switch flow.phase {
+        case .warmup:
+            surface = .start(.init(title: "Start \(noun) \(flow.unitIndex + 1)?", cameraReady: flow.filming,
+                                   footnote: flow.filming ? RacketWatchCopy.cameraFootnote : "Score without video on the phone."))
+        case .playing, .interval, .intervalPaused, .scoring:
+            let started = flow.gameStartedAt ?? now
+            surface = .scoring(.init(unitNumber: flow.unitIndex + 1, score: score,
+                                     clock: .init(base: 0, asOf: started, running: flow.gameStartedAt != nil),
+                                     matchLine: c.matchLine))
+        case .breakTime(let endsAt):
+            surface = .matchBreak(.init(unitNumber: flow.unitIndex, unitScore: lastUnitLabel ?? "", endsAt: endsAt,
+                                        remainingSec: 0, totalSec: TimeInterval(flow.options.breakSec), paused: false))
+        case .breakPaused(let left):
+            surface = .matchBreak(.init(unitNumber: flow.unitIndex, unitScore: lastUnitLabel ?? "", endsAt: nil,
+                                        remainingSec: left, totalSec: TimeInterval(flow.options.breakSec), paused: true))
+        case .breakDone:
+            surface = .start(.init(title: "Start \(noun) \(flow.unitIndex + 1)?", cameraReady: flow.filming,
+                                   footnote: "The break is over."))
+        case .countdown(let endsAt):
+            surface = .countdown(.init(block: flow.unitIndex, blocks: 0, endsAt: endsAt,
+                                       totalSec: TimeInterval(flow.options.countdownSec),
+                                       title: RacketGameCopy.unitTitle(c.sport.unit, index: flow.unitIndex)))
+        case .ended:
+            surface = .ended(.init(title: c.matchLine ?? "Match over", line: "Confirm the scores on the phone."))
+        }
+        var notice: RacketWatchState.Notice?
+        var still: RacketWatchState.StillPlaying?
+        if let m, flow.filming {
+            if let i = m.interruption, !m.isEnded {
+                notice = .init(reason: stopReason(i), canResume: i.canResume, savedUpToSec: m.log?.savedUpToSec)
+            } else if m.isEnded && m.endedByStillPlaying {
+                notice = .init(reason: .stillPlayingTimeout, canResume: false, savedUpToSec: m.log?.savedUpToSec)
+            }
+            still = m.stillPlayingAskedAt.map {
+                RacketWatchState.StillPlaying(askedAt: $0, minutes: Int((m.stillPlayingSec ?? 0) / 60),
+                                              answerWindowSec: RacketStillPlaying.answerWindowSec)
+            }
+        }
+        return RacketWatchState(sessionID: c.sessionID, revision: 0, sport: c.sport.label, unitNoun: noun,
+                                sideUs: c.sideUs, sideThem: c.sideThem, note: RacketWatchCopy.note(c.sport),
+                                surface: surface, stillPlaying: still, notice: notice)
+    }
+
+    /// What a Watch tap asks of the game-by-game screen. The screen applies it (the flow, the machine and the tally
+    /// move together there); this is the pure routing, tested in `RacketMatchFlowTests`.
+    enum GameAction: Equatable, Sendable {
+        case startGame, point(us: Bool), undo, endGame, endMatch, mark
+        case pauseTimer, resumeTimer, add(TimeInterval), skip, keepPlaying, stopRecording
+        case none
+    }
+
+    static func gameAction(_ command: RacketWatchCommand, phase: RacketGameFlow.Phase) -> GameAction {
+        switch command {
+        case .start: return .startGame
+        case .pointUs, .pointThem:
+            switch phase {
+            case .playing, .interval, .intervalPaused: return .point(us: command == .pointUs)
+            default: return .none
+            }
+        case .undo: return phase == .playing ? .undo : .none
+        case .endUnit, .newUnit: return .endGame
+        case .endMatch, .stopAndSplit: return .endMatch
+        case .mark: return .mark
+        case .pauseTimer: return .pauseTimer
+        case .resumeTimer: return .resumeTimer
+        case .add30: return .add(30)
+        case .add60: return .add(60)
+        case .skip: return .skip
+        case .keepPlaying: return .keepPlaying
+        case .stopRecording: return .stopRecording
+        case .notYet, .breakStarts, .endBlock, .stopDrill, .finishDrill: return .none
+        }
     }
 }
 

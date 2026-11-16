@@ -82,7 +82,11 @@ final class RacketSportsUITests: XCTestCase {
         tapWhenHittable(round)
         round.typeText("R16\n")
         shot("02-match-details")
-        tapWhenHittable(app.buttons["racket.startMatch"])
+        // Play without video (prompt 249) opens ScoreOnly; Close keeps the match on its page.
+        tapWhenHittable(app.buttons["racket.match.playWithoutVideo"])
+        let close = app.buttons["racket.scoreOnly.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 6), "Play without video opens the point-by-point screen")
+        close.tap()
 
         // The match page: scoreboard + "vs Alex Chen".
         XCTAssertTrue(app.buttons["racket.endUnit"].waitForExistence(timeout: 6), "the match page should show")

@@ -125,6 +125,8 @@ struct RacketRecordingSettingsView: View {
 struct RacketStorageSheet: View {
     let mode: RacketMode
     let defaultQuality: RacketRecordingQuality
+    /// "Back" when it follows a setup screen (TtStorage; V2.4), "Cancel" from the match / drill page.
+    var cancelLabel: String = "Cancel"
     let onContinue: (RacketRecordingQuality) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -144,7 +146,8 @@ struct RacketStorageSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Record everything · for this match or drill").snappetLabel()
+                        Text("Record everything").font(.system(size: 15, weight: .semibold))
+                        Text("For this match or drill").snappetLabel()
                         Text(RacketStorageCheck.roomLine(freeBytes: free, config: config(quality)))
                             .font(.system(size: 24, weight: .light))
                             .foregroundStyle(verdictColor)
@@ -155,12 +158,28 @@ struct RacketStorageSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let storage {
-                        HStack {
-                            Text("\(RacketStorageCheck.gigabytes(storage.free)) free")
-                            Spacer()
-                            if storage.total > 0 { Text(RacketStorageCheck.gigabytes(storage.total)).foregroundStyle(SnappetColor.textSecondary) }
+                        // TtStorage's bar: "41 GB free of 256 GB" (V2.4) — used space filled, free space empty.
+                        VStack(alignment: .leading, spacing: 6) {
+                            if storage.total > 0 {
+                                GeometryReader { g in
+                                    let used = 1 - min(1, max(0, Double(storage.free) / Double(storage.total)))
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.white.opacity(0.08))
+                                        Capsule().fill(SnappetColor.textSecondary).frame(width: max(6, g.size.width * used))
+                                    }
+                                }
+                                .frame(height: 10)
+                                .accessibilityElement()
+                                .accessibilityLabel("Phone storage: \(RacketStorageCheck.gigabytes(storage.free)) free of \(RacketStorageCheck.gigabytes(storage.total))")
+                                .accessibilityIdentifier("racket.storage.bar")
+                            }
+                            HStack {
+                                Text("\(RacketStorageCheck.gigabytes(storage.free)) free")
+                                Spacer()
+                                if storage.total > 0 { Text(RacketStorageCheck.gigabytes(storage.total)).foregroundStyle(SnappetColor.textSecondary) }
+                            }
+                            .font(SnappetType.body.monospacedDigit())
                         }
-                        .font(SnappetType.body.monospacedDigit())
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Recording quality").snappetLabel().padding(.bottom, 6)
@@ -219,7 +238,7 @@ struct RacketStorageSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.accessibilityIdentifier("racket.storage.cancel")
+                    Button(cancelLabel) { dismiss() }.accessibilityIdentifier("racket.storage.cancel")
                 }
             }
         }
@@ -324,9 +343,13 @@ struct RacketRecordingCover: View {
     var session: WorkoutSession? = nil
     /// A game / set tallied point by point on the Apple Watch finished: log it "from Watch" (prompt 245).
     var onWatchUnit: (SetLog) -> Void = { _ in }
+    /// The latest heart rate (Stats "Heart rate", prompt 249); nil ⇒ "–".
+    var heartRate: Double? = nil
     let onClose: () -> Void
 
     @State private var recorder = RacketRecorder()
+    /// Warm (prompt 249): serious heat pauses the camera view; recording continues.
+    @State private var thermal: RacketThermalLevel = .ok
     @State private var machine: RacketRecordingMachine?
     @State private var now = Date()
     /// Dim · Camera · Stats (device feedback round 1: opens on the camera so the shot can be framed).
@@ -362,11 +385,12 @@ struct RacketRecordingCover: View {
             VStack(spacing: 12) {
                 topBar
                 if let m = machine {
-                    if RacketRecordingShow.showsPreview(show, phase: m.phase) {
+                    if thermal != .ok, !m.isEnded { warmBanner }
+                    if thermal == .ok, RacketRecordingShow.showsPreview(show, phase: m.phase) {
                         cameraView.layoutPriority(1)
                     }
                     content(m)
-                    if RacketRecordingShow.showsSwitcher(phase: m.phase) { switcher }
+                    if RacketRecordingShow.showsSwitcher(phase: m.phase), thermal == .ok { switcher }
                     bottomAction(m)
                 } else {
                     Spacer()
@@ -449,6 +473,8 @@ struct RacketRecordingCover: View {
             act { m in m.interrupt(reason, now: Date()); return [] }
             Haptics.warning()
         }
+        recorder.onThermal = { level in thermal = level }
+        thermal = recorder.thermal
         recorder.startPreview(quality: quality)
         if ex.isRacketMatch { liveScore = RacketLiveScore(rules: watchRules(unitIndex: baseSets)) }
         RacketWatchRelay.shared.attach(ex.id) { command, now in handleWatch(command, now: now) }
@@ -546,9 +572,17 @@ struct RacketRecordingCover: View {
                 Text("Match, everything").font(.system(size: 15, weight: .semibold))
                     .accessibilityIdentifier("racket.rec.header")
                 Spacer(minLength: 4)
-                Text(savedLine).font(.system(size: 13)).foregroundStyle(savedColor)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("racket.rec.saved")
+                if thermal != .ok {
+                    Text(thermal.headerLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(SnappetColor.perfModerate)
+                        .accessibilityIdentifier("racket.rec.warm")
+                } else {
+                    Text(savedLine).font(.system(size: 13)).foregroundStyle(savedColor)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("racket.rec.saved")
+                }
+            } else if thermal != .ok, machine?.isEnded == false {
+                Text(thermal.headerLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(SnappetColor.perfModerate)
+                    .accessibilityIdentifier("racket.rec.warm")
             }
         }
     }
@@ -580,7 +614,9 @@ struct RacketRecordingCover: View {
     /// The phase's main action under the switcher: Stop and split (match), End block, Finish drill (rest).
     @ViewBuilder private func bottomAction(_ m: RacketRecordingMachine) -> some View {
         switch m.phase {
-        case .recordingMatch: stopButton("Stop and split")
+        case .recordingMatch:
+            // V2.6: the board goes straight to the split prompt (SplitPrompt "Keep as one video" / Later is the undo).
+            RacketStopButton(title: "Stop and split", id: "racket.rec.stop") { act { $0.end(now: Date()) } }
         case .block: primary("End block", id: "racket.rec.endBlock") { act { $0.endBlock(now: Date()) } }
         case .rest, .restPaused, .restDone: stopButton("Finish drill")
         default: EmptyView()
@@ -602,7 +638,7 @@ struct RacketRecordingCover: View {
             } else if m?.capturing == true {
                 HStack(spacing: 6) {
                     Circle().fill(SnappetColor.perfHard).frame(width: 8, height: 8)
-                    Text("Recording \(RacketClock.elapsed(recorded))").monospacedDigit()
+                    Text("Recording \(RacketClock.recordingHeader(recorded))").monospacedDigit()
                 }
                 .foregroundStyle(SnappetColor.perfHard)   // the boards' "● Recording" is red
             } else {
@@ -629,7 +665,7 @@ struct RacketRecordingCover: View {
         let compact = RacketRecordingShow.compact(show, phase: m.phase)
         switch m.phase {
         case .recordingMatch:
-            if show == .stats { matchStatsPanel(m) } else { matchPanel(m, compact: compact) }
+            if show == .stats && thermal == .ok { matchStatsPanel(m) } else { matchPanel(m, compact: compact && thermal == .ok) }
         case .ready: readyPanel(m)
         case .countdown(let b, let endsAt): countdownPanel(m, block: b, endsAt: endsAt, compact: compact)
         case .block(let b, _):
@@ -754,53 +790,32 @@ struct RacketRecordingCover: View {
     private func matchStatsPanel(_ m: RacketRecordingMachine) -> some View {
         let state = ex.racketState
         let log = m.log
-        let sides = RacketWatchCopy.sides(opponent: ex.opponent, doubles: ex.isDoubles)
-        let tags = RacketTagSummary.make(log?.allRallies ?? [], sport: ex.racketSport ?? ex.racketFormat.sport)
-        return ScrollView {
-            VStack(spacing: 16) {
-                bigScore(state, compact: false)
-                VStack(spacing: 2) {
-                    Text("Your tags").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
-                    Text(RacketRecordStats.tagsLine(tags, sides: sides)).font(.system(size: 17, weight: .semibold))
-                        .accessibilityIdentifier("racket.rec.stats.tags")
-                }
-                let gameSec = log.map { RacketRecordStats.gameSec($0, now: now) } ?? 0
-                let played = RacketRecordStats.pointsPlayed(liveScore)
-                HStack(spacing: 10) {
-                    stat("\(unit.noun.capitalized) time", RacketClock.elapsed(gameSec), compact: false)
-                        .accessibilityIdentifier("racket.rec.stats.gameTime")
-                    stat("Session time", RacketClock.elapsed(log?.recordedSec(now: now) ?? 0), compact: false)
-                        .accessibilityIdentifier("racket.rec.stats.sessionTime")
-                    stat("Points played", played.map(String.init) ?? "–", compact: false)
-                        .accessibilityIdentifier("racket.rec.stats.points")
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("How rallies ended").snappetLabel()
-                    if tags.endings.isEmpty {
-                        Text("No endings tagged yet").font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                    } else {
-                        let top = tags.endings.map(\.count).max() ?? 1
-                        ForEach(tags.endings, id: \.ending) { e in
-                            HStack(spacing: 8) {
-                                Text(e.ending.label).font(SnappetType.detail).frame(width: 90, alignment: .leading)
-                                GeometryReader { g in
-                                    Capsule().fill(SnappetColor.brand)
-                                        .frame(width: max(4, g.size.width * Double(e.count) / Double(max(1, top))))
-                                }
-                                .frame(height: 8)
-                                Text("\(e.count)").font(SnappetType.detail.monospacedDigit())
-                            }
-                        }
-                    }
-                    Text(tags.sourceLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
-                        .accessibilityIdentifier("racket.rec.stats.source")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                footnote("Rally and shot stats appear after the match. Tag rallies from Your videos.")
-                    .multilineTextAlignment(.center)
-            }
+        let sport = ex.racketSport ?? ex.racketFormat.sport
+        let big = RacketRecordStats.bigScore(live: liveScore, won: state.won, lost: state.lost, unit: unit)
+        return RacketStatsOffPanel(score: big.value,
+                                   tags: RacketTagSummary.make(log?.allRallies ?? [], sport: sport),
+                                   sides: RacketWatchCopy.sides(opponent: ex.opponent, doubles: ex.isDoubles), unit: unit,
+                                   gameSec: log.map { RacketRecordStats.gameSec($0, now: now) } ?? 0,
+                                   sessionSec: log?.recordedSec(now: now) ?? 0,
+                                   pointsLabel: RacketGameCopy.pointsLabel(sport),
+                                   points: RacketRecordStats.pointsPlayed(liveScore), heartRate: heartRate,
+                                   afterLine: RacketGameCopy.statsAfterLine(sport))
+    }
+
+    /// Warm (PhoneWarm): the camera view pauses; recording, marks and score carry on.
+    private var warmBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("▲ Camera view and live tracking paused").font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(SnappetColor.perfModerate)
+            Text("Your recording is safe and continues. You can still keep score and mark moments.").font(.system(size: 14))
+            Text("Shade the phone or take off its case if you can.").font(SnappetType.detail)
+                .foregroundStyle(SnappetColor.textSecondary)
         }
-        .accessibilityIdentifier("racket.rec.stats")
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(SnappetColor.perfModerate, lineWidth: 1))
+        .accessibilityIdentifier("racket.rec.warmPanel")
     }
 
     /// Stats for a drill recording everything: blocks done and recorded time under the timer.
@@ -950,31 +965,16 @@ struct RacketRecordingCover: View {
     // MARK: Interrupted / InterruptedStop (review5 H1)
 
     @ViewBuilder private func interruptedPanel(_ m: RacketRecordingMachine, _ reason: RacketInterruption) -> some View {
-        let route = m.endRoute
-        Text(RacketRecordingRoutes.header(mode: m.racketMode, recording: m.recording, unit: unit,
-                                          unitNumber: ex.racketState.units.count + 1,
-                                          block: m.currentBlock, blocks: m.plan?.blocks ?? 1))
-            .snappetLabel()
-            .accessibilityIdentifier("racket.int.header")
-        Text(reason.headline).font(.system(size: 20, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("racket.int.reason")
-        footnote("Everything up to \(RacketClock.elapsed(m.log?.savedUpToSec ?? 0)) is saved in Photos.")
-        footnote(reason.advice)
-        if reason.canResume {
-            primary("Resume recording", id: "racket.int.resume") { act { $0.resume(now: Date()) } }
-            footnote("Resume on the phone: it starts a new part of the same game, drill block or recording.")
-        } else if RacketRecordingRoutes.allowsScoringWithoutVideo(mode: m.racketMode) {
-            secondary("Keep scoring without video", id: "racket.int.keepScoring") { act { $0.continueWithoutVideo(now: Date()) } }
-        }
-        Button { act { $0.end(now: Date()) } } label: {
-            Text(RacketRecordingRoutes.endLabel(route)).font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(SnappetColor.perfHard)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .overlay(Capsule().strokeBorder(SnappetColor.perfHard, lineWidth: 1.5))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("racket.int.end")
+        RacketInterruptionPanel(
+            header: RacketRecordingRoutes.header(mode: m.racketMode, recording: m.recording, unit: unit,
+                                                 unitNumber: ex.racketState.units.count + 1,
+                                                 block: m.currentBlock, blocks: m.plan?.blocks ?? 1),
+            reason: reason, savedUpToSec: m.log?.savedUpToSec ?? 0,
+            endLabel: RacketRecordingRoutes.endLabel(m.endRoute),
+            allowsKeepScoring: RacketRecordingRoutes.allowsScoringWithoutVideo(mode: m.racketMode),
+            onResume: { act { $0.resume(now: Date()) } },
+            onKeepScoring: { act { $0.continueWithoutVideo(now: Date()) } },
+            onEnd: { act { $0.end(now: Date()) } })
     }
 
     // MARK: Still playing? (review5 M4: the configured threshold, everywhere)
@@ -982,26 +982,17 @@ struct RacketRecordingCover: View {
     @ViewBuilder private func stillPlayingPanel(_ m: RacketRecordingMachine) -> some View {
         let minutes = Int((m.stillPlayingSec ?? 3600) / 60)
         let asked = m.stillPlayingAskedAt ?? now
-        let left = max(0, RacketStillPlaying.answerWindowSec - now.timeIntervalSince(asked))
-        Text("Still playing?").font(.system(size: 22, weight: .semibold)).accessibilityIdentifier("racket.still.title")
-        footnote(RacketStillPlaying.reason(minutes: minutes))
-        footnote("Recording stops in \(RacketClock.mmss(left)) if there’s no answer. Everything so far stays saved.")
-        primary("Keep recording", id: "racket.still.keep") { act { $0.keepPlaying(now: Date()); return [] } }
-        Button { act { $0.end(now: Date()) } } label: {
-            Text("Stop recording").font(.system(size: 15, weight: .semibold)).foregroundStyle(SnappetColor.perfHard)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .overlay(Capsule().strokeBorder(SnappetColor.perfHard, lineWidth: 1.5))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("racket.still.stop")
-        footnote(RacketStillPlaying.again(minutes: minutes))
+        RacketStillPlayingPanel(minutes: minutes,
+                                secondsLeft: max(0, RacketStillPlaying.answerWindowSec - now.timeIntervalSince(asked)),
+                                againLine: RacketStillPlaying.again(minutes: minutes),
+                                onKeep: { act { $0.keepPlaying(now: Date()); return [] } },
+                                onStop: { act { $0.end(now: Date()) } })
     }
 }
 
 // MARK: - Camera preview
 
-private struct RacketCameraPreview: UIViewRepresentable {
+struct RacketCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let fake: Bool
 

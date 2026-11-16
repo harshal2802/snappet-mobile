@@ -26,12 +26,16 @@ struct RacketLiveRules: Codable, Equatable, Sendable {
     var cap: Int?
     /// Sets: this unit is the deciding super tiebreak (to 10, win by 2).
     var superTiebreak: Bool
+    /// Padel "Golden point" (PdDeuce, prompt 249): at 40–40 the next point wins the game. Optional on the wire, so an
+    /// older Watch / phone decodes it as Advantage.
+    var goldenPoint: Bool?
 
-    init(kind: Kind, pointsTo: Int, cap: Int? = nil, superTiebreak: Bool = false) {
+    init(kind: Kind, pointsTo: Int, cap: Int? = nil, superTiebreak: Bool = false, goldenPoint: Bool = false) {
         self.kind = kind
         self.pointsTo = max(1, pointsTo)
         self.cap = cap
         self.superTiebreak = kind == .sets && superTiebreak
+        self.goldenPoint = kind == .sets && goldenPoint ? true : nil
     }
 }
 
@@ -154,7 +158,11 @@ struct RacketLiveScore: Codable, Equatable, Sendable {
                     t.result = .init(scoreFor: t.gamesFor, scoreAgainst: t.gamesAgainst,
                                      tiebreakFor: tbFor, tiebreakAgainst: tbAgainst)
                 } else {
-                    guard let usWon = gameWon(t.pointsFor, t.pointsAgainst, to: 4, cap: nil) else { continue }
+                    // Golden point: from 40–40 (3–3) the next point decides the game.
+                    let golden = rules.goldenPoint == true && t.pointsFor >= 3 && t.pointsAgainst >= 3
+                        && t.pointsFor != t.pointsAgainst
+                    guard let usWon = golden ? t.pointsFor > t.pointsAgainst
+                            : gameWon(t.pointsFor, t.pointsAgainst, to: 4, cap: nil) else { continue }
                     if usWon { t.gamesFor += 1 } else { t.gamesAgainst += 1 }
                     t.pointsFor = 0
                     t.pointsAgainst = 0

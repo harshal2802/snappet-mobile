@@ -10926,3 +10926,59 @@ while splitting.
   gone from the library leave black stretches ("2 parts of the original aren't on this phone"); none at all says the
   split still works by time. Photos requests run in a nonisolated helper, so Photos' callbacks never run main-actor
   closures off the main thread.
+
+## 2026-11-11 — Racket parity: match recording and setup (issue #438; prompt 249)
+
+Wireframe parity batches R1 + R2, plus the match-side deferrals the user now wants built (Warmup, CameraCheck /
+NoModelCamera, GameBreak, the phone countdown, the break options on SaveGame, paused break / interval, BdInterval,
+TnTiebreak, ScoreOnly).
+
+- **Point-by-point scoring on the phone (ScoreOnly) is in scope** (user, this batch). Prompt 203's "no point-by-point in
+  v1" is superseded by the ScoreOnly board: You +1 / Alex +1 / Undo / End game / Start recording instead. The phone uses
+  the Watch's `RacketLiveScore`, so the wrist and the phone tally the same game. ScoreOnly has a Close button the board
+  doesn't show: without it the pager is unreachable (the hub board's "Close keeps the session open").
+- **Game by game records through `RacketRecordingMachine` with `recording: .byUnit`.** Each game is its own run (so its
+  own Photos part); between games the run closes with `pauseCapture` (not an interruption). The log gets game and
+  interval ranges and `modeRaw = byUnit`, and an applied split (`RacketGameByGameSplit`: one game part per game, a break
+  part only for a recorded break), so Your videos lists the games straight away — this lifts the prompt 246 deferral
+  "game-by-game clips in Your videos". A match that already has a record-everything log keeps it: game by game then
+  attaches its parts to the games but writes no log (one log per match).
+- **The game flow is a separate pure value** (`RacketGameFlow`): warmup → game → interval → score → break → countdown.
+  The machine keeps capture, interruptions and Still playing?; the flow says when to pause / resume. Still playing? reads
+  the game-by-game threshold and never asks while recording is paused for a break.
+- **Camera check shows NoModelCamera** ("Line up the view yourself") for every sport: there is no court detector, so the
+  CameraCheck board's "Table found ✓ / Whole table in frame / Move a little closer" can't be honest. Its arrow
+  ("No court check yet") is on the boards. This contradicts Capabilities' "✓ Available" for court check (user decision
+  #438) — open question for the user.
+- **Live tracking rows stay disabled** with the board's copy (Warmup switch, "Live tracking off · Turn on"). The Dim /
+  CameraView / Stats live-tracking boards are the tracking-off boards until step 6.
+- **Warm** = `ProcessInfo.ThermalState.serious`: keep recording, drop the preview (the layer is removed), header
+  "▲ Warm", the board's panel; back to Dim at fair / nominal. Critical still stops (InterruptedStop "too hot"). Applies
+  to the record-everything screen too.
+- **SaveGame**: "Later" logs the Watch's tally as "from Watch" (counted until confirmed) or, with no Watch points,
+  "Score unconfirmed" (phone taps are not labelled as Watch taps), then starts the break. "Save, match over" ends the
+  match and opens Your videos when a game was filmed (Score → Analyzing goes through Your videos' Find rallies). Break
+  chips per sport from the boards (TT 0:30 / 1:00 / 2:00 / 5:00, squash from 1:30, others from 1:00) + Custom (a 15 s
+  stepper). The quick-score chips, Swap and verdict line of the generic score sheet aren't on SaveGame, so they're not
+  shown there (the generic sheet keeps them for edits).
+- **Who serves** (Warmup "Who serves first?", stored on the match): rally-winner sports, TT two each then one from 10–10
+  with the first server alternating per game, tennis / padel by game across sets and in the tiebreak. The caption follows
+  each sport's board: TT "Score from Watch", tennis / padel "Games 4–3 · Set 1", the others "Game 1 · you're serving".
+- **BdInterval** when the leading score first reaches 11 (8 in a game to 15), 60 s, once per game; "Pause recording
+  during intervals" off by default ("Off keeps one clip for the game"). **TnTiebreak** banner for tennis and padel (the
+  board is tennis only; padel's tiebreak is the same).
+- **PdDeuce is a step before the padel match form** (the boards put format and players there; PdMatch has neither).
+  Golden point is an additive `RacketLiveRules.goldenPoint` (optional on the wire) and `SessionExercise.racketGoldenPoint`.
+- **Match form** follows the board: "Film this match" keeps the per-match recording rows (user decision) under the board's
+  helper; Event · round stays (prompt 203 feature, not on the board); Open play is no longer offered (not on the boards);
+  badminton / squash get "Games to 15" (badminton then caps at 21). Pickleball keeps its format box until PbScoring.
+- **RecordAll Stop goes straight to the split prompt** (V2.6, decided by the board): the split prompt's "Keep as one
+  video" / Later is the undo. The drill's Finish keeps its confirm (drill batch).
+- **Storage** says "Back" when it follows Warmup and draws the "41 GB free of 256 GB" bar. Interrupted adds "Your Watch
+  tells you it stopped."; InterruptedStop always shows the "If the phone got too hot" paragraph.
+- **Hub / recap**: the pager overview gets "Your videos" and the hub footnote for any session with a racket match or
+  drill; the recap shows "1:24:10 · average heart rate 132" and "Make a reel" (opens the session in Studio, Finish
+  summary only — the session detail has no Studio entry there).
+- **The Watch** mirrors the game screen (`gameCoverState`): Start on the warmup ("Camera ready" now true for game by
+  game), scoring, the break ring, the countdown ("Game 2 starts" via the additive `Countdown.title`), match over. The
+  relay's attach now returns a token so the cover closing can't detach the page that re-attached the same match.
