@@ -506,7 +506,8 @@ struct RacketEditScreen: View {
         let order = (0..<count).sorted { abs($0 - here) < abs($1 - here) }
         for chunk in stride(from: 0, to: count, by: 6).map({ Array(order[$0..<min(count, $0 + 6)]) }) {
             if Task.isCancelled { return }
-            let imgs = await RacketVideoLibrary.shared.thumbnails(player, times: chunk.map { times[$0] }, maxSide: 120)
+            let imgs = await RacketVideoLibrary.shared.thumbnails(player, times: chunk.map { times[$0] }, maxSide: 120,
+                                                                  turns: playback.quarterTurns)
             for (k, i) in chunk.enumerated() where k < imgs.count { out[i] = imgs[k] }
             thumbs = out
         }
@@ -972,7 +973,8 @@ struct RacketEditScreen: View {
     private func makeLookThumbs() async {
         guard lookThumbs.isEmpty else { return }
         // The player draws with the current look: the presets start from the original frame.
-        guard let base = await originalStill() ?? playback.poster else { return }
+        guard let base = await originalStill()
+                ?? playback.poster.map({ RacketVideoLibrary.turned($0, turns: playback.quarterTurns) }) else { return }
         var out: [RacketLook: UIImage] = [:]
         for l in RacketLook.allCases { out[l] = RacketLookRenderer.still(base, look: l) }
         lookThumbs = out
@@ -984,7 +986,8 @@ struct RacketEditScreen: View {
         let was = playback.showOriginal
         playback.showOriginal = true
         defer { playback.showOriginal = was }
-        return await RacketVideoLibrary.shared.thumbnails(player, times: [max(0, position - ref.startSec)], maxSide: 240).first ?? nil
+        return await RacketVideoLibrary.shared.thumbnails(player, times: [max(0, position - ref.startSec)], maxSide: 240,
+                                                          turns: playback.quarterTurns).first ?? nil
     }
 
     // MARK: Score tab (EditScore)

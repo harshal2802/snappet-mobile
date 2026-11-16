@@ -171,6 +171,9 @@ enum RacketVideoSeed {
         if let variant = UserDefaults.standard.string(forKey: String(playerArgument.dropFirst())) {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = playerLog(startedAt: start, variant: variant)
+            // `-uiTestRacketTurns 1` (prompt 259): the recording already turned with Rotate.
+            let turns = UserDefaults.standard.integer(forKey: "uiTestRacketTurns")
+            if turns != 0 { match.racketRecordingLog?.quarterTurns = RacketVideoTurn.stored(turns) }
             match.sets = [match.sets[0]]   // game 1 won 11–9 on the Watch; game 2 has no score yet
         } else if ProcessInfo.processInfo.arguments.contains(splitTimeoutArgument) {
             let m = splitTimeoutMatch(startedAt: start, scored: ProcessInfo.processInfo.arguments.contains(splitTimeoutScoredArgument))

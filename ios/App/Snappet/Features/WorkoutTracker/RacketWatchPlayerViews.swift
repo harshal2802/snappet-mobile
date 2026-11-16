@@ -867,7 +867,8 @@ struct RacketWatchPlayerScreen: View {
         thumbnails = out
         for chunk in stride(from: 0, to: order.count, by: 6).map({ Array(order[$0..<min(order.count, $0 + 6)]) }) {
             if Task.isCancelled { return }
-            let imgs = await RacketVideoLibrary.shared.thumbnails(player, times: chunk.map { times[$0] }, maxSide: 120)
+            let imgs = await RacketVideoLibrary.shared.thumbnails(player, times: chunk.map { times[$0] }, maxSide: 120,
+                                                                  turns: pb.quarterTurns)
             for (k, i) in chunk.enumerated() where k < imgs.count { out[i] = imgs[k] }
             thumbnails = out
         }

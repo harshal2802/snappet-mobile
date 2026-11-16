@@ -264,6 +264,7 @@ struct RacketDrillCover: View {
             mode: $choice, accessDenied: accessDenied,
             show: $show, useWatch: $useWatch, watchAvailable: watchWasLinked,
             thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            thumbnailTurns: ex.racketRecordingLog?.quarterTurns,
             onVideos: { videos = RacketVideosTarget(start: .drillVideos(ex.id)) },
             onShutter: { act { $0.startNextBlock(now: Date()) } },
             onClose: onClose,

@@ -615,9 +615,11 @@ struct RacketExportSheet: View {
             defer { working = false }
             do {
                 if share {
-                    shareURL = try await RacketVideoLibrary.shared.export(pieces, smaller: smaller, captions: captions)
+                    shareURL = try await RacketVideoLibrary.shared.export(pieces, smaller: smaller, captions: captions,
+                                                                          turns: log.copyTurns)
                 } else {
-                    _ = try await RacketVideoLibrary.shared.saveToPhotos(pieces, smaller: smaller, captions: captions)
+                    _ = try await RacketVideoLibrary.shared.saveToPhotos(pieces, smaller: smaller, captions: captions,
+                                                                         turns: log.copyTurns)
                     message = "Saved to Photos"
                     Haptics.success()
                 }

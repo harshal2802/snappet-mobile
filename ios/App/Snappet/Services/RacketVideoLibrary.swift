@@ -74,13 +74,17 @@ final class RacketVideoLibrary {
     private func layout(_ segments: [RacketVideoSegment], partStart: Double, partEnd: Double,
                         progress: (@MainActor (String, Double) -> Void)?) async
         -> (comp: AVMutableComposition, video: AVMutableVideoComposition?)? {
-        await assemble(segments.map { ($0, max(0, $0.timelineStart - partStart)) }, progress: progress)
+        await assemble(segments.map { ($0, max(0, $0.timelineStart - partStart)) }, turns: 0, progress: progress)
     }
 
     /// Lay `items` (a segment and where it sits, in seconds) on one composition: a video track per orientation, and a
     /// video composition fitting each part upright when there's more than one orientation. The split player and the
     /// exports both build on this (device feedback round 2 / 3: a part never borrows another part's rotation).
-    private func assemble(_ items: [(segment: RacketVideoSegment, atSec: Double)],
+    ///
+    /// `turns` (prompt 259, copies only — the player turns on screen): each track's transform becomes "stored, then the
+    /// viewer's turn" (`RacketVideoTurn.transform`), so a copy that isn't re-encoded plays upright from its track
+    /// transform and a re-encoded one renders upright from it. 0 ⇒ the stored transforms, exactly as before.
+    private func assemble(_ items: [(segment: RacketVideoSegment, atSec: Double)], turns: Int,
                           progress: (@MainActor (String, Double) -> Void)?) async
         -> (comp: AVMutableComposition, video: AVMutableVideoComposition?)? {
         guard !items.isEmpty else { return nil }
@@ -96,8 +100,9 @@ final class RacketVideoLibrary {
             }
             guard let asset = loaded[s.localIdentifier],
                   let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
-            let transform = (try? await src.load(.preferredTransform)) ?? .identity
             let natural = (try? await src.load(.naturalSize)) ?? .zero
+            let stored = (try? await src.load(.preferredTransform)) ?? .identity
+            let transform = RacketVideoTurn.transform(natural: natural, preferred: stored, turns: turns)
             let key = RacketVideoOrientation.key(transform)
             if tracks[key] == nil,
                let t = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) {
@@ -165,11 +170,13 @@ final class RacketVideoLibrary {
 
     /// A still of video `id` near `sec`, from what is on the phone: the bundled test clip's frame, or Photos' own
     /// still of the video with the network off (an iCloud-only video still has one). nil when there is none.
-    func poster(_ id: String, at sec: Double = 0) async -> UIImage? {
+    /// `turns` (prompt 259): a still shown outside the turned player (the camera's thumbnail) turns itself; the
+    /// player's poster stays as stored (`RacketTurned` turns it with the video).
+    func poster(_ id: String, at sec: Double = 0, turns: Int = 0) async -> UIImage? {
         if id.hasPrefix(RecapClipSeed.bundledScheme) {
             guard let asset = await avAsset(id, network: false),
                   let image = await Self.still(Box(value: asset), at: sec) else { return nil }
-            return UIImage(cgImage: image)
+            return Self.turned(UIImage(cgImage: image), turns: turns)
         }
         guard let ph = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
         let boxed: Box<UIImage?> = await withCheckedContinuation { cont in
@@ -182,7 +189,33 @@ final class RacketVideoLibrary {
                 cont.resume(returning: Box(value: image))
             }
         }
-        return boxed.value
+        return boxed.value.map { Self.turned($0, turns: turns) }
+    }
+
+    /// A still turned `turns` quarter turns clockwise, redrawn (so the pixels, not just an orientation tag, are turned).
+    nonisolated static func turned(_ image: UIImage, turns: Int) -> UIImage {
+        let k = RacketVideoTurn.normalized(turns)
+        guard k > 0, image.size.width > 0, image.size.height > 0 else { return image }
+        let size = RacketVideoTurn.displayed(image.size, turns: k)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            let c = ctx.cgContext
+            c.translateBy(x: size.width / 2, y: size.height / 2)
+            c.rotate(by: CGFloat(k) * .pi / 2)   // y down: a positive angle turns clockwise on screen
+            image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2,
+                                  width: image.size.width, height: image.size.height))
+        }
+    }
+
+    /// The size a video file shows at in any player: its first video track's natural size turned by its transform.
+    nonisolated static func displayedSize(of url: URL) async -> CGSize? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let natural = try? await track.load(.naturalSize) else { return nil }
+        let transform = (try? await track.load(.preferredTransform)) ?? .identity
+        return RacketVideoOrientation.orientedSize(natural: natural, transform: transform)
     }
 
     /// The upright size of what `item` shows: the video composition's render size, else the first video track's
@@ -200,12 +233,13 @@ final class RacketVideoLibrary {
 
     /// Small frames of the player's video at `times` (seconds on the player's own clock). A time with no video (an
     /// interruption gap) gives nil. Off the main actor; the generator never leaves the helper.
-    func thumbnails(_ player: AVPlayer, times: [Double], maxSide: CGFloat = 160) async -> [UIImage?] {
+    /// `turns`: the recording's turn (prompt 259), so a strip shows the frames as the turned player does.
+    func thumbnails(_ player: AVPlayer, times: [Double], maxSide: CGFloat = 160, turns: Int = 0) async -> [UIImage?] {
         guard let asset = player.currentItem?.asset, !times.isEmpty else { return times.map { _ in nil } }
         // Parts in different orientations: the strip draws them as the player does.
         let video = player.currentItem?.videoComposition
         let images = await Self.stills(Box(value: asset), video: video.map { Box(value: $0) }, times: times, maxSide: maxSide)
-        return images.value.map { $0.map { UIImage(cgImage: $0) } }
+        return images.value.map { $0.map { Self.turned(UIImage(cgImage: $0), turns: turns) } }
     }
 
     nonisolated private static func stills(_ boxed: Box<AVAsset>, video: Box<AVVideoComposition>?, times: [Double],
@@ -230,6 +264,14 @@ final class RacketVideoLibrary {
     /// `ReelExporter.PlacedComposition`); it is not touched again until this returns.
     private struct CompositionBox: @unchecked Sendable { let comp: AVMutableComposition }
 
+    /// The composition's first video track as it shows (its transform applied).
+    private nonisolated static func uprightSize(_ box: CompositionBox) async -> CGSize? {
+        guard let t = try? await box.comp.loadTracks(withMediaType: .video).first,
+              let natural = try? await t.load(.naturalSize) else { return nil }
+        let transform = (try? await t.load(.preferredTransform)) ?? .identity
+        return RacketVideoOrientation.orientedSize(natural: natural, transform: transform)
+    }
+
     private nonisolated static func propertiesComposition(_ box: CompositionBox) async -> AVMutableVideoComposition? {
         try? await AVMutableVideoComposition.videoComposition(withPropertiesOf: box.comp)
     }
@@ -241,9 +283,16 @@ final class RacketVideoLibrary {
 
     /// Export `pieces` (each a list of segments for one recording range, joined end to end) to an .mp4. `captions`
     /// (output-relative ranges + text) are burned in on a device ("Analyzed"); the simulator can only pass through.
+    ///
+    /// `turns` (prompt 259): the viewer's turn of the recording. Every route takes it from the composition tracks'
+    /// turned `preferredTransform`: a passthrough copy (simulator) and a plain re-encode (device, no look / labels /
+    /// captions / mixed orientations) keep it as the output track's transform; the look-and-labels composition renders
+    /// at the turned size with upright frames (Core Image gets frames with the track transform applied), so labels sit
+    /// upright on the turned picture; captions render at the turned upright size; mixed orientations fit each turned
+    /// part into the turned render size. 0 turns ⇒ the stored transforms: the same route and output as before.
     func export(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
                 captions: [(start: Double, end: Double, text: String)] = [],
-                look: RacketLook = .original, speed: Double = 1, labels: [RacketSharePlan.Label] = [],
+                look: RacketLook = .original, speed: Double = 1, labels: [RacketSharePlan.Label] = [], turns: Int = 0,
                 progress: (@MainActor (Double) -> Void)? = nil, fileName: String? = nil) async throws -> URL {
         // Pieces end to end, each part with its own orientation (round 3).
         var items: [(segment: RacketVideoSegment, atSec: Double)] = []
@@ -254,7 +303,7 @@ final class RacketVideoLibrary {
                 cursorSec += seg.durationSec
             }
         }
-        let built = await assemble(items, progress: nil)
+        let built = await assemble(items, turns: turns, progress: nil)
         guard let built else { throw VideoError.missing }
         let comp = built.comp
         let cursor = comp.duration
@@ -282,6 +331,11 @@ final class RacketVideoLibrary {
             let overlays = captions.map {
                 OverlayItem(kind: .text, content: $0.text, startSec: $0.start, endSec: $0.end,
                             position: CGPoint(x: 0.5, y: 0.1), scale: 0.9, highlightHex: "#000000")
+            }
+            // A turned copy: the properties composition sizes itself from the composition's natural size, which
+            // doesn't know the turn; render at the turned track's upright size (prompt 259). Unturned: as before.
+            if RacketVideoTurn.normalized(turns) != 0, let size = await Self.uprightSize(CompositionBox(comp: comp)) {
+                vc.renderSize = size
             }
             if let tool = StudioOverlays.makeAnimationTool(overlays: overlays, canvas: vc.renderSize,
                                                            totalDuration: cursor.seconds) {
@@ -323,9 +377,10 @@ final class RacketVideoLibrary {
     }
 
     /// Export and save to Photos; returns the new video's id. The temp file is removed after.
+    /// `turns`: the viewer's turn, baked in (a derived video made from it is upright — `playFromDerived`).
     func saveToPhotos(_ pieces: [(segments: [RacketVideoSegment], start: Double, end: Double)], smaller: Bool = false,
-                      captions: [(start: Double, end: Double, text: String)] = []) async throws -> String {
-        let url = try await export(pieces, smaller: smaller, captions: captions)
+                      captions: [(start: Double, end: Double, text: String)] = [], turns: Int = 0) async throws -> String {
+        let url = try await export(pieces, smaller: smaller, captions: captions, turns: turns)
         defer { try? FileManager.default.removeItem(at: url) }
         guard let id = try await library.saveVideoToPhotos(url, accessLevel: .readWrite) else {
             throw VideoError.exportFailed("no asset id")
@@ -343,7 +398,8 @@ final class RacketVideoLibrary {
     /// JPEG stills for an app that can't take video. Each shot is the segment holding that instant (its `assetStart`
     /// is the moment); files are named by the clip time, as the prompt tells the app: `frame-0012.5s.jpg`. Returns the
     /// files made (none when no video is on the phone).
-    func frames(_ shots: [(clipSec: Double, segment: RacketVideoSegment)]) async throws -> [URL] {
+    /// `turns`: the viewer's turn, drawn into the pixels (an app may ignore an orientation tag) — prompt 259.
+    func frames(_ shots: [(clipSec: Double, segment: RacketVideoSegment)], turns: Int = 0) async throws -> [URL] {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("racket-frames-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var out: [URL] = []
@@ -352,7 +408,7 @@ final class RacketVideoLibrary {
             let id = shot.segment.localIdentifier
             if assets[id] == nil { assets[id] = await avAsset(id, network: true) }
             guard let asset = assets[id], let image = await Self.still(Box(value: asset), at: shot.segment.assetStart),
-                  let data = UIImage(cgImage: image).jpegData(compressionQuality: 0.8) else { continue }
+                  let data = Self.turned(UIImage(cgImage: image), turns: turns).jpegData(compressionQuality: 0.8) else { continue }
             let url = dir.appendingPathComponent(String(format: "frame-%06.1fs.jpg", shot.clipSec))
             try data.write(to: url)
             out.append(url)
@@ -379,6 +435,10 @@ final class RacketVideoLibrary {
             let res = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
             return Bundle.main.url(forResource: res, withExtension: ext).map { AVURLAsset(url: $0) }
         }
+        #if DEBUG
+        // Unit tests only (prompt 259): a copy made by `export` read back as a source (the turn round trip).
+        if id.hasPrefix("file://"), let url = URL(string: id) { return AVURLAsset(url: url) }
+        #endif
         let report: (@Sendable (Double) -> Void)? = progress.map { p in
             { @Sendable f in Task { @MainActor in p(id, f) } }
         }

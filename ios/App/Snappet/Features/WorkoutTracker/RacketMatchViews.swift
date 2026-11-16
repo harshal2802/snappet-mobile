@@ -486,6 +486,7 @@ struct RacketGameCover: View {
             show: $show, useWatch: $useWatch,
             watchAvailable: RacketWatchRelay.shared.isAvailable || ProcessInfo.processInfo.arguments.contains("-uiTestWatchReady"),
             thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            thumbnailTurns: ex.racketRecordingLog?.quarterTurns,
             onVideos: session == nil ? nil : { videos = RacketVideosTarget(start: .videos) },
             onShutter: startRecording,
             onClose: onClose,
@@ -734,6 +735,7 @@ struct RacketGameCover: View {
             sides: sides, partnerName: RacketServeCopy.name(.partner, partner: ex.partner),
             show: $show, useWatch: $useWatch, watchAvailable: watchLinked,
             thumbnailID: ex.racketRecordingLog?.assets.last?.localIdentifier,
+            thumbnailTurns: ex.racketRecordingLog?.quarterTurns,
             onVideos: session == nil ? nil : { videos = RacketVideosTarget(start: .videos) },
             onShutter: {}, onClose: onClose, onPlayWithoutVideo: {},
             live: liveConfig, optionsExtra: breakOptions, testOverlay: testOverlay)

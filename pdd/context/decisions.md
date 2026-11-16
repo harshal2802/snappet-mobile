@@ -11598,3 +11598,52 @@ Boards ProCameraRecording → ProCameraLandscape (`racket-wireframes/boards2/`).
   Videos 2, Tagging 15, Player 7, Edit 7, Match 14, Recording 2, RallyVideo 5 — all green (one Player run stalled in
   XCTest's event synthesis after hours on the box; the same test passed alone and in a clean rerun of the suite).
   Device build (`generic/platform=iOS`) succeeds. Not verified on a phone: the user's real saved match, real video.
+
+## 2026-11-15 — Racket: the turn reaches copies; a joined game's heart rate (prompt 259)
+
+- **Why**: prompt 257's Rotate turned the picture on screen only, so a recording stored sideways was still sideways when
+  shared, saved as derived videos, sent to another AI app and in thumbnails. Prompt 258 left a joined game's heart-rate
+  window as `completedAt − played time … completedAt`: about one timeout late at the start, and the timeout inside.
+- **One mechanism for every export route: the composition track's `preferredTransform`.** `assemble(…, turns:)` sets
+  each track to "stored transform, moved to the origin, then N clockwise quarter turns" (`RacketVideoTurn.transform`,
+  pure). Per route: passthrough (simulator, and nothing else to draw) and a plain device re-encode keep it as the output
+  track's transform — **no re-render, any player shows it upright**; the Core Image look / labels composition derives
+  its render size from the track transform and hands the handler frames with it applied (SDK header), so labels are
+  drawn upright on the turned picture with no extra code; the Analyzed captions composition (`withPropertiesOf`) sizes
+  from the composition's natural size, which doesn't know the turn, so a turned copy sets its render size to the turned
+  upright size (unturned: untouched); mixed orientations already fit each track's transform into the first track's
+  oriented size, so turned transforms give a turned render. Chosen over a dedicated rotating video composition because
+  that would force a re-encode on copies that are passthrough today and duplicate the fitting maths.
+- **0 turns = byte-for-byte the old route**: `transform` returns the stored transform unchanged, the captions branch
+  only touches the render size when turned, and no composition is added. A joined game (prompt 258) is just more
+  pieces; nothing about the turn depends on it.
+- **Turned once (derived videos)**: they are saved with the turn baked in, and the same store update that marks the
+  original deleted clears the turn (`RacketRecordingLog.playFromDerived()`). The turn is therefore always relative to
+  the videos the recording plays from now (`RacketVideoMap.sources`), and every surface (player, copies, thumbnails)
+  keeps reading one field. Considered: a "turn baked" field per derived video — more state that could disagree, for no
+  case this rule misses. Old data: a recording derived before this keeps its turn (its derived videos weren't turned),
+  which is still right. Edge: a failed delete keeps the derived videos already saved (turned at that moment) with the
+  originals still in use; a retry after a further Rotate saves new parts at the new turn (the earlier ones stay in
+  `derived`, as before this change).
+- **AI frames are redrawn turned, not EXIF-tagged**: another app may ignore the orientation tag. Thumbnails are redrawn
+  too (`RacketVideoLibrary.turned`), small and off the critical path. The player's poster stays as stored (`RacketTurned`
+  turns it with the video); the camera's thumbnail takes the recording's turn.
+- **Joined game's heart rate**: `RacketStats.joinedStretches` reads the applied split — a group with a timeout, linked
+  (`setIndex` on its first half) — and gives the window from the first half's start to the last half's end on the
+  session timeline (`log.startedAt` + part seconds), the timeouts as `UnitWindow.gaps`. `unitHR` / `games` /
+  `HRVReads.perSet` leave readings inside a gap out and subtract gap time from zone time (a gap's edges count as play).
+  The game sheet draws the readings through the timeout (they're real) under a grey band labelled "Timeout", the header
+  shows played time and "1 timeout left out"; the previous game's dashed line still stretches to this chart's width.
+  Set efforts (`WorkoutHRStats.setEfforts`) take the window's new start; their end is still the set's completedAt.
+- **Fallback**: no recording, no applied split, or a game with no timeout ⇒ the old window, unchanged. Every joined game
+  has the halves' times (a timeout only exists in an applied split), so the fallback covers only non-joined games.
+- **UI check of a turned copy**: with `-uiTestShareName`, the share sheet remembers the last copy's displayed size and
+  shows it (DEBUG only, `racket.share.madeSize`) when Share is opened again — the system share sheet covers the sheet
+  while the copy is up, then closes it. `-uiTestRacketTurns N` seeds the player recording turned.
+- **Verified on the simulator**: SnappetTests 3119 / 0 failures (5 skipped; 16 new in `RacketTurnCopyTests` and
+  `RacketJoinedGameHRTests`). UI suites alone, app uninstalled first: RacketEdit 8 (1 new: 960×540 copies of the
+  540×960 clip turned once, this rally and whole game), RacketVideos 2, RacketRallyVideo 5, RacketSplitTimeout 3,
+  RacketPlayer 7, RacketGameHR 1 — all green. The export test covers the passthrough route for 0–3 turns on both bundled
+  clips and the turn → derive → share round trip, and is written to run unchanged on a device (re-encoded). Device build
+  (`generic/platform=iOS`) succeeds; the re-encoded routes (look, labels, captions) are compile-checked only.
+

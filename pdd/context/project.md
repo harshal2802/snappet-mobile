@@ -771,7 +771,7 @@ block 1 too. Pure: `RacketProCameraRecording.swift` (`RacketProCameraRecordingTe
 (and its serve / wall / let sheets, Shots, Fix) takes the picture's own shape — full width, capped so "Who won" stays on
 the first screen — with the Watch player's controls: tap to play / pause, Replay, 1× · 0.5× · 0.25×, a scrub bar over the
 loop with the rally highlighted, −3 s / +3 s to widen it, full screen with pinch-zoom, and Rotate (a quarter turn kept on
-the recording, honoured by every screen playing it; not by shared copies). Pure: `RacketRallyVideoControls.swift`,
+the recording, honoured by every screen playing it; copies too since prompt 259). Pure: `RacketRallyVideoControls.swift`,
 `RacketVideoTurn` (`RacketRallyVideoControlsTests`); views `RacketRallyVideoViews.swift`; UI `RacketRallyVideoUITests`.
 **Device-pending:** the user's sideways clip turned upright on the phone; the cap on a real 6.1" sheet.
 
@@ -782,6 +782,16 @@ played length); the player skips it, shared copies and the AI clip leave it out,
 scored games asks first and keeps the sum as a suggested, unconfirmed score; later games renumber; changing it back gives
 two games. "Change the split" reopens a saved split. Pure: `RacketSplitGroups.swift` (`RacketSplitTimeoutTests`, with a
 randomised run); views `RacketSplitVideoViews.swift`, `RacketVideoViews.swift`; UI `RacketSplitTimeoutUITests`.
+
+🟡 **Racket turn in copies, joined game's heart rate (2026-11-15, prompt 259).** iOS. Rotate now reaches shared copies
+(every variant, with look and labels drawn upright), the videos "Delete the long original" / "Keep rallies only" save,
+the clip and frames sent to another AI app, and thumbnails (filmstrips, look presets, the camera's thumbnail). Derived
+videos are saved turned and the recording's turn is cleared when they replace the originals, so they're never turned
+twice. A game joined across a timeout takes its heart rate from its real halves: the game sheet shades the timeout
+("Timeout") and its averages, peak, zone time and HRV leave it out. Pure: `RacketVideoTurn.transform` / `renderSize`,
+`RacketStats.joinedStretches` (`RacketTurnCopyTests`, `RacketJoinedGameHRTests`); UI
+`RacketEditUITests.testShareTurnedRecording`. **Device-pending:** the re-encoded routes (look, labels, Analyzed
+captions) on the phone; a real turned recording deleted to derived videos.
 
 ## License
 
