@@ -27,14 +27,15 @@ struct RacketShareSheet: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var rallies: [RacketRally] {
-        RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec).filter(\.isRally)
+        (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? []).filter(\.isRally)
     }
     private var sides: (us: String, them: String) { RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false) }
     private var quality: RacketRecordingQuality? { ex?.racketRecordingLog?.qualityRaw.flatMap(RacketRecordingQuality.init(rawValue:)) }
 
     private func plan(_ w: RacketShareWhich) -> RacketSharePlan? {
         RacketSharePlan.make(w, rallies: rallies, position: position, partStart: ref.startSec, partEnd: ref.endSec,
-                             rate: rate, keepSpeed: keepSpeed, labels: labels, sides: sides, quality: quality)
+                             rate: rate, keepSpeed: keepSpeed, labels: labels, sides: sides, quality: quality,
+                             skipping: ex?.racketRecordingLog?.timeouts(from: ref.startSec, to: ref.endSec) ?? [])
     }
 
     var body: some View {

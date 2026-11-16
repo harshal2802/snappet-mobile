@@ -294,7 +294,7 @@ struct RacketAnalyzedPlayerScreen: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var rallies: [RacketRally] {
-        RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec)
+        (ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? [])
     }
     private var sides: (us: String, them: String) {
         RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
@@ -372,6 +372,8 @@ struct RacketAnalyzedPlayerScreen: View {
             analyzed = startAnalyzed
             let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
             pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
+            // Prompt 258: a game joined across timeouts plays through them without stopping.
+            if let c = ex?.racketRecordingLog?.playedTime(ref.startSec, ref.endSec), c.hasSkips { pb.playedClock = c }
             playback = pb
             onlyRallies = ralliesOnly && !rallies.isEmpty
             pb.ralliesOnly = onlyRallies ? rallies : nil
@@ -651,7 +653,7 @@ struct RacketTimelineScreen: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var allRallies: [RacketRally] { ex?.racketRecordingLog?.allRallies ?? [] }
-    private var rallies: [RacketRally] { RacketRallyMarking.inRange(allRallies, ref.startSec, ref.endSec) }
+    private var rallies: [RacketRally] { ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? [] }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
 
     var body: some View {
@@ -751,6 +753,8 @@ struct RacketTimelineScreen: View {
             configured = true
             let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
             pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
+            // Prompt 258: a game joined across timeouts plays through them without stopping.
+            if let c = ex?.racketRecordingLog?.playedTime(ref.startSec, ref.endSec), c.hasSkips { pb.playedClock = c }
             playback = pb
             if let log = ex?.racketRecordingLog {
                 await pb.load(RacketVideoMap.segments(start: ref.startSec, end: ref.endSec, log: log))

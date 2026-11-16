@@ -368,6 +368,11 @@ struct SetLog: Codable, Hashable, Sendable {
     var scoreFromWatch: Bool?
     /// How a drill block felt (Rest: Easy / About right / Hard, prompt 250): `RacketDrillFeel.rawValue`; `nil` ⇒ not rated.
     var drillFeelRaw: String?
+    /// Prompt 258: a score the app suggests for a game still "Score unconfirmed" — two games joined across a timeout
+    /// (their sum), or a game that came back from a join (its tags). Shown and prefilled in Edit score; counts for
+    /// neither side until saved there (which clears it). `nil` ⇒ no suggestion.
+    var suggestedFor: Int?
+    var suggestedAgainst: Int?
 }
 
 /// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.

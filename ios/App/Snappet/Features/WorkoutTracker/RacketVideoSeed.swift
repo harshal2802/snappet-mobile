@@ -97,6 +97,46 @@ enum RacketVideoSeed {
         return log
     }
 
+    /// With the seed (prompt 258, the user's real match): the match was split and saved some time ago — warmup,
+    /// Games 1–3, a break, Game 4, a 3:10 break that was really a timeout, Game 5, Game 6, not play. Games 4 and 5 have
+    /// no score yet; with `-uiTestRacketSplitTimeoutScored` they are 6–5 and 5–3.
+    static let splitTimeoutArgument = "-uiTestRacketSplitTimeout"
+    static let splitTimeoutScoredArgument = "-uiTestRacketSplitTimeoutScored"
+
+    /// The saved split's parts (kind, start, end), seconds on the recording.
+    static let timeoutMatchParts: [(RacketPartKind, Double, Double)] = [
+        (.warmup, 0, 300), (.game, 300, 900), (.game, 900, 1500), (.game, 1500, 2100), (.breakTime, 2100, 2220),
+        (.game, 2220, 2700), (.breakTime, 2700, 2890), (.game, 2890, 3300), (.game, 3300, 3900), (.notPlay, 3900, 4000),
+    ]
+
+    /// The match as saved: the log (split applied, each game linked to its logged game) and its six games. Rallies:
+    /// three in Game 4 (you, you, them), one hit during the timeout, two in Game 5 (them, you).
+    static func splitTimeoutMatch(startedAt: Date, scored: Bool) -> (log: RacketRecordingLog, sets: [SetLog]) {
+        var log = RacketRecordingLog(startedAt: startedAt)
+        log.baseSetIndex = 0
+        log.qualityRaw = RacketRecordingQuality.hd1080.rawValue
+        log.runs = [.init(startSec: 0, endSec: 4000, endReasonRaw: nil)]
+        log.endedAt = startedAt.addingTimeInterval(4000)
+        var parts: [RacketVideoPart] = []
+        var sets: [SetLog] = []
+        let scores: [(Int, Int)?] = [(11, 7), (9, 11), (11, 8), scored ? (6, 5) : nil, scored ? (5, 3) : nil, nil]
+        for (kind, a, b) in timeoutMatchParts {
+            var p = RacketVideoPart(kind: kind, startSec: a, endSec: b)
+            if kind == .game {
+                p.setIndex = sets.count
+                var g = SetLog(completedAt: startedAt.addingTimeInterval(b), durationSec: b - a)
+                if let sc = scores[sets.count] { g.scoreFor = sc.0; g.scoreAgainst = sc.1 } else { g.scoreUnconfirmed = true }
+                sets.append(g)
+            }
+            parts.append(p)
+        }
+        log.split = RacketSplit(parts: parts, appliedAt: startedAt.addingTimeInterval(4100))
+        log.rallies = [RacketRally(startSec: 2300, endSec: 2308, winner: .us), RacketRally(startSec: 2400, endSec: 2410, winner: .us),
+                       RacketRally(startSec: 2500, endSec: 2506, winner: .them), RacketRally(startSec: 2750, endSec: 2755),
+                       RacketRally(startSec: 2950, endSec: 2957, winner: .them), RacketRally(startSec: 3050, endSec: 3060, winner: .us)]
+        return (log, sets)
+    }
+
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
@@ -132,6 +172,21 @@ enum RacketVideoSeed {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = playerLog(startedAt: start, variant: variant)
             match.sets = [match.sets[0]]   // game 1 won 11–9 on the Watch; game 2 has no score yet
+        } else if ProcessInfo.processInfo.arguments.contains(splitTimeoutArgument) {
+            let m = splitTimeoutMatch(startedAt: start, scored: ProcessInfo.processInfo.arguments.contains(splitTimeoutScoredArgument))
+            match.racketBestOf = 7
+            match.racketRecordingLog = m.log
+            match.sets = m.sets
+            if ProcessInfo.processInfo.arguments.contains("-uiTestRacketSplitTimeoutJoined"), var log = match.racketRecordingLog,
+               let parts = log.split?.parts {
+                // Already joined (the player test): the break between Game 4 and Game 5 saved as a timeout.
+                let draft = RacketSplitEditor.setKind(parts, id: parts[6].id, kind: .timeout)
+                let out = RacketSplitCommit.apply(parts: draft, sets: match.sets, base: 0, startedAt: start,
+                                                  duration: log.timelineSec, rallies: log.allRallies)
+                log.split = RacketSplit(parts: out.parts, appliedAt: start.addingTimeInterval(4100))
+                match.racketRecordingLog = log
+                match.sets = out.sets
+            }
         } else if ProcessInfo.processInfo.arguments.contains(taggedGamesArgument) {
             match.racketRecordingRaw = nil
             match.racketRecordingLog = taggedGameLog(startedAt: start)

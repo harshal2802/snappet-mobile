@@ -422,6 +422,9 @@ final class RacketPlayback {
     var ralliesOnly: [RacketRally]? = nil
     /// "Loop this rally" (prompt 253): back to its start at its end; ends when the viewer moves away.
     var loop: ClosedRange<Double>? = nil
+    /// Prompt 258: a game joined across timeouts plays as one game — playing through, seeking, scrubbing and skipping
+    /// all jump over its timeouts (`RacketPlayedTime`). nil ⇒ nothing skipped.
+    var playedClock: RacketPlayedTime? = nil
     /// The player's mute button (prompt 253).
     var muted = false { didSet { player?.isMuted = muted } }
     /// Playback reached the end of the part (or the last rally in Rallies only): PlayerEnd. Cleared by any seek or Play.
@@ -590,7 +593,7 @@ final class RacketPlayback {
     func scrub(to t: Double, tolerance: Double) {
         if playing { pause() }
         ended = false
-        position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
+        position = landing(RacketPlaybackPolicy.clamp(t, partStart, partEnd))
         guard player != nil else { return }
         pendingSeek = (position, tolerance)
         if !seeking { nextSeek() }
@@ -607,9 +610,15 @@ final class RacketPlayback {
         }
     }
 
+    /// A position inside a timeout of the game moves to its edge (on the way it was going).
+    private func landing(_ t: Double) -> Double {
+        guard let c = playedClock else { return t }
+        return c.landing(t, forward: t >= position)
+    }
+
     func seek(to t: Double) {
         pendingSeek = nil
-        position = RacketPlaybackPolicy.clamp(t, partStart, partEnd)
+        position = landing(RacketPlaybackPolicy.clamp(t, partStart, partEnd))
         // Still at the end (another skip forward there) stays ended; anywhere else is not.
         if position < partEnd - 0.05 { ended = false }
         player?.seek(to: CMTime(seconds: position - partStart, preferredTimescale: 600),
@@ -621,7 +630,7 @@ final class RacketPlayback {
         }
     }
 
-    func step(_ sec: Double) { seek(to: position + sec) }
+    func step(_ sec: Double) { seek(to: playedClock.map { $0.step(from: position, by: sec) } ?? position + sec) }
 
     /// Draw the frame at the playhead again (a tick off and back: a seek to where the player already is can be
     /// skipped and draw nothing).
@@ -639,6 +648,8 @@ final class RacketPlayback {
 
     private func tick(_ t: Double) {
         position = min(partEnd, max(partStart, t))
+        // Playing into a timeout: on to its end (prompt 258).
+        if playing, let s = playedClock?.skip(at: position) { seek(to: s.upperBound); return }
         if let l = loop, playing {
             switch RacketPlayerLoop.jump(at: position, loop: l) {
             case .to(let start): seek(to: start); return

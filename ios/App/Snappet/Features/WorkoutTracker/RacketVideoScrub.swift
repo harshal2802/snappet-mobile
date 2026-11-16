@@ -83,8 +83,9 @@ enum RacketRecordStats {
 // MARK: - The split review's segmented timeline (TtSplitReview)
 
 enum RacketSplitTimeline {
-    /// Game accent; warmup / break / rest / not play / practice grey; an unsure stretch amber.
-    enum Tone: Equatable, Sendable { case game, grey, unsure }
+    /// Game accent; warmup / break / rest / not play / practice grey; an unsure stretch amber; a timeout inside a game
+    /// a dim accent (prompt 258).
+    enum Tone: Equatable, Sendable { case game, grey, unsure, timeout }
 
     struct Segment: Equatable, Sendable {
         var id: UUID
@@ -100,6 +101,7 @@ enum RacketSplitTimeline {
         case .matched: return .game
         case .unsure: return .unsure
         case .notCounted: return .grey
+        case .skipped: return .timeout
         }
     }
 
@@ -182,6 +184,14 @@ enum RacketScrub {
     static func thumbnailCount(width: Double, height: Double) -> Int {
         guard width > 0, height > 0 else { return 1 }
         return min(12, max(1, Int((width / (height * 16 / 9)).rounded(.up))))
+    }
+
+    /// Prompt 258 (the user: "when i split the video and hit play. it doesnt play before saving"): where Play in the
+    /// split sheet starts — at the playhead when it is inside the part and more than `playLeadSec` before its end;
+    /// otherwise at the part's start (after a handle moved, a nudge, or "Split here", the playhead sits on an edge).
+    static let playLeadSec: Double = 0.3
+    static func playStart(playhead: Double, start: Double, end: Double) -> Double {
+        playhead >= start - 0.001 && playhead < end - playLeadSec ? max(start, playhead) : start
     }
 
     /// "Split here" at the playhead: the playhead, when it leaves both halves at least `RacketSplitEditor.minPartSec`;

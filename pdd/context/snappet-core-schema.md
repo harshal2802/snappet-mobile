@@ -30,6 +30,13 @@ only thing persisted is the feedback JSONL (`FeedbackStore`), which is training 
 Core record. When the store lands, it must read/write the canonical entity shapes (with `id`,
 `schemaVersion`, ISO `createdAt/updatedAt`) and stamp `schemaVersion = 0`.
 
+## App-side racket records (not Snappet Core)
+
+Racket recordings and scores live in the app's `SessionExercise` blob, not in a Snappet Core entity; they change by
+additive Optionals only. Prompt 258 added: `RacketPartKind.timeout` (raw `"timeout"`; older builds read it as Not play),
+`RacketVideoPart.joinedSetIndexes` (draft only, cleared on save) and `SetLog.suggestedFor` / `suggestedAgainst` (a
+suggested score on a game still "Score unconfirmed"; cleared when a score is saved). See `decisions.md` (prompt 258).
+
 ## When the schema changes
 
 1. Change it in the **web repo** first; bump `schemaVersion`.

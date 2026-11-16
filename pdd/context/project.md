@@ -775,6 +775,14 @@ the recording, honoured by every screen playing it; not by shared copies). Pure:
 `RacketVideoTurn` (`RacketRallyVideoControlsTests`); views `RacketRallyVideoViews.swift`; UI `RacketRallyVideoUITests`.
 **Device-pending:** the user's sideways clip turned upright on the phone; the cap on a real 6.1" sheet.
 
+🟡 **Racket split timeouts (2026-11-15, prompt 258 — device feedback).** iOS. Play in "Fix one part" now plays the part
+(from the playhead inside it, else from its start) in the picture-shaped video with tap / speed / full screen. A part can
+be a **Timeout**: the game halves either side become one game (one score, one rally list, one Your videos row with its
+played length); the player skips it, shared copies and the AI clip leave it out, Edit can't mark in it. Joining two
+scored games asks first and keeps the sum as a suggested, unconfirmed score; later games renumber; changing it back gives
+two games. "Change the split" reopens a saved split. Pure: `RacketSplitGroups.swift` (`RacketSplitTimeoutTests`, with a
+randomised run); views `RacketSplitVideoViews.swift`, `RacketVideoViews.swift`; UI `RacketSplitTimeoutUITests`.
+
 ## License
 
 TBD.

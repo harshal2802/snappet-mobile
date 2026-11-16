@@ -339,7 +339,7 @@ struct RacketAnalysisSummaryScreen: View {
 
     var body: some View {
         let log = ex?.racketRecordingLog
-        let rallies = RacketRallyMarking.inRange(log?.allRallies ?? [], ref.startSec, ref.endSec)
+        let rallies = (log?.rallies(ref.startSec, ref.endSec) ?? [])
         let g = RacketGuessSummary.make(rallies)
         let tags = RacketTagSummary.make(rallies, sport: ex?.racketSport ?? .tableTennis)
         let scan = log?.appliedScan(partStart: ref.startSec, partEnd: ref.endSec)

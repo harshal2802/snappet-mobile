@@ -324,11 +324,14 @@ struct RacketRallyScrubBar: View {
                 let x = l.fraction(of: pb.position) * w
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.16)).frame(height: 6)
-                    Capsule().fill(SnappetColor.brand.opacity(0.55))
-                        .frame(width: max(4, (r.to - r.from) * w), height: 6)
-                        .offset(x: r.from * w)
-                    Capsule().fill(Color.white.opacity(0.85)).frame(width: max(0, x), height: 6)
-                        .opacity(0.35)
+                    // Already played: a white fill on the track. The rally: an accent bracket above the track (prompt 258
+                    // follow-up — the two used to blend where they overlapped).
+                    Capsule().fill(Color.white.opacity(0.45)).frame(width: max(0, x), height: 6)
+                    RacketRallyBracket()
+                        .stroke(SnappetColor.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        .frame(width: max(4, (r.to - r.from) * w), height: 7)
+                        .offset(x: r.from * w, y: -9)
+                        .accessibilityHidden(true)
                     Circle().fill(Color.white).frame(width: model.scrubbing ? 20 : 14, height: model.scrubbing ? 20 : 14)
                         .shadow(radius: 2)
                         .offset(x: x - (model.scrubbing ? 10 : 7))
@@ -346,6 +349,18 @@ struct RacketRallyScrubBar: View {
             .accessibilityAdjustableAction { dir in model.step(dir == .increment ? 1 : -1) }
             .accessibilityIdentifier(idPrefix + "scrub")
         }
+    }
+}
+
+/// The rally's stretch over the scrub bar's track: a line with its ends turned down to the track.
+struct RacketRallyBracket: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        return p
     }
 }
 

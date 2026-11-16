@@ -60,14 +60,20 @@ struct RacketWatchPlayerScreen: View {
 
     private var ex: SessionExercise? { store.ex(ref.exerciseID) }
     private var rallies: RacketPlayerRallies {
-        RacketPlayerRallies(RacketRallyMarking.inRange(ex?.racketRecordingLog?.allRallies ?? [], ref.startSec, ref.endSec))
+        RacketPlayerRallies((ex?.racketRecordingLog?.rallies(ref.startSec, ref.endSec) ?? []))
     }
     private var sides: (us: String, them: String) {
         RacketWatchCopy.sides(opponent: ex?.opponent, doubles: ex?.isDoubles ?? false)
     }
     private var sport: RacketSport { ex?.racketSport ?? .tableTennis }
     private var title: String { RacketPlayerText.title(ref.title) }
-    private var duration: Double { max(0, ref.endSec - ref.startSec) }
+    /// The game's played time (prompt 258: a game joined across timeouts skips them; its length and position leave them
+    /// out). `span` is its stretch of the recording, timeouts included (the filmstrip's frames).
+    private var clock: RacketPlayedTime {
+        ex?.racketRecordingLog?.playedTime(ref.startSec, ref.endSec) ?? RacketPlayedTime(start: ref.startSec, end: ref.endSec)
+    }
+    private var duration: Double { clock.playedSec }
+    private var span: Double { max(0, ref.endSec - ref.startSec) }
     private var unitScore: RacketUnitScore? {
         guard let i = ref.setIndex, let sets = ex?.sets, i < sets.count else { return nil }
         return sets[i].racketScore
@@ -161,6 +167,7 @@ struct RacketWatchPlayerScreen: View {
         #endif
         let pb = RacketPlayback(partStart: ref.startSec, partEnd: ref.endSec)
         pb.quarterTurns = RacketVideoTurn.normalized(ex?.racketRecordingLog?.quarterTurns)
+        if clock.hasSkips { pb.playedClock = clock }
         // The look chosen in Edit (prompt 254): this video's, else the match's, else Always.
         pb.look = RacketLookStore.resolve(partStart: ref.startSec, log: ex?.racketRecordingLog,
                                           always: UserDefaults.standard.string(forKey: RacketLookStore.alwaysKey)
@@ -180,6 +187,8 @@ struct RacketWatchPlayerScreen: View {
         if onlyRallies, let first = rallies.rallies.first { pb.seek(to: first.startSec) }
         // Opened from Play: it plays (Photos), and the controls hide after a moment; unless the viewer already
         // paused or moved it while the video was opening.
+        // UI tests only (prompt 258): open at a recording time (just before a timeout) to see it skipped.
+        if let t = UserDefaults.standard.string(forKey: "uiTestRacketPlayerStart").flatMap(Double.init) { pb.seek(to: t) }
         if !missing, touches == before { pb.play() }
     }
 
@@ -284,7 +293,7 @@ struct RacketWatchPlayerScreen: View {
         )
         .accessibilityElement()
         .accessibilityLabel("Video")
-        .accessibilityValue(RacketPlayerText.timeLine(pb.position - ref.startSec, of: duration))
+        .accessibilityValue(RacketPlayerText.timeLine(clock.played(pb.position), of: duration))
         .accessibilityHint("Shows or hides the controls")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { toggleChrome() }
@@ -389,13 +398,22 @@ struct RacketWatchPlayerScreen: View {
     private func progressLine(_ pb: RacketPlayback) -> some View {
         GeometryReader { g in
             let w = g.size.width
-            let p = duration > 0 ? (pb.position - ref.startSec) / duration : 0
+            let c = clock
+            let p = duration > 0 ? c.played(pb.position) / duration : 0
+            // Fractions of played time: a band's recording-time fraction mapped through the game's clock.
+            let f: (Double) -> Double = { duration > 0 ? c.played(ref.startSec + $0 * span) / duration : 0 }
             ZStack(alignment: .leading) {
                 Rectangle().fill(Color.white.opacity(0.14)).frame(height: 3)
                 ForEach(Array(RacketPlayerBand.fractions(rallies, start: ref.startSec, end: ref.endSec).enumerated()), id: \.offset) { _, b in
                     Rectangle().fill(bandColor(b.band))
-                        .frame(width: max(2, (b.to - b.from) * w), height: 3)
-                        .offset(x: b.from * w)
+                        .frame(width: max(2, (f(b.to) - f(b.from)) * w), height: 3)
+                        .offset(x: f(b.from) * w)
+                }
+                // Each timeout: a thin marked gap where the game paused (skipped when playing).
+                ForEach(Array(c.skips.enumerated()), id: \.offset) { _, s in
+                    Rectangle().fill(SnappetColor.perfModerate).frame(width: 2, height: 9)
+                        .overlay(Rectangle().fill(Color.black).frame(width: 1, height: 3))
+                        .offset(x: (duration > 0 ? c.played(s.lowerBound) / duration : 0) * w - 1)
                 }
                 RoundedRectangle(cornerRadius: 1).fill(SnappetColor.ink).frame(width: 2, height: 9)
                     .offset(x: min(max(0, p), 1) * w - 1)
@@ -438,7 +456,7 @@ struct RacketWatchPlayerScreen: View {
     private func scrubReadout(_ pb: RacketPlayback) -> some View {
         VStack {
             VStack(spacing: 6) {
-                Text(RacketPlayerText.clock(pb.position - ref.startSec))
+                Text(RacketPlayerText.clock(clock.played(pb.position)))
                     .font(.system(size: 34, weight: .light).monospacedDigit()).foregroundStyle(SnappetColor.ink)
                     .accessibilityIdentifier("racket.player.scrubTime")
                 if let l = RacketPlayerCopy.scrubLine(rallies, at: pb.position, sides: sides) {
@@ -546,7 +564,7 @@ struct RacketWatchPlayerScreen: View {
                 Text(labelLine(pb)).font(.system(size: 13, weight: .semibold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
                     .accessibilityIdentifier("racket.player.label")
                 Spacer(minLength: 8)
-                Text(RacketPlayerText.timeLine(pb.position - ref.startSec, of: duration))
+                Text(RacketPlayerText.timeLine(clock.played(pb.position), of: duration))
                     .font(.system(size: 13).monospacedDigit()).foregroundStyle(SnappetColor.textSecondary)
                     .accessibilityIdentifier("racket.player.time")
             }
@@ -801,7 +819,7 @@ struct RacketWatchPlayerScreen: View {
         .frame(height: 48)
         .accessibilityElement()
         .accessibilityLabel("Timeline, \(rallies.count) rallies")
-        .accessibilityValue(RacketPlayerText.timeLine(pb.position - ref.startSec, of: duration))
+        .accessibilityValue(RacketPlayerText.timeLine(clock.played(pb.position), of: duration))
         .accessibilityAdjustableAction { dir in
             skip(pb, dir == .increment ? RacketPlayerTaps.skipSec : -RacketPlayerTaps.skipSec)
         }
@@ -841,10 +859,10 @@ struct RacketWatchPlayerScreen: View {
         guard let player = pb.player, tiles > 0 else { return }
         let count = min(60, tiles)
         guard thumbsDone != count else { return }
-        let times = RacketScrub.thumbnailTimes(start: 0, end: duration, count: count)
+        let times = RacketScrub.thumbnailTimes(start: 0, end: span, count: count)
         var out = thumbnails.count == count ? thumbnails : [UIImage?](repeating: nil, count: count)
         // Centre-out from the playhead: the frames you see first come first; frames already made are kept.
-        let here = Int(((pb.position - ref.startSec) / max(1, duration) * Double(count)).rounded(.down))
+        let here = Int(((pb.position - ref.startSec) / max(1, span) * Double(count)).rounded(.down))
         let order = (0..<count).filter { out[$0] == nil }.sorted { abs($0 - here) < abs($1 - here) }
         thumbnails = out
         for chunk in stride(from: 0, to: order.count, by: 6).map({ Array(order[$0..<min(order.count, $0 + 6)]) }) {
@@ -925,7 +943,8 @@ struct RacketWatchPlayerScreen: View {
     }
 
     private func skip(_ pb: RacketPlayback, _ sec: Double) {
-        let t = RacketPlaybackPolicy.clamp(pb.position + sec, ref.startSec, ref.endSec)
+        let t = clock.hasSkips ? clock.step(from: pb.position, by: sec)
+                               : RacketPlaybackPolicy.clamp(pb.position + sec, ref.startSec, ref.endSec)
         pb.seek(to: t)
         clearLoopIfOutside(pb, t)
         touched()

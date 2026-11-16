@@ -368,28 +368,34 @@ enum RacketEditMark {
         case insideRally
         /// What's left between the neighbours is shorter than a rally.
         case tooShort
+        /// The playhead is in a timeout of the game (prompt 258): rallies are marked in its halves.
+        case inTimeout
 
         var message: String {
             switch self {
             case .insideRally: return "There’s a rally here already. Move to a gap, then tap + Rally."
             case .tooShort: return "Too short for a rally. Let it play a little longer, then end it."
+            case .inTimeout: return "That’s the timeout, which is skipped. Move into the game, then tap + Rally."
             }
         }
     }
 
     /// Can a mark start at `t`? Not inside an existing rally.
-    static func canStart(at t: Double, rallies: [RacketRally]) -> Problem? {
-        rallies.contains { t >= $0.startSec && t < $0.endSec - 0.01 } ? .insideRally : nil
+    static func canStart(at t: Double, rallies: [RacketRally], skips: [ClosedRange<Double>] = []) -> Problem? {
+        if skips.contains(where: { t >= $0.lowerBound && t < $0.upperBound }) { return .inTimeout }
+        return rallies.contains { t >= $0.startSec && t < $0.endSec - 0.01 } ? .insideRally : nil
     }
 
     /// End a mark started at `start` with the playhead at `end`. Decision (prompt 254): a mark that runs into a rally is
     /// **clamped** to the gap it started in (it ends where the next rally starts, or starts where the last one ended), and
     /// `clamped` says so; it's refused only when it started inside a rally or what's left is shorter than a rally.
-    static func finish(start: Double, end: Double, rallies: [RacketRally], lo: Double, hi: Double)
+    static func finish(start: Double, end: Double, rallies: [RacketRally], lo: Double, hi: Double,
+                       skips: [ClosedRange<Double>] = [])
         -> Result<(range: ClosedRange<Double>, clamped: Bool), Problem> {
-        if let p = canStart(at: start, rallies: rallies) { return .failure(p) }
-        let gapLo = max(lo, rallies.filter { $0.endSec <= start + 0.01 }.map(\.endSec).max() ?? lo)
-        let gapHi = min(hi, rallies.filter { $0.startSec >= start - 0.01 }.map(\.startSec).min() ?? hi)
+        if let p = canStart(at: start, rallies: rallies, skips: skips) { return .failure(p) }
+        // A timeout bounds the gap like a rally does: a mark stays inside its half.
+        let gapLo = max(lo, (rallies.map(\.endSec) + skips.map(\.upperBound)).filter { $0 <= start + 0.01 }.max() ?? lo)
+        let gapHi = min(hi, (rallies.map(\.startSec) + skips.map(\.lowerBound)).filter { $0 >= start - 0.01 }.min() ?? hi)
         let a0 = min(start, end), b0 = max(start, end)
         let a = max(a0, gapLo), b = min(b0, gapHi)
         guard b - a >= RacketEditSession.minRallySec else { return .failure(.tooShort) }
@@ -551,7 +557,7 @@ struct RacketSharePlan: Equatable, Sendable {
     /// nil when there's nothing to share (This rally with the playhead outside every rally, Rallies only with none).
     static func make(_ which: RacketShareWhich, rallies: [RacketRally], position: Double, partStart: Double, partEnd: Double,
                      rate: Float, keepSpeed: Bool, labels: Bool, sides: (us: String, them: String),
-                     quality: RacketRecordingQuality?) -> RacketSharePlan? {
+                     quality: RacketRecordingQuality?, skipping: [ClosedRange<Double>] = []) -> RacketSharePlan? {
         let rs = RacketPlayerRallies(rallies)
         let ranges: [ClosedRange<Double>]
         let count: Int
@@ -568,7 +574,16 @@ struct RacketSharePlan: Equatable, Sendable {
             count = rs.count
         case .whole:
             guard partEnd > partStart else { return nil }
-            ranges = [partStart...partEnd]
+            // Prompt 258: a game joined across timeouts is shared as its halves joined, the timeouts left out.
+            let c = RacketPlayedTime(start: partStart, end: partEnd, skips: skipping)
+            var halves: [ClosedRange<Double>] = []
+            var t = partStart
+            for s in c.skips {
+                if s.lowerBound > t { halves.append(t...s.lowerBound) }
+                t = s.upperBound
+            }
+            if partEnd > t { halves.append(t...partEnd) }
+            ranges = halves
             count = rs.count
         }
         let speed = keepSpeed && rate > 0 ? Double(rate) : 1
