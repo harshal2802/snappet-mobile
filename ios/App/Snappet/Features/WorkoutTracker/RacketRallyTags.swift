@@ -83,6 +83,11 @@ struct RacketRally: Codable, Hashable, Identifiable, Sendable {
     var guessWinnerRaw: String?
     /// You tagged, checked or fixed this guess: it's yours now and counts in history.
     var confirmed: Bool?
+    // Prompt 251 — additive Optionals.
+    /// FixRally "What went wrong? Optional" (`RacketFixReason.rawValue`), kept for model feedback.
+    var fixReasonsRaw: [String]?
+    /// ShotTags / DoublesShots: every shot of the rally, tagged by hand (no shot finding yet).
+    var shots: [RacketShot]?
 
     init(id: UUID = UUID(), startSec: Double, endSec: Double, winner: RacketRallyWinner? = nil,
          ending: RacketRallyEnding? = nil, lastShotBy: String? = nil, notRally: Bool? = nil) {

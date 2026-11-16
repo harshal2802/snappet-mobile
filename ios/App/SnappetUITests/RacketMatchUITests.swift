@@ -101,6 +101,15 @@ final class RacketMatchUITests: XCTestCase {
         XCTAssertEqual(app.buttons["racket.rec.trackingTurnOn"].label, "Not available yet")
         shot("dim-off")
         app.buttons["racket.game.mark"].tap()
+        // LiveTag (prompt 251): tag the last rally by hand, then back to the game screen.
+        app.buttons["racket.game.tagLast"].tap()
+        XCTAssertTrue(any("racket.liveTag.title").waitForExistence(timeout: 3))
+        XCTAssertTrue(any("racket.liveTag.preview").exists, "the camera stays on top")
+        XCTAssertTrue(any("racket.liveTag.line").label.hasPrefix("Shot count not available yet"))
+        shot("live-tag")
+        app.buttons["racket.liveTag.winner.us"].tap()
+        app.buttons["racket.liveTag.done"].tap()
+        XCTAssertTrue(app.buttons["racket.game.tagLast"].waitForExistence(timeout: 3))
         // CameraViewOff, StatsOff.
         app.buttons["racket.rec.show.camera"].tap()
         XCTAssertTrue(any("racket.game.preview").waitForExistence(timeout: 3))

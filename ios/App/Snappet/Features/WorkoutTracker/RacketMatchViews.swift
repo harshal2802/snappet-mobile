@@ -64,6 +64,8 @@ struct RacketGameCover: View {
     @State private var lastUnitLabel: String?
     /// Whether this match's log may be written (an earlier record-everything log on it is never overwritten).
     @State private var writesLog = true
+    /// LiveTag (prompt 251): the last rally's stretch on the recording, while it's being tagged.
+    @State private var liveTag: ClosedRange<Double>?
 
     private var sport: RacketSport { ex.racketSport ?? ex.racketFormat.sport }
     private var unit: RacketUnit { sport.unit }
@@ -550,6 +552,8 @@ struct RacketGameCover: View {
         case .playing, .scoring:
             if thermal != .ok {
                 warmContent
+            } else if let range = liveTag {
+                liveTagContent(range)
             } else {
                 playingContent
                 if show != .dim { RacketTrackingOffRow() }
@@ -581,6 +585,9 @@ struct RacketGameCover: View {
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("racket.game.line")
                 RacketWideButton("Mark this moment", id: "racket.game.mark", primary: false) { mark() }
+                if canTagLive {
+                    RacketWideButton("Tag last rally", id: "racket.game.tagLast", primary: false) { startLiveTag() }
+                }
                 RacketTrackingOffRow()
                 Spacer(minLength: 0)
             }
@@ -602,6 +609,9 @@ struct RacketGameCover: View {
                 }
                 Text(RacketGameCopy.cameraTrackingOffLine).font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
                     .multilineTextAlignment(.center)
+                if canTagLive {
+                    RacketWideButton("Tag last rally", id: "racket.game.tagLast", primary: false) { startLiveTag() }
+                }
             }
         case .stats:
             let tags = RacketTagSummary.make(machine?.log?.allRallies ?? [], sport: sport)
@@ -614,6 +624,47 @@ struct RacketGameCover: View {
     }
 
     private var gameSec: TimeInterval { flow.gameStartedAt.map { now.timeIntervalSince($0) } ?? 0 }
+
+    // MARK: LiveTag (prompt 251)
+
+    /// Tag last rally needs a recording to put the rally on.
+    private var canTagLive: Bool {
+        guard writesLog, let m = machine, !m.isEnded, m.interruption == nil, m.log != nil else { return false }
+        return flow.phase == .playing
+    }
+
+    private func startLiveTag() {
+        guard let log = machine?.log else { return }
+        let t = log.offset(Date())
+        liveTag = RacketLiveTag.range(now: t, since: RacketLiveTag.boundary(log: log, before: t))
+        Haptics.tap()
+    }
+
+    /// LiveTag board: the camera on top (this screen's one preview slot), then who won / how it ended / Done.
+    private func liveTagContent(_ range: ClosedRange<Double>) -> some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                Color.clear.racketPreviewSlot()
+                    .overlay {
+                        if recorder.fake {
+                            Text("Camera preview shows here on a device")
+                                .font(SnappetType.detail).foregroundStyle(SnappetColor.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 170)
+                    .accessibilityIdentifier("racket.liveTag.preview")
+                RacketLiveTagPanel(sport: sport, sides: sides,
+                                   number: RacketLiveTag.number(of: range, in: machine?.log?.allRallies ?? []),
+                                   lengthSec: range.upperBound - range.lowerBound,
+                                   onDone: { w, e, notRally in
+                                       machineAct { $0.tagLastRally(range: range, winner: w, ending: e, notRally: notRally, now: Date()); return [] }
+                                       liveTag = nil
+                                       Haptics.success()
+                                   },
+                                   onCancel: { liveTag = nil })
+            }
+        }
+    }
 
     private func bigScore(size: CGFloat, caption showsCaption: Bool = true) -> some View {
         VStack(spacing: 4) {

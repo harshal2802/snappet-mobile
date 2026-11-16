@@ -784,6 +784,10 @@ struct RacketSetupSheet: View {
 
     private func openCustomize() {
         customizeDraft = drillPlan
+        // The board's court shows a From cell and a To cell; start on its pair until you pick your own (prompt 251).
+        if customizeDraft.details.fromZone == nil && customizeDraft.details.toZone == nil {
+            (customizeDraft.details.fromZone, customizeDraft.details.toZone) = RacketCourtZoneRule.boardDefault
+        }
         withAnimation { step = .customize }
     }
 
@@ -828,11 +832,6 @@ struct RacketSetupSheet: View {
                         }
                     }
                     RacketCourtZones(sport: sport, from: $customizeDraft.details.fromZone, to: $customizeDraft.details.toZone)
-                    HStack {
-                        Text("From").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
-                        Spacer()
-                        Text("To").font(.system(size: 13)).foregroundStyle(SnappetColor.textSecondary)
-                    }
                 }
                 section("Plan") {
                     HStack(alignment: .top, spacing: 10) {
