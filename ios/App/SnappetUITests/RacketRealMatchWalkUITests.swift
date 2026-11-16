@@ -136,4 +136,142 @@ final class RacketRealMatchWalkUITests: XCTestCase {
         XCTAssertNotEqual(h0, h1, "Play advances on a real recording")
         XCTAssertNotEqual(h2, h3, "Play advances after moving the end")
     }
+
+    /// The saved split of the first match, as the review screen shows it. Leaves without applying.
+    func testShowSavedSplit() {
+        openVideos()
+        let change = app.buttons.matching(identifier: "racket.videos.changeSplit").element(boundBy: 0)
+        bring(change); change.tap()
+        XCTAssertTrue(app.buttons["racket.split.apply"].waitForExistence(timeout: 20))
+        Thread.sleep(forTimeInterval: 2)
+        shot("saved-split-1"); dump("saved-split-1")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 1)
+        shot("saved-split-2"); dump("saved-split-2")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 1)
+        shot("saved-split-3"); dump("saved-split-3")
+    }
+
+    /// The session's logged sets, as the Edit screen lists them. Never saves.
+    func testShowLoggedSets() {
+        openToday()
+        Thread.sleep(forTimeInterval: 1)
+        app.buttons["session.editSets"].tap()
+        Thread.sleep(forTimeInterval: 2)
+        shot("sets-1"); dump("sets-1")
+        app.swipeUp(velocity: .slow); Thread.sleep(forTimeInterval: 1)
+        shot("sets-2"); dump("sets-2")
+    }
+
+    /// Plays the unsplit recording through in the Watch player and keeps a frame every few seconds, named by time.
+    func testCaptureFramesOfUnsplitMatch() {
+        openVideos()
+        let play = app.buttons.matching(identifier: "racket.videos.play.0").element(boundBy: 1)
+        bring(play); play.tap()
+        let surface = any("racket.player.surface")
+        XCTAssertTrue(surface.waitForExistence(timeout: 20))
+        var last = "", same = 0
+        let until = Date().addingTimeInterval(25 * 60)
+        while Date() < until, app.state == .runningForeground {
+            let v = (surface.value as? String ?? "").split(separator: " ").first.map(String.init) ?? "?"
+            let a = XCTAttachment(image: app.screenshot().image, quality: .low)
+            a.name = "f-" + v.replacingOccurrences(of: ":", with: "-"); a.lifetime = .keepAlways; add(a)
+            same = v == last ? same + 1 : 0
+            last = v
+            if same >= 4 { break }   // stopped: the end
+            Thread.sleep(forTimeInterval: 3.2)
+        }
+    }
+
+    private func clock(_ t: String) -> Int { t.split(separator: ":").compactMap { Int($0) }.reduce(0) { $0 * 60 + $1 } }
+    private func rangeEnds() -> (Int, Int) {
+        let p = any("racket.split.edit.range").label.split(separator: "–").map { clock(String($0)) }
+        return (p.first ?? 0, p.last ?? 0)
+    }
+    private func playheadSec() -> Int { clock(any("racket.split.edit.playhead").label.replacingOccurrences(of: "Playhead ", with: "")) }
+
+    /// Applies a split the user asked for: `RACKET_REAL_CUTS` = "25:notPlay,305:warmup,…" (each piece's end second and
+    /// kind, in order; what is left after the last cut becomes `RACKET_REAL_LAST`). Saves only with RACKET_REAL_APPLY=1
+    /// and only when every part came out as asked.
+    func testApplyAskedSplit() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        let cuts: [(Int, String)] = (env["RACKET_REAL_CUTS"] ?? "").split(separator: ",").compactMap {
+            let p = $0.split(separator: ":"); return p.count == 2 ? (Int(p[0]) ?? 0, String(p[1])) : nil
+        }
+        try XCTSkipIf(cuts.isEmpty, "no cuts given")
+        openVideos()
+        let split = app.buttons["racket.videos.split"]
+        bring(split); split.tap()
+        XCTAssertTrue(app.buttons["racket.split.fix.0"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["racket.split.fix.1"].exists, "starts as one part")
+
+        func openFix(_ k: Int) {
+            let fix = app.buttons["racket.split.fix.\(k)"]
+            XCTAssertTrue(fix.waitForExistence(timeout: 8), "Fix \(k)")
+            bring(fix); fix.tap()
+            XCTAssertTrue(app.buttons["racket.split.edit.save"].waitForExistence(timeout: 6))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        func choose(_ kind: String) {
+            let chip = app.buttons["racket.split.edit.kind.\(kind)"]
+            XCTAssertTrue(chip.isEnabled, "kind \(kind) can be chosen")
+            chip.tap()
+        }
+        for (k, cut) in cuts.enumerated() {
+            openFix(k)
+            let start = rangeEnds().0
+            // Put the playhead inside the part: play until it is 7 s in, pause.
+            app.buttons["racket.split.edit.play"].tap()
+            let limit = Date().addingTimeInterval(40)
+            while playheadSec() < start + 7, Date() < limit { Thread.sleep(forTimeInterval: 0.3) }
+            app.buttons["racket.split.edit.play"].tap()
+            XCTAssertGreaterThanOrEqual(playheadSec(), start + 6, "playhead inside the part")
+            let handle = any("racket.split.edit.playhead").coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            handle.press(forDuration: 0.05, thenDragTo: handle.withOffset(CGVector(dx: 0, dy: -260)))
+            let splitHere = app.buttons["racket.split.edit.splitHere"]
+            XCTAssertTrue(splitHere.isEnabled, "Split here is on")
+            splitHere.tap()
+            // No scrolling back: a downward drag pulls the sheet itself down. The end buttons and kinds stay on screen.
+            // Move this piece's end to the asked time.
+            for _ in 0..<4 {
+                let d = cut.0 - rangeEnds().1
+                if d == 0 { break }
+                let tens = abs(d) / 10, ones = abs(d) % 10
+                for _ in 0..<tens { app.buttons["racket.split.edit.end.\(d > 0 ? 10 : -10)"].tap() }
+                for _ in 0..<ones { app.buttons["racket.split.edit.end.\(d > 0 ? 1 : -1)"].tap() }
+            }
+            XCTAssertEqual(rangeEnds().1, cut.0, "piece \(k) ends where asked")
+            XCTAssertEqual(rangeEnds().0, start, "piece \(k) start unchanged")
+            choose(cut.1)
+            shot("cut-\(k)")
+            app.buttons["racket.split.edit.save"].tap()
+            XCTAssertTrue(app.buttons["racket.split.fix.\(k + 1)"].waitForExistence(timeout: 6), "piece \(k) saved")
+        }
+        if let last = env["RACKET_REAL_LAST"] {
+            openFix(cuts.count)
+            choose(last)
+            app.buttons["racket.split.edit.save"].tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        // Read the parts back.
+        var labels: [String] = []
+        for k in 0...cuts.count { labels.append(app.buttons["racket.split.part.\(k)"].label) }
+        print("REALWALK parts " + labels.joined(separator: " | "))
+        shot("review-final"); dump("review-final")
+        XCTAssertFalse(app.buttons["racket.split.part.\(cuts.count + 1)"].exists, "no extra part")
+        guard env["RACKET_REAL_APPLY"] == "1" else { return }
+        let apply = app.buttons["racket.split.apply"]
+        bring(apply); apply.tap()
+        XCTAssertTrue(app.buttons["racket.assign.save"].waitForExistence(timeout: 8))
+        Thread.sleep(forTimeInterval: 1)
+        shot("assign"); dump("assign")
+        app.buttons["racket.assign.save"].tap()
+        let done = app.buttons["racket.splitDone.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 8))
+        shot("done")
+        bring(done); done.tap()
+        XCTAssertTrue(any("racket.videos.header").waitForExistence(timeout: 8))
+        Thread.sleep(forTimeInterval: 1)
+        shot("videos-after"); dump("videos-after")
+    }
 }
