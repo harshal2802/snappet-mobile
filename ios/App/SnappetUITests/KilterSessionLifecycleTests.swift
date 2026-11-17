@@ -13,7 +13,7 @@ final class KilterSessionLifecycleTests: XCTestCase {
         continueAfterFailure = true
         app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

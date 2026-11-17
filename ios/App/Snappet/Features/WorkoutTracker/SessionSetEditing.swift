@@ -172,6 +172,12 @@ enum SessionSetEditing {
         exercises.filter { $0.id != id }
     }
 
+    /// Whether removing `id` would leave the finished session with no exercise (prompt 262): the detail then offers to
+    /// delete the whole session instead, so History never holds an empty one.
+    static func isLastExercise(_ id: UUID, in exercises: [SessionExercise]) -> Bool {
+        exercises.contains { $0.id == id } && removing(id, from: exercises).isEmpty
+    }
+
     /// A stored weight re-expressed in the display unit. Same-unit values pass through raw; a
     /// cross-unit value converts via kg rounded to one decimal (the `LastSetLookup` hint's rule),
     /// so float noise never seeds an edit field.

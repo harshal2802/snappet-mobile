@@ -44,6 +44,7 @@ struct RootShell: View {
                         // has data. Subsequent refreshes ride scenePhase below.
                         WidgetSnapshotService.refresh(context: context)
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
+                        uiTestReminderStart()   // prompt 265 (F13): UI tests only
                         reconcileLiveActivities()   // prompt 198: no stale "session on" left on the Lock Screen
                         RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)   // prompt 136
                         SpotlightIndexer.reindex(context: context)   // #81 Phase 4
@@ -194,6 +195,23 @@ struct RootShell: View {
         app.kilterLiveActivity.reconcile(activeSessionStartedAt: board?.startedAt)
     }
 
+    /// UI tests (prompt 265, F13): `-uiTestReminderStart missing|empty` delivers a scheduled reminder's Start now for a
+    /// routine that no longer exists / one with no exercises, as a tapped notification action would.
+    private func uiTestReminderStart() {
+        let args = CommandLine.arguments
+        // Only ever on the in-memory test store (prompt 266): it inserts a routine.
+        guard UITestStore.isFreshStore(args) else { return }
+        guard let i = args.firstIndex(of: "-uiTestReminderStart"), i + 1 < args.count else { return }
+        var id = UUID()
+        if args[i + 1] == "empty" {
+            let routine = Routine(name: "Leg day", exercises: [])
+            context.insert(routine)
+            try? context.save()
+            id = routine.id
+        }
+        app.routineReminders.pendingAction = .start(id)
+    }
+
     private func drainAppActions() {
         guard !Self.isUITestLaunch else { return }
         for action in AppActionInbox.drain() { dispatch(action) }
@@ -209,9 +227,19 @@ struct RootShell: View {
     }
 
     private func dispatch(_ action: PendingAppAction) {
+        // Prompt 263 (F4): finishing while a racket recording, drill or game screen is open finishes nothing — and must
+        // not navigate either: opening the module replaces the stack, which rebuilds the gym tracker and drops the
+        // player with the recording screen on it. The open screen shows why instead.
+        if case .finishSession = action, RacketLiveCovers.shared.refuseFinishIfOpen() { return }
+        // Prompt 265 (F15): the Live Activity's tap while the player (or a racket screen on it) is up does nothing — it
+        // is already the workout, and opening the module would tear it down the same way.
+        if case .openWorkout = action,
+           WorkoutOpenLink.decide(playerOpen: router.workoutPlayerOpen,
+                                  openCover: RacketLiveCovers.shared.openKind) == .stay { return }
         // The action→navigation decision is the pure, unit-tested AppActionRouter; this is just glue.
         let route = AppActionRouter.route(for: action)
         if route.startPomodoro { router.pendingPomodoroStart = true }
+        if route.resumeWorkout { router.pendingWorkoutResume = true }
         // Workout actions from Shortcuts / Siri / links (prompt 199): with an activity → the "Log it now" path.
         switch action {
         case .startQuickSession(let raw?):
@@ -238,6 +266,8 @@ struct RootShell: View {
             dispatch(.startQuickSession(activity))
         case .finish:
             dispatch(.finishSession)
+        case .open:
+            dispatch(.openWorkout)
         case let .log(activity, reps, weight, unit, seconds, meters):
             let out = try? WorkoutIntentService.logSet(activity: activity, reps: reps, weight: weight, unit: unit,
                                                        seconds: seconds, meters: meters, in: context)

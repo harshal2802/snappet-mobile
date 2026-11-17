@@ -99,6 +99,7 @@ final class WorkoutWatchManager: NSObject {
             Task { @MainActor [weak self] in self?.household = snapshot }
         }
         racket.send = { [weak self] command in self?.link.sendRacket(command) }
+        racket.phoneReachable = { [weak self] in self?.link.isPhoneReachable ?? false }
         link.onRacket = { [weak self] message in
             Task { @MainActor [weak self] in self?.racket.receive(message) }
         }
@@ -218,6 +219,14 @@ final class WorkoutWatchManager: NSObject {
         }
     }
 
+    /// End tapped on the wrist (prompt 264): tell the phone first (its session keeps running and says heart rate
+    /// stopped coming from the Watch), then end and save the workout here. A phone-initiated stop goes through
+    /// `end()` and sends nothing back.
+    func endFromWrist() {
+        if isRunning || retyping { link.sendEnded(startedAt: startDate) }
+        end()
+    }
+
     func end() {
         if retyping { stopDuringRetype = true; return }
         guard let session, let builder else {
@@ -288,6 +297,8 @@ extension WorkoutWatchManager: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
             guard let self, workoutSession === self.session, !self.retyping else { return }
+            // The workout died on the Watch (prompt 264): the phone must hear heart rate stopped.
+            self.link.sendEnded(startedAt: self.startDate)
             self.resetState()
         }
     }

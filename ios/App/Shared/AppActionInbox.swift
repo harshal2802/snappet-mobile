@@ -17,6 +17,8 @@ enum PendingAppAction: Codable, Sendable, Equatable {
     case startQuickSession(String?)
     /// Finish the running workout session — prompt 199.
     case finishSession
+    /// Open the running workout's player — the workout Live Activity's tap (`snappet://workout`, prompt 265).
+    case openWorkout
     /// Open a Snappet link (`snappet://…`) — a QR code read from a photo shared to Snappet (prompt 201).
     case openLink(String)
 }

@@ -10665,6 +10665,8 @@ stripes, and the panel read as an opaque slab.
   unit) so tapping one opens its own score sheet, and saving a score clears the flag.
 - **Setup → Storage directly when recording everything** (boards: PracticeSetup "Set up camera", Warmup
   "Everything, split later" → Storage). The page's "Record everything" button stays for a second recording.
+  **Superseded 2026-11-16 (prompt 263):** a second recording replaced the first log (split, rallies, tags lost); the
+  button is now off with its reason once the entry has recorded anything (one recording per entry).
 
 ## 2026-11-06 — Racket Watch scoring (prompt 245, issue #438 step 2)
 
@@ -11718,3 +11720,229 @@ screen could remove it without breaking `baseSetIndex` and the split's links.
 - **Weights are test counts, not measured times**: good enough at this size; if one leg runs long, raise
   `UI_SHARDS` first.
 - **Check names changed** to `App tests (SnappetUITests-KofN)`. Main has no required checks, so nothing blocks.
+
+## 2026-11-16 — Racket screens reachable on any finished session; removing the last exercise (prompt 262)
+
+- **Context**: state-machine review findings F9 and F16. Your videos, Edit match, Keep rallies only… and a game's heart
+  rate are offered only by `RacketRecapCards`. `SessionRecapCards` rendered it only when racket was the dominant
+  discipline (most completed sets), and `SessionDetailView` rendered `SessionRecapCards` (and passed the racket sheet
+  closures) only for workout types timed / run / other (most exercises). A match plus two lifts is type strength: no
+  racket card, so the match's videos and editor were unreachable.
+- **The racket card shows whenever the session holds a racket entity** (`discipline == .racket`, i.e. a match or a
+  drill — `racketMode` defaults to match; the same test `RacketStats.summary` uses), after the dominant discipline's
+  own cards. Racket dominant still renders it as the dominant card and it is never added a second time. The decision is
+  pure (`RacketRecapReach.addsRacketCard` for `SessionRecapCards`, `detailAddsRacketCard` for the detail's strength
+  branch, which renders no `SessionRecapCards`). Considered: making racket win the dominant pick whenever present —
+  rejected, it would replace the lifts' cards and hero.
+- **Every detail branch hands the racket sheets to the detail** (`onOpenGame` / `onOpenVideos` / `onEditMatch`), not
+  only timed / run / other: the card sits in a lazy `List`, where a sheet owned by the row can be dropped on re-render
+  (the reason the host owns them since prompt 246).
+- **The Finish summary** gets the card through the same `SessionRecapCards` change. Edit match stays hidden there: the
+  session is still active until Done (`RacketMatchEditAvailability`, unchanged).
+- **Removing the only exercise of a finished session offers deleting the session** ("Delete this session?", Delete
+  session / Cancel) instead of leaving an empty session in History. It goes through `SessionCascade.deleteWorkoutSession`
+  (History's delete): the session row and its `SessionMedia` / `StudioProject` / festival rows. It never calls Photos,
+  so the message says photos and videos stay in the Photos library. The detail pops first; the cascade runs in
+  `onDisappear` so nothing renders a deleted model on the way out. New id `session.confirmDeleteSession`; the existing
+  `session.confirmRemoveExercise` is unchanged for the other cases.
+- **Test seed**: `-uiTestRacketMixedSession strength|timed` (with `-uiTestSeedRacketVideos`) replaces the seed's drill
+  with two lifts or two planks × 3 sets and adds a synthetic HR series; without the argument the seed is unchanged.
+- **Found, not changed**: on a timed-dominant session the timed card's "Exercises" rows list the match too ("Table
+  tennis match · 2 sets · 0:00 total"), because the match is a `.duration`-kind entity (pre-existing; now next to the
+  racket card).
+- **Verified on the simulator**: SnappetTests 3144 / 0 failures (5 skipped; 7 new in `RacketRecapReachTests`).
+  `RacketMixedSessionUITests` 3 / 3 (strength and timed mixed sessions open Your videos, Edit match, a game's heart
+  rate, and Keep rallies on the timed one; last-exercise Delete session / Cancel). Existing UI suites run alone, app
+  uninstalled first, all green: RacketEditMatch 3, RacketVideos 2, RacketGameHR 1, RacketSports 10, SessionInsights 1,
+  CompletionMoment 3, FreeformFlowWalkthrough 2, WorkoutWalkthrough 1, ActivityProgress 6, Progression 5,
+  TrackingTypeFilter 1, LiveWorkoutStudioWalkthrough 1, RacketEdit 8, RacketSplitTimeout 3, RacketTagging 15,
+  RacketPlayer 7, RacketRallyVideo 5, RacketModel 2, RacketAI 2 (RacketRealMatchWalk 8 skipped, as before). The Finish
+  summary with a mixed session was not driven on the simulator; it renders the same `SessionRecapCards` the timed
+  detail test covers.
+## 2026-11-16 — The live session never loses work silently (prompt 263)
+
+The workout state-machine review found six ways the live session dropped or corrupted work without asking (F1, F2,
+F3, F4, F5, F14). The user's decisions are final; each rule is pure in `LiveSessionSafety.swift` and tested in
+`LiveSessionSafetyTests`; `LiveSessionSafetyUITests` drives each on the simulator.
+
+- **F5 — Remove asks.** Remove match / drill / exercise / climb in the live player's ⋯ menus asks with the finished
+  session detail's words ("Remove this match?"). A recorded match / drill says its recording's split (a drill: block
+  marks), rallies and tags go and the video stays in Photos — checked: `removeExercise` drops the entity with its
+  `racketRecordingLog`, unties its `SessionMedia` rows to General and never touches the Photos library. An exercise with
+  no sets, no media and no recording goes without asking (nothing to lose). Climbs follow the same rule (the brief named
+  match / drill / exercise; Remove climb was the same unconfirmed call).
+- **F2 — Finish never deletes silently.** `LiveFinish.decide`: a completed set ⇒ the summary (unchanged); nothing worth
+  keeping (no exercise with any set, no session media row, no recording log) ⇒ discard silently (unchanged for an empty
+  Quick Session); otherwise ask "Finish this session?" — Save session / Discard / Cancel — with a line saying what
+  Discard deletes ("1 recording with its split, rallies and tags and 2 photos and videos … Videos stay in your Photos
+  library"). Save session finishes through the normal path even with zero completed sets (the player's
+  `finish(saved:)` would have turned it into a discard, so the dialog calls `onClose(true)`).
+- **F2 — the Finish intent / `snappet://finish` link saves, never deletes, when there is something worth keeping.** An
+  App Intent / link can't show a dialog reliably (the app may be opening, the player may be under a cover), so the only
+  safe default for work is to keep it; an empty session is still discarded as before.
+- **F4 — refuse, not end from outside.** The intent / link while a racket recording, drill or game cover is open now
+  finishes nothing: the cover stays, its recording keeps going, and it shows "Session not finished" with "This screen is
+  still recording. Stop it here first, then finish the session. Nothing was deleted." (a game cover: "This match is
+  still open …"). Chosen over ending the recording from outside: the three covers end differently (split prompt, drill
+  review, the game's score sheet — each a user step) and the Photos parts save asynchronously after Stop, so an outside
+  end would either skip those steps or race the saves, and none of it can be proved on the simulator (the fake camera
+  saves no parts). The refusal is provable (UI test with the real link). Found while proving it: the cover was torn
+  down even before `finishWorkout` ran — the shell's `router.open(module:)` replaces the navigation stack, which rebuilds
+  the gym tracker and drops its `playing` player with every cover on it. So the refusal happens in `RootShell.dispatch`
+  (no navigation at all while a cover is open), with the same check kept in `consumeFinishSession` as a backstop. Covers register in `RacketLiveCovers` (one
+  container per cover, so the record-everything cover's split prompt still counts as open). Known limit: while a screen
+  opened from a cover is on top of it (Drill videos from the drill review, Your videos over the split prompt), the
+  cover reports itself gone (SwiftUI's onDisappear); by then its recording has already ended through its own Stop.
+- **F3 — the drawer's racket delete goes through `RacketMatchEditor`.** Swipe-to-delete on a match game builds the Edit
+  match draft, removes the game and commits it, so `baseSetIndex`, applied split links and `game` mark indexes are
+  written again from ids, and pinned photos / clips move by the commit's remap (a removed game's media stays on the
+  match with no game). A game with video needs Edit match's "what happens to its video" choice, which a swipe can't
+  ask: its row can't be swiped and says "Has video. Remove it from Edit match after the session." (Edit match stays
+  finished-session only, prompt 260.) The only game, with no video, may go in a live match (Edit match keeps one on a
+  finished session; live, the next game is logged on the page) — base becomes 0. Drills had the same problem with block
+  / rest marks: a block with a mark (video) stays ("Has video, so it stays with its recording."); deleting one without
+  moves later marks up one (marks count from the log's base). Non-racket exercises keep the plain delete.
+- **F1 — one recording per entry, blocked for now.** Once an entry's log has a run or a saved part, "Record everything"
+  on the match page is off with "This match already has a recording. A second one isn't supported yet." (the label is
+  now always "Record everything"); the game cover's Everything shows the same reason in an alert, and so does its game
+  by game start when the match's recording was record-everything (`gameByGameBlock`: switching the mode in Match details
+  would otherwise start a second log that the save refuses, leaving the new game's video tied to nothing; its own
+  game-by-game log is continued as before, and Score without video stays available); a drill whose plan's
+  mode differs from its log's is off with the drill reason. A log with no runs and no parts may be replaced. **A
+  record-everything drill continues its log** ("Continue drill"): `continueLog` now accepts a drill recording everything
+  when the log was recorded everything (same mode only); new blocks add runs, parts and marks after the old ones (unit
+  test: the earlier block marks, runs, parts and tags survive and `drillParts` maps blocks 0–2). `saveRacketRecordingLog`
+  refuses to replace a log with runs or parts by one with another `startedAt` and logs the refusal (category
+  `racket.recording`). Supersedes the 2026-11-06 line "stays for a second recording".
+- **F14 — a recording left open by a crash.** `RacketRecordingRecovery.recovered`: every open run closes at the end of
+  the last part saved during it (`startSec + durationSec` of its assets; none ⇒ the run's start) — not
+  `savedUpToSec`, which only knows closed runs; open range marks (block, rest, game, interval) close there too; a
+  record-everything log gets `endedAt`. A game-by-game / block-by-block log keeps `endedAt` nil: its cover continues it
+  and reads `endedAt` as "now" for its split. Runs when the player appears (resume after a relaunch, or after a cover
+  closes), skipping every entry whose cover is open (`RacketLiveCovers`), so a live recording is never touched.
+- **Seeds**: `-uiTestRacketLive` keeps the racket video seed's session running; `-uiTestRacketLiveCrash` (with it)
+  leaves the match's record-everything log open after one part per run and no sets anywhere. Existing seeds unchanged.
+- **No schema change**: no new field or raw value; recovery and the drawer only write existing fields.
+
+## 2026-11-16 — Heart-rate source ownership: Watch end, Kilter, mid-session switch (prompt 264)
+
+Three findings of the workout state-machine review (F6, F7, F8) about who owns the one live heart-rate source. The
+user's decisions are final; each rule is pure in `HeartRateOwnership.swift` (`HeartRateOwnershipTests`), and
+`HeartRateOwnershipUITests` drives each on the simulator.
+
+- **F6 — the Watch ending its workout reaches the phone; the phone keeps going.** New wire kind
+  `LiveWorkoutMessage.ended(startedAt:)` (watch → phone), not a reuse of `.stop`: `.stop` stays the phone's command, so
+  neither side can mistake its own echo. The Watch sends it from End on the wrist (`endFromWrist`, before ending and
+  saving its workout) and when its session fails; a phone-initiated stop sends nothing back. It carries the Watch
+  workout's start so a late copy queued with `transferUserInfo` from an EARLIER session is dropped (`WatchEnded.accepts`:
+  the Watch start may sit at most 10 s before the phone session's start, for clock skew; none sent ⇒ trusted). The
+  phone **never finishes or deletes**: `isSessionActive` stays true, the HR buffer is kept for the finish flush,
+  `latestHR` is cleared (no frozen bpm on the player, banner or Live Activity), the Watch leaves `workoutRunning`, and the
+  phone's own paused state is left alone. A sample queued before the end that lands after it is still buffered (it is
+  real heart rate) but not shown as live. The player shows a "Watch ended" card ("Your Apple Watch stopped its workout,
+  so heart rate isn't coming from it any more. This session is still running here. Finish it when you're done.") with
+  **Keep going**, which leaves a small "Watch ended" chip where the HR chip was; both clear on the next start / stop.
+  Only when the session's source is the Watch (a band session never says it). **Not built**: restarting the Watch
+  workout from the phone mid-session — a new Watch workout's offsets start at 0 and would land at the wrong place on the
+  session timeline; the Watch has no Start of its own either. Carrying on means the session continues without Watch HR
+  (Health backfill after finish still fills what the Watch recorded).
+- **F7 — refuse, not hand over.** A NEW gym session (Quick Start, a routine's Start Workout, a planned start, Log it now
+  into a new session, and "Discard it & start new", refused before anything is discarded) can't start while a Kilter
+  board session is live: alert "A board session is running" / "Your Kilter board session is still going and is recording
+  your heart rate. Finish it in Kilter Board first, then start this workout." Resuming an existing gym session is not a
+  start and is never refused. "Live" = `KilterSessionManager.isLive(in:)`: the in-memory session, or an open one in the
+  store that recovery would adopt (after a relaunch, before Kilter is opened) — read-only, it adopts or closes nothing,
+  so the board session is untouched. The festival night's start is outside this decision and unchanged.
+- **F8 — lock the picker.** While any session is live (`isSessionActive`, an open `WorkoutSession` — it may not have
+  restarted its source after a relaunch — or a live board session), the picker's Apple Watch row, band rows, "Prefer band
+  for detailed clips" (it changes the automatic source) and the saved band's Forget swipe (same reason) are disabled, under
+  a line "You can't change the heart-rate source while a session is live. Finish the session first, then switch." Band
+  scanning still runs (it changes nothing).
+- **Seed**: `-uiTestWatchEnded` plays the Watch's part through the real decode / handle path: a 128 bpm sample after 1 s,
+  then the `.ended` payload after 5 s. **Known gap (not in this brief)**: `KilterSessionManager.adopt` still claims the
+  source if one is running when a board session is recovered, which after a relaunch can be a gym session's.
+
+- **UI tests never send to the real Watch (prompt 264, added at review).** `WatchSendGate` (Shared): a launch with any
+  `-uiTest…` argument sends nothing over `WCSession` from `AppleWatchMetricsSource` or `RacketWatchRelay`. A UI test
+  run on a real phone started sessions, which queued a `start` for the paired Watch with nothing to stop it. On that
+  phone the simulated "Watch ended" test only applies when the heart-rate source is the Watch (a saved band wins).
+
+## 2026-11-16 — UI tests check the test-store marker before the first tap; link tests are simulator-only (prompt 266)
+
+**Incident.** UI tests are sometimes run on the user's real iPhone. They rely on launch arguments (`-uiTestFreshStore`
+or a `-uiTestSeed…` argument that implies it) for an empty in-memory SwiftData store. On 2026-11-16 the first test
+launch after a fresh install attached to an app process iOS had started WITHOUT those arguments, so the test tapped
+Quick Start in the user's real data. Nothing was lost; the rule below makes it impossible.
+
+- **One decision, two users.** `UITestStore.isFreshStore(_ arguments:)` (`Snappet/Core/UITestStore.swift`, pure,
+  `UITestStoreTests`) is the only place that decides "test store". `SnappetApp.init` uses it to choose the in-memory
+  store, and the root scene uses it to show the marker, so the marker can't appear on the real store and a normal
+  launch (no such argument) never shows it.
+- **The marker.** An invisible 1pt `Color.clear` overlay at the top-leading corner of the `WindowGroup` content, one
+  accessibility element with identifier `uiTest.freshStore`, `allowsHitTesting(false)`: no layout change, takes no
+  taps. Present from launch on every root screen (it wraps the camera probe too). Not guaranteed to be visible to
+  XCUITest while a sheet or full-screen cover is up; the guard only needs it right after launch.
+- **The guard.** `XCUIApplication.launchOnTestStore()` (`SnappetUITests/TestStoreGuard.swift`) replaces every
+  `app.launch()` in `SnappetUITests` (123 sites, relaunches included). It launches, then waits up to 15 s for the
+  marker: ALWAYS on a real device; on the simulator only when the launch arguments imply the test store (the simulator
+  store is disposable, and a few simulator tests launch plainly on purpose). Missing marker ⇒ `terminate()` FIRST, then
+  `XCTFail("Snappet is not on the test store; refusing to touch real data")`; nothing taps before the marker is
+  confirmed. The core `launchCheckingTestStore(require:timeout:)` returns the refusal instead of failing, so
+  `TestStoreGuardUITests` proves the refusal (forced check, no argument ⇒ refusal and app `.notRunning`) on the simulator.
+  The test target can't import the app, so it keeps a mirrored argument list; both files point at each other.
+- **Link tests are simulator-only.** `XCUIDevice.shared.system.open(snappet://…)` reaches whatever Snappet is installed,
+  test store or not. `WorkoutLinkUITests` (in setUp, before launching) and the two link tests in
+  `LiveSessionSafetyUITests` call `TestStoreGuard.skipLinkTestsOnDevice()` (`XCTSkip("link tests are simulator-only")`).
+- **Consequence on a device:** tests that launch without a test-store argument are refused there by design:
+  `SuiteSmokeTests`, the plain relaunch at the end of `ClipsPostUITests.testTheLevelsAndTheyAreRemembered` (`launchArguments =
+  ["clips"]`), and `RacketRealMatchWalkUITests` (the opt-in, read-only walk of the user's own recordings, which
+  previously ran on the real store on purpose; it now needs a deliberate exception if it is wanted again).
+
+## 2026-11-16 — Five broken links and stale states in the workout tracker (prompt 265)
+
+The workout state-machine review's F10, F11, F12, F13 and F15, each checked on main after #458 / #459 (all five still
+held) and fixed as a pure rule: `WorkoutBrokenLinks.swift` (phone) and `Shared/RacketWatchFreshness.swift` (Watch),
+tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13 and F15 on the simulator.
+
+- **F10 — the Watch never keeps a racket face the phone has left. Both directions, not one.** A new wire message
+  `clearAll(through: revision)`: the phone sends it when WatchConnectivity activates with nothing attached (a relaunch
+  after a kill) and when a session ends (`WorkoutSessionFinisher`, `SessionCascade`), unless a racket screen of another
+  session is attached. The Watch drops its face only if that face isn't newer than the clear, and remembers the mark so
+  a late `transferUserInfo` snapshot can't bring a stale face back (revisions are clock-seeded, so they keep rising
+  across relaunches). A Watch tap for a match the phone shows nothing for is now answered with `.clear` (was dropped
+  silently). The Watch also leaves on its own: a tap with no newer snapshot within 15 s returns to the usual workout
+  face. To make "no answer" mean "phone gone", the phone re-sends the snapshot 1 s after a tap that changed nothing
+  (Undo with nothing to undo). Leaving is silent and loses nothing: the tap stays queued and the phone's next snapshot
+  brings the board back. Chosen over a heartbeat (battery, and a match can go many minutes without an event) and over
+  a Watch-only timeout without taps (it would drop a live face during a quiet rally). Known limit: a face left by a
+  kill with no taps stays until the phone app runs again (any launch, including the background launch a tap's
+  `sendMessage` causes).
+- **F11 — a deleted session's scans stop, and nothing is written afterwards.** `SessionCascade.deleteWorkoutSession`
+  (every delete path: History, session detail, Finish discard, Discard & start new, the watch-import reconciler) calls
+  `RacketScanCenter.forgetSession` first: its waiting scans leave the queue, its running scan is cancelled, and any
+  late progress / result / pause for that session is dropped (`deletedSessionIDs`). `stopAll(in:)` was not reused: it
+  writes "paused" into the session being deleted. An enqueue takes the session's id back out (a backup restore
+  re-inserts the same ids). Backup restore's `deleteAll(WorkoutSession)` is not routed through the cascade (out of
+  scope; noted).
+- **F12 — a planned Start while a workout runs asks, never silently.** "A workout is already running" / "“Quick
+  session” is still going. Go to it, or cancel and start this plan after you finish it. Your plan stays here." with
+  Go to running workout / Cancel. The planner shows the alert itself (it is the top of the stack). No "Discard & start
+  new" here, unlike the routine conflict dialog: the brief offered only go-to / cancel, and replacing would delete the
+  running workout's work. The plan stays because the planner stays pushed under the player.
+- **F13 — a reminder's Start now for a gone or empty routine says so.** "Routine not found" / "This routine no longer
+  exists. It may have been deleted, so there’s nothing to start." or "Nothing to start" / "“Leg day” has no exercises
+  yet. Add some in Routines, then start it." Both land on the Gym Tracker's dashboard (the brief's "workout home"),
+  not Routines. QA hook `-uiTestReminderStart missing|empty`.
+- **F15 — the Live Activity opens the running workout.** `widgetURL(snappet://workout)` on the Lock Screen view and
+  the Dynamic Island → `WorkoutLinkAction.open` → `PendingAppAction.openWorkout` → the Gym Tracker with
+  `pendingWorkoutResume`. Exactly `snappet://workout` (a path is still not a route: the existing deep-link tests reject
+  `snappet://workout/session/1`). Like the finish link (#459), the shell does not navigate while the player is up
+  (`SuiteRouter.workoutPlayerOpen`, set from `WorkoutHomeView.playing`, cleared by `open(module:)`) or a racket cover is
+  open (`RacketLiveCovers`): replacing the stack would tear them down. No alert in that case: the workout is already on
+  screen.
+- **No schema change.**
+
+- **F10, changed at review: the 15 s rule only counts while the phone is reachable.** A tap sent to a phone out of
+  range (left in a bag across the hall while scoring from the wrist) is queued and the racket face stays; before this
+  change the Watch would have left the face 15 s after the first such tap and scoring from the wrist would stop. The
+  phone-kill case is still covered: a reachable phone is woken by the tap, activates, and answers with a clear.

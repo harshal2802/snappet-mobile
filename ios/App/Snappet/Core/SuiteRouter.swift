@@ -27,6 +27,10 @@ final class SuiteRouter {
     /// local state, so a pushed route alone lands on the dashboard with the player closed).
     /// Self-clearing on consume; a no-op when no active session exists.
     var pendingWorkoutResume = false
+    /// The Gym Tracker's live player is presented (prompt 265, F15). Set by `WorkoutHomeView` from its `playing`; the
+    /// shell reads it so the Live Activity's tap doesn't replace the stack under an open player. `open(module:)`
+    /// clears it: replacing the stack takes the player down.
+    var workoutPlayerOpen = false
 
     /// One-shot "start this routine" intent (prompt 136, the `pendingWorkoutResume` pattern): a
     /// scheduled-routine notification's Start now (and Habits' linked Start, 137) sets this before
@@ -105,6 +109,7 @@ final class SuiteRouter {
     func open(module id: String) {
         tab = .apps
         path = NavigationPath([ModuleRoute(id: id)])
+        workoutPlayerOpen = false
     }
 }
 

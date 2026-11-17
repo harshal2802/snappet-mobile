@@ -119,6 +119,10 @@ struct WorkoutHomeView: View {
     @State private var plannerPrefill: PlannerRoutinePrefill?
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
+    /// A gym start refused because a Kilter board session is live (prompt 264, F7).
+    @State private var boardRefusal: OwnershipNotice?
+    /// A reminder's Start now for a routine that's gone or empty (prompt 265, F13): said, not skipped silently.
+    @State private var routineStartNotice: RoutineStartNotice?
     /// A routine arriving over QR / a `snappet://routine/v1/…` link (E6) awaiting the import-confirm
     /// preview. Set by `consumePendingImport` from the router one-shot; cleared when the sheet closes.
     @State private var importingRoutine: SharedRoutine?
@@ -223,6 +227,8 @@ struct WorkoutHomeView: View {
         // WorkoutHistoryStats fed by the @MainActor resolver join, surfaced as an editable draft.
         .navigationDestination(for: WorkoutPlanRoute.self) { _ in
             WorkoutPlanView(history: history, resolver: resolver, unit: unit,
+                            running: activeSession?.routineName,
+                            goToRunning: { if let s = activeSession { resume(s) } },
                             start: { exercises, name in startPlannedSession(exercises, name: name) },
                             saveAsRoutine: { exercises, name in
                                 plannerPrefill = PlannerRoutinePrefill(name: name, exercises: exercises)
@@ -322,6 +328,7 @@ struct WorkoutHomeView: View {
         // presents. Minimizing drops `playing`, which releases the hold and lets the phone lock.
         .onChange(of: playing?.id, initial: true) { _, id in
             app.screenAwake.set("workoutPlayer", reason: .workout, active: id != nil)
+            router.workoutPlayerOpen = id != nil   // prompt 265: the Live Activity's tap stays on an open player
         }
         // The module-level Video Studio (#74): presented from the dashboard's "Open in Studio"
         // rows / a History row's swipe shortcut, on this stable host (the session detail keeps
@@ -343,9 +350,23 @@ struct WorkoutHomeView: View {
             }
             Button("Cancel", role: .cancel) { startConflict = nil }
         }
+        // F7 (prompt 264): a Kilter board session owns the heart-rate source; the gym start was refused.
+        .alert(boardRefusal?.title ?? "", isPresented: Binding(get: { boardRefusal != nil },
+                                                               set: { if !$0 { boardRefusal = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(boardRefusal?.message ?? "")
+        }
         .task {
             seedStarters()
             consumePendingResume()
+        }
+        // The same one-shot when this view is ALREADY the Gym Tracker (prompt 265, F15): the shell's `open(module:)`
+        // then sets an equal path, nothing is rebuilt and `.task` never runs again, so the Live Activity's tap did
+        // nothing (seen on a phone). One tick later, so the tab switch settles before the player presents.
+        .onChange(of: router.pendingWorkoutResume) { _, pending in
+            guard pending else { return }
+            Task { @MainActor in consumePendingResume() }
         }
         // Consume the one-shot routine-import intent (E6, the `pendingKilterClimb` pattern): `initial: true`
         // covers cold start (the intent was set before this view existed), the change closure the warm case
@@ -358,14 +379,28 @@ struct WorkoutHomeView: View {
             importingRoutine = pending
         }
         // Scheduled-routine reminder → Start now (prompt 136). Through the normal start path, so a
-        // workout already in progress still gets the resume / replace choice.
+        // workout already in progress still gets the resume / replace choice. A routine that's gone or has no
+        // exercises says so and lands on the workout home (prompt 265, F13) instead of doing nothing.
         .onChange(of: router.pendingRoutineStart, initial: true) { _, id in
             guard let id else { return }
             router.pendingRoutineStart = nil
-            section = .routines
-            if let routine = routines.first(where: { $0.id == id }), !routine.exercises.isEmpty {
-                startWorkout(from: routine)
+            let routine = routines.first(where: { $0.id == id })
+            switch ReminderStart.outcome(routine: routine.map { ($0.name, $0.exercises.count) }) {
+            case .start:
+                section = .routines
+                if let routine { startWorkout(from: routine) }
+            case .notice(let notice):
+                section = .dashboard
+                routineStartNotice = notice
             }
+        }
+        .alert(routineStartNotice?.title ?? "",
+               isPresented: Binding(get: { routineStartNotice != nil },
+                                    set: { if !$0 { routineStartNotice = nil } })) {
+            Button("OK", role: .cancel) { routineStartNotice = nil }
+                .accessibilityIdentifier("workout.routineStartNotice.ok")
+        } message: {
+            Text(routineStartNotice?.message ?? "")
         }
         // "Log it now" from an Activity page (prompt 184): add to the running session, or start a Quick Session
         // with it — the same paths Quick Start / resume use (live metrics, Live Activity, the player).
@@ -407,12 +442,25 @@ struct WorkoutHomeView: View {
         Task { @MainActor in if let s = activeSession { resume(s) } else { startFreeform() } }
     }
 
-    /// Finish the running workout as the player's Finish would — an empty one is discarded, like the player does.
+    /// Finish the running workout from Shortcuts / Siri / `snappet://finish` (prompt 263):
+    /// - a racket recording, drill or game screen is open ⇒ finish nothing: the screen stays (its recording keeps going)
+    ///   and says to stop it there first (F4; finishing would tear it down without ending the recording);
+    /// - nothing worth keeping ⇒ discarded, like the player's Finish;
+    /// - otherwise saved, even with no completed set (F2: an intent can't ask, so it never deletes work).
     private func consumeFinishSession() {
         guard router.pendingFinishSession else { return }
         router.pendingFinishSession = false
         guard let s = activeSession else { return }
-        Task { @MainActor in finishWorkout(s, saved: s.completedSetCount > 0) }
+        Task { @MainActor in
+            if RacketLiveCovers.shared.refuseFinishIfOpen() {
+                if playing == nil { resume(s) }
+                return
+            }
+            let sid = s.id
+            let decision = LiveFinish.decide(exercises: s.exercises, completedSets: s.completedSetCount,
+                                             mediaCount: sessionMedia.filter { $0.sessionID == sid }.count)
+            finishWorkout(s, saved: LiveFinish.intentSaves(decision))
+        }
     }
 
     /// "Log it now" (prompt 184): add the entity to the running session and resume, or start a Quick Session with it.
@@ -422,6 +470,7 @@ struct WorkoutHomeView: View {
             try? context.save()
             resume(active)
         } else {
+            if refuseIfBoardLive() { return }
             let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [entity])
             context.insert(session)
             try? context.save()
@@ -606,6 +655,7 @@ struct WorkoutHomeView: View {
             else { startConflict = routine }
             return
         }
+        if refuseIfBoardLive() { return }
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
@@ -631,6 +681,7 @@ struct WorkoutHomeView: View {
 
     private func startFreeform() {
         if let active = activeSession { resume(active); return }
+        if refuseIfBoardLive() { return }
         let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])
         context.insert(session)
         try? context.save()
@@ -644,9 +695,11 @@ struct WorkoutHomeView: View {
     /// Start a session from the smart planner's draft (workout-redesign E7). The plan is a `[RoutineExercise]`;
     /// we seed a freeform (routineless) session from it via the same `RoutineSessionBuilder` the guided player
     /// uses, so the planned exercises arrive as proper session entities and the user grows/edits them in the
-    /// freeform logbook. If a workout is already active, resume it instead of stacking a second one.
+    /// freeform logbook. A workout already active never gets here silently: the planner asks first (prompt 265, F12:
+    /// Go to running workout / Cancel, the plan stays); this guard only backs that up and never drops the running one.
     private func startPlannedSession(_ exercises: [RoutineExercise], name: String) {
         if let active = activeSession { resume(active); return }
+        if refuseIfBoardLive() { return }
         let sessionExercises = exercises.map { RoutineSessionBuilder.sessionExercise(from: $0, defaultUnit: unit) }
         let session = WorkoutSession(routineID: nil, routineName: name, exercises: sessionExercises)
         context.insert(session)
@@ -659,6 +712,8 @@ struct WorkoutHomeView: View {
     }
 
     private func replaceActiveAndStart(with routine: Routine) {
+        // Refused before anything is discarded: the current workout stays as it is.
+        if refuseIfBoardLive() { return }
         // Stop the watch session for the workout being discarded *before* starting the
         // new one — otherwise the watch's `!isRunning` guard drops the new start and it
         // keeps recording the old activity (and HR rebases onto the wrong session).
@@ -669,6 +724,18 @@ struct WorkoutHomeView: View {
         try? context.save()
         startLiveMetrics(for: session, routine: routine)
         playing = session
+    }
+
+    /// F7 (prompt 264): a NEW gym session can't start while a Kilter board session is live. It would take the shared
+    /// heart-rate source over (clear its buffer, re-base it on the gym start), and ending the board session later
+    /// would flush the gym's samples into it and stop the Watch under the gym. Refuse with a plain message; the board
+    /// session is not touched. Resuming a gym session that already exists is not a start and is never refused.
+    private func refuseIfBoardLive() -> Bool {
+        guard let refusal = GymStartGate.refusal(boardSessionLive: app.kilterSessions.isLive(in: context)) else {
+            return false
+        }
+        boardRefusal = refusal
+        return true
     }
 
     /// Resume an already-active session (dashboard banner / "Resume current workout" /

@@ -12,7 +12,7 @@ final class DanceOtherTests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func openFreeformPlayer() {

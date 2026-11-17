@@ -382,12 +382,19 @@ struct RacketRecordingCover: View {
     private var title: String { ex.isRacketMatch ? ex.racketMatchTitle : (ex.displayName ?? "Drill") }
 
     var body: some View {
-        if let session, let m = machine, m.phase == .ended(.splitPrompt) {
-            // TtSplitPrompt → Review → Assign → Done (prompt 246), in place of step 1's "Recording saved" placeholder.
-            RacketVideosCover(session: session, start: .splitPrompt(ex.id), onClose: onClose)
-        } else {
-            recordingBody
+        // One container for the cover's whole life (recording and its split prompt), so the open-cover registry
+        // (prompt 263) sees one appear and one disappear.
+        ZStack {
+            if let session, let m = machine, m.phase == .ended(.splitPrompt) {
+                // TtSplitPrompt → Review → Assign → Done (prompt 246), in place of step 1's "Recording saved" placeholder.
+                RacketVideosCover(session: session, start: .splitPrompt(ex.id), onClose: onClose)
+            } else {
+                recordingBody
+            }
         }
+        .racketFinishRefusal(exerciseID: ex.id)
+        .onAppear { RacketLiveCovers.shared.opened(ex.id, .recording) }
+        .onDisappear { RacketLiveCovers.shared.closed(ex.id) }
     }
 
     private var recordingBody: some View {

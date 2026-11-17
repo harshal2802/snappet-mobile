@@ -40,6 +40,10 @@ Prompt 259 adds no field: `RacketRecordingLog.quarterTurns` (prompt 257) is rela
 from now, so it is cleared when derived videos (saved turned) replace the originals.
 Prompt 260 adds no field and no raw value: editing a match rewrites existing indexes (`baseSetIndex`, a part's
 `setIndex`, a `game` mark's `index`, `SessionMedia.assignedSetIndex`) and part kinds among the existing ones.
+Prompt 263 adds no field and no raw value: the live history drawer's racket delete rewrites the same indexes (and a
+drill's block / rest mark `index`); crash recovery closes `RacketRecordingLog.runs[].endSec`, open range marks'
+`endSec` and, for a record-everything log, `endedAt`. A record-everything drill may continue its log (more runs, parts
+and marks on the same `startedAt`).
 
 ## When the schema changes
 

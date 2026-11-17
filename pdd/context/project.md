@@ -111,7 +111,8 @@ receipts** (scan with the camera or paste receipt text → per-item assignment w
 tax/discount + per-person split; iOS Vision / Android ML Kit OCR; mirrored on both platforms); **Budget**
 edit transactions + month switcher + 6-month trends. Prompts in `pdd/prompts/features/12–17`. Tests:
 each app has a `SnappetUITests/<App>UITests.swift` driving its flow; UI tests use a `-uiTestFreshStore`
-launch arg (isolated in-memory store) for determinism. **Verified on the iPhone 17 Pro sim: all 10 UI
+launch arg (isolated in-memory store) for determinism, and since prompt 266 launch through `launchOnTestStore()`, which
+confirms the store's invisible `uiTest.freshStore` marker before the first tap. **Verified on the iPhone 17 Pro sim: all 10 UI
 tests green** (6 apps + `SuiteSmokeTests` + `WorkoutWalkthroughTests`) and `HighlightEngine` 18/18.
 Remaining: data-dependent on-device runs (Workout needs Apple Watch workouts/Photos); the Budget
 month-switcher's forward chevron is verified in-app but its synthetic XCUITest tap is flaky (harness
@@ -802,6 +803,39 @@ game marks, photos / clips); Cancel changes nothing. The stop-sheet game now tak
 splitting matches is not built (one recording per match). Pure: `RacketMatchEditor.swift` (`RacketMatchEditorTests`,
 3000 random sequences); views `RacketMatchEditViews.swift`; UI `RacketEditMatchUITests`. **Device-pending:** the user's
 real match on the phone.
+
+✅ **Racket screens on any finished session; removing the last exercise (2026-11-16, prompt 262).** iOS. A session with
+a match or drill shows the racket card (Your videos, Edit match, Keep rallies only…, game heart rate) on its detail and
+on the Finish summary whatever discipline dominates — after that discipline's own cards, never twice (was: only when
+racket was dominant, so a match plus two lifts could not reach its videos or editor). Removing a finished session's
+only exercise asks "Delete this session?" (Delete session / Cancel) and deletes through `SessionCascade`, leaving the
+detail; photos and videos stay in Photos. Pure: `RacketRecapReach`, `SessionSetEditing.isLastExercise`
+(`RacketRecapReachTests`); UI `RacketMixedSessionUITests` (seed `-uiTestRacketMixedSession strength|timed`).
+🟡 **The live session never loses work silently (2026-11-16, prompt 263).** iOS. From the workout state-machine review:
+Remove match / drill / exercise / climb in the live player asks (a recorded one says its split, rallies and tags go and
+the video stays in Photos); Finish with no completed set but a recording, photos / videos or logged sets asks Save
+session / Discard / Cancel instead of deleting, and the Finish intent / `snappet://finish` link saves it; that link
+while a racket recording, drill or game screen is open finishes nothing and the screen says why; the history drawer's
+delete on a racket game goes through Edit match's logic (a game with video can't be swiped away, with the reason), and
+drills keep their block marks right; one recording per entry ("Record everything" off with its reason once something
+was recorded; a record-everything drill continues its log); a recording left open by an app kill is closed at its last
+saved part. Pure: `LiveSessionSafety.swift` (`LiveSessionSafetyTests`); `RacketLiveCovers.swift`; UI
+`LiveSessionSafetyUITests`. **Device-pending:** the crash recovery and the finish link with real Photos parts.
+🟡 **Heart-rate source ownership (2026-11-16, prompt 264).** iOS + watchOS. From the workout state-machine review: End
+on the Watch now reaches the phone (new wire kind `ended`); the phone session keeps running, drops the frozen bpm and the
+player says "Watch ended" (Keep going, then a small chip). A gym session can't start while a Kilter board session is live
+("A board session is running"; the board session is untouched). The heart-rate source picker is locked while any session
+is live, with the reason. Pure: `HeartRateOwnership.swift` (`HeartRateOwnershipTests`); UI `HeartRateOwnershipUITests`
+(seed `-uiTestWatchEnded`). **Device-pending:** End on a real Watch reaching a real phone.
+🟡 **Five broken links and stale states in the workout tracker (2026-11-16, prompt 265).** iOS + watchOS + widget.
+From the workout state-machine review: a racket face left on the Watch by a phone app kill goes away (the phone clears
+it at launch and when a session ends, answers a tap for a match it no longer shows, and the Watch leaves on its own 15 s
+after an unanswered tap); deleting a session stops its rally scans without writing to it; Start on a planned session
+while a workout runs asks (Go to running workout / Cancel) and keeps the plan; a reminder's Start now for a deleted or
+empty routine says so and lands on the dashboard; tapping the workout Live Activity opens the running workout's player
+(never over an open player or racket recording screen). Pure: `WorkoutBrokenLinks.swift`,
+`Shared/RacketWatchFreshness.swift` (`WorkoutBrokenLinksTests`); UI `WorkoutBrokenLinksUITests`. **Device-pending:** the
+Watch behaviour and a real Live Activity tap.
 
 ## License
 

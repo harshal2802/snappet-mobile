@@ -11,7 +11,7 @@ import XCTest
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += arguments
-        app.launch()
+        app.launchOnTestStore()
         return app
     }
 

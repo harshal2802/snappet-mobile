@@ -12,7 +12,7 @@ import XCTest
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

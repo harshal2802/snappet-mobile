@@ -75,6 +75,12 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
   dependency that breaks that.
 - Services + UI need a device/simulator to *run*; a clean type-check is necessary but **not**
   sufficient — never report a device-only feature as "verified" from a type-check alone.
+- **UI tests launch with `app.launchOnTestStore()`, never `app.launch()`** (`SnappetUITests/TestStoreGuard.swift`,
+  prompt 266). It waits for the app's invisible `uiTest.freshStore` marker before the first tap (always on a real
+  device; on the simulator when the launch arguments ask for the test store) and terminates the app and fails if it is
+  missing. A new test-store argument goes in `UITestStore.freshStoreArguments` (`Snappet/Core/UITestStore.swift`) AND
+  the mirrored list in `TestStoreGuard`. Tests that open links with `XCUIDevice.shared.system.open` call
+  `try TestStoreGuard.skipLinkTestsOnDevice()` first: link tests are simulator-only.
 
 ## Experiments (spikes)
 

@@ -14,7 +14,7 @@ final class WorkoutWalkthroughTests: XCTestCase {
         // leftover active session (which would trigger the start-conflict dialog instead of
         // the player). Matches every other SnappetUITests target.
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

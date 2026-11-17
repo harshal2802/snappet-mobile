@@ -17,7 +17,7 @@ final class RacketSplitTimeoutUITests: XCTestCase {
 
     private func launch(_ extra: [String] = []) {
         app.launchArguments += extra
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

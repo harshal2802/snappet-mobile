@@ -36,7 +36,7 @@ final class HouseholdE2ETests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         open(app)
         app.buttons["household.empty.starter"].tap()
         XCTAssertTrue(app.buttons["household.check.Dishes"].waitForExistence(timeout: 4))
@@ -77,7 +77,7 @@ final class HouseholdE2ETests: XCTestCase {
         let link = try XCTUnwrap(waitForFile("link.txt", timeout: 120), "the inviter's link")
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         open(app)   // creates this phone's (solo) household
         app.open(try XCTUnwrap(URL(string: link)))
 

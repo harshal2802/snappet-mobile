@@ -11,7 +11,7 @@ final class SessionInsightsUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

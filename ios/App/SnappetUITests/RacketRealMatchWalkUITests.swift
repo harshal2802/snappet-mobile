@@ -10,7 +10,7 @@ final class RacketRealMatchWalkUITests: XCTestCase {
         continueAfterFailure = true
         try XCTSkipUnless(ProcessInfo.processInfo.environment["RACKET_REAL_WALK"] == "1", "real-data walk is opt-in")
         app = XCUIApplication()
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

@@ -14,7 +14,7 @@ final class RacketMatchUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera", "-uiTestWatchReady"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func shot(_ name: String) {

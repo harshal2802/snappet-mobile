@@ -17,7 +17,7 @@ final class KilterWalkthroughTests: XCTestCase {
         // The app ships no catalog (issue #42) — install the synthetic fixture so the walkthrough has
         // climbs to render, standing in for a user import.
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
 
         // App Library → Kilter Board card.
         app.tabBars.buttons["Apps"].tap()

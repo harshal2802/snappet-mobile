@@ -13,6 +13,8 @@ enum AppActionRouter {
         var startPomodoro: Bool = false
         /// Set `SuiteRouter.pendingJournalCompose` before opening (compose a new entry).
         var journalCompose: JournalComposeRequest? = nil
+        /// Set `SuiteRouter.pendingWorkoutResume` before opening (the running workout's player, prompt 265).
+        var resumeWorkout: Bool = false
     }
 
     static func route(for action: PendingAppAction) -> Route {
@@ -25,6 +27,8 @@ enum AppActionRouter {
             return Route(moduleID: "journal", journalCompose: JournalComposeRequest(text: text))
         case .startRoutine, .startQuickSession, .finishSession:
             return Route(moduleID: "workout-log")   // WorkoutTrackerModule.id (#74); the shell sets the one-shot (199)
+        case .openWorkout:
+            return Route(moduleID: "workout-log", resumeWorkout: true)
         case .openLink:
             return Route(moduleID: nil)
         }

@@ -6,12 +6,13 @@ import XCTest
 @MainActor final class WorkoutLinkUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        // `system.open` reaches whatever Snappet is installed — never the user's phone (prompt 266).
+        try TestStoreGuard.skipLinkTestsOnDevice()
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

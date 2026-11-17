@@ -14,7 +14,7 @@ final class RecapClipExportUITests: XCTestCase {
         // `"feed"` starts on the Recap tab; the literal seed arg matches `RecapClipSeed.argument`
         // (UITests can't see app types). The seed implies a fresh in-memory store.
         app.launchArguments += ["feed", "-uiTestSeedRecapClip"]
-        app.launch()
+        app.launchOnTestStore()
 
         // Recap tab.
         let recap = app.tabBars.buttons["Recap"]
@@ -91,7 +91,7 @@ final class RecapClipExportUITests: XCTestCase {
     func testCaptureClipViewerOverlay() {
         let app = XCUIApplication()
         app.launchArguments += ["feed", "-uiTestSeedRecapClip"]
-        app.launch()
+        app.launchOnTestStore()
 
         let recap = app.tabBars.buttons["Recap"]
         XCTAssertTrue(recap.waitForExistence(timeout: 15), "Recap tab")

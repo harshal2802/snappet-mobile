@@ -10,7 +10,7 @@ final class KilterBoardPhotoUITests: XCTestCase {
     func testAddAPhotoOfYourBoardThenSeeItOnAClimb() {
         let app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog", "-uiTestBoardPhotoSample"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         let card = app.buttons["moduleCard.kilter"]
         var tries = 0

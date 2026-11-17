@@ -9,7 +9,7 @@ final class FeedViewUITests: XCTestCase {
     func testRecapTabRendersFeedAndLensBar() {
         let app = XCUIApplication()
         app.launchArguments += ["feed", "-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
 
         // `--start-tab feed` selects the middle tab; confirm it exists and is the Recap tab.
         let recap = app.tabBars.buttons["Recap"]
