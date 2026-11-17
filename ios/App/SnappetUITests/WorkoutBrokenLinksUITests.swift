@@ -62,7 +62,7 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
 
     func testAPlannedStartWhileAWorkoutRunsAsksAndKeepsThePlan() {
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openGymTracker()
         startAndMinimize()
 
@@ -104,7 +104,7 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
 
     func testAReminderStartForADeletedRoutineSaysSoAndLandsOnTheWorkoutHome() {
         app.launchArguments += ["-uiTestFreshStore", "-uiTestReminderStart", "missing"]
-        app.launch()
+        app.launchOnTestStore()
         let alert = app.alerts["Routine not found"]
         XCTAssertTrue(alert.waitForExistence(timeout: 12), "the reminder's Start now says why nothing started")
         XCTAssertTrue(text(containing: "This routine no longer exists. It may have been deleted, so there’s nothing to start.").exists)
@@ -117,7 +117,7 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
 
     func testAReminderStartForAnEmptyRoutineSaysSo() {
         app.launchArguments += ["-uiTestFreshStore", "-uiTestReminderStart", "empty"]
-        app.launch()
+        app.launchOnTestStore()
         let alert = app.alerts["Nothing to start"]
         XCTAssertTrue(alert.waitForExistence(timeout: 12))
         XCTAssertTrue(text(containing: "“Leg day” has no exercises yet. Add some in Routines, then start it.").exists)
@@ -130,9 +130,10 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
     // MARK: F15
 
     /// `XCUIDevice.shared.system.open` delivers the link to the RUNNING app, as a Live Activity tap does.
-    func testTheLiveActivityLinkOpensTheRunningWorkoutFromElsewhere() {
+    func testTheLiveActivityLinkOpensTheRunningWorkoutFromElsewhere() throws {
+        try TestStoreGuard.skipLinkTestsOnDevice()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openGymTracker()
         startAndMinimize()
         app.tabBars.buttons["Home"].tap()
@@ -150,10 +151,11 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
         XCTAssertTrue(minimize.exists, "still on the player")
     }
 
-    func testTheLiveActivityLinkNeverTearsDownAnOpenRecording() {
+    func testTheLiveActivityLinkNeverTearsDownAnOpenRecording() throws {
+        try TestStoreGuard.skipLinkTestsOnDevice()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
         openGymTracker()
         app.buttons["workout.quickStart"].tap()
         tapWhenHittable(app.buttons["freeform.cardRacket"])

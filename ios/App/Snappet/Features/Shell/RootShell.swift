@@ -199,6 +199,8 @@ struct RootShell: View {
     /// routine that no longer exists / one with no exercises, as a tapped notification action would.
     private func uiTestReminderStart() {
         let args = CommandLine.arguments
+        // Only ever on the in-memory test store (prompt 266): it inserts a routine.
+        guard UITestStore.isFreshStore(args) else { return }
         guard let i = args.firstIndex(of: "-uiTestReminderStart"), i + 1 < args.count else { return }
         var id = UUID()
         if args[i + 1] == "empty" {
