@@ -361,6 +361,13 @@ struct WorkoutHomeView: View {
             seedStarters()
             consumePendingResume()
         }
+        // The same one-shot when this view is ALREADY the Gym Tracker (prompt 265, F15): the shell's `open(module:)`
+        // then sets an equal path, nothing is rebuilt and `.task` never runs again, so the Live Activity's tap did
+        // nothing (seen on a phone). One tick later, so the tab switch settles before the player presents.
+        .onChange(of: router.pendingWorkoutResume) { _, pending in
+            guard pending else { return }
+            Task { @MainActor in consumePendingResume() }
+        }
         // Consume the one-shot routine-import intent (E6, the `pendingKilterClimb` pattern): `initial: true`
         // covers cold start (the intent was set before this view existed), the change closure the warm case
         // (the shell replaced the path with this root, then set a new intent). Clearing the router flag
