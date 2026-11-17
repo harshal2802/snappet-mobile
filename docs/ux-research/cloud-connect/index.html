@@ -1,0 +1,487 @@
+<title>Snappet Cloud Connect</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one reading column (max 980px); diagrams and tables scroll inside their own box.
+   Tokens are Snappet Pulse (SnappetColor.swift): paper / surface / hairline / ink + coral brand. */
+:root{
+  --paper:#F6F7F9; --surface:#FFFFFF; --muted:#EEF0F3; --hairline:#E3E6EB;
+  --ink:#15171B; --ink2:#5F646E; --ink3:#8A8F99;
+  --brand:#D13F33; --brand-tint:#FBE9E7;
+  --ok:#2F8747; --busy:#2A7DE1; --warn:#B45309; --bad:#D13F33;
+  --ok-t:#E6F3E9; --busy-t:#E5EFFC; --warn-t:#FBEEDD; --bad-t:#FBE9E7;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#0A0B0D; --surface:#14161A; --muted:#1C1F24; --hairline:#2A2E35;
+  --ink:#F2F3F5; --ink2:#9BA0AA; --ink3:#6B707A;
+  --brand:#FF6A5C; --brand-tint:#3A1B18;
+  --ok:#5BC074; --busy:#589BF2; --warn:#F59E0B; --bad:#FF6A5C;
+  --ok-t:#16291C; --busy-t:#15233A; --warn-t:#33240A; --bad-t:#3A1B18; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --paper:#0A0B0D; --surface:#14161A; --muted:#1C1F24; --hairline:#2A2E35;
+  --ink:#F2F3F5; --ink2:#9BA0AA; --ink3:#6B707A;
+  --brand:#FF6A5C; --brand-tint:#3A1B18;
+  --ok:#5BC074; --busy:#589BF2; --warn:#F59E0B; --bad:#FF6A5C;
+  --ok-t:#16291C; --busy-t:#15233A; --warn-t:#33240A; --bad-t:#3A1B18; color-scheme:dark }
+
+body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:14px;min-width:0}
+h1{font-size:30px;font-weight:600;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h3{font-size:15px;font-weight:600;margin:0}
+p{margin:0;max-width:68ch}
+.lede{font-size:17px;color:var(--ink2)}
+.eyebrow{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand);font-weight:600}
+a{color:var(--brand)}
+code{font-family:var(--mono);font-size:.88em;background:var(--muted);padding:1px 5px;border-radius:5px}
+.note{color:var(--ink2);font-size:13px}
+
+.calls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
+.calls div{background:var(--surface);padding:16px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.calls b{font-size:15px}
+.calls span{color:var(--ink2);font-size:13.5px}
+
+.scroll{overflow-x:auto;border:1px solid var(--hairline);border-radius:14px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:680px;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:11px 14px;border-bottom:1px solid var(--hairline)}
+th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);font-weight:600;background:var(--muted)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.p-ok{background:var(--ok-t);color:var(--ok)} .p-warn{background:var(--warn-t);color:var(--warn)}
+.p-bad{background:var(--bad-t);color:var(--bad)} .p-busy{background:var(--busy-t);color:var(--busy)}
+
+/* architecture */
+.arch{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:720px){.arch{grid-template-columns:1fr}}
+.lane{background:var(--surface);border:1px solid var(--hairline);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.chain{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none;counter-reset:s}
+.chain li{counter-increment:s;display:grid;grid-template-columns:26px 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--hairline);font-size:13.5px}
+.chain li:first-child{border-top:0}
+.chain li::before{content:counter(s);width:22px;height:22px;border-radius:50%;background:var(--muted);color:var(--ink2);font-size:12px;font-weight:600;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.chain small{display:block;color:var(--ink2);font-size:12.5px}
+
+/* state machines */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{font:inherit;font-size:13.5px;font-weight:600;padding:7px 14px;border-radius:99px;border:1px solid var(--hairline);background:var(--surface);color:var(--ink2);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:focus-visible,.node:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.machine{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:860px){.machine{grid-template-columns:1fr}}
+.canvas{overflow-x:auto;background:var(--surface);border:1px solid var(--hairline);border-radius:14px}
+.canvas svg{display:block;min-width:760px;width:100%;height:auto}
+.node rect{fill:var(--surface);stroke:var(--hairline);stroke-width:1.5}
+.node{cursor:pointer}
+.node text{fill:var(--ink);font-size:12.5px;font-weight:600;font-family:var(--font)}
+.node.cur rect{stroke:var(--brand);stroke-width:2.5;fill:var(--brand-tint)}
+.dot-ok{fill:var(--ok)} .dot-busy{fill:var(--busy)} .dot-warn{fill:var(--warn)} .dot-bad{fill:var(--bad)} .dot-idle{fill:var(--ink3)}
+.edge path{fill:none;stroke:var(--ink3);stroke-width:1.4}
+.edge text{fill:var(--ink2);font-size:11px;font-family:var(--font);paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+.edge.live path{stroke:var(--brand);stroke-width:2}
+.edge.live text{fill:var(--brand);font-weight:600;cursor:pointer}
+#ah path{fill:var(--ink3)} #ahl path{fill:var(--brand)}
+.panel{background:var(--surface);border:1px solid var(--hairline);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.panel h3{font-size:17px}
+.panel dl{margin:0;display:flex;flex-direction:column;gap:10px}
+.panel dt{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);font-weight:600}
+.panel dd{margin:2px 0 0;font-size:13.5px}
+.moves{display:flex;flex-wrap:wrap;gap:6px}
+.moves button{font:inherit;font-size:13px;text-align:left;padding:8px 10px;border-radius:9px;border:1px solid var(--hairline);background:var(--paper);color:var(--ink);cursor:pointer}
+.moves button b{color:var(--brand)}
+.moves button:hover{border-color:var(--brand)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+
+/* wireframes */
+.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:26px 18px}
+figure{margin:0;display:flex;flex-direction:column;gap:10px;align-items:center}
+figcaption{font-size:13px;color:var(--ink2);max-width:236px;text-align:center}
+figcaption b{color:var(--ink);display:block}
+.phone{width:236px;max-width:100%;height:480px;border:2px solid var(--ink);border-radius:30px;background:var(--paper);padding:14px 12px;display:flex;flex-direction:column;gap:9px;font-size:11.5px;line-height:1.35;overflow:hidden;position:relative}
+.phone .nav{display:flex;justify-content:space-between;align-items:center;color:var(--ink2);font-size:11px}
+.phone .t{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.phone .sec{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);font-weight:600;margin-top:3px}
+.card{background:var(--surface);border:1px solid var(--hairline);border-radius:12px}
+.row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--hairline)}
+.row:first-child{border-top:0}
+.row .g{flex:1;min-width:0}
+.row small{display:block;color:var(--ink2);font-size:10px}
+.ic{width:22px;height:22px;border-radius:6px;background:var(--muted);flex:none;display:grid;place-items:center;font-size:10px;font-weight:700;color:var(--ink2)}
+.tg{width:26px;height:15px;border-radius:99px;background:var(--hairline);position:relative;flex:none}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--surface)}
+.tg.on{background:var(--ok)} .tg.on::after{left:13px}
+.btn{border-radius:10px;padding:9px;text-align:center;font-weight:600;background:var(--brand);color:var(--surface)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--hairline)}
+.btn.sm{padding:4px 9px;font-size:10px;border-radius:99px}
+.foot{font-size:10px;color:var(--ink2)}
+.sheet{margin-top:auto;background:var(--surface);border:1px solid var(--hairline);border-radius:18px 18px 0 0;margin-inline:-12px;margin-bottom:-14px;padding:14px 14px 18px;display:flex;flex-direction:column;gap:8px}
+.grab{width:30px;height:4px;border-radius:9px;background:var(--hairline);margin:0 auto 2px}
+.dim{opacity:.35}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tile{aspect-ratio:3/4;border-radius:10px;background:var(--muted);border:1px solid var(--hairline);position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:6px;font-size:9.5px;gap:3px}
+.tile .bd{position:absolute;top:5px;right:5px}
+.tile.miss{border-style:dashed;background:transparent;justify-content:center;align-items:center;text-align:center;color:var(--ink2)}
+.bar{height:3px;border-radius:9px;background:var(--hairline);overflow:hidden}
+.bar i{display:block;height:100%;width:62%;background:var(--busy)}
+.chk{display:flex;gap:6px;align-items:flex-start}
+.chk::before{content:"✓";color:var(--ok);font-weight:700}
+.chk.no::before{content:"✕";color:var(--ink3)}
+
+.phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.phase{background:var(--surface);border:1px solid var(--hairline);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.phase span{color:var(--ink2)}
+ul.plain{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px;max-width:72ch}
+</style>
+
+<div class="wrap">
+
+<section>
+  <div class="eyebrow">Design exploration · iOS lead</div>
+  <h1>Snappet Cloud Connect</h1>
+  <p class="lede">Two jobs hide inside this idea, and they need different machinery: keeping a clip playable when its file is no longer on the phone, and keeping Snappet's own records safe off the phone.</p>
+  <div class="calls">
+    <div><b>Split it into two features</b><span>A media resolver that finds missing clips, and a backup that copies Snappet data to one chosen cloud. They share a settings screen, nothing else.</span></div>
+    <div><b>iCloud Photos needs no "connect"</b><span>Snappet already reads the same library through PhotoKit. Missing originals are fetched by flipping one flag and storing a cross-device identifier.</span></div>
+    <div><b>Google Photos cannot be a silent fallback</b><span>Since March 2025 its API only returns items the app uploaded, or items the person hand-picks. Use Google Drive for automatic copies.</span></div>
+    <div><b>Back up by snapshot first</b><span>The suite backup file already exists and encodes to identical bytes for identical data. Upload that automatically before attempting live sync.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>What each service can actually do</h2>
+  <p>The matrix is asymmetric. Apple gives on-device apps the whole library; Google gives third-party apps almost none of it.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Service</th><th>Recover a missing clip</th><th>Hold Snappet data</th><th>How it works</th></tr></thead>
+    <tbody>
+      <tr><td>iCloud Photos</td><td><span class="pill p-ok">Automatic</span></td><td><span class="pill p-bad">No</span></td>
+        <td>Same library Snappet already reads. Allow network download when a clip is offloaded; save a <code>PHCloudIdentifier</code> beside each <code>localIdentifier</code> so references survive a new phone. No sign-in.</td></tr>
+      <tr><td>Google Photos</td><td><span class="pill p-warn">Only by hand</span></td><td><span class="pill p-warn">Own uploads only</span></td>
+        <td>The Picker API opens a Google-hosted picker; the person selects items and Snappet downloads them. Snappet cannot search or list the library by itself.</td></tr>
+      <tr><td>iCloud Drive / CloudKit</td><td><span class="pill p-busy">If Snappet stored a copy</span></td><td><span class="pill p-ok">Yes</span></td>
+        <td>App container in the person's iCloud. No sign-in screen. Apple's review rule 5.1.3 restricts health information in iCloud, so heart-rate samples need care.</td></tr>
+      <tr><td>Google Drive</td><td><span class="pill p-busy">If Snappet stored a copy</span></td><td><span class="pill p-ok">Yes</span></td>
+        <td>Google sign-in with the narrow <code>drive.appdata</code> (hidden app folder, for data) and <code>drive.file</code> (a visible Snappet folder, for media copies) scopes. Works for Android later too.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">A common trap on iPhone: the Google Photos app's "Free up space" deletes originals from the Apple library. Every <code>SessionMedia.localIdentifier</code> pointing at them goes dead, and Snappet cannot ask Google for them back unaided. That case is why the vault option below exists.</p>
+</section>
+
+<section>
+  <h2>Proposed shape</h2>
+  <div class="arch">
+    <div class="lane">
+      <h3>Media resolver</h3>
+      <p class="note">One service every surface calls instead of touching PhotoKit directly. It tries each source in order and stops at the first hit.</p>
+      <ol class="chain">
+        <li><div>Local library<small>The asset is on the phone. Today's path.</small></div></li>
+        <li><div>iCloud original<small>Asset exists, file is offloaded. Download with progress. Free, no account work.</small></div></li>
+        <li><div>Re-match<small>Identifier is dead. Try the saved cloud identifier, then capture time + duration + dimensions.</small></div></li>
+        <li><div>Snappet vault copy<small>Optional. A copy Snappet uploaded to iCloud Drive or Google Drive when the clip was tagged.</small></div></li>
+        <li><div>Ask the person<small>Google Photos picker or the system photo picker. Snappet verifies the pick against the saved fingerprint.</small></div></li>
+        <li><div>Unavailable<small>Keep the record, HR and stats. Reels skip the clip. Never crash, never silently drop.</small></div></li>
+      </ol>
+    </div>
+    <div class="lane">
+      <h3>Data backup</h3>
+      <p class="note">One protocol, two destinations. The person picks one; both hold the same encrypted file.</p>
+      <ol class="chain">
+        <li><div>Watch for saves<small>Any SwiftData save marks the store dirty. Wait for a quiet moment or app background.</small></div></li>
+        <li><div>Encode with <code>SnappetBackup</code><small>The existing versioned Rows file. Same data gives the same bytes, so a hash tells us if anything changed.</small></div></li>
+        <li><div>Encrypt on the phone<small>Key lives in the keychain (iCloud Keychain carries it to a new iPhone). The cloud never sees plain records.</small></div></li>
+        <li><div>Upload through <code>CloudVault</code><small><code>ICloudVault</code> or <code>GoogleDriveVault</code>. Keep the last few generations plus a small manifest: device, time, hash, format version.</small></div></li>
+        <li><div>Restore deliberately<small>On a fresh install or when another device wrote a newer file, offer it. Replace-everything, as the manual restore does now.</small></div></li>
+      </ol>
+    </div>
+  </div>
+  <p>Pure parts stay device-free and testable in <code>SnappetTests</code>: the resolver's source-ordering decision, the fingerprint matcher, the backup scheduler's state machine, and the manifest comparison. PhotoKit, Google sign-in and file transfer sit behind thin protocols in <code>Services/</code>.</p>
+</section>
+
+<section>
+  <h2>State machines</h2>
+  <p>Three small machines instead of one large one. Select a state to read what the person sees and what Snappet does, then follow a transition to walk a scenario.</p>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="machine">
+    <div class="canvas" id="canvas"></div>
+    <div class="panel" id="panel"></div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--ok)"></i>Healthy</span>
+    <span><i style="background:var(--busy)"></i>Working</span>
+    <span><i style="background:var(--warn)"></i>Needs attention</span>
+    <span><i style="background:var(--bad)"></i>Degraded</span>
+    <span><i style="background:var(--ink3)"></i>Inactive</span>
+  </div>
+</section>
+
+<section>
+  <h2>Wireframes</h2>
+  <p>Low-fidelity, in Pulse proportions. The entry point is the existing backup sheet on the App Library, renamed "Cloud &amp; Backup".</p>
+  <div class="frames">
+
+    <figure><div class="phone">
+      <div class="nav"><span>‹ Apps</span><span>Done</span></div>
+      <div class="t">Cloud &amp; Backup</div>
+      <div class="sec">Your photos and videos</div>
+      <div class="card">
+        <div class="row"><div class="ic">iC</div><div class="g">iCloud Photos<small>On · originals download when needed</small></div><span class="pill p-ok">Ready</span></div>
+        <div class="row"><div class="ic">G</div><div class="g">Google Photos<small>Find clips removed from this phone</small></div><div class="btn sm">Connect</div></div>
+      </div>
+      <div class="sec">Snappet data</div>
+      <div class="card">
+        <div class="row"><div class="g">Automatic backup<small>iCloud · 2 min ago · 3.1 MB</small></div><div class="tg on"></div></div>
+        <div class="row"><div class="g">Back up to</div><span style="color:var(--ink2)">iCloud ›</span></div>
+        <div class="row"><div class="g">Keep copies of session clips<small>Off · uses cloud storage</small></div><div class="tg"></div></div>
+      </div>
+      <div class="card"><div class="row"><div class="g">Export a backup file</div><span style="color:var(--ink2)">›</span></div><div class="row"><div class="g">Restore…</div><span style="color:var(--ink2)">›</span></div></div>
+      <div class="foot">Backups are encrypted on this iPhone before they leave it.</div>
+    </div><figcaption><b>1 · Hub</b>Media sources and data backup are separate sections with their own status.</figcaption></figure>
+
+    <figure><div class="phone">
+      <div class="nav dim"><span>‹ Apps</span><span>Done</span></div>
+      <div class="t dim">Cloud &amp; Backup</div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div style="font-size:15px;font-weight:600">Connect Google</div>
+        <div class="chk">Back up Snappet data to a private folder in your Drive</div>
+        <div class="chk">Store copies of session clips in a "Snappet" folder, if you turn that on</div>
+        <div class="chk">Let you pick clips from Google Photos when one is missing</div>
+        <div class="chk no">Snappet cannot browse your Google Photos or your other Drive files</div>
+        <div class="btn">Continue with Google</div>
+        <div class="btn ghost">Not now</div>
+        <div class="foot">You can disconnect at any time and choose to keep or delete the cloud copy.</div>
+      </div>
+    </div><figcaption><b>2 · Connect Google</b>Plain-language scope list before the Google consent screen, including what stays off limits.</figcaption></figure>
+
+    <figure><div class="phone">
+      <div class="nav"><span>‹ Cloud &amp; Backup</span><span></span></div>
+      <div class="t">Backup</div>
+      <div class="sec">Destination</div>
+      <div class="card">
+        <div class="row"><div class="g">iCloud<small>Signed in · 41 GB free</small></div><span style="color:var(--brand);font-weight:700">✓</span></div>
+        <div class="row"><div class="g">Google Drive<small>Not connected</small></div></div>
+        <div class="row"><div class="g">Off<small>Keep everything on this iPhone</small></div></div>
+      </div>
+      <div class="sec">Included</div>
+      <div class="card">
+        <div class="row"><div class="g">Records from every app<small>Sessions, habits, journal, budgets…</small></div><div class="tg on"></div></div>
+        <div class="row"><div class="g">Heart-rate samples<small>Off: re-read from Apple Health on restore</small></div><div class="tg"></div></div>
+        <div class="row"><div class="g">Wi-Fi only</div><div class="tg on"></div></div>
+      </div>
+      <div class="foot">Settings such as your HR profile and band pairing are not part of the backup yet.</div>
+    </div><figcaption><b>3 · Destination and contents</b>One destination at a time. Health samples are a separate, default-off choice.</figcaption></figure>
+
+    <figure><div class="phone">
+      <div class="nav"><span>Clips</span><span>Filter</span></div>
+      <div class="t">This week</div>
+      <div class="tiles">
+        <div class="tile"><span class="pill p-ok bd">142 bpm</span>Bouldering · Tue</div>
+        <div class="tile"><span class="pill p-busy bd">iCloud</span>Downloading original<div class="bar"><i></i></div></div>
+        <div class="tile miss"><div><b style="color:var(--ink)">Not on this phone</b><br>Shot Tue 18:42 · 0:14</div><div class="btn sm" style="margin-top:6px">Find clip</div></div>
+        <div class="tile"><span class="pill p-ok bd">128 bpm</span>Dance · Mon</div>
+      </div>
+      <div class="card"><div class="row"><div class="g">3 clips aren't on this phone<small>Reels will skip them until found</small></div><div class="btn sm">Review</div></div></div>
+    </div><figcaption><b>4 · Clips feed states</b>Downloading and missing are visible tile states. A missing clip keeps its time, duration and HR.</figcaption></figure>
+
+    <figure><div class="phone">
+      <div class="nav dim"><span>Clips</span><span>Filter</span></div>
+      <div class="t dim">This week</div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div style="font-size:15px;font-weight:600">Find 3 missing clips</div>
+        <div class="foot">They were removed from this iPhone's library. Snappet will match what you pick by capture time and length.</div>
+        <div class="card">
+          <div class="row"><div class="ic">G</div><div class="g">Pick from Google Photos<small>Opens Google's picker</small></div>›</div>
+          <div class="row"><div class="ic">▣</div><div class="g">Pick from this iPhone<small>Photos, Files, AirDropped copies</small></div>›</div>
+        </div>
+        <div class="card"><div class="row"><div class="g">Tue 18:42 · 0:14<small>Bouldering</small></div><span class="pill p-warn">Missing</span></div><div class="row"><div class="g">Tue 18:51 · 0:09</div><span class="pill p-warn">Missing</span></div></div>
+        <div class="btn ghost">Skip, keep the records</div>
+      </div>
+    </div><figcaption><b>5 · Relink sheet</b>Batch relink. Picks that don't match the fingerprint are flagged, not silently attached.</figcaption></figure>
+
+    <figure><div class="phone">
+      <div style="margin-top:34px;font-size:21px;font-weight:600;letter-spacing:-.01em">Welcome back</div>
+      <div class="foot" style="font-size:11.5px">Snappet found a backup in your iCloud.</div>
+      <div class="card">
+        <div class="row"><div class="g">From<small>iPhone 15 Pro</small></div></div>
+        <div class="row"><div class="g">Last backed up<small>16 Nov 2026, 21:04</small></div></div>
+        <div class="row"><div class="g">Contains<small>212 sessions · 1,480 clips · 9 apps</small></div></div>
+      </div>
+      <div class="foot">Clips in your iCloud Photos reconnect automatically. Others can be found later.</div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+        <div class="btn">Restore this backup</div>
+        <div class="btn ghost">Start fresh</div>
+      </div>
+    </div><figcaption><b>6 · Restore on a new phone</b>Shown once on first launch when a manifest exists. Restore then re-matches media.</figcaption></figure>
+
+  </div>
+</section>
+
+<section>
+  <h2>Build order</h2>
+  <div class="phases">
+    <div class="phase"><b>1 · Resolver and iCloud originals</b><span>One <code>MediaResolver</code>, cloud identifiers on <code>SessionMedia</code>, downloading and missing tile states. Nothing leaves the phone, so the privacy promise is untouched.</span></div>
+    <div class="phase"><b>2 · Automatic iCloud backup</b><span>Scheduler, encryption, manifest, restore-on-install. No sign-in UI. First change to the on-device-only rule.</span></div>
+    <div class="phase"><b>3 · Google sign-in and Drive backup</b><span>Second <code>CloudVault</code>. Needs Google OAuth verification and the first third-party SDK or a hand-rolled OAuth flow.</span></div>
+    <div class="phase"><b>4 · Media vault and Google picker</b><span>Opt-in clip copies and the relink sheet. Largest storage and bandwidth cost, smallest audience.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Decisions to make before building</h2>
+  <ul class="plain">
+    <li><b>The on-device-only promise changes.</b> The README, privacy policy and <code>project.md</code> all say health and media never leave the device. Phases 2 to 4 need a named, opt-in exception recorded in <code>decisions.md</code>, plus updated privacy copy and App Store privacy labels.</li>
+    <li><b>Heart-rate samples in iCloud.</b> Guideline 5.1.3(ii) says apps may not store personal health information in iCloud, and Apple has not said publicly whether client-side encryption changes that. Recommended default: leave HealthKit-sourced samples out of the cloud file and re-read them from Apple Health on restore; confirm with App Review before including them.</li>
+    <li><b>Backup, not sync.</b> A snapshot gives one phone a safety net. Two devices editing at once would need CloudKit-backed SwiftData, which rejects the six <code>@Attribute(.unique)</code> fields in the schema and requires optional relationships. Worth doing only if multi-device use becomes a goal.</li>
+    <li><b>Whether the media vault is worth it.</b> For iCloud Photos users it duplicates what Apple already keeps. Its real audience is people who use Google Photos with "Free up space". It could wait until someone hits the relink sheet often.</li>
+    <li><b>Android parity.</b> The Android backup is a different file format (SQLite-level JSON), so a Drive backup made on one platform will not restore on the other without a shared format.</li>
+  </ul>
+  <p class="note">Sources checked 17 Nov 2026: <a href="https://developers.google.com/photos/support/updates">Google Photos API updates</a>, <a href="https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices">Apple: syncing SwiftData with CloudKit</a>, <a href="https://developer.apple.com/forums/thread/844159">Apple forum thread on 5.1.3(ii)</a>.</p>
+</section>
+
+</div>
+
+<script>
+const NW=132, NH=46, X=[24,274,524,774];
+const MACHINES=[
+{ id:'conn', name:'Connection', start:'off', h:380, note:'One instance per provider (iCloud, Google).',
+  nodes:[
+    {id:'off',x:X[0],y:170,label:'Not connected',tone:'idle',sees:'A Connect button in Cloud & Backup.',does:'Nothing. Snappet is fully local, exactly as it is today.'},
+    {id:'auth',x:X[1],y:170,label:'Authorizing',tone:'busy',sees:'The plain-language scope sheet, then Google\'s consent screen. For iCloud there is no screen; Snappet checks the signed-in account.',does:'Runs OAuth with PKCE (Google) or checks the ubiquity token (iCloud). Stores tokens in the keychain.'},
+    {id:'on',x:X[2],y:170,label:'Connected',tone:'ok',sees:'A green Ready pill with the account name and last activity.',does:'Backup scheduler and media vault may use this provider.'},
+    {id:'paused',x:X[2],y:40,label:'Paused',tone:'warn',sees:'"Waiting for Wi-Fi" or "Paused in Low Power Mode". No alert.',does:'Holds work in a queue. Resumes by itself when conditions clear.'},
+    {id:'reauth',x:X[3],y:170,label:'Needs sign-in',tone:'bad',sees:'An amber row: "Sign in again to keep backing up." One badge on the App Library toolbar.',does:'Stops uploads, keeps local data and the pending queue. Never deletes anything.'},
+    {id:'full',x:X[2],y:300,label:'Storage full',tone:'bad',sees:'"Your iCloud / Drive is full." Offers: manage storage, turn off clip copies, switch destination.',does:'Keeps the data backup going if it still fits; pauses clip copies first because they are the large part.'},
+    {id:'leaving',x:X[0],y:300,label:'Disconnecting',tone:'busy',sees:'A choice: keep the cloud copy or delete it.',does:'Revokes the token, clears the keychain entry, optionally deletes remote files.'},
+  ],
+  edges:[
+    {a:'off',b:'auth',label:'Connect',off:9},{a:'auth',b:'off',label:'Cancelled / denied',off:9},
+    {a:'auth',b:'on',label:'Access granted'},
+    {a:'on',b:'reauth',label:'Token revoked',off:9},{a:'reauth',b:'on',label:'Signed in again',off:9},
+    {a:'on',b:'paused',label:'Offline / Low Power',off:9},{a:'paused',b:'on',label:'Back online',off:9},
+    {a:'on',b:'full',label:'Quota exceeded',off:9},{a:'full',b:'on',label:'Space freed',off:9},
+    {a:'on',b:'leaving',label:'Disconnect'},
+    {a:'leaving',b:'off',label:'Finished',flip:true},
+  ]},
+{ id:'media', name:'Media clip', start:'local', h:410, note:'One instance per SessionMedia reference.',
+  nodes:[
+    {id:'local',x:X[0],y:70,label:'On this phone',tone:'ok',sees:'The clip plays instantly.',does:'Resolves localIdentifier through PhotoKit. Saves the cloud identifier and a fingerprint (time, duration, size) while it can.'},
+    {id:'cloud',x:X[1],y:70,label:'In iCloud only',tone:'idle',sees:'The poster with a small cloud badge.',does:'The asset exists but iOS offloaded the original. Posters stay local-only so the feed stays fast.'},
+    {id:'dl',x:X[2],y:70,label:'Downloading',tone:'busy',sees:'A progress bar on the tile; exports show "Fetching 2 clips".',does:'Requests the original with network access allowed, from iCloud Photos or from the Snappet vault copy.'},
+    {id:'unresolved',x:X[0],y:200,label:'Not found',tone:'warn',sees:'Nothing yet. This state lasts milliseconds.',does:'localIdentifier returned no asset. Caused by deletion, Google Photos "Free up space", or a restore onto a new phone.'},
+    {id:'remap',x:X[1],y:200,label:'Re-matching',tone:'busy',sees:'Nothing, or "Reconnecting clips…" after a restore.',does:'Maps the saved cloud identifier to a new local one. If that fails, searches the library for an asset with the same fingerprint.'},
+    {id:'vault',x:X[2],y:200,label:'Checking vault',tone:'busy',sees:'Nothing.',does:'If clip copies are on, looks for this clip in the Snappet folder (iCloud Drive or Google Drive). If they are off, falls straight through.'},
+    {id:'relink',x:X[3],y:200,label:'Needs your pick',tone:'warn',sees:'A dashed tile with "Find clip", and one summary row: "3 clips aren\'t on this phone".',does:'Waits. Opens the Google Photos picker or system picker on request and checks picks against the fingerprint.'},
+    {id:'gone',x:X[3],y:330,label:'Unavailable',tone:'bad',sees:'The record with time, duration and HR, marked unavailable. Reels and the weekly cut skip it.',does:'Keeps the row and every stat. Excluded from export plans so nothing fails mid-render.'},
+  ],
+  edges:[
+    {a:'local',b:'cloud',label:'iOS offloads original'},
+    {a:'cloud',b:'dl',label:'Needed to play',off:9},{a:'dl',b:'cloud',label:'Failed / offline',off:9},
+    {a:'dl',b:'local',label:'Saved on phone',bend:-116},
+    {a:'local',b:'unresolved',label:'Deleted · freed · new phone'},
+    {a:'unresolved',b:'remap',label:'Automatic'},
+    {a:'remap',b:'cloud',label:'Match found',flip:true},
+    {a:'remap',b:'vault',label:'No match'},
+    {a:'vault',b:'dl',label:'Copy found'},
+    {a:'vault',b:'relink',label:'No copy'},
+    {a:'relink',b:'dl',label:'Picked'},
+    {a:'relink',b:'gone',label:'Skipped',off:9},{a:'gone',b:'relink',label:'Try again',off:9},
+  ]},
+{ id:'backup', name:'Data backup', start:'idle', h:400, note:'One instance for the whole Snappet Core store.',
+  nodes:[
+    {id:'idle',x:X[0],y:130,label:'Up to date',tone:'ok',sees:'"Backed up 2 min ago".',does:'Listens for SwiftData saves and, on launch, compares the remote manifest with the last one it wrote.'},
+    {id:'dirty',x:X[1],y:130,label:'Changes pending',tone:'idle',sees:'No change. The timestamp simply ages.',does:'Debounces. Starts when the app has been quiet for 30 s or moves to the background. Never during a live workout.'},
+    {id:'encode',x:X[2],y:130,label:'Preparing',tone:'busy',sees:'Nothing.',does:'Encodes with SnappetBackup off the main actor, hashes the bytes, compares with the last uploaded hash, then encrypts.'},
+    {id:'up',x:X[3],y:130,label:'Uploading',tone:'busy',sees:'"Backing up…" in the hub only.',does:'Writes the file as a new generation, then the manifest last so a half upload is never mistaken for a good one.'},
+    {id:'wait',x:X[3],y:280,label:'Waiting to retry',tone:'warn',sees:'"Last backup failed. Trying again later." after the third miss; silent before that.',does:'Exponential backoff. Hands over to the Connection machine if the cause is sign-in or quota.'},
+    {id:'newer',x:X[0],y:280,label:'Newer backup',tone:'warn',sees:'Nothing yet.',does:'The manifest was written by another device, or by this one before a reinstall. Checks whether local data changed since the last sync.'},
+    {id:'ask',x:X[1],y:280,label:'Choose a version',tone:'warn',sees:'A sheet comparing the two: device, time, record counts. Two buttons.',does:'Blocks automatic uploads until answered. Does not merge; the backup is replace-everything.'},
+    {id:'restore',x:X[2],y:280,label:'Restoring',tone:'busy',sees:'A full-screen progress state. Navigation is blocked.',does:'Downloads, decrypts, validates the whole file, then replaces the store in one save. Rolls back on any error. Then re-matches media.'},
+  ],
+  edges:[
+    {a:'idle',b:'dirty',label:'Data saved'},
+    {a:'dirty',b:'encode',label:'Quiet for 30 s'},
+    {a:'encode',b:'up',label:'Hash changed'},
+    {a:'encode',b:'idle',label:'Nothing changed',bend:-100},
+    {a:'up',b:'idle',label:'Uploaded',bend:-200},
+    {a:'up',b:'wait',label:'Failed',off:9},{a:'wait',b:'up',label:'Retry with backoff',off:9},
+    {a:'idle',b:'newer',label:'Other device backed up'},
+    {a:'newer',b:'ask',label:'Both changed'},
+    {a:'newer',b:'restore',label:'Only cloud changed',bend:-110},
+    {a:'ask',b:'restore',label:'Use cloud copy'},
+    {a:'ask',b:'dirty',label:'Keep this phone',flip:true},
+    {a:'restore',b:'encode',label:'Restored, verify'},
+  ]},
+];
+
+const NS='http://www.w3.org/2000/svg';
+const el=(n,a={},t)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;return e;};
+let mi=0, cur=MACHINES[0].start;
+
+function clip(c,p,q){ // leave rect centred at c, starting from p heading to q
+  const dx=q.x-p.x, dy=q.y-p.y; let s=Infinity;
+  if(dx>0)s=Math.min(s,(c.x+NW/2-p.x)/dx); if(dx<0)s=Math.min(s,(c.x-NW/2-p.x)/dx);
+  if(dy>0)s=Math.min(s,(c.y+NH/2-p.y)/dy); if(dy<0)s=Math.min(s,(c.y-NH/2-p.y)/dy);
+  return {x:p.x+dx*s,y:p.y+dy*s};
+}
+function shorten(p,q,d){const L=Math.hypot(q.x-p.x,q.y-p.y)||1;return {x:p.x+(q.x-p.x)*d/L,y:p.y+(q.y-p.y)*d/L};}
+
+function draw(){
+  const m=MACHINES[mi], byId=Object.fromEntries(m.nodes.map(n=>[n.id,n]));
+  const svg=el('svg',{viewBox:`0 0 930 ${m.h}`,role:'img','aria-label':m.name+' state machine'});
+  const defs=el('defs');
+  for(const id of ['ah','ahl']){const mk=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});mk.appendChild(el('path',{d:'M0 0L10 5L0 10z'}));defs.appendChild(mk);}
+  svg.appendChild(defs);
+  const eg=el('g'), ng=el('g'); svg.append(eg,ng);
+  for(const e of m.edges){
+    const A=byId[e.a], B=byId[e.b], ca={x:A.x+NW/2,y:A.y+NH/2}, cb={x:B.x+NW/2,y:B.y+NH/2};
+    const L=Math.hypot(cb.x-ca.x,cb.y-ca.y), d={x:(cb.x-ca.x)/L,y:(cb.y-ca.y)/L}, n={x:d.y,y:-d.x};
+    let path, lp, side={x:n.x,y:n.y};
+    if(e.bend){
+      const c={x:(ca.x+cb.x)/2+n.x*e.bend,y:(ca.y+cb.y)/2+n.y*e.bend};
+      const s=clip(ca,ca,c), t0=clip(cb,cb,c), t=shorten(t0,c,3);
+      path=`M${s.x} ${s.y}Q${c.x} ${c.y} ${t.x} ${t.y}`;
+      lp={x:.25*s.x+.5*c.x+.25*t.x,y:.25*s.y+.5*c.y+.25*t.y};
+      const sg=Math.sign(e.bend); side={x:n.x*sg,y:n.y*sg};
+    }else{
+      const o=e.off||0, pa={x:ca.x+n.x*o,y:ca.y+n.y*o}, pb={x:cb.x+n.x*o,y:cb.y+n.y*o};
+      const s=clip(ca,pa,pb), t0=clip(cb,pb,pa), t=shorten(t0,pa,3);
+      path=`M${s.x} ${s.y}L${t.x} ${t.y}`; lp={x:(s.x+t.x)/2,y:(s.y+t.y)/2};
+    }
+    if(e.flip) side={x:-side.x,y:-side.y};
+    const live=e.a===cur, g=el('g',{class:'edge'+(live?' live':'')});
+    g.appendChild(el('path',{d:path,'marker-end':`url(#${live?'ahl':'ah'})`}));
+    const anchor=Math.abs(side.x)>.5?(side.x>0?'start':'end'):'middle';
+    const tx=el('text',{x:lp.x+side.x*9,y:lp.y+side.y*10,'text-anchor':anchor,'dominant-baseline':'middle'},e.label);
+    if(live) tx.addEventListener('click',()=>go(e.b));
+    g.appendChild(tx); eg.appendChild(g);
+  }
+  for(const nd of m.nodes){
+    const g=el('g',{class:'node'+(nd.id===cur?' cur':''),tabindex:0,role:'button','aria-label':nd.label});
+    g.appendChild(el('rect',{x:nd.x,y:nd.y,width:NW,height:NH,rx:12}));
+    g.appendChild(el('circle',{cx:nd.x+14,cy:nd.y+NH/2,r:4,class:'dot-'+nd.tone}));
+    g.appendChild(el('text',{x:nd.x+25,y:nd.y+NH/2,'dominant-baseline':'middle'},nd.label));
+    g.addEventListener('click',()=>go(nd.id));
+    g.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go(nd.id);}});
+    ng.appendChild(g);
+  }
+  const cv=document.getElementById('canvas'); cv.replaceChildren(svg);
+
+  const nd=byId[cur], p=document.getElementById('panel'); p.replaceChildren();
+  const h=document.createElement('h3'); h.textContent=nd.label; p.appendChild(h);
+  const dl=document.createElement('dl');
+  for(const [k,v] of [['The person sees',nd.sees],['Snappet does',nd.does]]){const w=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=v;w.append(dt,dd);dl.appendChild(w);}
+  p.appendChild(dl);
+  const out=m.edges.filter(e=>e.a===cur), mv=document.createElement('div'); mv.className='moves';
+  for(const e of out){const b=document.createElement('button');b.type='button';const s=document.createElement('b');s.textContent=e.label;b.append(s,' → '+byId[e.b].label);b.addEventListener('click',()=>go(e.b));mv.appendChild(b);}
+  if(cur!==m.start){const b=document.createElement('button');b.type='button';b.textContent='↺ Back to start';b.addEventListener('click',()=>go(m.start));mv.appendChild(b);}
+  p.appendChild(mv);
+  const nt=document.createElement('p'); nt.className='note'; nt.textContent=m.note; p.appendChild(nt);
+}
+function go(id){cur=id;draw();}
+const tabs=document.getElementById('tabs');
+MACHINES.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.id='tab-'+m.id;b.setAttribute('role','tab');b.textContent=m.name;b.addEventListener('click',()=>{mi=i;cur=m.start;[...tabs.children].forEach((c,j)=>c.setAttribute('aria-selected',j===i));draw();});b.setAttribute('aria-selected',i===0);tabs.appendChild(b);});
+draw();
+</script>
