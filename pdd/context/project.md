@@ -111,7 +111,8 @@ receipts** (scan with the camera or paste receipt text → per-item assignment w
 tax/discount + per-person split; iOS Vision / Android ML Kit OCR; mirrored on both platforms); **Budget**
 edit transactions + month switcher + 6-month trends. Prompts in `pdd/prompts/features/12–17`. Tests:
 each app has a `SnappetUITests/<App>UITests.swift` driving its flow; UI tests use a `-uiTestFreshStore`
-launch arg (isolated in-memory store) for determinism. **Verified on the iPhone 17 Pro sim: all 10 UI
+launch arg (isolated in-memory store) for determinism, and since prompt 266 launch through `launchOnTestStore()`, which
+confirms the store's invisible `uiTest.freshStore` marker before the first tap. **Verified on the iPhone 17 Pro sim: all 10 UI
 tests green** (6 apps + `SuiteSmokeTests` + `WorkoutWalkthroughTests`) and `HighlightEngine` 18/18.
 Remaining: data-dependent on-device runs (Workout needs Apple Watch workouts/Photos); the Budget
 month-switcher's forward chevron is verified in-app but its synthetic XCUITest tap is flaky (harness

@@ -14,7 +14,7 @@ final class RacketDrillUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func shot(_ name: String) {
@@ -211,7 +211,7 @@ final class RacketDrillUITests: XCTestCase {
             ("squash", "Coach feeding", "Boast", "Length", "Length"),
         ]
         for (k, s) in sports.enumerated() {
-            if k > 0 { app.terminate(); app.launch() }
+            if k > 0 { app.terminate(); app.launchOnTestStore() }
             openDrills(s.id)
             XCTAssertTrue(app.buttons["racket.drillCat.\(s.cat)"].exists, "\(s.id) categories")
             shot("\(s.id)-01-drills")

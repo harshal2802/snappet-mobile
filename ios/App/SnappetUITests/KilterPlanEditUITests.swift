@@ -9,7 +9,7 @@ final class KilterPlanEditUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         let card = app.buttons["moduleCard.kilter"]
         var tries = 0

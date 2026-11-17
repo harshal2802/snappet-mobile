@@ -11,7 +11,7 @@ final class HabitUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     /// Open the Habit mini-app from the App Library.

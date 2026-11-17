@@ -27,7 +27,7 @@ final class KilterCreateClimbRepeatTests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog",
                                 "-uiTestKilterCreateSample"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

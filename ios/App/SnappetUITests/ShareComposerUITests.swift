@@ -13,7 +13,7 @@ import XCTest
     func testShareComposerReachableOrEmptyState() {
         let app = XCUIApplication()
         app.launchArguments += ["feed", "-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
 
         let recap = app.tabBars.buttons["Recap"]
         XCTAssertTrue(recap.waitForExistence(timeout: 15), "Recap tab should exist")

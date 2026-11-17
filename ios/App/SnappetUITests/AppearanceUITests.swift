@@ -5,7 +5,7 @@ final class AppearanceUITests: XCTestCase {
     func testPickingAnAccentRepaintsTheApp() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         func snap(_ name: String) {
             let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a)
         }

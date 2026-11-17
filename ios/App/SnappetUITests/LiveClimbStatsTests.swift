@@ -11,7 +11,7 @@ final class LiveClimbStatsTests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func typeIn(_ field: XCUIElement, _ text: String) {

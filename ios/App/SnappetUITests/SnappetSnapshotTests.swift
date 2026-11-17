@@ -21,7 +21,7 @@ final class SnappetSnapshotTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += args
         setupSnapshot(app)          // must be called before launch()
-        app.launch()
+        app.launchOnTestStore()
         return app
     }
 

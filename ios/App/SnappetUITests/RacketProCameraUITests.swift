@@ -31,7 +31,7 @@ final class RacketProCameraUITests: XCTestCase {
             app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
         }
         app.launchArguments += extra
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func shot(_ name: String) {

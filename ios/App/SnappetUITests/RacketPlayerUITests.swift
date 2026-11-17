@@ -15,7 +15,7 @@ final class RacketPlayerUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", variant]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     override func tearDown() async throws {
@@ -320,7 +320,7 @@ final class RacketPlayerUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", "landscape",
                                 "-uiTestRacketLandscape", "YES"]
-        app.launch()
+        app.launchOnTestStore()
         openPlayer()
         Thread.sleep(forTimeInterval: 1.5)
         pause()

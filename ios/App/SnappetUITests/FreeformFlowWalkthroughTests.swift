@@ -17,7 +17,7 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         continueAfterFailure = true   // keep capturing screenshots even if one assert trips
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

@@ -10,7 +10,7 @@ final class BackupUITests: XCTestCase {
     func testCorruptStoreShowsBannerAndRestoreOpensBackupSheet() {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestCorruptStore"]
-        app.launch()
+        app.launchOnTestStore()
 
         // The banner is persistent and explicit — no more silent blank app.
         let restore = app.buttons["store.health.restore"]
@@ -38,7 +38,7 @@ final class BackupUITests: XCTestCase {
     func testBackupSheetOpensFromTheAppLibraryToolbar() {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
 
         let open = app.buttons["suite.backup.open"]

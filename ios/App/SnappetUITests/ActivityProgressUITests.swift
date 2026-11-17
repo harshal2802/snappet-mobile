@@ -11,7 +11,7 @@ final class ActivityProgressUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedActivityClips"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {
