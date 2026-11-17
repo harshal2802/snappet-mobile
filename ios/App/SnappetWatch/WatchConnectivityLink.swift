@@ -45,6 +45,12 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     /// dropped while the phone is briefly away.
     func sendControl(_ message: LiveWorkoutMessage) { send(message) }
 
+    /// The workout ended on the Watch (prompt 264): End on the wrist, or the session failed. Queued with
+    /// `transferUserInfo` when the phone is away, so the phone still learns heart rate stopped.
+    func sendEnded(startedAt: Date?) {
+        send(.ended(startedAt: startedAt?.timeIntervalSince1970))
+    }
+
     /// A racket tap (prompt 245): `sendMessage` while the phone is reachable (it wakes the phone app), else queued
     /// with `transferUserInfo` so a point isn't lost. The command id lets the phone apply a re-sent copy once.
     func sendRacket(_ command: RacketWatchCommandEnvelope) {
@@ -114,7 +120,7 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
         case .retype(let activityType): onRetype?(activityType)
         case .pause: onPause?()
         case .resume: onResume?()
-        case .metrics: break   // metrics flow watch → phone only
+        case .metrics, .ended: break   // metrics / ended flow watch → phone only
         case .none:
             if let racket = RacketWatchMessage(payload: payload) { onRacket?(racket) }
         }

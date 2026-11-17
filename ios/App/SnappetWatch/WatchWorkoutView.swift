@@ -12,7 +12,8 @@ import SwiftUI
 ///     the phone is pocketed.
 ///
 /// All on-wrist controls relay over `WCSession` (pause/resume/end), so the phone's overlay and
-/// Live Activity stay in lock-step with the watch.
+/// Live Activity stay in lock-step with the watch. End sends `.ended` (prompt 264): the phone keeps its session
+/// running and shows "Watch ended" (heart rate no longer comes from the Watch).
 struct WatchWorkoutView: View {
     @Environment(WorkoutWatchManager.self) private var manager
 
@@ -185,7 +186,7 @@ private struct ControlsPage: View {
             }
             .tint(manager.paused ? .green : .yellow)
 
-            Button(role: .destructive) { manager.end() } label: {
+            Button(role: .destructive) { manager.endFromWrist() } label: {
                 Label("End", systemImage: "stop.fill").frame(maxWidth: .infinity)
             }
             .tint(.red)

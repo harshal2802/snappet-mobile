@@ -53,6 +53,14 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
 
     private(set) var samples: [HRSample] = []
 
+    /// The Watch said its workout ended while this session was recording (prompt 264): End on the wrist, or the
+    /// session failed there. The phone session keeps running (nothing finishes or is deleted); `latestHR` is
+    /// cleared so no screen keeps showing a frozen bpm, and the buffer keeps what arrived before. Reset by the next
+    /// `start` / `stop`.
+    private(set) var endedOnWatch = false
+    /// The user tapped "Keep going" on the player's "Watch ended" notice; the player shows a small chip instead.
+    private(set) var endedNoticeDismissed = false
+
     let displayName = "Apple Watch"
 
     /// Map the watch-specific `connectionState` (+ whether a sample has arrived) onto the
@@ -113,10 +121,30 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
         latestHR = nil
         energy = 0
         isPaused = false
+        endedOnWatch = false
+        endedNoticeDismissed = false
         send(.start(activityType: activityType.rawValue, maxHR: maxHR, restHR: restHR))
         // Only claim "running" when there's actually a watch to run it — otherwise the
         // A4 overlay would sit at "Waiting for heart rate…" forever (no watch installed).
         if watchUsable { connectionState = .workoutRunning }
+        simulateWatchEndForUITest(sessionStart: sessionStart)
+    }
+
+    /// UI tests only (`-uiTestWatchEnded`, prompt 264): a real Watch can't send to the simulator, so play its part —
+    /// one 128 bpm sample after a second, then the Watch's `.ended` payload (decoded and handled exactly as a
+    /// received one) after five.
+    static let uiTestWatchEndedArgument = "-uiTestWatchEnded"
+    private func simulateWatchEndForUITest(sessionStart: Date) {
+        #if canImport(WatchConnectivity)
+        guard ProcessInfo.processInfo.arguments.contains(Self.uiTestWatchEndedArgument) else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.handle(payload: LiveWorkoutMessage.metrics(hrBpm: 128, energyKcal: 12, t: 1).payload)
+            try? await Task.sleep(for: .seconds(4))
+            let started = sessionStart.addingTimeInterval(1).timeIntervalSince1970
+            self?.handle(payload: LiveWorkoutMessage.ended(startedAt: started).payload)
+        }
+        #endif
     }
 
     func stop() {
@@ -124,7 +152,30 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
         sessionStart = nil
         activityType = nil
         isPaused = false
+        endedOnWatch = false
+        endedNoticeDismissed = false
         if connectionState == .workoutRunning { connectionState = .active }
+    }
+
+    // MARK: - The Watch ended its workout (prompt 264)
+
+    /// A `.ended` from the Watch. Taken only for the session being recorded (`WatchEnded.accepts`: a late, queued
+    /// copy from an earlier session is dropped). The phone session keeps running: no finish, no delete, the HR
+    /// buffer is kept for the finish flush, and the phone's paused state is left as it is (the phone's to change).
+    /// Heart rate stops reading as live, and the Watch is no longer "running a workout".
+    func watchEnded(watchStartedAt: Date?) {
+        guard WatchEnded.accepts(sessionStart: sessionStart, watchStartedAt: watchStartedAt,
+                                 alreadyEnded: endedOnWatch) else { return }
+        endedOnWatch = true
+        endedNoticeDismissed = false
+        latestHR = nil
+        if connectionState == .workoutRunning { connectionState = .active }
+    }
+
+    /// "Keep going" on the player's notice: carry on without the Watch's heart rate.
+    func dismissEndedNotice() {
+        guard endedOnWatch else { return }
+        endedNoticeDismissed = true
     }
 
     /// Switch the running watch workout to another type (prompt 203) — only while a session is live and the
@@ -163,7 +214,9 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     func ingest(hrBpm: Double, energyKcal: Double, watchOffset t: Double, receivedAt: Date = .now) {
         energy = energyKcal
         guard hrBpm > 0 else { return }
-        latestHR = hrBpm
+        // A sample queued before the Watch ended can land after its `.ended` (prompt 264): keep it in the buffer
+        // (it is real heart rate from this session) but don't show it as live.
+        if !endedOnWatch { latestHR = hrBpm }
         let offset = Self.sessionOffset(watchOffset: t, sessionStart: sessionStart, receivedAt: receivedAt)
         samples.append(HRSample(t: offset, bpm: hrBpm))
     }
@@ -256,7 +309,7 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
         handle(payload: userInfo)
     }
 
-    private nonisolated func handle(payload: [String: Any]) {
+    fileprivate nonisolated func handle(payload: [String: Any]) {
         switch LiveWorkoutMessage(payload: payload) {
         case let .metrics(hr, kcal, t)?:
             Task { @MainActor [weak self] in
@@ -267,6 +320,11 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
             Task { @MainActor [weak self] in self?.setPaused(true, propagate: false) }
         case .resume?:
             Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
+        case .ended(let startedAt)?:
+            // The Watch ended its workout (prompt 264): the phone keeps its session and says so.
+            Task { @MainActor [weak self] in
+                self?.watchEnded(watchStartedAt: startedAt.map { Date(timeIntervalSince1970: $0) })
+            }
         case .start?, .stop?, .retype?:
             break   // start/stop flow phone → watch only
         case .none:

@@ -640,6 +640,12 @@ struct FreeformPlayerView: View {
                 glassNav
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
+                if app.liveWorkout.watchEndedDisplay == .notice {
+                    watchEndedNotice
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .transition(.opacity)
+                }
                 PagerRailView(
                     chips: QuickSessionPager.railChips(for: session.exercises) { ex in
                         resolver.name(for: ex.exerciseId, override: ex.displayName)
@@ -740,6 +746,7 @@ struct FreeformPlayerView: View {
     private var glassDock: some View {
         HStack(spacing: 10) {
             hrChip
+            if app.liveWorkout.watchEndedDisplay == .chip { watchEndedChip }
             if restRunning, let remaining = restTimer.reading.remaining {
                 HStack(spacing: 4) {
                     Image(systemName: "hourglass").font(.caption2)
@@ -820,6 +827,45 @@ struct FreeformPlayerView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("freeform.hrChip")
         }
+    }
+
+    // MARK: - The Watch ended its workout (prompt 264)
+
+    /// The Watch stopped its workout (End on the wrist, or it failed there): heart rate no longer comes from it, and
+    /// this session keeps running. "Keep going" dismisses it to the small chip below.
+    private var watchEndedNotice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(WatchEnded.notice.title, systemImage: "applewatch.slash")
+                .font(.subheadline.weight(.semibold))
+            Text(WatchEnded.notice.message)
+                .font(.caption)
+                .foregroundStyle(SnappetColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                withAnimation { app.liveWorkout.dismissWatchEndedNotice() }
+            } label: {
+                Text(WatchEnded.keepGoing)
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.horizontal, 14)
+                    .frame(height: 32)
+                    .pagerOutline()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.watchEndedKeepGoing")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .pagerGlass(cornerRadius: 18)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("freeform.watchEndedNotice")
+    }
+
+    /// After "Keep going": where the heart-rate chip was, so it stays clear why no bpm shows.
+    private var watchEndedChip: some View {
+        Label(WatchEnded.chip, systemImage: "applewatch.slash")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(SnappetColor.textSecondary)
+            .accessibilityIdentifier("freeform.watchEndedChip")
     }
 
     // MARK: - Overview page (page 0)

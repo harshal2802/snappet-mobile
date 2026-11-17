@@ -820,6 +820,12 @@ drills keep their block marks right; one recording per entry ("Record everything
 was recorded; a record-everything drill continues its log); a recording left open by an app kill is closed at its last
 saved part. Pure: `LiveSessionSafety.swift` (`LiveSessionSafetyTests`); `RacketLiveCovers.swift`; UI
 `LiveSessionSafetyUITests`. **Device-pending:** the crash recovery and the finish link with real Photos parts.
+🟡 **Heart-rate source ownership (2026-11-16, prompt 264).** iOS + watchOS. From the workout state-machine review: End
+on the Watch now reaches the phone (new wire kind `ended`); the phone session keeps running, drops the frozen bpm and the
+player says "Watch ended" (Keep going, then a small chip). A gym session can't start while a Kilter board session is live
+("A board session is running"; the board session is untouched). The heart-rate source picker is locked while any session
+is live, with the reason. Pure: `HeartRateOwnership.swift` (`HeartRateOwnershipTests`); UI `HeartRateOwnershipUITests`
+(seed `-uiTestWatchEnded`). **Device-pending:** End on a real Watch reaching a real phone.
 
 ## License
 
