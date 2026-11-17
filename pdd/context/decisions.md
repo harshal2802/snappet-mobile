@@ -11838,3 +11838,8 @@ user's decisions are final; each rule is pure in `HeartRateOwnership.swift` (`He
 - **Seed**: `-uiTestWatchEnded` plays the Watch's part through the real decode / handle path: a 128 bpm sample after 1 s,
   then the `.ended` payload after 5 s. **Known gap (not in this brief)**: `KilterSessionManager.adopt` still claims the
   source if one is running when a board session is recovered, which after a relaunch can be a gym session's.
+
+- **UI tests never send to the real Watch (prompt 264, added at review).** `WatchSendGate` (Shared): a launch with any
+  `-uiTest…` argument sends nothing over `WCSession` from `AppleWatchMetricsSource` or `RacketWatchRelay`. A UI test
+  run on a real phone started sessions, which queued a `start` for the paired Watch with nothing to stop it. On that
+  phone the simulated "Watch ended" test only applies when the heart-rate source is the Watch (a saved band wins).

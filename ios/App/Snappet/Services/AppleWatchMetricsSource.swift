@@ -258,6 +258,7 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
 
     private func send(_ message: LiveWorkoutMessage) {
         #if canImport(WatchConnectivity)
+        guard WatchSendGate.allowed else { return }   // a UI test never starts a workout on the real Watch
         guard let session, session.activationState == .activated else { return }
         if session.isReachable {
             session.sendMessage(message.payload, replyHandler: nil) { [weak self] _ in

@@ -116,3 +116,10 @@ enum LiveWorkoutMessage: Equatable, Sendable {
         }
     }
 }
+
+/// A UI-test launch (any `-uiTest…` argument) never sends to the real Apple Watch (prompt 264): a test session
+/// started on a phone would otherwise start, or queue, a real workout on the paired Watch that nothing stops.
+enum WatchSendGate {
+    static func allows(arguments: [String]) -> Bool { !arguments.contains { $0.hasPrefix("-uiTest") } }
+    static let allowed = allows(arguments: ProcessInfo.processInfo.arguments)
+}

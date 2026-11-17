@@ -176,4 +176,13 @@ final class HeartRateOwnershipTests: XCTestCase {
         XCTAssertTrue(line.contains("while a session is live"))
         assertPlain(line)
     }
+
+    // MARK: - UI tests never send to the real Watch
+
+    func testUITestLaunchesNeverSendToTheWatch() {
+        XCTAssertTrue(WatchSendGate.allows(arguments: ["Snappet"]))
+        XCTAssertTrue(WatchSendGate.allows(arguments: ["Snappet", "apps", "-AppleLanguages", "(en)"]))
+        XCTAssertFalse(WatchSendGate.allows(arguments: ["Snappet", "-uiTestFreshStore"]))
+        XCTAssertFalse(WatchSendGate.allows(arguments: ["Snappet", "-uiTestSeedRacketVideos", "-uiTestRacketLive"]))
+    }
 }
