@@ -10,7 +10,7 @@ final class BuddyStillRenderTests: XCTestCase {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["RENDER_BUDDY_STILLS"] == "1", "render-only")
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-buddyStillStudio"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         app.buttons["moduleCard.workout-log"].tap()
         let gear = app.buttons["workout.settings"]

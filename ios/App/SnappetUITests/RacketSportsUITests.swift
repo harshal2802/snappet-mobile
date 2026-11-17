@@ -12,7 +12,7 @@ final class RacketSportsUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func shot(_ name: String) {
@@ -188,7 +188,7 @@ final class RacketSportsUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += args
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func openMatchForm(_ sport: String) {

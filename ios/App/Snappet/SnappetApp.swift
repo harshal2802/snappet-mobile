@@ -11,6 +11,8 @@ struct SnappetApp: App {
     @State private var storeHealth: StoreHealth
     /// Only for the orientation lock (`SnappetOrientation`, prompt 254): screens designed for portrait only.
     @UIApplicationDelegateAdaptor(SnappetAppDelegate.self) private var appDelegate
+    /// On the in-memory UI-test store (`UITestStore`, prompt 266): shows the invisible `uiTest.freshStore` marker.
+    private let onTestStore: Bool
 
     init() {
         // The shared on-device store for the whole suite (Snappet Core). A corrupt
@@ -54,9 +56,10 @@ struct SnappetApp: App {
         let seedRacketHR = args.contains(RacketHRSeed.argument)
         // `-uiTestSeedRacketVideos` (prompt 246): a finished match recorded everything + a drill, for split / tagging.
         let seedRacketVideos = args.contains(RacketVideoSeed.argument)
-        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip || seedRoutineHistory
-            || seedActivityClips || seedRacketHR || seedRacketVideos
-            || seedFestival || seedFestivalPlan
+        // Every seed above implies the fresh store; `UITestStore` is the single list (prompt 266), shared with
+        // the `uiTest.freshStore` marker the UI tests wait for before their first tap.
+        let freshStore = UITestStore.isFreshStore(args)
+        onTestStore = freshStore
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
@@ -193,15 +196,22 @@ struct SnappetApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if RacketCameraProbe.requested {
-                RacketCameraProbe()
-            } else {
+            Group {
+                #if DEBUG
+                if RacketCameraProbe.requested {
+                    RacketCameraProbe()
+                } else {
+                    shell
+                }
+                #else
                 shell
+                #endif
             }
-            #else
-            shell
-            #endif
+            // UI tests confirm this marker before their first tap, so a test can never act on real data (prompt 266).
+            // Only on the test store; a 1pt clear overlay that takes no taps and changes no layout.
+            .overlay(alignment: .topLeading) {
+                if onTestStore { TestStoreMarker() }
+            }
         }
         .modelContainer(container)
     }
@@ -221,5 +231,17 @@ struct SnappetApp: App {
                 .environment(storeHealth)
                 // The user's accent + System/Dark/Light (Settings → Appearance, prompt 211): repaints live.
                 .snappetTheme()
+    }
+}
+
+/// The invisible test-store marker (prompt 266): one accessibility element, identifier `uiTest.freshStore`.
+private struct TestStoreMarker: View {
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityElement()
+            .accessibilityLabel("UI test store")
+            .accessibilityIdentifier(UITestStore.markerIdentifier)
     }
 }

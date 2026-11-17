@@ -93,7 +93,7 @@ final class HeartRateOwnershipUITests: XCTestCase {
 
     func testWatchEndingItsWorkoutKeepsThePhoneSessionRunningAndSaysSo() {
         app.launchArguments += ["-uiTestFreshStore", "-uiTestWatchEnded"]
-        app.launch()
+        app.launchOnTestStore()
         openModule("workout-log")
         quickStart()
         XCTAssertTrue(timer.waitForExistence(timeout: 8), "the player should open")
@@ -133,7 +133,7 @@ final class HeartRateOwnershipUITests: XCTestCase {
 
     func testGymStartIsRefusedWhileABoardSessionIsLiveAndTheBoardSessionIsUntouched() {
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
         startBoardSession()
         backToApps()
 
@@ -180,7 +180,7 @@ final class HeartRateOwnershipUITests: XCTestCase {
 
     func testHeartRateSourceIsLockedWhileAWorkoutIsLive() {
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openModule("workout-log")
 
         // No session: the source can be switched.
@@ -206,7 +206,7 @@ final class HeartRateOwnershipUITests: XCTestCase {
 
     func testHeartRateSourceIsLockedWhileABoardSessionIsLive() {
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
         startBoardSession()
         backToApps()
         openModule("workout-log")

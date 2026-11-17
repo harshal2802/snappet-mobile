@@ -11843,3 +11843,34 @@ user's decisions are final; each rule is pure in `HeartRateOwnership.swift` (`He
   `-uiTest…` argument sends nothing over `WCSession` from `AppleWatchMetricsSource` or `RacketWatchRelay`. A UI test
   run on a real phone started sessions, which queued a `start` for the paired Watch with nothing to stop it. On that
   phone the simulated "Watch ended" test only applies when the heart-rate source is the Watch (a saved band wins).
+
+## 2026-11-16 — UI tests check the test-store marker before the first tap; link tests are simulator-only (prompt 266)
+
+**Incident.** UI tests are sometimes run on the user's real iPhone. They rely on launch arguments (`-uiTestFreshStore`
+or a `-uiTestSeed…` argument that implies it) for an empty in-memory SwiftData store. On 2026-11-16 the first test
+launch after a fresh install attached to an app process iOS had started WITHOUT those arguments, so the test tapped
+Quick Start in the user's real data. Nothing was lost; the rule below makes it impossible.
+
+- **One decision, two users.** `UITestStore.isFreshStore(_ arguments:)` (`Snappet/Core/UITestStore.swift`, pure,
+  `UITestStoreTests`) is the only place that decides "test store". `SnappetApp.init` uses it to choose the in-memory
+  store, and the root scene uses it to show the marker, so the marker can't appear on the real store and a normal
+  launch (no such argument) never shows it.
+- **The marker.** An invisible 1pt `Color.clear` overlay at the top-leading corner of the `WindowGroup` content, one
+  accessibility element with identifier `uiTest.freshStore`, `allowsHitTesting(false)`: no layout change, takes no
+  taps. Present from launch on every root screen (it wraps the camera probe too). Not guaranteed to be visible to
+  XCUITest while a sheet or full-screen cover is up; the guard only needs it right after launch.
+- **The guard.** `XCUIApplication.launchOnTestStore()` (`SnappetUITests/TestStoreGuard.swift`) replaces every
+  `app.launch()` in `SnappetUITests` (123 sites, relaunches included). It launches, then waits up to 15 s for the
+  marker: ALWAYS on a real device; on the simulator only when the launch arguments imply the test store (the simulator
+  store is disposable, and a few simulator tests launch plainly on purpose). Missing marker ⇒ `terminate()` FIRST, then
+  `XCTFail("Snappet is not on the test store; refusing to touch real data")`; nothing taps before the marker is
+  confirmed. The core `launchCheckingTestStore(require:timeout:)` returns the refusal instead of failing, so
+  `TestStoreGuardUITests` proves the refusal (forced check, no argument ⇒ refusal and app `.notRunning`) on the simulator.
+  The test target can't import the app, so it keeps a mirrored argument list; both files point at each other.
+- **Link tests are simulator-only.** `XCUIDevice.shared.system.open(snappet://…)` reaches whatever Snappet is installed,
+  test store or not. `WorkoutLinkUITests` (in setUp, before launching) and the two link tests in
+  `LiveSessionSafetyUITests` call `TestStoreGuard.skipLinkTestsOnDevice()` (`XCTSkip("link tests are simulator-only")`).
+- **Consequence on a device:** tests that launch without a test-store argument are refused there by design:
+  `SuiteSmokeTests`, the plain relaunch at the end of `ClipsPostUITests.testTheLevelsAndTheyAreRemembered` (`launchArguments =
+  ["clips"]`), and `RacketRealMatchWalkUITests` (the opt-in, read-only walk of the user's own recordings, which
+  previously ran on the real store on purpose; it now needs a deliberate exception if it is wanted again).

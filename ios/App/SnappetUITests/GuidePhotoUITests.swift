@@ -20,7 +20,7 @@ final class GuidePhotoUITests: XCTestCase {
         // override. Harmless when the server isn't running — the not-installed assertions never
         // touch the network (downloads are strictly tap-initiated).
         app.launchArguments += ["-workout.photos.host", Self.localHost]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

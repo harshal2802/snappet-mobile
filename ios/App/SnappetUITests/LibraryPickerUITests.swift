@@ -11,7 +11,7 @@ final class LibraryPickerUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedActivityClips"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
         app.buttons["moduleCard.workout-log"].tap()

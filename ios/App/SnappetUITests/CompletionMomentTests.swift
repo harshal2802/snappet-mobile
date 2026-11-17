@@ -13,7 +13,7 @@ final class CompletionMomentTests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func openFreeformPlayer() {
