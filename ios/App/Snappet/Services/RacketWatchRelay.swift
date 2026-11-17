@@ -101,8 +101,47 @@ final class RacketWatchRelay {
     }
 
     func deliver(_ c: RacketWatchCommandEnvelope) {
-        guard c.sessionID == attachedID, ledger.firstTime(c.id) else { return }
+        // Prompt 265 (F10): a tap for a match / drill no screen here shows (the phone was closed mid-match and
+        // relaunched) is answered with `.clear`, so the Watch goes back to its usual face instead of tapping into nothing.
+        if RacketWatchClearRule.answersWithClear(commandFor: c.sessionID, attached: attachedID) {
+            send(.clear(sessionID: c.sessionID))
+            return
+        }
+        guard ledger.firstTime(c.id) else { return }
+        let before = revision
         handler?(c.command, Date())
+        // Every tap gets an answer: a tap that changed nothing on the phone (Undo with nothing to undo) re-sends the
+        // snapshot, so the Watch can tell "the phone heard me" from "the phone is gone" (`RacketWatchFreshness`).
+        let id = c.sessionID
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, self.attachedID == id, self.revision == before else { return }
+            self.republish()
+        }
+    }
+
+    // MARK: Clearing (prompt 265, F10)
+
+    /// The phone (re)launched: nothing is attached yet, so any racket face on the Watch is left over from before
+    /// (an app kill mid-match). Called when WatchConnectivity activates.
+    func clearStale() {
+        guard RacketWatchClearRule.broadcasts(attached: attachedID, ending: nil) else { return }
+        clearAll()
+    }
+
+    /// A session ended (finished, discarded, deleted): its racket screens are gone, so is the Watch face.
+    /// `exerciseIDs`: the session's exercises (the Watch's `sessionID` is the match / drill entity).
+    func sessionEnded(exerciseIDs: Set<UUID>) {
+        guard RacketWatchClearRule.broadcasts(attached: attachedID, ending: exerciseIDs) else { return }
+        attachedID = nil
+        handler = nil
+        lastSent = nil
+        clearAll()
+    }
+
+    private func clearAll() {
+        revision += 1
+        send(.clearAll(through: revision))
     }
 
     // MARK: Out

@@ -827,6 +827,15 @@ player says "Watch ended" (Keep going, then a small chip). A gym session can't s
 ("A board session is running"; the board session is untouched). The heart-rate source picker is locked while any session
 is live, with the reason. Pure: `HeartRateOwnership.swift` (`HeartRateOwnershipTests`); UI `HeartRateOwnershipUITests`
 (seed `-uiTestWatchEnded`). **Device-pending:** End on a real Watch reaching a real phone.
+🟡 **Five broken links and stale states in the workout tracker (2026-11-16, prompt 265).** iOS + watchOS + widget.
+From the workout state-machine review: a racket face left on the Watch by a phone app kill goes away (the phone clears
+it at launch and when a session ends, answers a tap for a match it no longer shows, and the Watch leaves on its own 15 s
+after an unanswered tap); deleting a session stops its rally scans without writing to it; Start on a planned session
+while a workout runs asks (Go to running workout / Cancel) and keeps the plan; a reminder's Start now for a deleted or
+empty routine says so and lands on the dashboard; tapping the workout Live Activity opens the running workout's player
+(never over an open player or racket recording screen). Pure: `WorkoutBrokenLinks.swift`,
+`Shared/RacketWatchFreshness.swift` (`WorkoutBrokenLinksTests`); UI `WorkoutBrokenLinksUITests`. **Device-pending:** the
+Watch behaviour and a real Live Activity tap.
 
 ## License
 

@@ -11874,3 +11874,52 @@ Quick Start in the user's real data. Nothing was lost; the rule below makes it i
   `SuiteSmokeTests`, the plain relaunch at the end of `ClipsPostUITests.testTheLevelsAndTheyAreRemembered` (`launchArguments =
   ["clips"]`), and `RacketRealMatchWalkUITests` (the opt-in, read-only walk of the user's own recordings, which
   previously ran on the real store on purpose; it now needs a deliberate exception if it is wanted again).
+
+## 2026-11-16 — Five broken links and stale states in the workout tracker (prompt 265)
+
+The workout state-machine review's F10, F11, F12, F13 and F15, each checked on main after #458 / #459 (all five still
+held) and fixed as a pure rule: `WorkoutBrokenLinks.swift` (phone) and `Shared/RacketWatchFreshness.swift` (Watch),
+tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13 and F15 on the simulator.
+
+- **F10 — the Watch never keeps a racket face the phone has left. Both directions, not one.** A new wire message
+  `clearAll(through: revision)`: the phone sends it when WatchConnectivity activates with nothing attached (a relaunch
+  after a kill) and when a session ends (`WorkoutSessionFinisher`, `SessionCascade`), unless a racket screen of another
+  session is attached. The Watch drops its face only if that face isn't newer than the clear, and remembers the mark so
+  a late `transferUserInfo` snapshot can't bring a stale face back (revisions are clock-seeded, so they keep rising
+  across relaunches). A Watch tap for a match the phone shows nothing for is now answered with `.clear` (was dropped
+  silently). The Watch also leaves on its own: a tap with no newer snapshot within 15 s returns to the usual workout
+  face. To make "no answer" mean "phone gone", the phone re-sends the snapshot 1 s after a tap that changed nothing
+  (Undo with nothing to undo). Leaving is silent and loses nothing: the tap stays queued and the phone's next snapshot
+  brings the board back. Chosen over a heartbeat (battery, and a match can go many minutes without an event) and over
+  a Watch-only timeout without taps (it would drop a live face during a quiet rally). Known limit: a face left by a
+  kill with no taps stays until the phone app runs again (any launch, including the background launch a tap's
+  `sendMessage` causes).
+- **F11 — a deleted session's scans stop, and nothing is written afterwards.** `SessionCascade.deleteWorkoutSession`
+  (every delete path: History, session detail, Finish discard, Discard & start new, the watch-import reconciler) calls
+  `RacketScanCenter.forgetSession` first: its waiting scans leave the queue, its running scan is cancelled, and any
+  late progress / result / pause for that session is dropped (`deletedSessionIDs`). `stopAll(in:)` was not reused: it
+  writes "paused" into the session being deleted. An enqueue takes the session's id back out (a backup restore
+  re-inserts the same ids). Backup restore's `deleteAll(WorkoutSession)` is not routed through the cascade (out of
+  scope; noted).
+- **F12 — a planned Start while a workout runs asks, never silently.** "A workout is already running" / "“Quick
+  session” is still going. Go to it, or cancel and start this plan after you finish it. Your plan stays here." with
+  Go to running workout / Cancel. The planner shows the alert itself (it is the top of the stack). No "Discard & start
+  new" here, unlike the routine conflict dialog: the brief offered only go-to / cancel, and replacing would delete the
+  running workout's work. The plan stays because the planner stays pushed under the player.
+- **F13 — a reminder's Start now for a gone or empty routine says so.** "Routine not found" / "This routine no longer
+  exists. It may have been deleted, so there’s nothing to start." or "Nothing to start" / "“Leg day” has no exercises
+  yet. Add some in Routines, then start it." Both land on the Gym Tracker's dashboard (the brief's "workout home"),
+  not Routines. QA hook `-uiTestReminderStart missing|empty`.
+- **F15 — the Live Activity opens the running workout.** `widgetURL(snappet://workout)` on the Lock Screen view and
+  the Dynamic Island → `WorkoutLinkAction.open` → `PendingAppAction.openWorkout` → the Gym Tracker with
+  `pendingWorkoutResume`. Exactly `snappet://workout` (a path is still not a route: the existing deep-link tests reject
+  `snappet://workout/session/1`). Like the finish link (#459), the shell does not navigate while the player is up
+  (`SuiteRouter.workoutPlayerOpen`, set from `WorkoutHomeView.playing`, cleared by `open(module:)`) or a racket cover is
+  open (`RacketLiveCovers`): replacing the stack would tear them down. No alert in that case: the workout is already on
+  screen.
+- **No schema change.**
+
+- **F10, changed at review: the 15 s rule only counts while the phone is reachable.** A tap sent to a phone out of
+  range (left in a bag across the hall while scoring from the wrist) is queued and the racket face stays; before this
+  change the Watch would have left the face 15 s after the first such tap and scoring from the wrist would stop. The
+  phone-kill case is still covered: a reachable phone is woken by the tap, activates, and answers with a clear.

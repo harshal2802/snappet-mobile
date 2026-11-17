@@ -48,7 +48,7 @@ enum SessionCascade {
 
     /// Delete a gym/dance `WorkoutSession` and everything hanging off its id: `SessionMedia`,
     /// `StudioProject`, `FestivalAttendance`, `FestivalClipTag`, `FestivalNightStretch`. A watch-imported anchor also
-    /// records a tombstone so the reconciler never re-mints it. Does NOT save — callers batch
+    /// records a tombstone so the reconciler never re-mints it. Its racket scans are stopped first (prompt 265). Does NOT save — callers batch
     /// deletes (clear-all) and save once.
     ///
     /// `FeedActivity` rows are deliberately left alone: that log is append-only by design and the
@@ -58,6 +58,10 @@ enum SessionCascade {
         if let watchUUID = session.healthKitWorkoutUUID {
             WatchImportTombstones.record(watchUUID, defaults: defaults)
         }
+        // Prompt 265: nothing may keep working on a deleted session. Its rally scans stop without writing (F11), and
+        // a racket face it left on the Watch goes away (F10).
+        RacketScanCenter.shared.forgetSession(session.id)
+        RacketWatchRelay.shared.sessionEnded(exerciseIDs: Set(session.exercises.map(\.id)))
         sweepShared(sessionID: session.id, in: context)
         let sid = session.id
         for row in fetch(FetchDescriptor<FestivalAttendance>(

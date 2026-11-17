@@ -38,6 +38,10 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         var recoveryReady: Bool = false
     }
 
+    /// What a tap on the Live Activity opens (prompt 265, F15): the running workout's player. Parsed by
+    /// `WorkoutLinkAction` (`snappet://workout`); the shell won't navigate while the player is already up.
+    static let openURL = URL(string: "snappet://workout")!
+
     /// The routine being performed — fixed for the activity's lifetime.
     var routineName: String
     /// The user's resolved max HR (Phase 2), so the widget tints the HR zone off the same
