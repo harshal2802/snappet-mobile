@@ -7,7 +7,7 @@ import Foundation
 // target (`WorkoutBrokenLinksTests`):
 // - the phone says so: at launch (WatchConnectivity activation, nothing attached yet) and when a session ends it sends
 //   `clearAll(through: revision)`; a tap for a match the phone has no screen for gets `.clear` for that match;
-// - the Watch notices on its own: a tap that gets no answer from the phone (no newer snapshot) within
+// - the Watch notices on its own: a tap sent to a REACHABLE phone that gets no answer (no newer snapshot) within
 //   `answerWindowSec` drops the face. The next snapshot from the phone brings it back, and the tap itself is queued, so
 //   nothing is lost.
 
@@ -47,6 +47,10 @@ struct RacketWatchFreshness: Equatable, Sendable {
 
     /// The phone answered (a snapshot for the face shown, or a clear).
     mutating func heard() { unansweredTapAt = nil }
+
+    /// Only a tap sent to a reachable phone waits for an answer. Out of range the tap is queued (it is applied when
+    /// the phone is back) and the face stays, so scoring from the wrist works with the phone left in a bag.
+    static func waitsForAnAnswer(phoneReachable: Bool) -> Bool { phoneReachable }
 
     /// A tap went to the phone.
     mutating func tapped(at date: Date) {

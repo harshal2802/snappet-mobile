@@ -11918,3 +11918,8 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   open (`RacketLiveCovers`): replacing the stack would tear them down. No alert in that case: the workout is already on
   screen.
 - **No schema change.**
+
+- **F10, changed at review: the 15 s rule only counts while the phone is reachable.** A tap sent to a phone out of
+  range (left in a bag across the hall while scoring from the wrist) is queued and the racket face stays; before this
+  change the Watch would have left the face 15 s after the first such tap and scoring from the wrist would stop. The
+  phone-kill case is still covered: a reachable phone is woken by the tap, activates, and answers with a clear.

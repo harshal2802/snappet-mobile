@@ -60,6 +60,12 @@ final class WorkoutBrokenLinksTests: XCTestCase {
         XCTAssertFalse(f.isStale(now: t0.addingTimeInterval(600)), "a clear answers too")
     }
 
+    func testATapToAPhoneOutOfRangeNeverLeavesTheFace() {
+        XCTAssertTrue(RacketWatchFreshness.waitsForAnAnswer(phoneReachable: true))
+        XCTAssertFalse(RacketWatchFreshness.waitsForAnAnswer(phoneReachable: false),
+                       "queued for later: the face stays so scoring from the wrist still works")
+    }
+
     func testThePhoneClearsAtLaunchAndWhenTheSessionEndsButNeverAnotherSessionsLiveFace() {
         let match = UUID(), other = UUID()
         XCTAssertTrue(RacketWatchClearRule.broadcasts(attached: nil, ending: nil), "launch: nothing attached yet")

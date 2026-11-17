@@ -18,6 +18,9 @@ final class RacketWatchModel {
     private(set) var dismissedNotice: RacketWatchState.Notice?
 
     @ObservationIgnored var send: ((RacketWatchCommandEnvelope) -> Void)?
+    /// Whether the phone can be reached right now. Out of range (the phone in a bag across the hall) a tap is queued
+    /// and the face must stay: only a reachable phone that doesn't answer has left the match.
+    @ObservationIgnored var phoneReachable: (() -> Bool)?
     /// Prompt 265 (F10): has the phone answered our taps, and which snapshots are gone.
     @ObservationIgnored private var freshness = RacketWatchFreshness()
 
@@ -56,6 +59,7 @@ final class RacketWatchModel {
         if let shown = s.applyingOptimistically(command) { state = shown }
         send?(RacketWatchCommandEnvelope(sessionID: s.sessionID, command: command))
         WKInterfaceDevice.current().play(.click)
+        guard RacketWatchFreshness.waitsForAnAnswer(phoneReachable: phoneReachable?() ?? false) else { return }
         freshness.tapped(at: Date())
         // No answer from the phone in time (it was closed mid-match): back to the usual face. The phone's next
         // snapshot brings the racket face back; the tap itself is queued for it.
@@ -68,6 +72,11 @@ final class RacketWatchModel {
     func dismissNotice() { dismissedNotice = state?.notice }
 
     private func leaveIfUnanswered() {
+        // Went out of range while waiting: the tap is queued, keep the face and stop waiting.
+        guard RacketWatchFreshness.waitsForAnAnswer(phoneReachable: phoneReachable?() ?? false) else {
+            freshness.heard()
+            return
+        }
         guard let s = state, freshness.isStale(now: Date()) else { return }
         freshness.cleared(through: s.revision)
         leave()
