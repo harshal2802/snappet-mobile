@@ -10665,6 +10665,8 @@ stripes, and the panel read as an opaque slab.
   unit) so tapping one opens its own score sheet, and saving a score clears the flag.
 - **Setup → Storage directly when recording everything** (boards: PracticeSetup "Set up camera", Warmup
   "Everything, split later" → Storage). The page's "Record everything" button stays for a second recording.
+  **Superseded 2026-11-16 (prompt 263):** a second recording replaced the first log (split, rallies, tags lost); the
+  button is now off with its reason once the entry has recorded anything (one recording per entry).
 
 ## 2026-11-06 — Racket Watch scoring (prompt 245, issue #438 step 2)
 
@@ -11734,3 +11736,67 @@ screen could remove it without breaking `baseSetIndex` and the split's links.
   RacketPlayer 7, RacketRallyVideo 5, RacketModel 2, RacketAI 2 (RacketRealMatchWalk 8 skipped, as before). The Finish
   summary with a mixed session was not driven on the simulator; it renders the same `SessionRecapCards` the timed
   detail test covers.
+## 2026-11-16 — The live session never loses work silently (prompt 263)
+
+The workout state-machine review found six ways the live session dropped or corrupted work without asking (F1, F2,
+F3, F4, F5, F14). The user's decisions are final; each rule is pure in `LiveSessionSafety.swift` and tested in
+`LiveSessionSafetyTests`; `LiveSessionSafetyUITests` drives each on the simulator.
+
+- **F5 — Remove asks.** Remove match / drill / exercise / climb in the live player's ⋯ menus asks with the finished
+  session detail's words ("Remove this match?"). A recorded match / drill says its recording's split (a drill: block
+  marks), rallies and tags go and the video stays in Photos — checked: `removeExercise` drops the entity with its
+  `racketRecordingLog`, unties its `SessionMedia` rows to General and never touches the Photos library. An exercise with
+  no sets, no media and no recording goes without asking (nothing to lose). Climbs follow the same rule (the brief named
+  match / drill / exercise; Remove climb was the same unconfirmed call).
+- **F2 — Finish never deletes silently.** `LiveFinish.decide`: a completed set ⇒ the summary (unchanged); nothing worth
+  keeping (no exercise with any set, no session media row, no recording log) ⇒ discard silently (unchanged for an empty
+  Quick Session); otherwise ask "Finish this session?" — Save session / Discard / Cancel — with a line saying what
+  Discard deletes ("1 recording with its split, rallies and tags and 2 photos and videos … Videos stay in your Photos
+  library"). Save session finishes through the normal path even with zero completed sets (the player's
+  `finish(saved:)` would have turned it into a discard, so the dialog calls `onClose(true)`).
+- **F2 — the Finish intent / `snappet://finish` link saves, never deletes, when there is something worth keeping.** An
+  App Intent / link can't show a dialog reliably (the app may be opening, the player may be under a cover), so the only
+  safe default for work is to keep it; an empty session is still discarded as before.
+- **F4 — refuse, not end from outside.** The intent / link while a racket recording, drill or game cover is open now
+  finishes nothing: the cover stays, its recording keeps going, and it shows "Session not finished" with "This screen is
+  still recording. Stop it here first, then finish the session. Nothing was deleted." (a game cover: "This match is
+  still open …"). Chosen over ending the recording from outside: the three covers end differently (split prompt, drill
+  review, the game's score sheet — each a user step) and the Photos parts save asynchronously after Stop, so an outside
+  end would either skip those steps or race the saves, and none of it can be proved on the simulator (the fake camera
+  saves no parts). The refusal is provable (UI test with the real link). Found while proving it: the cover was torn
+  down even before `finishWorkout` ran — the shell's `router.open(module:)` replaces the navigation stack, which rebuilds
+  the gym tracker and drops its `playing` player with every cover on it. So the refusal happens in `RootShell.dispatch`
+  (no navigation at all while a cover is open), with the same check kept in `consumeFinishSession` as a backstop. Covers register in `RacketLiveCovers` (one
+  container per cover, so the record-everything cover's split prompt still counts as open). Known limit: while a screen
+  opened from a cover is on top of it (Drill videos from the drill review, Your videos over the split prompt), the
+  cover reports itself gone (SwiftUI's onDisappear); by then its recording has already ended through its own Stop.
+- **F3 — the drawer's racket delete goes through `RacketMatchEditor`.** Swipe-to-delete on a match game builds the Edit
+  match draft, removes the game and commits it, so `baseSetIndex`, applied split links and `game` mark indexes are
+  written again from ids, and pinned photos / clips move by the commit's remap (a removed game's media stays on the
+  match with no game). A game with video needs Edit match's "what happens to its video" choice, which a swipe can't
+  ask: its row can't be swiped and says "Has video. Remove it from Edit match after the session." (Edit match stays
+  finished-session only, prompt 260.) The only game, with no video, may go in a live match (Edit match keeps one on a
+  finished session; live, the next game is logged on the page) — base becomes 0. Drills had the same problem with block
+  / rest marks: a block with a mark (video) stays ("Has video, so it stays with its recording."); deleting one without
+  moves later marks up one (marks count from the log's base). Non-racket exercises keep the plain delete.
+- **F1 — one recording per entry, blocked for now.** Once an entry's log has a run or a saved part, "Record everything"
+  on the match page is off with "This match already has a recording. A second one isn't supported yet." (the label is
+  now always "Record everything"); the game cover's Everything shows the same reason in an alert, and so does its game
+  by game start when the match's recording was record-everything (`gameByGameBlock`: switching the mode in Match details
+  would otherwise start a second log that the save refuses, leaving the new game's video tied to nothing; its own
+  game-by-game log is continued as before, and Score without video stays available); a drill whose plan's
+  mode differs from its log's is off with the drill reason. A log with no runs and no parts may be replaced. **A
+  record-everything drill continues its log** ("Continue drill"): `continueLog` now accepts a drill recording everything
+  when the log was recorded everything (same mode only); new blocks add runs, parts and marks after the old ones (unit
+  test: the earlier block marks, runs, parts and tags survive and `drillParts` maps blocks 0–2). `saveRacketRecordingLog`
+  refuses to replace a log with runs or parts by one with another `startedAt` and logs the refusal (category
+  `racket.recording`). Supersedes the 2026-11-06 line "stays for a second recording".
+- **F14 — a recording left open by a crash.** `RacketRecordingRecovery.recovered`: every open run closes at the end of
+  the last part saved during it (`startSec + durationSec` of its assets; none ⇒ the run's start) — not
+  `savedUpToSec`, which only knows closed runs; open range marks (block, rest, game, interval) close there too; a
+  record-everything log gets `endedAt`. A game-by-game / block-by-block log keeps `endedAt` nil: its cover continues it
+  and reads `endedAt` as "now" for its split. Runs when the player appears (resume after a relaunch, or after a cover
+  closes), skipping every entry whose cover is open (`RacketLiveCovers`), so a live recording is never touched.
+- **Seeds**: `-uiTestRacketLive` keeps the racket video seed's session running; `-uiTestRacketLiveCrash` (with it)
+  leaves the match's record-everything log open after one part per run and no sets anywhere. Existing seeds unchanged.
+- **No schema change**: no new field or raw value; recovery and the drawer only write existing fields.

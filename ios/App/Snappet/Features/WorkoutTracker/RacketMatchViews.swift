@@ -89,6 +89,8 @@ struct RacketGameCover: View {
     @State private var freeSpace = false
     /// A Watch was linked when the camera opened (so its loss is "Watch off").
     @State private var watchWasLinked = false
+    /// Everything chosen on a match that already has a recording (prompt 263): the reason, until OK.
+    @State private var everythingBlocked: String?
 
     private var sport: RacketSport { ex.racketSport ?? ex.racketFormat.sport }
     private var unit: RacketUnit { sport.unit }
@@ -109,7 +111,8 @@ struct RacketGameCover: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear { recorder.screenAppeared(); setUp() }
+        .racketFinishRefusal(exerciseID: ex.id)
+        .onAppear { RacketLiveCovers.shared.opened(ex.id, .game); recorder.screenAppeared(); setUp() }
         .onChange(of: useWatch) { _, on in setWatch(on) }
         .sheet(isPresented: $freeSpace) {
             // "Free space" (ProCameraSpace): the storage screen, in the app — opening Settings would leave Snappet, which
@@ -122,7 +125,7 @@ struct RacketGameCover: View {
         .sheet(item: $videos) { t in
             if let session { RacketVideosCover(session: session, start: t.start) { videos = nil } }
         }
-        .onDisappear(perform: tearDown)
+        .onDisappear { RacketLiveCovers.shared.closed(ex.id); tearDown() }
         .onChange(of: watchState) { _, s in if let s { RacketWatchRelay.shared.publish(s) } }
         .onChange(of: firstServer) { _, f in
             // Side-out: who serves the first rally is part of the tally; rebuild it while the game hasn't started.
@@ -142,6 +145,13 @@ struct RacketGameCover: View {
                                 onSave: { log, startBreak in saveGame(log, startBreak: startBreak) },
                                 onCancel: { step { $0.cancelScore() } })
                 .interactiveDismissDisabled()
+        }
+        .alert("Can’t record this match again", isPresented: Binding(get: { everythingBlocked != nil },
+                                                               set: { if !$0 { everythingBlocked = nil } })) {
+            Button("OK", role: .cancel) { everythingBlocked = nil }
+                .accessibilityIdentifier("racket.recordBlocked.ok")
+        } message: {
+            Text(everythingBlocked ?? "")
         }
         .sheet(isPresented: $storageCheck) {
             RacketStorageSheet(mode: .match, defaultQuality: recorder.setup.format.quality, cancelLabel: "Back") { quality in
@@ -328,7 +338,18 @@ struct RacketGameCover: View {
     /// Warmup "Start recording" / the Watch's Start.
     private func startRecording() {
         if choice == .everything {
+            // One recording per entry (prompt 263, F1): a match that already has a recording can't record everything
+            // over it (that would replace its games' video, split and tags).
+            if let reason = RacketRecordingGuard.recordEverythingBlock(ex) {
+                everythingBlocked = reason
+                return
+            }
             storageCheck = true
+            return
+        }
+        // Game by game over a record-everything recording would start a second log too (prompt 263, F1).
+        if let reason = RacketRecordingGuard.gameByGameBlock(ex) {
+            everythingBlocked = reason
             return
         }
         onRecordingMode(.byUnit)

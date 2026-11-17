@@ -407,12 +407,25 @@ struct WorkoutHomeView: View {
         Task { @MainActor in if let s = activeSession { resume(s) } else { startFreeform() } }
     }
 
-    /// Finish the running workout as the player's Finish would — an empty one is discarded, like the player does.
+    /// Finish the running workout from Shortcuts / Siri / `snappet://finish` (prompt 263):
+    /// - a racket recording, drill or game screen is open ⇒ finish nothing: the screen stays (its recording keeps going)
+    ///   and says to stop it there first (F4; finishing would tear it down without ending the recording);
+    /// - nothing worth keeping ⇒ discarded, like the player's Finish;
+    /// - otherwise saved, even with no completed set (F2: an intent can't ask, so it never deletes work).
     private func consumeFinishSession() {
         guard router.pendingFinishSession else { return }
         router.pendingFinishSession = false
         guard let s = activeSession else { return }
-        Task { @MainActor in finishWorkout(s, saved: s.completedSetCount > 0) }
+        Task { @MainActor in
+            if RacketLiveCovers.shared.refuseFinishIfOpen() {
+                if playing == nil { resume(s) }
+                return
+            }
+            let sid = s.id
+            let decision = LiveFinish.decide(exercises: s.exercises, completedSets: s.completedSetCount,
+                                             mediaCount: sessionMedia.filter { $0.sessionID == sid }.count)
+            finishWorkout(s, saved: LiveFinish.intentSaves(decision))
+        }
     }
 
     /// "Log it now" (prompt 184): add the entity to the running session and resume, or start a Quick Session with it.

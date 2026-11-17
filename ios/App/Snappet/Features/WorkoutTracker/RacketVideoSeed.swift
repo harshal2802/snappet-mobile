@@ -208,6 +208,24 @@ enum RacketVideoSeed {
                 entity("Pullups", "Pull-ups", .strength, at: 5200)]
     }
 
+    /// With the seed (prompt 263): the session is still running (no `completedAt`), so the live player shows it. Every
+    /// other seed argument keeps its meaning.
+    static let liveArgument = "-uiTestRacketLive"
+    /// With `-uiTestRacketLive` (prompt 263): the app was killed mid-recording. Nothing is logged yet (no exercise has a
+    /// set; the drill keeps its finished recording) and the match's record-everything log is still open: one 10-minute
+    /// part saved per run, the second run never closed, no `endedAt`. Recovery closes it at 20:00 recorded.
+    static let liveCrashArgument = "-uiTestRacketLiveCrash"
+
+    static func crashedLog(startedAt: Date) -> RacketRecordingLog {
+        var log = matchLog(startedAt: startedAt)
+        log.runs = [.init(startSec: 0, endSec: 600, endReasonRaw: RacketInterruption.appLeft.rawValue),
+                    .init(startSec: 600, endSec: nil, endReasonRaw: nil)]
+        log.assets = [.init(localIdentifier: "uitest-crash-part-1", startSec: 0, durationSec: 600),
+                      .init(localIdentifier: "uitest-crash-part-2", startSec: 600, durationSec: 600)]
+        log.endedAt = nil
+        return log
+    }
+
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
@@ -342,9 +360,16 @@ enum RacketVideoSeed {
             // Prompt 262: the recorded match (no drill) plus other work that outweighs it, so racket isn't dominant.
             exercises = [match] + mixedExtras(variant: mixed, start: start)
         }
+        let live = ProcessInfo.processInfo.arguments.contains(liveArgument)
+        if live, ProcessInfo.processInfo.arguments.contains(liveCrashArgument), let i = exercises.firstIndex(where: \.isRacketMatch) {
+            // Nothing logged yet anywhere (the recordings are all the session holds), so Finish has to ask.
+            for k in exercises.indices { exercises[k].sets = [] }
+            exercises[i].racketRecordingRaw = RacketRecordingMode.everything.rawValue
+            exercises[i].racketRecordingLog = crashedLog(startedAt: start)
+        }
         let session = WorkoutSession(routineID: nil, routineName: "Racket videos", exercises: exercises)
         session.startedAt = start
-        session.completedAt = start.addingTimeInterval(5700)
+        session.completedAt = live ? nil : start.addingTimeInterval(5700)
         if mixed != nil {
             // A steady synthetic series, so each game has a heart-rate row on the racket card.
             session.maxHR = 190
