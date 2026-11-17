@@ -119,6 +119,8 @@ struct WorkoutHomeView: View {
     @State private var plannerPrefill: PlannerRoutinePrefill?
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
+    /// A gym start refused because a Kilter board session is live (prompt 264, F7).
+    @State private var boardRefusal: OwnershipNotice?
     /// A routine arriving over QR / a `snappet://routine/v1/…` link (E6) awaiting the import-confirm
     /// preview. Set by `consumePendingImport` from the router one-shot; cleared when the sheet closes.
     @State private var importingRoutine: SharedRoutine?
@@ -343,6 +345,13 @@ struct WorkoutHomeView: View {
             }
             Button("Cancel", role: .cancel) { startConflict = nil }
         }
+        // F7 (prompt 264): a Kilter board session owns the heart-rate source; the gym start was refused.
+        .alert(boardRefusal?.title ?? "", isPresented: Binding(get: { boardRefusal != nil },
+                                                               set: { if !$0 { boardRefusal = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(boardRefusal?.message ?? "")
+        }
         .task {
             seedStarters()
             consumePendingResume()
@@ -435,6 +444,7 @@ struct WorkoutHomeView: View {
             try? context.save()
             resume(active)
         } else {
+            if refuseIfBoardLive() { return }
             let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [entity])
             context.insert(session)
             try? context.save()
@@ -619,6 +629,7 @@ struct WorkoutHomeView: View {
             else { startConflict = routine }
             return
         }
+        if refuseIfBoardLive() { return }
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
@@ -644,6 +655,7 @@ struct WorkoutHomeView: View {
 
     private func startFreeform() {
         if let active = activeSession { resume(active); return }
+        if refuseIfBoardLive() { return }
         let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])
         context.insert(session)
         try? context.save()
@@ -660,6 +672,7 @@ struct WorkoutHomeView: View {
     /// freeform logbook. If a workout is already active, resume it instead of stacking a second one.
     private func startPlannedSession(_ exercises: [RoutineExercise], name: String) {
         if let active = activeSession { resume(active); return }
+        if refuseIfBoardLive() { return }
         let sessionExercises = exercises.map { RoutineSessionBuilder.sessionExercise(from: $0, defaultUnit: unit) }
         let session = WorkoutSession(routineID: nil, routineName: name, exercises: sessionExercises)
         context.insert(session)
@@ -672,6 +685,8 @@ struct WorkoutHomeView: View {
     }
 
     private func replaceActiveAndStart(with routine: Routine) {
+        // Refused before anything is discarded: the current workout stays as it is.
+        if refuseIfBoardLive() { return }
         // Stop the watch session for the workout being discarded *before* starting the
         // new one — otherwise the watch's `!isRunning` guard drops the new start and it
         // keeps recording the old activity (and HR rebases onto the wrong session).
@@ -682,6 +697,18 @@ struct WorkoutHomeView: View {
         try? context.save()
         startLiveMetrics(for: session, routine: routine)
         playing = session
+    }
+
+    /// F7 (prompt 264): a NEW gym session can't start while a Kilter board session is live. It would take the shared
+    /// heart-rate source over (clear its buffer, re-base it on the gym start), and ending the board session later
+    /// would flush the gym's samples into it and stop the Watch under the gym. Refuse with a plain message; the board
+    /// session is not touched. Resuming a gym session that already exists is not a start and is never refused.
+    private func refuseIfBoardLive() -> Bool {
+        guard let refusal = GymStartGate.refusal(boardSessionLive: app.kilterSessions.isLive(in: context)) else {
+            return false
+        }
+        boardRefusal = refusal
+        return true
     }
 
     /// Resume an already-active session (dashboard banner / "Resume current workout" /

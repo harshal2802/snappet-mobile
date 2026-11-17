@@ -109,7 +109,7 @@ final class RacketWatchRelay {
 
     private func send(_ message: RacketWatchMessage) {
         #if canImport(WatchConnectivity)
-        guard isAvailable else { return }
+        guard WatchSendGate.allowed, isAvailable else { return }   // a UI test never drives the real Watch
         let session = WCSession.default
         if session.isReachable {
             session.sendMessage(message.payload, replyHandler: nil) { _ in

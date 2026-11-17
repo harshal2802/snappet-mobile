@@ -188,6 +188,18 @@ final class LiveMetricsCoordinator: MetricsSource {
         active.resume()
     }
 
+    // MARK: - The Watch ended its workout (prompt 264)
+
+    /// What the live player shows about the Watch ending its workout mid-session (`WatchEnded.display`): only when
+    /// this session's heart rate comes from the Watch. The session itself keeps running either way.
+    var watchEndedDisplay: WatchEnded.Display {
+        WatchEnded.display(watchIsSource: isSessionActive && activeKind == .appleWatch,
+                           ended: watch.endedOnWatch, dismissed: watch.endedNoticeDismissed)
+    }
+
+    /// "Keep going" on the notice.
+    func dismissWatchEndedNotice() { watch.dismissEndedNotice() }
+
     // MARK: - A1 compatibility shims (so A2/A4 call sites don't churn)
 
     /// The Apple-Watch connection state, used by the session lifecycle in

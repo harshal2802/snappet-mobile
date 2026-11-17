@@ -19,6 +19,10 @@ import Foundation
 ///     live workout (the watch pauses its `HKWorkoutSession`; the phone freezes its
 ///     overlay + Live Activity). The receiver applies the state *without* echoing it back,
 ///     so a pause tapped on either device can't ping-pong (live-workout-studio next pass).
+///   - `ended(startedAt:)` — watch → phone (prompt 264): the workout on the Watch stopped on its own side (End
+///     tapped on the wrist, or the session failed), so heart rate stops coming. `startedAt` is the Watch
+///     workout's start (seconds since 1970) so the phone can drop a late, queued copy that belongs to an earlier
+///     session. The phone keeps its session running and says so; an older phone app ignores the unknown kind.
 ///   - `metrics(hrBpm:energyKcal:t:)` — watch → phone: a streamed live sample, `t`
 ///     seconds since the watch session started (the phone re-bases this onto the
 ///     `WorkoutSession.startedAt` timeline when buffering).
@@ -33,6 +37,8 @@ enum LiveWorkoutMessage: Equatable, Sendable {
     case pause
     case resume
     case metrics(hrBpm: Double, energyKcal: Double, t: Double)
+    /// Watch → phone (prompt 264): the Watch's workout ended there. `startedAt` = its start, seconds since 1970.
+    case ended(startedAt: Double?)
 
     private enum Key {
         static let kind = "kind"
@@ -42,10 +48,11 @@ enum LiveWorkoutMessage: Equatable, Sendable {
         static let hrBpm = "hrBpm"
         static let energyKcal = "energyKcal"
         static let t = "t"
+        static let startedAt = "startedAt"
     }
 
     private enum Kind: String {
-        case start, stop, retype, pause, resume, metrics
+        case start, stop, retype, pause, resume, metrics, ended
     }
 
     /// Property-list dictionary suitable for `WCSession.sendMessage`/`transferUserInfo`.
@@ -71,6 +78,10 @@ enum LiveWorkoutMessage: Equatable, Sendable {
                 Key.energyKcal: energyKcal,
                 Key.t: t,
             ]
+        case .ended(let startedAt):
+            var d: [String: Any] = [Key.kind: Kind.ended.rawValue]
+            if let startedAt { d[Key.startedAt] = startedAt }
+            return d
         }
     }
 
@@ -100,6 +111,15 @@ enum LiveWorkoutMessage: Equatable, Sendable {
                   let kcal = payload[Key.energyKcal] as? Double,
                   let t = payload[Key.t] as? Double else { return nil }
             self = .metrics(hrBpm: hr, energyKcal: kcal, t: t)
+        case .ended:
+            self = .ended(startedAt: payload[Key.startedAt] as? Double)
         }
     }
+}
+
+/// A UI-test launch (any `-uiTest…` argument) never sends to the real Apple Watch (prompt 264): a test session
+/// started on a phone would otherwise start, or queue, a real workout on the paired Watch that nothing stops.
+enum WatchSendGate {
+    static func allows(arguments: [String]) -> Bool { !arguments.contains { $0.hasPrefix("-uiTest") } }
+    static let allowed = allows(arguments: ProcessInfo.processInfo.arguments)
 }

@@ -11800,3 +11800,46 @@ F3, F4, F5, F14). The user's decisions are final; each rule is pure in `LiveSess
 - **Seeds**: `-uiTestRacketLive` keeps the racket video seed's session running; `-uiTestRacketLiveCrash` (with it)
   leaves the match's record-everything log open after one part per run and no sets anywhere. Existing seeds unchanged.
 - **No schema change**: no new field or raw value; recovery and the drawer only write existing fields.
+
+## 2026-11-16 — Heart-rate source ownership: Watch end, Kilter, mid-session switch (prompt 264)
+
+Three findings of the workout state-machine review (F6, F7, F8) about who owns the one live heart-rate source. The
+user's decisions are final; each rule is pure in `HeartRateOwnership.swift` (`HeartRateOwnershipTests`), and
+`HeartRateOwnershipUITests` drives each on the simulator.
+
+- **F6 — the Watch ending its workout reaches the phone; the phone keeps going.** New wire kind
+  `LiveWorkoutMessage.ended(startedAt:)` (watch → phone), not a reuse of `.stop`: `.stop` stays the phone's command, so
+  neither side can mistake its own echo. The Watch sends it from End on the wrist (`endFromWrist`, before ending and
+  saving its workout) and when its session fails; a phone-initiated stop sends nothing back. It carries the Watch
+  workout's start so a late copy queued with `transferUserInfo` from an EARLIER session is dropped (`WatchEnded.accepts`:
+  the Watch start may sit at most 10 s before the phone session's start, for clock skew; none sent ⇒ trusted). The
+  phone **never finishes or deletes**: `isSessionActive` stays true, the HR buffer is kept for the finish flush,
+  `latestHR` is cleared (no frozen bpm on the player, banner or Live Activity), the Watch leaves `workoutRunning`, and the
+  phone's own paused state is left alone. A sample queued before the end that lands after it is still buffered (it is
+  real heart rate) but not shown as live. The player shows a "Watch ended" card ("Your Apple Watch stopped its workout,
+  so heart rate isn't coming from it any more. This session is still running here. Finish it when you're done.") with
+  **Keep going**, which leaves a small "Watch ended" chip where the HR chip was; both clear on the next start / stop.
+  Only when the session's source is the Watch (a band session never says it). **Not built**: restarting the Watch
+  workout from the phone mid-session — a new Watch workout's offsets start at 0 and would land at the wrong place on the
+  session timeline; the Watch has no Start of its own either. Carrying on means the session continues without Watch HR
+  (Health backfill after finish still fills what the Watch recorded).
+- **F7 — refuse, not hand over.** A NEW gym session (Quick Start, a routine's Start Workout, a planned start, Log it now
+  into a new session, and "Discard it & start new", refused before anything is discarded) can't start while a Kilter
+  board session is live: alert "A board session is running" / "Your Kilter board session is still going and is recording
+  your heart rate. Finish it in Kilter Board first, then start this workout." Resuming an existing gym session is not a
+  start and is never refused. "Live" = `KilterSessionManager.isLive(in:)`: the in-memory session, or an open one in the
+  store that recovery would adopt (after a relaunch, before Kilter is opened) — read-only, it adopts or closes nothing,
+  so the board session is untouched. The festival night's start is outside this decision and unchanged.
+- **F8 — lock the picker.** While any session is live (`isSessionActive`, an open `WorkoutSession` — it may not have
+  restarted its source after a relaunch — or a live board session), the picker's Apple Watch row, band rows, "Prefer band
+  for detailed clips" (it changes the automatic source) and the saved band's Forget swipe (same reason) are disabled, under
+  a line "You can't change the heart-rate source while a session is live. Finish the session first, then switch." Band
+  scanning still runs (it changes nothing).
+- **Seed**: `-uiTestWatchEnded` plays the Watch's part through the real decode / handle path: a 128 bpm sample after 1 s,
+  then the `.ended` payload after 5 s. **Known gap (not in this brief)**: `KilterSessionManager.adopt` still claims the
+  source if one is running when a board session is recovered, which after a relaunch can be a gym session's.
+
+- **UI tests never send to the real Watch (prompt 264, added at review).** `WatchSendGate` (Shared): a launch with any
+  `-uiTest…` argument sends nothing over `WCSession` from `AppleWatchMetricsSource` or `RacketWatchRelay`. A UI test
+  run on a real phone started sessions, which queued a `start` for the paired Watch with nothing to stop it. On that
+  phone the simulated "Watch ended" test only applies when the heart-rate source is the Watch (a saved band wins).

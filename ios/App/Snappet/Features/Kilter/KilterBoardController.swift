@@ -945,6 +945,24 @@ final class KilterSessionManager {
         try? context.save()
     }
 
+    /// Whether a board session is live (prompt 264): the in-memory one, or an open one in the store that `recover`
+    /// would adopt (after a relaunch, before Kilter is opened again). Read-only: adopts, closes and saves nothing.
+    /// The gym tracker refuses to start a session while this is true (`GymStartGate`), so the board session keeps
+    /// its heart-rate source.
+    func isLive(in context: ModelContext) -> Bool {
+        if current != nil { return true }
+        let open = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.endedAt == nil }))) ?? []
+        guard !open.isEmpty else { return false }
+        let plan = KilterSessionRecovery.plan(
+            open: open.map {
+                KilterSessionRecovery.Candidate(id: $0.id, startedAt: $0.startedAt,
+                                                lastActivity: lastActivity(of: $0, in: context))
+            },
+            now: .now)
+        return plan.adopt != nil
+    }
+
     func end(in context: ModelContext) {
         guard let id = current?.id else { return }
         end(sessionID: id, in: context)

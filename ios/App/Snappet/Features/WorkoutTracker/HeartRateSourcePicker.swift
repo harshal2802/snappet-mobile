@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -21,13 +22,34 @@ struct HeartRateSourcePicker: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var context
+    /// Open gym workouts (prompt 264): one may be live before its source restarts after a relaunch.
+    @Query(filter: #Predicate<WorkoutSession> { $0.completedAt == nil }) private var openWorkouts: [WorkoutSession]
 
     private var coordinator: LiveMetricsCoordinator { app.liveWorkout }
     private var ble: BLEHeartRateMetricsSource { coordinator.ble }
 
+    /// F8 (prompt 264): switching mid-session would point the session at a source that was never started (every
+    /// sample at t = 0) and drop the running source's buffer at finish. While any session is live, every control
+    /// that can change the active source is disabled, with this line saying why. nil ⇒ unlocked.
+    private var lockReason: String? {
+        HRSourceLock.reason(metricsRunning: coordinator.isSessionActive,
+                            workoutLive: !openWorkouts.isEmpty,
+                            boardLive: app.kilterSessions.isLive(in: context))
+    }
+
     var body: some View {
         NavigationStack {
             List {
+                if let lockReason {
+                    Section {
+                        Label(lockReason, systemImage: "lock.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("hrSourceLocked")
+                    }
+                }
                 Section {
                     sourceRow(kind: .appleWatch,
                               subtitle: watchSubtitle,
@@ -67,6 +89,7 @@ struct HeartRateSourcePicker: View {
                     Text("Use a connected heart-rate band when available").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .disabled(lockReason != nil)
             .accessibilityIdentifier("hrSourcePreferBand")
         } footer: {
             Text("A heart-rate band records about once a second — the most detailed heart rate for your clips. An Apple Watch records a bit less often, so Snappet also backfills watch sessions from Health when it can.")
@@ -128,6 +151,7 @@ struct HeartRateSourcePicker: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(lockReason != nil)
         .accessibilityIdentifier(identifier)
     }
 
@@ -150,9 +174,11 @@ struct HeartRateSourcePicker: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(lockReason != nil)
         .accessibilityIdentifier("hrSourceBLEDevice")
         .swipeActions(edge: .trailing) {
-            if ble.rememberedID == device.id {
+            // Forgetting the saved band can change the automatic source too, so it waits as well.
+            if ble.rememberedID == device.id, lockReason == nil {
                 Button(role: .destructive) { ble.forget(device) } label: {
                     Label("Forget", systemImage: "trash")
                 }
