@@ -173,12 +173,18 @@ enum IntentSetBuilder {
 /// the gym wall, or a Shortcuts "Open URL":
 /// `snappet://quick[?activity=Bench Press]` · `snappet://finish` ·
 /// `snappet://log?activity=Bench Press&reps=8&weight=75[&unit=kg][&seconds=42][&meters=5000]` ·
-/// `snappet://attempt?climb=Blue arete&outcome=sent`. Pure parse.
+/// `snappet://attempt?climb=Blue arete&outcome=sent` · `snappet://workout` (open the running workout: the Live Activity's
+/// tap, prompt 265). Pure parse.
 enum WorkoutLinkAction: Equatable, Sendable {
     case quick(activity: String?)
     case finish
     case log(activity: String, reps: Int?, weight: Double?, unit: WeightUnit?, seconds: Double?, meters: Double?)
     case attempt(climb: String, outcome: KilterAscentStatus)
+    /// Open the running workout's player (the workout Live Activity's tap, prompt 265).
+    case open
+
+    /// The link the workout Live Activity opens (prompt 265, F15): `WorkoutActivityAttributes.openURL`.
+    static let openLink = "snappet://workout"
 
     init?(url: URL) {
         guard let c = URLComponents(url: SnappetWebLink.appForm(url), resolvingAgainstBaseURL: false),
@@ -191,6 +197,10 @@ enum WorkoutLinkAction: Equatable, Sendable {
             self = .quick(activity: q["activity"].flatMap { $0.isEmpty ? nil : $0 })
         case "finish":
             self = .finish
+        case "workout":
+            // Exactly `snappet://workout`: a path (`snappet://workout/session/1`) is not a route (yet).
+            guard c.path.isEmpty || c.path == "/" else { return nil }
+            self = .open
         case "log":
             guard let a = q["activity"], !a.isEmpty else { return nil }
             self = .log(activity: a, reps: q["reps"].flatMap(Int.init), weight: q["weight"].flatMap(Double.init),

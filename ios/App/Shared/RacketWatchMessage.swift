@@ -286,10 +286,15 @@ enum RacketWatchMessage: Equatable, Sendable {
     case command(RacketWatchCommandEnvelope)
     /// Phone → Watch: the match / drill left the phone's screen; the Watch goes back to its usual face.
     case clear(sessionID: UUID)
+    /// Phone → Watch (prompt 265, F10): no racket screen is up on the phone any more (it relaunched, or the session
+    /// ended). The Watch drops any racket face whose snapshot is not newer than `through` and ignores older snapshots
+    /// still queued, so a face left by an app kill can't stay. See `RacketWatchFreshness`.
+    case clearAll(through: Int)
 
     static let kindKey = "racketKind"
     private static let dataKey = "data"
     private static let sessionKey = "session"
+    private static let revisionKey = "revision"
 
     var payload: [String: Any] {
         switch self {
@@ -299,6 +304,8 @@ enum RacketWatchMessage: Equatable, Sendable {
             return [Self.kindKey: "command", Self.dataKey: Self.encode(c) ?? Data()]
         case .clear(let id):
             return [Self.kindKey: "clear", Self.sessionKey: id.uuidString]
+        case .clearAll(let revision):
+            return [Self.kindKey: "clearAll", Self.revisionKey: revision]
         }
     }
 
@@ -316,6 +323,9 @@ enum RacketWatchMessage: Equatable, Sendable {
         case "clear":
             guard let id = (payload[Self.sessionKey] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
             self = .clear(sessionID: id)
+        case "clearAll":
+            guard let revision = payload[Self.revisionKey] as? Int else { return nil }
+            self = .clearAll(through: revision)
         default:
             return nil
         }

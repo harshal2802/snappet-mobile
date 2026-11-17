@@ -290,6 +290,8 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
             guard let self else { return }
             self.connectionState = activated ? .active : .inactive
             self.isReachable = reachable
+            // Prompt 265 (F10): a racket face left on the Watch by an app kill goes away at launch.
+            if activated { RacketWatchRelay.shared.clearStale() }
         }
     }
 

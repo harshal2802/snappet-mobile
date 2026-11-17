@@ -5,7 +5,8 @@ import WatchKit
 /// The Watch end of a racket match / drill running on the phone (prompt 245, issue #438 step 2). Holds the phone's
 /// latest snapshot, sends taps back, shows a score tap at once (the phone's next snapshot wins) and taps the wrist
 /// when the phase changes. Every rule here is the pure, tested `Shared/RacketWatchMessage.swift`
-/// (`accepts`, `applyingOptimistically`, `RacketWatchCue`); this class only holds state and plays haptics.
+/// (`accepts`, `applyingOptimistically`, `RacketWatchCue`) and `Shared/RacketWatchFreshness.swift` (prompt 265: leave a
+/// face the phone has left); this class only holds state and plays haptics.
 @MainActor
 @Observable
 final class RacketWatchModel {
@@ -17,6 +18,8 @@ final class RacketWatchModel {
     private(set) var dismissedNotice: RacketWatchState.Notice?
 
     @ObservationIgnored var send: ((RacketWatchCommandEnvelope) -> Void)?
+    /// Prompt 265 (F10): has the phone answered our taps, and which snapshots are gone.
+    @ObservationIgnored private var freshness = RacketWatchFreshness()
 
     var showsNotice: Bool {
         guard let n = state?.notice else { return false }
@@ -26,17 +29,21 @@ final class RacketWatchModel {
     func receive(_ message: RacketWatchMessage) {
         switch message {
         case .state(let s):
-            guard RacketWatchState.accepts(s, over: state) else { return }
+            guard freshness.admits(s), RacketWatchState.accepts(s, over: state) else { return }
+            freshness.heard()
             let cue = RacketWatchCue.between(state, s)
             if s.surface.kind != "start" || s.sessionID != state?.sessionID { startDeferred = false }
             state = s
             play(cue)
         case .clear(let id):
             if state?.sessionID == id {
-                state = nil
-                startDeferred = false
-                dismissedNotice = nil
+                if let r = state?.revision { freshness.cleared(through: r) }
+                leave()
             }
+        case .clearAll(let revision):
+            let drops = RacketWatchFreshness.clearAllDrops(state, through: revision)
+            freshness.cleared(through: revision)
+            if drops { leave() }
         case .command:
             break   // commands flow Watch → phone only
         }
@@ -49,9 +56,28 @@ final class RacketWatchModel {
         if let shown = s.applyingOptimistically(command) { state = shown }
         send?(RacketWatchCommandEnvelope(sessionID: s.sessionID, command: command))
         WKInterfaceDevice.current().play(.click)
+        freshness.tapped(at: Date())
+        // No answer from the phone in time (it was closed mid-match): back to the usual face. The phone's next
+        // snapshot brings the racket face back; the tap itself is queued for it.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(RacketWatchFreshness.answerWindowSec + 0.5))
+            self?.leaveIfUnanswered()
+        }
     }
 
     func dismissNotice() { dismissedNotice = state?.notice }
+
+    private func leaveIfUnanswered() {
+        guard let s = state, freshness.isStale(now: Date()) else { return }
+        freshness.cleared(through: s.revision)
+        leave()
+    }
+
+    private func leave() {
+        state = nil
+        startDeferred = false
+        dismissedNotice = nil
+    }
 
     private func play(_ cue: RacketWatchCue?) {
         guard let cue else { return }
