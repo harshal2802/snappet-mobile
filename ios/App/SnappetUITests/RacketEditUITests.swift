@@ -46,41 +46,23 @@ final class RacketEditUITests: XCTestCase {
         XCTAssertTrue(surface.waitForExistence(timeout: 8) || any("racket.player.missing.title").exists, "the Watch-mode player")
     }
 
-    /// Tap the video where nothing else is (upper middle).
-    private func tapVideo(dx: CGFloat = 0.5) {
-        surface.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.33)).tap()
-    }
+    /// The player's auto-hiding controls, driven without racing the hide (shared: `RacketPlayerControls`).
+    private var player: RacketPlayerControls { RacketPlayerControls(app: app) }
+    private func tapVideo(dx: CGFloat = 0.5) { player.tapVideo(dx: dx) }
+    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.freshControls(file: file, line: line) }
+    private func pause(file: StaticString = #filePath, line: UInt = #line) { player.pause(file: file, line: line) }
 
-    private func showControls() { freshControls() }
-
-    /// The controls with a fresh 3 s before they hide by themselves: if they show (and may be about to fade), hide
-    /// them first, then tap again (apart enough not to be a double tap).
-    private func freshControls() {
-        if controls.exists {
-            tapVideo()
-            _ = controls.waitForNonExistence(timeout: 2)
-            Thread.sleep(forTimeInterval: 0.8)
-        }
-        tapVideo()
-        XCTAssertTrue(controls.waitForExistence(timeout: 3), "the controls show")
-    }
-
-    /// Pause with the controls showing (paused, they stay).
-    private func pause(file: StaticString = #filePath, line: UInt = #line) {
-        freshControls()
-        if controls.label == "Pause" { controls.tap() }
-        XCTAssertEqual(controls.label, "Play", file: file, line: line)
+    /// The controls showing: the playhead is in rally `k`. Portrait has the label line; landscape only the one-line
+    /// title ("… · Rally 12 of 21").
+    private func at(_ k: Int) -> Bool {
+        let label = any("racket.player.label")
+        return label.exists ? label.label.hasPrefix("Rally \(k) ") : any("racket.player.title").label.contains("Rally \(k) of")
     }
 
     /// With the controls showing and paused: back to the first rally, then forward to rally `n`.
     private func goToRally(_ n: Int) {
         let prev = app.buttons["racket.player.prevRally"], next = app.buttons["racket.player.nextRally"]
         for _ in 0..<30 where prev.isEnabled { prev.tap() }
-        // Portrait has the label line; landscape only the one-line title ("… · Rally 12 of 21").
-        func at(_ k: Int) -> Bool {
-            let label = any("racket.player.label")
-            return label.exists ? label.label.hasPrefix("Rally \(k) ") : any("racket.player.title").label.contains("Rally \(k) of")
-        }
         for _ in 0..<(n - (at(1) ? 1 : 0)) { next.tap() }
         XCTAssertTrue(at(n), "at rally \(n)")
     }
@@ -105,9 +87,11 @@ final class RacketEditUITests: XCTestCase {
         pause()
         if let n {
             goToRally(n)
-            controls.tap()
-            Thread.sleep(forTimeInterval: 1.5)
-            controls.tap()
+            // A moment of play, so the playhead is inside rally n (not on its first frame), then paused for Edit.
+            // Not a timed 1.5 s: playing, the controls hide 3 s after the Play tap, and on the runner the sleep plus
+            // the next step outlasted that (Pause, then Edit, found no button).
+            player.playAMoment()
+            XCTAssertTrue(at(n), "still in rally \(n)")
         }
         button("racket.player.edit").tap()
         XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5), "Edit mode")
@@ -241,7 +225,7 @@ final class RacketEditUITests: XCTestCase {
         XCTAssertTrue(any("racket.player.subtitle").label.hasSuffix("of 22"), any("racket.player.subtitle").label)
 
         // Reopen: the look and the score are kept.
-        if controls.label == "Pause" { controls.tap() }
+        pause()
         button("racket.player.edit").tap()
         XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
         XCTAssertEqual(any("racket.edit.count").label, "22 rallies · 21 tagged")
@@ -384,9 +368,8 @@ final class RacketEditUITests: XCTestCase {
         openPlayer()
         pause()
         goToRally(12)
-        controls.tap()
-        Thread.sleep(forTimeInterval: 1.5)
-        controls.tap()
+        player.playAMoment()
+        XCTAssertTrue(at(12), "still in rally 12")
         share("whole")
         share("rally")
         share("ralliesOnly")
@@ -394,13 +377,13 @@ final class RacketEditUITests: XCTestCase {
         if !button("racket.player.speed").exists { tapVideo() }
         button("racket.player.speed").tap()
         button("racket.player.speed.0.5").tap()
-        if controls.label == "Pause" { controls.tap() }
+        pause()
         share("rally", keepSpeed: true)
         // Back to 1×, Warm for this video, then this rally with the look and labels.
         if !button("racket.player.speed").exists { tapVideo() }
         button("racket.player.speed").tap()
         button("racket.player.speed.1").tap()
-        if controls.label == "Pause" { controls.tap() }
+        pause()
         button("racket.player.edit").tap()
         XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
         button("racket.edit.tab.looks").tap()
@@ -420,7 +403,7 @@ final class RacketEditUITests: XCTestCase {
         share("rally", size: "960×540")
         share("whole", size: "960×540")
         // The re-rendered route on a phone: Warm with labels, still turned.
-        if controls.label == "Pause" { controls.tap() }
+        pause()
         button("racket.player.edit").tap()
         XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5))
         button("racket.edit.tab.looks").tap()

@@ -123,10 +123,12 @@ final class RacketVideosUITests: XCTestCase {
         XCTAssertTrue(any("racket.player.surface").waitForExistence(timeout: 5))
         XCTAssertTrue(any("racket.player.standIn").exists, "no Photos video in the simulator")
         // It opens playing with the controls showing; they hide by themselves, and a tap brings them back.
+        // Edit hides with them, so it is tapped straight after a tap on the video brings them back (prompt 267).
+        let player = RacketPlayerControls(app: app)
         _ = app.buttons["racket.player.edit"].waitForNonExistence(timeout: 8)
-        any("racket.player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)).tap()
-        XCTAssertTrue(app.buttons["racket.player.edit"].waitForExistence(timeout: 3))
-        app.buttons["racket.player.edit"].tap()
+        player.tapVideo()
+        XCTAssertTrue(app.buttons["racket.player.edit"].waitForExistence(timeout: 3), "a tap brings the controls back")
+        player.tapControl(app.buttons["racket.player.edit"], until: app.buttons["racket.edit.list"], fresh: true)
         // Edit mode (prompt 254): the analysis view is under the rally list.
         XCTAssertTrue(app.buttons["racket.edit.list"].waitForExistence(timeout: 5))
         app.buttons["racket.edit.list"].tap()

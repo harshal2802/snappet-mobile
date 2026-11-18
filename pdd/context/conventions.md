@@ -87,7 +87,8 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
 - **UI tests wait on conditions, not on time.** On the CI runner one XCUITest step takes 1–3 s, so don't read or tap
   something that hides by itself (player controls, camera overlays, toasts) in separate steps that must fit inside its
   timer: read from one `snapshot()`, tap straight after refreshing the timer and check the outcome, or check the
-  lasting effect. `SnappetUITests/UITestTaps.swift` has `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`.
+  lasting effect. `SnappetUITests/UITestTaps.swift` has `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`;
+  `SnappetUITests/RacketPlayerControls.swift` drives the racket player's auto-hiding controls (use it, don't copy it).
 
 ## Experiments (spikes)
 

@@ -54,59 +54,15 @@ final class RacketPlayerUITests: XCTestCase {
         XCTAssertTrue(surface.waitForExistence(timeout: 8) || any("racket.player.missing.title").exists, "the Watch-mode player")
     }
 
-    /// Tap the video where nothing else is (upper middle).
-    private func tapVideo(dx: CGFloat = 0.5) {
-        surface.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.33)).tap()
+    /// The player's auto-hiding controls, driven without racing the hide (shared: `RacketPlayerControls`).
+    private var player: RacketPlayerControls { RacketPlayerControls(app: app) }
+    private func tapVideo(dx: CGFloat = 0.5) { player.tapVideo(dx: dx) }
+    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.freshControls(file: file, line: line) }
+    private func playPause(_ label: String) -> XCUIElement { player.playPause(label) }
+    private func tapControl(_ el: XCUIElement, until shows: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        player.tapControl(el, until: shows, file: file, line: line)
     }
-
-    private func showControls() { freshControls() }
-
-    /// The controls with a fresh 3 s before they hide by themselves: if they show (and may be about to fade), hide
-    /// them first, then tap again (apart enough not to be a double tap).
-    private func freshControls() {
-        if controls.exists {
-            tapVideo()
-            _ = controls.waitForNonExistence(timeout: 2)
-            Thread.sleep(forTimeInterval: 0.8)
-        }
-        tapVideo()
-        XCTAssertTrue(controls.waitForExistence(timeout: 3), "the controls show")
-    }
-
-    /// The play/pause button only while it reads `label`. A query: asking never fails once the controls have hidden.
-    private func playPause(_ label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "identifier == 'racket.player.playPause' AND label == %@", label)).firstMatch
-    }
-
-    /// Taps a control that hides with the others while playing, until `shows` appears. While playing the controls
-    /// hide 3 s after the last touch, and on the CI runner one XCUITest step takes 1–3 s, so "look, read, then tap"
-    /// can find the control gone at the tap ("no matches"). So the tap comes straight after the controls get a fresh
-    /// 3 s: a tap on the video shows them, or hides them if showing and the next tap shows them. Then the outcome is
-    /// checked and, if they hid first anyway, it goes round. (Tapping through the video's coordinates instead was
-    /// tried: in the landscape walk, whose scene is turned on an upright simulator, such taps never reach the control,
-    /// and in portrait they missed it in one local run of four.)
-    private func tapControl(_ el: XCUIElement, until shows: XCUIElement,
-                            file: StaticString = #filePath, line: UInt = #line) {
-        for _ in 0..<4 {
-            if shows.exists { break }
-            tapVideo()
-            if !el.waitForExistence(timeout: 1) {
-                if shows.exists { break }      // e.g. already paused, the controls were hidden
-                tapVideo()
-                guard el.waitForExistence(timeout: 2) else { continue }
-            }
-            el.tap()
-            if shows.waitForExistence(timeout: 2) { break }
-        }
-        XCTAssertTrue(shows.exists, "\(shows) after tapping \(el)", file: file, line: line)
-    }
-
-    /// Pause (paused, the controls stay and the button reads Play). Playing, the controls may be hidden or about to
-    /// hide, so this shows them if needed and taps Pause without racing the auto-hide.
-    private func pause(file: StaticString = #filePath, line: UInt = #line) {
-        tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
-        XCTAssertEqual(controls.label, "Play", file: file, line: line)
-    }
+    private func pause(file: StaticString = #filePath, line: UInt = #line) { player.pause(file: file, line: line) }
 
     /// With the controls showing and paused: back to the first rally, then forward to rally `n`.
     private func goToRally(_ n: Int) {

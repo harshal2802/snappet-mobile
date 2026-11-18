@@ -11962,10 +11962,30 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   screen only adds noise).
 - **The failures themselves were races with the runner's speed**, not wrong states: one XCUITest step takes 1–3 s
   there and "wait for the app to idle" up to a minute. Fixed by waiting on conditions, not by longer timeouts or sleeps:
-  - Lazy `List` below the fold (RacketSports "⋯ menu", all 3 tries): the failure's UI hierarchy shows the session
-    detail's recap cards filling the screen; scroll to the menu (`scrollIntoView`).
+  - RacketSports "⋯ menu" (all 3 tries) — **first diagnosis wrong, corrected after run 44206031436**. It was read as
+    "below the fold of a lazy `List`, scroll to it" (`scrollIntoView`, 8 slow swipes). The next run failed the same
+    way, 3/3, and its xcresult shows why that was not the whole story: in all nine hierarchies (one before the swipes,
+    one after each) the list's scroll bar stays at "2 pages, 0%" and the cells keep their frames, and the screen
+    recording has no new frame at all between the push finishing and the end of the swipes. The swipes never moved
+    the list. What is proven: (a) the session detail is the screen showing (title "City Open", recap cards, Photos &
+    videos); (b) the menu is not in the tree because the first exercise header is not realized: on the CI simulator
+    Photos access is denied, so the Photos & videos card adds "Enable Photos access in Settings" (114 pt instead of
+    90), pushing the header just past what the `List` realizes; locally, with Photos revoked
+    (`simctl privacy … revoke photos`), the same layout appears (114 pt, no menu in the tree) and one swipe scrolls
+    to it; (c) on the same runner a swipe on a session detail opened from History scrolls (RacketMixedSession, idle
+    wait 2 s after the swipe, as a scroll's deceleration), while here the idle wait after each swipe is 0.5 s and
+    nothing moves. Not proven: why the list does not scroll after this flow on iOS 26.4.1 (not reproducible on the
+    local iOS 26.5 runtime; the 26.4 runtime is not installed). No speculative change was made for it; see prompt 267.
   - A dropped toolbar tap (RacketDrill): after a relaunch, Quick Start tapped mid-transition left the Gym Tracker home
     on screen; `startQuickSession()` taps until the session timer shows.
+  - Racket Edit (run 44206031436, leg 8: three tests, "racket.player.playPause" / "racket.player.edit" not found):
+    the same auto-hide race as the player, in `RacketEditUITests`' own copies of the helpers (read the label, then
+    tap; play 1.5 s by `Thread.sleep`, then tap Pause and Edit). The player helpers moved to
+    `SnappetUITests/RacketPlayerControls.swift` (shared by RacketPlayer, RacketEdit, RacketVideos); "play a moment"
+    is now Play then Pause at once (`playAMoment`, the Play tap is the fresh touch) with an added check that the
+    playhead is still in the rally. `RacketVideosUITests` had the same read-then-tap on Edit; fixed the same way. The
+    other classes that open the player (AI, RealMatchWalk, EditMatch, SplitTimeout, Tagging) only read the surface's
+    value or non-hiding elements.
   - Auto-hiding overlays (racket player controls 3 s, camera focus sun 3 s, zoom dial 2 s): reads and taps went in
     separate steps that outlasted the timer. Camera: read the overlay from one `app.snapshot()` (throws instead of
     failing), drag through the always-present preview's coordinates, check the outcome, retry the focus tap if it had

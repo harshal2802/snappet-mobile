@@ -37,7 +37,13 @@ what local runs can and cannot prove.
    - `RacketSportsUITests.testTableTennisMatchIsScoredGameByGameAndDecides` (all 3 tries): the session detail opened
      with the recap cards (stats, badges, the racket card, Photos & videos) filling the screen; the exercise sections
      were below the fold of a lazy `List`, so no `session.exerciseMenu` existed. Scroll to it
-     (`XCUIApplication.scrollIntoView`, shared).
+     (`XCUIApplication.scrollIntoView`, shared). **Corrected after run 44206031436** (failed again 3/3): the swipes
+     never moved the list (scroll bar "2 pages, 0%" in all nine hierarchies, no new recording frame during the
+     swipes, 0.5 s idle after each where a scrolling swipe on the same runner idles 2 s). Proven: the header is not
+     realized because Photos access is denied on the CI simulator, so the Photos & videos card is 24 pt taller ("Enable
+     Photos access in Settings"); with Photos revoked locally the layout matches and one swipe reaches the menu. Not
+     proven, and not changed: why the list does not scroll after this flow on iOS 26.4.1 (the 26.4 runtime is not
+     available locally). Needs a diagnostic CI run (the user's call: it means a push).
    - `RacketDrillUITests.testEverySportsDrillScreens`: after the relaunch for the second sport, Quick Start was tapped
      while the Gym Tracker was still sliding in and the tap was dropped (the hierarchy is still the Gym Tracker home).
      `XCUIApplication.startQuickSession()` taps until the session's timer shows; used by the racket suites that start a
@@ -47,6 +53,10 @@ what local runs can and cannot prove.
      outcome, go round; pause before stepping rallies instead of stepping while playing. (Tapping through the video's
      coordinates was tried: in the landscape walk, whose scene is turned on an upright simulator, such taps never
      reach the controls. The landscape walk checks rally 12 paused at its start instead of after 1.5 s of play.)
+   - `RacketEditUITests` (run 44206031436, three tests) and `RacketVideosUITests` (same pattern, not yet failed): the
+     player's auto-hide race in their own copies of the helpers. The helpers move to `RacketPlayerControls.swift`
+     (shared); "play 1.5 s then pause" becomes Play then Pause at once (`playAMoment`) plus a check the playhead is
+     still in the rally.
    - `RacketProCameraUITests` (two tests): the same race with the focus sun (3 s) and the zoom dial (2 s). Read the
      overlay from one app snapshot, drag through the preview's coordinates, retry the focus tap if it faded first.
    - `FestivalUITests.testShareSheetRendersAPlanCodeAndOffersScan`: after "Share my plan" the app did not idle for 60 s
@@ -64,6 +74,8 @@ what local runs can and cannot prove.
 ## Output
 
 - `SnappetUITests/UITestTaps.swift` (new): `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`.
+- `SnappetUITests/RacketPlayerControls.swift` (new): the racket player's controls (`tapControl`, `pause`,
+  `playAMoment`, `freshControls`), shared by `RacketPlayerUITests`, `RacketEditUITests`, `RacketVideosUITests`.
 - Changed tests: the 27 files with async hooks, `RacketPlayerUITests`, `RacketProCameraUITests` (also `@MainActor`),
   `RacketSportsUITests`, `RacketDrillUITests`, `ActivityPageUITests`, `LibraryKilterUITests`.
 - `Snappet/Core/SnappetShareable.swift` (`QRCodeImage`).
