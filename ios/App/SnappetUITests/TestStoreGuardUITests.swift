@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class TestStoreGuardUITests: XCTestCase {
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
     }
 

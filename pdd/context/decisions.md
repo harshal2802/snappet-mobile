@@ -11946,3 +11946,43 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   range (left in a bag across the hall while scoring from the wrist) is queued and the racket face stays; before this
   change the Watch would have left the face 15 s after the first such tap and scoring from the wrist would stop. The
   phone-kill case is still covered: a reachable phone is woken by the tap, activates, and answers with a clear.
+
+## 2026-11-16 — CI UI tests: failures get their retries, and tests wait on conditions (prompt 267)
+
+- **Why some failures were never retried** (run 43935201896): each one is followed in the job log by "Restarting after
+  unexpected exit, crash, or test timeout" and a new runner pid; xcodebuild resumes at the NEXT test, so
+  `-retry-tests-on-failure` never sees it. All were in classes with an `async` `setUp` or `tearDown`
+  (`ActivityPageUITests`, `ActivityProgressUITests`, `RacketPlayerUITests`). A local probe (Xcode 27.2, not committed)
+  reproduced it: with `continueAfterFailure = false`, a failing test in a class with an async `setUp`, an async
+  `tearDown`, or an async test method exits the runner and is not retried; the same test with sync hooks
+  (`setUp` / `setUpWithError`) or with `continueAfterFailure = true` is retried twice. Not a shard-script bug.
+- **Fix**: the 27 UI test files' async hooks became `setUpWithError` / `tearDownWithError`; `LibraryKilterUITests`'s
+  async tests became sync (`wait(for:)`). `scripts/ci-ui-shard.py --check` fails on any async hook or test in
+  `SnappetUITests`, so it can't come back unnoticed. Kept `continueAfterFailure = false` (a later step on a wrong
+  screen only adds noise).
+- **The failures themselves were races with the runner's speed**, not wrong states: one XCUITest step takes 1–3 s
+  there and "wait for the app to idle" up to a minute. Fixed by waiting on conditions, not by longer timeouts or sleeps:
+  - Lazy `List` below the fold (RacketSports "⋯ menu", all 3 tries): the failure's UI hierarchy shows the session
+    detail's recap cards filling the screen; scroll to the menu (`scrollIntoView`).
+  - A dropped toolbar tap (RacketDrill): after a relaunch, Quick Start tapped mid-transition left the Gym Tracker home
+    on screen; `startQuickSession()` taps until the session timer shows.
+  - Auto-hiding overlays (racket player controls 3 s, camera focus sun 3 s, zoom dial 2 s): reads and taps went in
+    separate steps that outlasted the timer. Camera: read the overlay from one `app.snapshot()` (throws instead of
+    failing), drag through the always-present preview's coordinates, check the outcome, retry the focus tap if it had
+    faded. Player: tap a control straight after giving the controls a fresh 3 s (a tap on the video shows them, or
+    hides them and the next shows them), check the outcome, go round; queries that ask "showing AND reads Pause" in one
+    go. Tapping the player's controls through the video's coordinates was tried and dropped: in the landscape walk
+    (scene turned on an upright simulator) such taps never reached the control although its `screenPoint` matched,
+    and in portrait they missed it in one local run of four. A small gap remains (show → tap is one step, ~1–2 s on
+    CI, inside the 3 s). The landscape walk now checks rally 12 paused at its start instead of after 1.5 s of play
+    (the slower pause could run past the 6.2 s rally); its assertions are unchanged.
+  - A 3 s toast (Activity page "Added to Push Day"): XCUITest's post-tap idle wait was 2.6 s of it locally and 18 s on
+    CI. It can't be caught reliably, so the test checks what it confirms: Push Day's exercise count goes up by one.
+    The one assertion that changed target.
+  - First launch on a just-booted simulator timed out (ActivityProgress, first test of its leg): retried now, and the
+    workflow boots the simulator in the Resolve step so it settles during the ~8-minute build.
+- **One app change**: `QRCodeImage` built a new `CIContext` on every call from a view body; on CI the app did not idle
+  for 52–60 s after opening the festival share code (21 s after switching to Whole lineup). Now one shared CPU
+  (`useSoftwareRenderer`) context and an `NSCache` of drawn codes. Same image (the unit tests decode it). Attributed
+  from the timings, not profiled on the runner.
+- **Local runs cannot prove the CI result**: the local simulator is fast. The next CI run on PR #457 is the check.

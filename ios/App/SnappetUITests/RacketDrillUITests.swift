@@ -42,9 +42,7 @@ final class RacketDrillUITests: XCTestCase {
         let card = app.buttons["moduleCard.workout-log"]
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()
-        let quick = app.buttons["workout.quickStart"]
-        XCTAssertTrue(quick.waitForExistence(timeout: 6))
-        quick.tap()
+        XCTAssertTrue(app.startQuickSession(), "Quick Start opens an empty session")
         tapWhenHittable(app.buttons["freeform.cardRacket"])
         let s = app.buttons["racket.sport.\(sport)"]
         XCTAssertTrue(s.waitForExistence(timeout: 5))

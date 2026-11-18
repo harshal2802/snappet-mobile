@@ -3,7 +3,8 @@
 
     scripts/ci-ui-shard.py <index> <count>     # prints one `-only-testing:SnappetUITests/<Class>` per line
     scripts/ci-ui-shard.py --plan <count>      # prints every shard with its classes and test counts
-    scripts/ci-ui-shard.py --check <count>     # exits 1 unless every test class is in exactly one shard
+    scripts/ci-ui-shard.py --check <count>     # exits 1 unless every test class is in exactly one shard and no UI
+                                               # test has an async setUp / tearDown / test (they are never retried)
 
 Classes are found by reading the sources (no build needed): each `class X: XCTestCase` with at least one
 `func test…`. A class is weighted by its number of tests and placed, heaviest first, on the lightest shard so
@@ -17,6 +18,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "ios" / "App" / "SnappetUITests"
 CLASS = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|internal\s+)?(?:final\s+)?class\s+(\w+)\s*:\s*[^{]*\bXCTestCase\b")
 TEST = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|internal\s+)?func\s+test\w*\s*\(")
+# An async setUp / tearDown / test in a UI test class: when it fails with `continueAfterFailure = false`, the test
+# runner exits and xcodebuild restarts it at the NEXT test, so `-retry-tests-on-failure` never retries it (prompt 267).
+ASYNC = re.compile(r"\bfunc\s+(setUp|tearDown|test\w*)\s*\([^)]*\)\s*async\b")
 
 
 def classes():
@@ -32,6 +36,16 @@ def classes():
             elif current and TEST.match(line):
                 found[current] += 1
     return {name: n for name, n in found.items() if n > 0}
+
+
+def async_hooks():
+    """["File.swift:line: text"] for every async setUp / tearDown / test in the UI tests."""
+    found = []
+    for path in sorted(ROOT.rglob("*.swift")):
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if ASYNC.search(line):
+                found.append(f"{path.name}:{n}: {line.strip()}")
+    return found
 
 
 def shards(count):
@@ -58,7 +72,10 @@ def main(argv):
         every = classes()
         ok = sorted(placed) == sorted(every) and len(placed) == len(set(placed)) and all(plan)
         print(f"{len(every)} classes, {sum(every.values())} tests, {count} shards: {'ok' if ok else 'NOT ok'}")
-        return 0 if ok else 1
+        hooks = async_hooks()
+        for h in hooks:
+            print(f"async in a UI test (a failure there is never retried; use setUpWithError / tearDownWithError): {h}")
+        return 0 if ok and not hooks else 1
     if len(argv) == 3:
         index, count = int(argv[1]), int(argv[2])
         if not 1 <= index <= count:

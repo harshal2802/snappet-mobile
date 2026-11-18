@@ -6,7 +6,7 @@ import XCTest
 final class RacketRealMatchWalkUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = true
         try XCTSkipUnless(ProcessInfo.processInfo.environment["RACKET_REAL_WALK"] == "1", "real-data walk is opt-in")
         app = XCUIApplication()

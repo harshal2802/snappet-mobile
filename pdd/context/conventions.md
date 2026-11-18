@@ -81,6 +81,13 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
   missing. A new test-store argument goes in `UITestStore.freshStoreArguments` (`Snappet/Core/UITestStore.swift`) AND
   the mirrored list in `TestStoreGuard`. Tests that open links with `XCUIDevice.shared.system.open` call
   `try TestStoreGuard.skipLinkTestsOnDevice()` first: link tests are simulator-only.
+- **UI tests have no `async` hooks or tests** (prompt 267): use `setUpWithError` / `tearDownWithError` and
+  `wait(for:)`. A failure under `continueAfterFailure = false` in an async `setUp` / `tearDown` / test makes the
+  runner exit, and xcodebuild resumes at the next test without retrying it. `scripts/ci-ui-shard.py --check` fails on one.
+- **UI tests wait on conditions, not on time.** On the CI runner one XCUITest step takes 1–3 s, so don't read or tap
+  something that hides by itself (player controls, camera overlays, toasts) in separate steps that must fit inside its
+  timer: read from one `snapshot()`, tap straight after refreshing the timer and check the outcome, or check the
+  lasting effect. `SnappetUITests/UITestTaps.swift` has `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`.
 
 ## Experiments (spikes)
 

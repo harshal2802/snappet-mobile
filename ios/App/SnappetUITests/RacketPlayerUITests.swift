@@ -18,7 +18,7 @@ final class RacketPlayerUITests: XCTestCase {
         app.launchOnTestStore()
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
         XCUIDevice.shared.orientation = .portrait
     }
 
@@ -73,10 +73,38 @@ final class RacketPlayerUITests: XCTestCase {
         XCTAssertTrue(controls.waitForExistence(timeout: 3), "the controls show")
     }
 
-    /// Pause with the controls showing (paused, they stay).
+    /// The play/pause button only while it reads `label`. A query: asking never fails once the controls have hidden.
+    private func playPause(_ label: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier == 'racket.player.playPause' AND label == %@", label)).firstMatch
+    }
+
+    /// Taps a control that hides with the others while playing, until `shows` appears. While playing the controls
+    /// hide 3 s after the last touch, and on the CI runner one XCUITest step takes 1–3 s, so "look, read, then tap"
+    /// can find the control gone at the tap ("no matches"). So the tap comes straight after the controls get a fresh
+    /// 3 s: a tap on the video shows them, or hides them if showing and the next tap shows them. Then the outcome is
+    /// checked and, if they hid first anyway, it goes round. (Tapping through the video's coordinates instead was
+    /// tried: in the landscape walk, whose scene is turned on an upright simulator, such taps never reach the control,
+    /// and in portrait they missed it in one local run of four.)
+    private func tapControl(_ el: XCUIElement, until shows: XCUIElement,
+                            file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<4 {
+            if shows.exists { break }
+            tapVideo()
+            if !el.waitForExistence(timeout: 1) {
+                if shows.exists { break }      // e.g. already paused, the controls were hidden
+                tapVideo()
+                guard el.waitForExistence(timeout: 2) else { continue }
+            }
+            el.tap()
+            if shows.waitForExistence(timeout: 2) { break }
+        }
+        XCTAssertTrue(shows.exists, "\(shows) after tapping \(el)", file: file, line: line)
+    }
+
+    /// Pause (paused, the controls stay and the button reads Play). Playing, the controls may be hidden or about to
+    /// hide, so this shows them if needed and taps Pause without racing the auto-hide.
     private func pause(file: StaticString = #filePath, line: UInt = #line) {
-        freshControls()
-        if controls.label == "Pause" { controls.tap() }
+        tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
         XCTAssertEqual(controls.label, "Play", file: file, line: line)
     }
 
@@ -111,8 +139,9 @@ final class RacketPlayerUITests: XCTestCase {
         launch("portrait")
         openPlayer()
         // It opens playing with the controls showing; they hide by themselves while playing.
-        XCTAssertTrue(controls.waitForExistence(timeout: 4))
-        XCTAssertEqual(controls.label, "Pause", "Play opens playing")
+        // One query for "showing and reads Pause": reading the label after a separate existence check can land after
+        // the auto-hide on a slow runner.
+        XCTAssertTrue(playPause("Pause").waitForExistence(timeout: 4), "Play opens playing, with the controls showing")
         XCTAssertTrue(controls.waitForNonExistence(timeout: 8), "the controls hide by themselves while playing")
         XCTAssertTrue(any("racket.player.progress").exists, "the thin progress line stays")
 
@@ -239,7 +268,7 @@ final class RacketPlayerUITests: XCTestCase {
         // Two seconds into rally 12.
         controls.tap()
         Thread.sleep(forTimeInterval: 1.5)
-        controls.tap()
+        pause()
         shot("PlayerPaused")
         controls.tap()
         shot("PlayerChrome", delay: 0.2, hold: 0.8)
@@ -254,8 +283,7 @@ final class RacketPlayerUITests: XCTestCase {
         surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 3)
         Thread.sleep(forTimeInterval: 1)
         // Back to rally 12, paused.
-        showControls()
-        if controls.label == "Pause" { controls.tap() }
+        pause()
         app.buttons["racket.player.nextRally"].tap()
         app.buttons["racket.player.prevRally"].tap()
         for _ in 0..<3 where !any("racket.player.label").label.hasPrefix("Rally 12 ") { app.buttons["racket.player.prevRally"].tap() }
@@ -272,7 +300,7 @@ final class RacketPlayerUITests: XCTestCase {
         app.buttons["racket.player.speed"].tap()
         app.buttons["racket.player.speed.0.5"].tap()
         controls.tap()
-        app.buttons["racket.player.speed"].tap()
+        tapControl(app.buttons["racket.player.speed"], until: app.buttons["racket.player.loop"])
         shot("PlayerSpeed")
         // Loop this rally, controls hidden: the mode labels.
         app.buttons["racket.player.loop"].tap()
@@ -283,13 +311,15 @@ final class RacketPlayerUITests: XCTestCase {
         shot("PlayerZoom")
         app.buttons["racket.player.zoomReset"].tap()
         // End of game 1: loop off, 2×, last rally, then skip to the end.
-        showControls()
+        // Playing here: the controls hide by themselves, so pause for the menu and the rally steps, then play.
+        pause()
         app.buttons["racket.player.speed"].tap()
         app.buttons["racket.player.loop"].tap()
         app.buttons["racket.player.speed"].tap()
         app.buttons["racket.player.speed.1"].tap()
         for _ in 0..<10 where app.buttons["racket.player.nextRally"].isEnabled { app.buttons["racket.player.nextRally"].tap() }
-        if controls.label == "Play" { controls.tap() }
+        controls.tap()
+        XCTAssertTrue(playPause("Pause").waitForExistence(timeout: 2), "playing again")
         for _ in 0..<3 { surface.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.33)).doubleTap(); Thread.sleep(forTimeInterval: 0.8) }
         XCTAssertTrue(app.buttons["racket.player.replay"].waitForExistence(timeout: 15), "PlayerEnd")
         shot("PlayerEnd")
@@ -306,7 +336,7 @@ final class RacketPlayerUITests: XCTestCase {
         goToRally(12)
         controls.tap()
         Thread.sleep(forTimeInterval: 1.5)
-        controls.tap()
+        pause()
         tapVideo()
         XCTAssertTrue(controls.waitForNonExistence(timeout: 3))
         XCTAssertTrue(any("racket.player.turnHint").waitForExistence(timeout: 3), "a sideways video on an upright phone")
@@ -324,10 +354,9 @@ final class RacketPlayerUITests: XCTestCase {
         openPlayer()
         Thread.sleep(forTimeInterval: 1.5)
         pause()
+        // Paused at rally 12's start. (The portrait walks play it for 1.5 s first; here a pause costs a few seconds
+        // more, see `tapControl`, and rally 12 is only 6.2 s long.)
         goToRally(12)
-        controls.tap()
-        Thread.sleep(forTimeInterval: 1.5)
-        controls.tap()
         XCTAssertTrue(any("racket.player.title").label.hasPrefix("Game 1 · 7 – 5 · Rally 12 of 21"), any("racket.player.title").label)
         XCTAssertFalse(any("racket.player.turnHint").exists)
         shot("PlayerLandscapeChrome")

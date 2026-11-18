@@ -173,6 +173,9 @@ jobs:
           fi
           echo "Using simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          # Boot it now so it settles during the ~8-minute build (prompt 267): booted by xcodebuild right before the
+          # first test, the first app launch on a leg timed out ("Failed to get launch progress", run 43935201896).
+          xcrun simctl boot "$UDID" || xcrun simctl list devices | grep "$UDID"
 
       - name: Build & run ${{ matrix.suite }} on the simulator
         working-directory: ios/App
