@@ -67,12 +67,19 @@ pure `MediaLinkPlanner` (`MediaLinkTests`).
 - **Store migration:** the pre-265 build (`883382c8`) created the on-disk store, two `SessionMedia`
   rows were inserted into it, and this build opened the same file: the six columns were added in
   place, both rows kept their values, the new fields are NULL.
-- **Still owed — needs a physical iPhone with full Photos access** (nothing in `MediaLinkService`
-  has run against a real library): steps 2–4 of prompt 265's test plan — rows gain
-  `cloudIdentifier` and a second pass writes nothing; restore on a second device; re-link to a
-  duplicate after deleting the original; "Not on this phone" for a clip with no duplicate; an
-  iCloud-offloaded original opening in Studio. Also unmeasured: the first pass's cost on a large
-  library (one `PHAssetResource` lookup per never-stamped clip, off-main).
+- **Device (MrRobot, iPhone 13 Pro Max, real library, 2026-11-19).** Before installing, the
+  phone's store was copied to the Mac and its schema diffed against this build's (nothing on the
+  phone missing from the build; only the six columns added), and the upgrade was rehearsed on that
+  copy in the simulator. On the phone: all 43 tables kept their row counts (6,299 rows), integrity
+  check ok, no `localIdentifier` changed. First pass stamped 191 of 1,875 clips — every one with a
+  cloud identifier, capture instant, pixel size and original filename. A second launch changed no
+  `SessionMedia` row (acceptance criterion 1). The other 1,684 clips no longer resolve (almost all
+  filed in 2026-07; Oct–Nov clips are 101/104 live) and none of them re-linked, i.e. no unique
+  match exists in the library for them.
+- **Still owed — needs hands on the phone** (not yet done): "Not on this phone" seen on a dead clip
+  after tapping it; re-link to a duplicate after deleting the original; an iCloud-offloaded original
+  opening in Studio; restore on a second device signed into the same iCloud. Whether 1,684 dead
+  clips matches what the user expects of their library is also unconfirmed.
 
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 

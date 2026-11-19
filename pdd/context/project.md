@@ -85,9 +85,10 @@ re-links rows whose identifier died (deleted / freed-up asset, backup restored o
 the pure `MediaLinkPlanner`. The feed says "Not on this phone" for footage that is really gone, and
 Studio opens iCloud-offloaded originals. Nothing leaves the phone. **Verified on a Mac
 2026-11-19:** builds unchanged, `MediaLinkTests` 24/24, full unit suite green, an older backup still
-restores, a pre-265 on-disk store migrates in place. **Still owed on a physical iPhone:** everything
-that touches a real Photos library (stamping, re-link, "Not on this phone", Studio opening an
-offloaded original) — the simulator cannot hold Photos access under test. See the 2026-11-19 entry
+restores, a pre-265 on-disk store migrates in place. **On the phone (MrRobot) 2026-11-19:** upgrade kept every row; 191 of
+1,875 clips stamped with a cloud identifier + fingerprint, a second launch wrote nothing; the other
+1,684 no longer resolve and found no match. **Still owed, hands-on:** seeing "Not on this phone",
+the duplicate re-link, Studio opening an offloaded original, restore on a second device. See the 2026-11-19 entry
 in `decisions.md`. Later
 phases (cloud backup, Google) are blocked on the decisions in `docs/ux-research/cloud-connect/`.
 
