@@ -1,97 +1,184 @@
 name: CI
 
-# PR verification gate, split for speed. A single job previously ran ~30+ min, all inside one
-# `xcodebuild test` (clean build + the full unit AND UI suites, serially). It now fans out into jobs
-# that run in PARALLEL:
+# PR verification gate, split for speed. It fans out into jobs that run in PARALLEL:
 #   • engine — the pure HighlightEngine SwiftPM tests (~1–2 min); an independent fast signal.
-#   • app (SnappetTests)   — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
-#   • app (SnappetUITests-KofN) — the end-to-end UI suite, split into N legs that each build the app
-#     and run their share of the UI test classes (`scripts/ci-ui-shard.py`, prompt 261). One serial UI
-#     leg had grown to ~200 min of tests and was cancelled at the 90-min ceiling on every run, with zero
-#     test failures and the later classes never run. Change `UI_SHARDS` in the `changes` job to resize.
-# The unit and UI suites are matrix legs (`-only-testing:`), so the unit/correctness signal no longer
-# waits behind the slow UI run. SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached
-# between runs.
+#   • app (SnappetTests) — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
+#   • app (SnappetUITests-…) — the end-to-end UI tests, in legs that each build the app and run their share of
+#     the UI test classes (`scripts/ci-ui-shard.py`, prompts 261 and 268).
+#   • ui-selection — the selection script's own unit tests and `--check` (Linux, seconds).
+# SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached between runs.
 #
-# The ~30-min UI leg only RUNS WHEN A PR TOUCHES `ios/**` OR this workflow file — all app + UI + engine
-# source lives under ios/, so a docs/`pdd`-only PR cannot change app behavior and the UI suite would add
-# no signal (a change to ci.yml itself IS the build recipe, so it re-runs UI to validate it). A cheap
-# `changes` job (Linux) computes the test matrix: full `[SnappetTests, SnappetUITests-1ofN … NofN]` when ios/** (or
-# ci.yml) changed (or on a `main` push / manual dispatch — always full), else just `[SnappetTests]`, so
-# the UI runner is never even requested. The decision is fail-OPEN: only an explicit "no ios changes"
-# drops UI, so an ambiguous/failed filter errs toward running it. Unit + engine ALWAYS run (so
-# they never go un-reported and can't deadlock a required-check rule). To make a *merge* wait only on the
-# fast checks, require just `engine` + `App tests (SnappetTests)` in branch protection (NOT the UI leg —
-# it is deliberately skippable and must not be required, or skipped PRs would block).
+# WHICH UI tests run (prompt 268, user decision 2026-11-18). The full UI suite is 94 classes / 294 tests, about
+# 8 hours of machine time in 8 legs; with the few macOS runners a PR waited ~2 h for it, so it no longer runs on
+# every PR. The cheap Linux `changes` job lists the changed files and `scripts/ci-ui-shard.py --matrix` turns them
+# into the `app` matrix:
+#   • pull_request — the PR's own changes (the merge commit vs its first parent):
+#       - nothing under ios/ (or only unit tests / docs there)  → SnappetTests only, no macOS UI runner requested
+#       - ios/** outside every area (Core, Services, DesignSystem, Shared, project.yml, …)
+#                                                               → + `SnappetUITests-smoke` (6 tests, ~5 min)
+#       - an app file in an area (racket, workout, kilter, feed, …; the map is in the script), or a UI test /
+#         UI test helper file                                   → + smoke + those classes, `SnappetUITests-targeted-KofN`
+#         (ceil(tests / 35) legs; 8 legs or more becomes the full suite)
+#       - this file or the script changed (unless `ui-quick`), or the PR has the `full-ui` label
+#                                                               → the full suite, `SnappetUITests-1of8 … 8of8`
+#   • push to main — the same rules on the pushed range (before..after), except that this file and the script do
+#     not force the full suite (their PR already ran it). If the range can't be listed: smoke.
+#   • schedule (nightly, 08:37 UTC) — the full suite on main; skipped entirely when main has not moved since the
+#     previous nightly (if that check fails, it runs).
+#   • workflow_dispatch — the full suite, or with the `ui_classes` input (comma-separated class names) unit + exactly
+#     those classes in ceil(tests / 35) legs (`SnappetUITests-picked-KofN`). An unknown class name FAILS the
+#     `changes` job and nothing runs: the one place that does not fail open (a typo must not become a full run).
+#   • PR labels: `ui-quick` → unit + engine + smoke only, whatever changed (even this file); `full-ui` → the full
+#     suite. Both → full-ui. Read from the event payload, so a label added later applies from the next push (adding
+#     either label also starts a run at once).
+# The accepted trade-off: a PR's UI run covers the areas it touches plus the smoke set. A regression it causes in
+# ANOTHER area is caught by the next nightly, not before merge (main has no required checks).
+#
+# Fail-OPEN: on a PR, any error while choosing (the diff, the script, an empty or unparseable result) runs the full
+# suite; if the `changes` job fails outright, the `app` matrix falls back to the full suite (`fromJSON(… || […])`).
+# On a push the choice fails open to smoke (the nightly is hours away). Unit + engine always run, so they never go
+# unreported. To make a merge wait only on the fast checks, require just `engine` + `App tests (SnappetTests)`; never
+# a UI leg (their names and number change with the PR).
 # release-ipa.yml / testflight.yml are the only other app-compiling workflows (release / dispatch only).
 
 on:
   push:
     branches: [main]
   pull_request:
+    # `labeled`: adding `full-ui` or `ui-quick` starts a run with it at once (cancelling the PR's in-flight run).
+    # Any other label is a no-op run (every job skipped, in its own concurrency group so it cancels nothing).
+    # Labels are read from the event payload, which carries the PR's CURRENT labels on every push too.
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: '37 8 * * *'    # nightly full UI suite on main (night in US Central)
   workflow_dispatch:
+    inputs:
+      ui_classes:
+        description: 'UI test classes to run, comma-separated (e.g. RacketPlayerUITests,RacketEditUITests). Empty: the full suite.'
+        required: false
+        default: ''
 
-# Cancel superseded runs on the SAME ref — but only for pull requests. Pushing a new commit to a PR
-# branch should cancel its now-stale in-flight run (save runner minutes); pushing to `main` must NOT —
-# each merge's post-merge verification has to run to completion so the commit's status reports green.
-# (Rapid back-to-back merges previously cancelled each other's main runs, which read as red "failures".)
+# Cancel superseded runs of the same PR: a new push to a PR branch cancels its stale in-flight run. Every other run
+# (push to main, nightly, dispatch, a no-op label event) gets a group of its own, so nothing cancels it and it never
+# waits as "pending" behind another run (a pending run in a group is replaced by the next one, which would drop a
+# nightly or a merge's check).
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ (github.event_name == 'pull_request' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ui' && github.event.label.name != 'ui-quick')) && format('ci-pr-{0}', github.ref) || format('ci-{0}-{1}', github.event_name, github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Cheap Linux gate that decides which app-test suites the macOS `app` job runs, so the slow UI leg's
-  # macOS runner is never requested when a PR can't affect the app. Outputs a JSON array consumed by the
-  # `app` matrix via fromJSON. Runs in ~20s and only `app` waits on it; `engine` runs in parallel.
+  # Cheap Linux gate that decides which app-test legs the macOS `app` job runs. Outputs the `app` matrix (a JSON list
+  # of {suite, classes}) and `skip` (nightly with nothing new on main). Runs in ~20 s.
   changes:
-    name: Detect changed paths
+    name: Choose the app test legs
+    if: ${{ !(github.event.action == 'labeled' && github.event.label.name != 'full-ui' && github.event.label.name != 'ui-quick') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read   # dorny/paths-filter lists the PR's changed files via the API (no checkout)
+      actions: read    # the nightly reads the previous nightly's commit
     outputs:
-      suites: ${{ steps.suites.outputs.suites }}
+      matrix: ${{ steps.pick.outputs.matrix }}
+      skip: ${{ steps.pick.outputs.skip }}
     steps:
-      # Only meaningful on pull_request (diff vs base). On push/dispatch we force the full suite below,
-      # so the filter is skipped there (it has no diff base on workflow_dispatch).
-      - name: Detect ios/** changes (PRs only)
-        id: filter
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v3
+      # Depth 2: on a PR, HEAD is GitHub's merge commit and its first parent is the base tip, so `HEAD^1..HEAD` is
+      # exactly what the PR changes against today's base. A push fetches its `before` commit below.
+      - uses: actions/checkout@v4
         with:
-          filters: |
-            ios:
-              - 'ios/**'
-              # A PR that changes THIS workflow changes how the UI suite is built — run it to validate
-              # the recipe (the build steps live here, outside ios/**). release-ipa/testflight don't
-              # affect the PR test build, so they're intentionally not listed.
-              - '.github/workflows/ci.yml'
-      - name: Decide which app test suites to run
-        id: suites
+          fetch-depth: 2
+
+      - name: Choose the legs
+        id: pick
         env:
           EVENT: ${{ github.event_name }}
-          IOS_CHANGED: ${{ steps.filter.outputs.ios }}
-          # How many parallel legs the UI suite is split into. Keep the `app` matrix fallback below in step.
-          UI_SHARDS: 8
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          UI_CLASSES: ${{ github.event.inputs.ui_classes }}
+          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          # Fail-OPEN: full suite on non-PR events (a `main` push is post-merge integration; a manual
-          # dispatch is an explicit "run everything"), and on PRs UNLESS we're certain ios/** was
-          # untouched — i.e. only drop the ~30-min UI leg when the filter explicitly reported "false".
-          # Any empty/ambiguous filter value (e.g. the action silently no-ops) keeps the full suite, so we
-          # never SKIP UI by accident. Unit (SnappetTests) is always in the matrix — it's the fast gate.
-          if [ "$EVENT" != "pull_request" ] || [ "$IOS_CHANGED" != "false" ]; then
-            suites='"SnappetTests"'
-            for i in $(seq 1 "$UI_SHARDS"); do suites="$suites,\"SnappetUITests-${i}of${UI_SHARDS}\""; done
-            echo "suites=[$suites]" >> "$GITHUB_OUTPUT"
+          set -uo pipefail   # no -e: every failure below falls back on purpose
+          S=scripts/ci-ui-shard.py
+          CHANGED="$RUNNER_TEMP/changed.txt"
+          matrix=""
+          case "$EVENT" in
+            pull_request)
+              # The labels full-ui (full) and ui-quick (smoke only) override the paths; both → full-ui.
+              if [ "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 3 ] \
+                 && git diff --name-only --no-renames HEAD^1 HEAD > "$CHANGED"; then
+                cat "$CHANGED"
+              else
+                echo "::warning title=Changed files unknown::could not list the PR's changed files; full suite unless a label says otherwise"
+                : > "$CHANGED"   # empty: the script falls back to full (after the labels)
+              fi
+              matrix=$(python3 "$S" --matrix "$CHANGED" --fallback full --labels "$LABELS") ;;
+            push)
+              # A new branch or a force push has no usable `before`: smoke (the nightly runs everything).
+              if [[ ! "$BEFORE" =~ ^0*$ ]] && git fetch --no-tags --depth=1 origin "$BEFORE" \
+                 && git diff --name-only --no-renames "$BEFORE" "$GITHUB_SHA" > "$CHANGED"; then
+                cat "$CHANGED"
+                matrix=$(python3 "$S" --matrix "$CHANGED" --push --fallback smoke)
+              else
+                echo "::warning title=Smoke UI only::could not list the pushed range ${BEFORE}..${GITHUB_SHA}"
+                matrix=$(python3 "$S" --matrix --smoke)
+              fi ;;
+            schedule)
+              # The newest finished nightly (success or failure; cancelled ones don't count). Same commit → nothing to do.
+              prev=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=schedule&status=completed&per_page=20" \
+                --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].head_sha // ""') \
+                || prev=""
+              if [ -n "$prev" ] && [ "$prev" = "$GITHUB_SHA" ]; then
+                echo "::notice title=Nightly skipped::main is still at ${GITHUB_SHA}, which the previous nightly ran"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              matrix=$(python3 "$S" --matrix --full) ;;
+            workflow_dispatch)
+              # ui_classes: exactly those classes. An unknown name FAILS this job (not fail-open: a typo must not
+              # become a 2-hour full run), and `app` must not then fall back to the full suite either.
+              if [ -n "${UI_CLASSES// /}" ]; then
+                if ! matrix=$(python3 "$S" --matrix --classes "$UI_CLASSES"); then
+                  echo "::error title=ui_classes::unknown UI test class in '$UI_CLASSES' (see above); nothing was run"
+                  echo "skip=true" >> "$GITHUB_OUTPUT"
+                  exit 1
+                fi
+              else
+                matrix=$(python3 "$S" --matrix --full)
+              fi ;;
+            *)
+              matrix=$(python3 "$S" --matrix --full) ;;
+          esac
+          # Only a non-empty JSON list of {suite, …} goes out. Anything else leaves the output empty, and the `app`
+          # matrix expands its full fallback.
+          if printf '%s' "$matrix" | python3 -c 'import json, sys; m = json.load(sys.stdin); sys.exit(0 if isinstance(m, list) and m and all(isinstance(r, dict) and r.get("suite") for r in m) else 1)'; then
+            echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+            legs=$(printf '%s' "$matrix" | python3 -c 'import json, sys; print(" ".join(r["suite"] for r in json.load(sys.stdin)))')
+            echo "::notice title=App test legs::$legs"
           else
-            echo 'suites=["SnappetTests"]' >> "$GITHUB_OUTPUT"
-            echo "::notice title=UI tests skipped::No ios/** (or ci.yml) changes in this PR — skipping the SnappetUITests legs. Unit + engine still run."
+            echo "::warning title=Full UI suite::no usable matrix from the selection; the app job runs everything"
           fi
+
+  # The UI selection's own tests and the shard/area check, on Linux in seconds, so a broken map shows up here and
+  # not only inside a macOS leg.
+  ui-selection:
+    name: UI selection script tests
+    if: ${{ !(github.event.action == 'labeled' && github.event.label.name != 'full-ui' && github.event.label.name != 'ui-quick') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests of scripts/ci-ui-shard.py
+        run: python3 -m unittest discover -s scripts -p 'test_ci_ui_shard.py' -v
+      - name: Shards, areas and the workflow fallback agree
+        run: python3 scripts/ci-ui-shard.py --check
 
   engine:
     name: HighlightEngine (pure SwiftPM)
+    needs: changes
+    # Runs even if `changes` failed; skipped only for a no-op label event or a nightly with nothing new.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.skip != 'true' }}
     runs-on: macos-26          # Tahoe runner — Xcode 26.5, the shipping toolchain (see decisions.md)
     timeout-minutes: 20
     steps:
@@ -106,10 +193,12 @@ jobs:
   app:
     name: App tests (${{ matrix.suite }})
     needs: changes
-    # Run even if `changes` fails (e.g. a paths-filter API hiccup/rate-limit): `!cancelled()` overrides the
-    # implicit "skip a job whose `needs` failed", and the fromJSON fallback below then expands the FULL
-    # matrix — so a broken gate degrades to "run everything", never to silently losing the unit signal.
-    if: ${{ !cancelled() }}
+    # Run even if `changes` fails (e.g. an API hiccup): `!cancelled()` overrides the implicit "skip a job whose
+    # `needs` failed", and the fromJSON fallback below then expands the FULL matrix — so a broken gate degrades to
+    # "run everything", never to silently losing the unit signal. Skipped only for a no-op label event (`changes`
+    # skipped) or a nightly with nothing new (`skip`). The one exception to failing open: a manual dispatch with
+    # `ui_classes` whose `changes` job failed (an unknown class) runs nothing rather than the full fallback.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.skip != 'true' && !(github.event_name == 'workflow_dispatch' && github.event.inputs.ui_classes != '' && needs.changes.result != 'success') }}
     runs-on: macos-26
     # 90, not 60: the UI suite outgrew the old ceiling and started being CANCELLED at exactly
     # 60:00 mid-run — which surfaces as a red check with ZERO test failures, so it reads like a
@@ -120,15 +209,17 @@ jobs:
     # 2026-11-16 (prompt 261): the ceiling stays, the UI suite is now split into legs of ~34 tests each,
     # because one leg could no longer fit under any sane ceiling. Six legs was tried first: four finished
     # in 47–66 min, two hit 90 (one with 77 min of slow-but-green racket tests, one retrying real failures).
+    # 2026-11-18 (prompt 268): targeted legs hold at most ~35 tests too, so the same ceiling fits them.
     timeout-minutes: 90
     strategy:
       fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
       matrix:
-        # ["SnappetTests","SnappetUITests-1of8",…,"SnappetUITests-8of8"] or just ["SnappetTests"] — see the
-        # `changes` job. The UI legs are omitted (not skipped-in-place) when a PR doesn't touch ios/**, so
-        # no macOS runner is spent. The `|| [...]` fallback expands the full matrix if `changes` produced
-        # no output (job failed); it must list the same legs as `UI_SHARDS` there.
-        suite: ${{ fromJSON(needs.changes.outputs.suites || '["SnappetTests","SnappetUITests-1of8","SnappetUITests-2of8","SnappetUITests-3of8","SnappetUITests-4of8","SnappetUITests-5of8","SnappetUITests-6of8","SnappetUITests-7of8","SnappetUITests-8of8"]') }}
+        # Rows from `changes`: {"suite":"SnappetTests"}, full legs {"suite":"SnappetUITests-KofN"} (the leg recomputes
+        # its classes from the same sources), and smoke / targeted legs that carry their class list
+        # {"suite":"SnappetUITests-targeted-1of2","classes":"A B …"} so `changes` and the leg cannot disagree.
+        # The `|| '[…]'` fallback is the full matrix, used when `changes` produced no output (job failed); it must
+        # match FULL_LEGS in the script (`ci-ui-shard.py --check` verifies it).
+        include: ${{ fromJSON(needs.changes.outputs.matrix || '[{"suite":"SnappetTests"},{"suite":"SnappetUITests-1of8"},{"suite":"SnappetUITests-2of8"},{"suite":"SnappetUITests-3of8"},{"suite":"SnappetUITests-4of8"},{"suite":"SnappetUITests-5of8"},{"suite":"SnappetUITests-6of8"},{"suite":"SnappetUITests-7of8"},{"suite":"SnappetUITests-8of8"}]') }}
     env:
       SCHEME: Snappet
       SPM_CACHE: ${{ github.workspace }}/.spm-cache
@@ -181,20 +272,28 @@ jobs:
         working-directory: ios/App
         env:
           SUITE: ${{ matrix.suite }}
+          CLASSES: ${{ matrix.classes }}
         run: |
           set -euo pipefail
-          # "SnappetTests" runs the whole unit bundle; "SnappetUITests-KofN" runs leg K of N of the UI test
-          # classes (the script reads the sources, so a new test class lands in a leg with no list to edit).
+          # "SnappetTests" runs the whole unit bundle. A UI leg with `classes` (smoke / targeted) runs exactly those;
+          # "SnappetUITests-KofN" without them runs leg K of N of the full suite (the script reads the sources, so a
+          # new test class lands in a leg with no list to edit).
           ONLY=()
-          if [[ "$SUITE" =~ ^SnappetUITests-([0-9]+)of([0-9]+)$ ]]; then
+          if [ -n "$CLASSES" ]; then
+            python3 ../../scripts/ci-ui-shard.py --check
+            while IFS= read -r arg; do ONLY+=("$arg"); done \
+              < <(python3 ../../scripts/ci-ui-shard.py --only "$CLASSES")
+          elif [[ "$SUITE" =~ ^SnappetUITests-([0-9]+)of([0-9]+)$ ]]; then
             python3 ../../scripts/ci-ui-shard.py --check "${BASH_REMATCH[2]}"
             while IFS= read -r arg; do ONLY+=("$arg"); done \
               < <(python3 ../../scripts/ci-ui-shard.py "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")
-            [ "${#ONLY[@]}" -gt 0 ] || { echo "::error::no UI test classes for $SUITE" >&2; exit 1; }
-            printf '%s\n' "${ONLY[@]}"
+          elif [ "$SUITE" = "SnappetTests" ]; then
+            ONLY=("-only-testing:SnappetTests")
           else
-            ONLY=("-only-testing:$SUITE")
+            echo "::error::unknown suite $SUITE (a UI leg needs classes or the KofN form)" >&2; exit 1
           fi
+          [ "${#ONLY[@]}" -gt 0 ] || { echo "::error::no test classes for $SUITE" >&2; exit 1; }
+          printf '%s\n' "${ONLY[@]}"
           xcodebuild test \
             -scheme "$SCHEME" \
             -destination "id=${{ steps.sim.outputs.udid }}" \

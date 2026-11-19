@@ -12040,3 +12040,55 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   (`useSoftwareRenderer`) context and an `NSCache` of drawn codes. Same image (the unit tests decode it). Attributed
   from the timings, not profiled on the runner.
 - **Local runs cannot prove the CI result**: the local simulator is fast. The next CI run on PR #457 is the check.
+
+## 2026-11-18 — CI: UI tests by area on PRs, the full suite nightly (prompt 268)
+
+- **User decision (2026-11-18)**: the full UI suite (94 classes, 294 tests, ~8 h of machine time in 8 legs, ~2 h of
+  waiting for a PR on the few macOS runners) no longer runs on every PR. **Trade-off, accepted**: a PR's UI run covers
+  the areas it touches plus a smoke set, so a regression it causes in ANOTHER area is caught by the next nightly, not
+  before merge. Main has no required checks, so nothing blocks on the changing UI check names.
+- **What runs** (`scripts/ci-ui-shard.py`, the single place for the rules and the area map):
+  - PR: the merge commit vs its first parent (exactly what the PR changes against today's base; `fetch-depth: 2`, no
+    API). Nothing under ios/ (or only `SnappetTests` / engine tests / docs there) → unit + engine only. Other `ios/**`
+    outside every area (Core, Services, DesignSystem, Shared, project.yml, engine sources, watch, widgets) → + the smoke
+    leg. An app file in an area → + smoke + that area's classes. A UI test file → its classes + the classes that use
+    what it declares (helpers found by grepping their type / free-function / extension-member names; an extension
+    function with required labels must be called with them, so UITestTaps' `tap(_:until:)` isn't every `.tap()`); a
+    helper with no user found → full; `TestStoreGuard.swift` is used by every class → full. ci.yml or the script →
+    full (the recipe itself).
+  - Legs: ceil(tests / 35), balanced with the prompt-261 split; a selection needing 8 legs or more runs as the full
+    suite. Names: `SnappetUITests-smoke`, `SnappetUITests-targeted-KofN`, `SnappetUITests-picked-KofN` (dispatch),
+    `SnappetUITests-KofN` (full, unchanged).
+  - **Smoke** (always with any UI): SuiteSmokeTests (every module opens), TestStoreGuardUITests (the guard every test
+    leans on), WorkoutDashboardUITests (seeded store → Gym Tracker → History), FeedViewUITests (Recap tab): 6 tests,
+    ~5 min of tests at the runner's ~45 s a test, under 10 at the slow end, plus the leg's ~8 min build.
+  - Push to main: the same rules on `before..after`, but ci.yml / the script don't force full (their PR ran it, the
+    nightly re-runs it) and the choice fails open to **smoke**, not full: a merge already passed its PR's selection,
+    and putting 8 legs on every merge would bring back the queue this removes. A new branch / force push → smoke.
+  - Nightly (`schedule`, 08:37 UTC): full suite on main; skipped (all jobs) when the newest finished (success or
+    failure) nightly ran the same commit; if that API check fails, it runs.
+  - `workflow_dispatch`: full, or with `ui_classes` exactly those classes (no smoke). An unknown class name FAILS the
+    `changes` job and the `app` job does not fall back: the one place that is not fail-open, so a typo can't become a
+    2-hour full run or an empty one.
+  - PR labels (user, 2026-11-18): `full-ui` → full; `ui-quick` → unit + engine + smoke only, even when ci.yml changed
+    (a quick turnaround for PRs like #457); both → full-ui (fail toward more testing). Read from the event payload,
+    which carries the PR's current labels on every push, so a label added later applies from the next push.
+    `labeled` is a trigger type so adding either label starts a run at once; any other label gives a no-op run (all
+    jobs skipped) in a concurrency group of its own, so it cancels nothing. The labels must exist in the repo.
+- **Area map**: follows `Features/*`. WorkoutTracker splits cleanly by file name: `Racket*` → racket, the rest →
+  workout. Services / Shared files with an area prefix join it. A class may be in several areas
+  (HeartRateOwnership: workout + kilter; LiveSessionSafety: racket + workout; RoutineSchedule: workout + habit;
+  RacketMixedSession, a match plus lifts in one session, also in workout). `--check` fails when a class is in no area
+  and not in smoke (a new class can't silently drop out of targeted runs), an area pattern matches no class or no
+  file, or the ci.yml fallback is not the full matrix.
+- **Matrix rows carry their class list** (`{"suite","classes"}`) for smoke / targeted / picked legs, so `changes` and
+  the leg can't disagree; the leg validates it (`--only`, unknown class → error). Full legs keep recomputing
+  `KofN` from the sources (same commit), which keeps the `fromJSON(… || '[full]')` fallback short.
+- **Concurrency**: PR runs share `ci-pr-<ref>` and cancel stale ones; push / schedule / dispatch runs get a group per
+  run. A run waiting as "pending" in a shared group is replaced by the next one, which would have dropped a nightly
+  queued behind a merge's run.
+- **Engine now `needs: changes`** (~20 s later) so a skipped nightly / no-op label skips it too; it still runs if
+  `changes` fails.
+- **Verified**: the script by `scripts/test_ci_ui_shard.py` (unittest, run in the new Linux `ui-selection` job) and
+  `--check 8`; the workflow only by parsing and reading. The event handling (merge-commit diff, `before` fetch, the
+  nightly skip query, labels, dispatch input) is checked by the first real runs.

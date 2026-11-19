@@ -94,6 +94,13 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
   `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying` keeps the real 3 s. `SnappetUITests/UITestTaps.swift`
   has `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`; `SnappetUITests/RacketPlayerControls.swift` drives
   the racket player's controls (use it, don't copy it).
+- **CI runs UI tests by area** (prompt 268): a PR runs the UI classes of the areas it touches plus a smoke set;
+  the full suite runs nightly, on dispatch, on a ci.yml / `scripts/ci-ui-shard.py` change, or with the `full-ui`
+  label (`ui-quick`: smoke only). The area map is `AREAS` in `scripts/ci-ui-shard.py`: a **new UI test class must
+  match an area's class pattern** (or the smoke set), or `--check` fails; a new feature folder gets an area. Name UI
+  test classes after their area (`Racket…`, `Kilter…`) so the existing patterns pick them up. Preview a change's
+  legs with `git diff --name-only origin/main...HEAD | python3 scripts/ci-ui-shard.py --select -`; run chosen
+  classes on CI with a manual dispatch's `ui_classes`.
 
 ## Experiments (spikes)
 
