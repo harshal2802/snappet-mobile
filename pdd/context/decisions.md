@@ -4,6 +4,44 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-19] Media link resilience — durable handles stamped by ONE reconcile pass; re-link never guesses (cloud-connect P1, prompt 265)
+
+**Decision.** A clip's PHAsset `localIdentifier` is valid on one phone's library only, so
+`SessionMedia` now also carries a `cloudIdentifier` (`PHCloudIdentifier.stringValue`) and a
+fingerprint (`linkCapturedAt` / `linkDurationSec` / `linkPixelWidth` / `linkPixelHeight` /
+`linkFilename`). `MediaLinkService` stamps them while the asset resolves and, when the identifier
+later dies, re-links via the cloud identifier, else a unique fingerprint match. The decisions are the
+pure `MediaLinkPlanner` (`MediaLinkTests`).
+
+- **One reconcile pass, not twelve call-site edits.** Rows are created in ~12 places; stamping at
+  creation would touch all of them and still miss existing rows. The pass runs after the watch
+  import (launch + foreground) and after a backup restore, and is idempotent — already-stamped rows
+  reuse their stored fingerprint, so a settled store costs one batched `PHAsset` fetch and no writes.
+- **A tie is no match.** Two candidates with the same top score (burst photos) leave the row
+  unlinked. A wrong re-link would show the wrong footage under someone's HR overlay; an honest
+  "Not on this phone" is the better failure. Ruled out: "closest capture time wins".
+- **Fingerprint columns are separate from `durationSec` / `aspectRatio`.** Those describe how
+  Snappet plays the clip and diverge after a Studio bake; the fingerprint is the Photos asset as
+  last seen. Sharing them would re-stamp on every pass.
+- **The handles ARE in the backup** (unlike the re-derivable `aspectRatio`): restoring onto another
+  phone is exactly when `localIdentifier` is dead and they are the only way back. Optional fields →
+  old backups still decode; `formatVersion` unchanged.
+- **Never-stamped rows get a weaker fallback** (`session.startedAt + offsetSec`, kind, duration) —
+  except when `offsetSec == 0`, because the clamp hides the true capture instant.
+- **Only with full `.authorized` Photos access, never prompting.** Under `.limited` an unresolvable
+  id may be an asset the user has not shared, so the pass no-ops and `ClipMediaSurface` keeps the
+  generic "Couldn't load" copy instead of "Not on this phone".
+- **"Missing" is not persisted yet.** The feed derives it at load time; a stored flag arrives with
+  the manual relink sheet (P1b), which is its first reader.
+- **`StudioComposer.avAsset` now allows network access**, so an iCloud-offloaded original opens in
+  Studio (the feed, share and reel paths already did). Posters/thumbnails stay local-only for speed.
+- **On-device-only rule unaffected**: these are lookups inside the user's own Photos library; PhotoKit
+  downloading an iCloud original is the OS's transfer, not Snappet sending anything.
+
+**Verification.** Written on Linux with no Swift toolchain: NOT compiled, NOT run. Owed on a Mac:
+`xcodebuild test` (`MediaLinkTests`, `SnappetBackupTests`) and the device steps in the prompt's
+test plan (PhotoKit cloud-identifier mapping cannot be exercised in the simulator).
+
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 
 **Decision** (implementing `pdd/prompts/features/festival/07-festival-getting-started.md`;

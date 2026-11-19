@@ -303,6 +303,9 @@ struct BackupView: View {
             HouseholdStore.rerollDevices(context: context)   // two phones restored from one backup must not collide
             HouseholdXP.shared.load(context: context)   // chore XP from the restored log (household 01)
             app.resetHouseholdStore()
+            // Restored rows carry another install's Photos identifiers — re-link them now through
+            // the cloud identifier / fingerprint the backup carried (prompt 265).
+            Task { await app.reconcileMediaLinks() }
             if storeIsFallback {
                 // Honest about ephemerality: the in-memory preview vanishes on relaunch.
                 finish(.success("Restored \(file.recordCount) records into temporary storage "

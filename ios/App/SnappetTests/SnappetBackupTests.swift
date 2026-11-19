@@ -441,6 +441,12 @@ final class SnappetBackupTests: XCTestCase {
                                  assignedSetIndex: 1,
                                  assignedClimbUUID: "climb-uuid",
                                  source: .manual)
+        // Durable link handles (prompt 265) must survive a round trip — they are the only way a
+        // restore onto another phone finds the clip again.
+        media.cloudIdentifier = "cloud-id-123"
+        media.linkFingerprint = MediaFingerprint(
+            capturedAt: Date(timeIntervalSinceReferenceDate: 700_000_012.5), isVideo: true,
+            durationSec: 9.5, pixelWidth: 1920, pixelHeight: 1080, originalFilename: "IMG_0123.MOV")
         context.insert(media)
 
         context.insert(TimedExerciseCatalog(name: "7s max hang", category: .hangboard,

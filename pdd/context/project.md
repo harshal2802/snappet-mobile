@@ -78,6 +78,15 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟡 **Media link resilience (2026-11-19, `pdd/prompts/features/cloud-connect/`, P1 of Cloud Connect).**
+Clips no longer depend on a single phone's PHAsset `localIdentifier`: `MediaLinkService` stamps a
+cross-device `cloudIdentifier` + fingerprint on every `SessionMedia` while its asset resolves, and
+re-links rows whose identifier died (deleted / freed-up asset, backup restored onto a new phone) via
+the pure `MediaLinkPlanner`. The feed says "Not on this phone" for footage that is really gone, and
+Studio opens iCloud-offloaded originals. Nothing leaves the phone. **Unverified: written without a
+Swift toolchain — needs a Mac build + `MediaLinkTests` run + the device steps in prompt 265.** Later
+phases (cloud backup, Google) are blocked on the decisions in `docs/ux-research/cloud-connect/`.
+
 🟢 **Highlights convergence (2026-07-15, `pdd/prompts/features/highlights-convergence/`).** The
 standalone **Workout Reels tile is RETIRED** — its list was made redundant by the watch→Clips import
 and its export was the app's weakest video (never passed `hrOverlay:`). The reel maker converged

@@ -77,6 +77,21 @@ final class SessionMedia {
     /// Additive + optional → lightweight migration; `nil` for every existing workout clip.
     var assignedClimbUUID: String?
 
+    // MARK: - Durable link handles (cloud-connect P1, prompt 265). All additive + optional →
+    // SwiftData lightweight migration; `nil` on every row until `MediaLinkService` first sees the
+    // asset resolve. They let a dead `localIdentifier` (deleted asset, Google Photos "Free up
+    // space", restore onto a new phone) be re-linked — see `MediaLink.swift`.
+    /// PhotoKit's cross-device identifier (`PHCloudIdentifier.stringValue`); `nil` when iCloud
+    /// Photos is off or the asset has not been mapped yet.
+    var cloudIdentifier: String?
+    /// The asset's fingerprint AS LAST SEEN in Photos (deliberately separate from `durationSec` /
+    /// `aspectRatio`, which describe how Snappet plays the clip and can diverge after a bake).
+    var linkCapturedAt: Date?
+    var linkDurationSec: Double?
+    var linkPixelWidth: Int?
+    var linkPixelHeight: Int?
+    var linkFilename: String?
+
     init(id: UUID = UUID(), sessionID: UUID, localIdentifier: String,
          kind: Kind, offsetSec: Double, durationSec: Double? = nil, aspectRatio: Double? = nil,
          addedManually: Bool = false,
@@ -115,6 +130,23 @@ final class SessionMedia {
     /// `true` when the clip is not tied to a specific set (the General bucket): either explicitly
     /// pinned `general`, or simply has no `assignedExerciseID`.
     var isGeneral: Bool { assignmentSource == .general || assignedExerciseID == nil }
+
+    /// The stamped fingerprint, or `nil` if this row was never seen while its asset resolved.
+    var linkFingerprint: MediaFingerprint? {
+        get {
+            guard let linkCapturedAt else { return nil }
+            return MediaFingerprint(capturedAt: linkCapturedAt, isVideo: kind == .video,
+                                    durationSec: linkDurationSec, pixelWidth: linkPixelWidth,
+                                    pixelHeight: linkPixelHeight, originalFilename: linkFilename)
+        }
+        set {
+            linkCapturedAt = newValue?.capturedAt
+            linkDurationSec = newValue?.durationSec
+            linkPixelWidth = newValue?.pixelWidth
+            linkPixelHeight = newValue?.pixelHeight
+            linkFilename = newValue?.originalFilename
+        }
+    }
 
     /// A posted highlight reel (highlights P2) — `reelTitle` is the marker AND the display title.
     var isReel: Bool { reelTitle != nil }
