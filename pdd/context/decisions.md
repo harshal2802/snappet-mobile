@@ -38,9 +38,41 @@ pure `MediaLinkPlanner` (`MediaLinkTests`).
 - **On-device-only rule unaffected**: these are lookups inside the user's own Photos library; PhotoKit
   downloading an iCloud original is the OS's transfer, not Snappet sending anything.
 
-**Verification.** Written on Linux with no Swift toolchain: NOT compiled, NOT run. Owed on a Mac:
-`xcodebuild test` (`MediaLinkTests`, `SnappetBackupTests`) and the device steps in the prompt's
-test plan (PhotoKit cloud-identifier mapping cannot be exercised in the simulator).
+- **The feed's "Couldn’t load" / "Not on this phone" copy only appears once a clip is PLAYED.**
+  A feed post shows its still poster until tapped; `ClipMediaSurface` (and so the placeholder)
+  mounts on play or fullscreen. A test or a device check that just scrolls the feed sees neither
+  string (found on the Mac pass, 2026-11-19).
+- **The simulator cannot show "Not on this phone".** `xcodebuild test` leaves the app's Photos
+  permission DENIED on the simulator even after `simctl privacy grant photos` (the TCC row reads 2
+  before the run and 0 after), and re-granting mid-run kills the app. So the `.missing` branch and
+  the whole `MediaLinkService` pass are device-only; the simulator can only prove the negative
+  (`ClipsFeedUITests.testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing`).
+- **Every `-uiTestSeed…` argument that seeds clips uses an in-memory store**, so the seeds cannot
+  prove an on-disk migration. That was checked against a real store instead (below).
+
+**Verification (Mac, 2026-11-19, Xcode 27.2, iPhone 17 simulator / iOS 26.5).**
+- **Build:** the commit compiled as written — no source change was needed in the app, the PhotoKit
+  edge included. No warnings in any file this prompt added or edited (the three in `RootShell` /
+  `StudioComposer` are on older lines).
+- **Unit:** `MediaLinkTests` 24/24 as written (no test or planner change). `SnappetBackupTests`
+  13/13, including the new `testPre265BackupWithoutLinkHandlesStillRestoresAndCurrentOneCarriesThem`
+  (a file with the six new keys stripped restores un-stamped; a current file carries them). Full
+  `SnappetTests`: 3212 run, 0 failures, 5 skipped (the standing environment skips — on-device
+  intelligence, Studio profiling, real-closet data).
+- **UI:** full `SnappetUITests` — 286 run, 272 passed, 13 skipped (the standing device/two-phone
+  skips), 1 failure: `RacketSportsUITests.testTableTennisMatchIsScoredGameByGameAndDecides`
+  ("each exercise header should have a ⋯ menu"). It fails identically on the parent commit
+  `883382c8`, so it is not from this prompt; left untouched, forward-fix owed separately. The new
+  `ClipsFeedUITests.testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing` passes.
+- **Store migration:** the pre-265 build (`883382c8`) created the on-disk store, two `SessionMedia`
+  rows were inserted into it, and this build opened the same file: the six columns were added in
+  place, both rows kept their values, the new fields are NULL.
+- **Still owed — needs a physical iPhone with full Photos access** (nothing in `MediaLinkService`
+  has run against a real library): steps 2–4 of prompt 265's test plan — rows gain
+  `cloudIdentifier` and a second pass writes nothing; restore on a second device; re-link to a
+  duplicate after deleting the original; "Not on this phone" for a clip with no duplicate; an
+  iCloud-offloaded original opening in Studio. Also unmeasured: the first pass's cost on a large
+  library (one `PHAssetResource` lookup per never-stamped clip, off-main).
 
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 

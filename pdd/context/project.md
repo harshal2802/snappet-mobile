@@ -83,8 +83,12 @@ Clips no longer depend on a single phone's PHAsset `localIdentifier`: `MediaLink
 cross-device `cloudIdentifier` + fingerprint on every `SessionMedia` while its asset resolves, and
 re-links rows whose identifier died (deleted / freed-up asset, backup restored onto a new phone) via
 the pure `MediaLinkPlanner`. The feed says "Not on this phone" for footage that is really gone, and
-Studio opens iCloud-offloaded originals. Nothing leaves the phone. **Unverified: written without a
-Swift toolchain — needs a Mac build + `MediaLinkTests` run + the device steps in prompt 265.** Later
+Studio opens iCloud-offloaded originals. Nothing leaves the phone. **Verified on a Mac
+2026-11-19:** builds unchanged, `MediaLinkTests` 24/24, full unit suite green, an older backup still
+restores, a pre-265 on-disk store migrates in place. **Still owed on a physical iPhone:** everything
+that touches a real Photos library (stamping, re-link, "Not on this phone", Studio opening an
+offloaded original) — the simulator cannot hold Photos access under test. See the 2026-11-19 entry
+in `decisions.md`. Later
 phases (cloud backup, Google) are blocked on the decisions in `docs/ux-research/cloud-connect/`.
 
 🟢 **Highlights convergence (2026-07-15, `pdd/prompts/features/highlights-convergence/`).** The

@@ -69,6 +69,30 @@ import XCTest
         return false
     }
 
+    /// Prompt 265: "Not on this phone" is a claim about the user's library, so it may only be made when
+    /// the app can SEE the whole library. A seeded clip's identifier resolves to nothing here, but with
+    /// no Photos access that proves nothing — the surface must keep the generic "Couldn’t load this
+    /// clip". (The `.missing` copy itself needs full access + a really-deleted asset: device-owed.)
+    func testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing() {
+        let app = XCUIApplication()
+        app.resetAuthorizationStatus(for: .photos)
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+
+        // The feed shows a still poster until a clip is played; tapping it mounts the media surface,
+        // whose load then fails to resolve the seeded identifier.
+        let page = app.descendants(matching: .any)["clips.post.page"].firstMatch
+        XCTAssertTrue(reveal(page, in: app), "the seeded night posts a clip")
+        page.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+
+        let generic = app.staticTexts["Couldn’t load this clip"]
+        XCTAssertTrue(generic.waitForExistence(timeout: 10),
+                      "an unresolvable clip shows the generic load failure")
+        XCTAssertFalse(app.staticTexts["Not on this phone"].exists,
+                       "without full Photos access an unresolvable id must not be reported as missing")
+    }
+
     /// Festival prompt 03: the seeded night's auto-tagged clip surfaces in Clips as an
     /// artist·stage post behind the ONE new 🎪 Festival chip. (Poster pixels need real Photos
     /// assets — device-owed; the post card + chip behavior are what the simulator can prove.)
