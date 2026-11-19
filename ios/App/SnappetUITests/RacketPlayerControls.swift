@@ -58,10 +58,10 @@ struct RacketPlayerControls {
         XCTAssertEqual(playPause.label, "Play", file: file, line: line)
     }
 
-    /// Paused with the controls showing: play for a moment and pause again, so the playhead sits just inside where it
-    /// was (e.g. a rally's start).
-    func playAMoment(file: StaticString = #filePath, line: UInt = #line) {
-        tapControl(playPause("Play"), until: playPause("Pause"), file: file, line: line)
-        tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
+    /// A double tap on the video's left half: 10 s back (`RacketPlayerTaps`). The pair toggles the controls twice, so
+    /// they end as they were, and it neither plays nor pauses. If the app reads the two taps more than 0.3 s apart (a
+    /// busy main thread), they are two single taps: the controls toggle twice and the playhead stays; callers check.
+    func doubleTapBack() {
+        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.33)).doubleTap()
     }
 }

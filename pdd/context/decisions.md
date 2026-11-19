@@ -12030,6 +12030,57 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   - Table tennis "⋯ menu" in run 44411257920 (2026-11-18): **passed**, with the PROBE267 diagnostic not firing (the menu
     existed after the swipes), after failing 3/3 on the two runs before. Not explained; nothing changed for it. The
     temporary probe stays in for the next runs.
+  - **Run 44443276721 (e372362e, 2026-11-19)**: unit tests and UI legs 3–7 green; the hide-delay hook held
+    (RacketPlayerUITests 8/8 on first tries). Leg 8 was cancelled at its 90-minute limit seconds before finishing,
+    every test in it having passed, for two reasons:
+    - **"Still in rally 12"** (`RacketEditUITests` lines 96 and 374): first tries of
+      testSelectTrimShotsMarkUndoListAndDiscard and testTennisDoublesInspector, and two tries of testShareVariants,
+      failed; the retries passed and cost minutes. "Play, then Pause at once" (`playAMoment`) still leaves a window of
+      playback as long as one tap step (1–4 s there), and rally 12 is 6.2 s, so the Pause can land after it. Decision:
+      seek, don't play. `intoRally(n)` steps to rally n + 1 and double-taps the video's left half (10 s back,
+      `RacketPlayerTaps`): game 1's seeded rallies start 14 s apart and last at least 4.2 s (`RacketVideoSeed`), so that
+      is 4 s into rally n, paused, for any n < 21, however slow the runner; the pair toggles the controls twice, so they
+      stay showing. If the app reads the two taps more than 0.3 s apart (busy main thread) they are two single taps and
+      the playhead stays, so it tries again (up to 3) and then asserts rally n and Play. Real controls, no app hook,
+      no timing in the outcome. `playAMoment` had no other callers (RacketPlayer and RacketVideos never played "a
+      moment"), so it went; `RacketPlayerControls.doubleTapBack()` replaces it.
+    - **The app stopped going idle after Edit opened** (testShareTurnedRecording, 1302 s): from the first tap after
+      `racket.edit.done` appeared, every step waited the full 60 s for idle ("App animations complete notification not
+      received, will attempt to continue"), through Done, the player and the share sheet, to the end of the test (18
+      waits); earlier taps in the same test were fast, and no other test of the leg had a single such wait. Once
+      locally (2026-11-18, testTapTogglesControlsSpeedMenuSkipAndModes, 303 s) it began with the Edit tap's own wait
+      and held through Cancel and the tear-down. **Proven** (XCTAutomationSupport, the part XCTest loads into the app):
+      the idle check is `XCTAnimationsIdleNotifier`, which swizzles `UIViewAnimationState`'s `animationDidStart:` /
+      `animationDidStop:finished:` and reports idle when no started UIKit animation is still open (UIKit block
+      animations and SwiftUI's in-process animations of UIKit-backed views both go through it). So the symptom is a
+      start whose stop never came, and the count stays open until the app is relaunched, which is why it outlives Edit.
+      **Reproduced locally once, on the final code** (iPhone 17 Pro, iOS 26.5, 8 busy loops, the full RacketEdit class,
+      sixth test): the same test at the same step, share Cancel then Edit, then 60 s waits from the first tap in Edit
+      (9 in all before the run was stopped). lldb on the stalled app: `+[XCTAnimationsIdleNotifier
+      isAnimationInProgress]` YES, its counter `XCTActiveAnimationsCount` = 2, and no `UIViewAnimationState` left alive
+      in the heap (`objc_refs`). So two UIKit animations were reported started and their animation state went away
+      without a stop: the count leaked; nothing was left animating, so on a phone it should cost nothing, but it blinds
+      XCTest's idle check until the next launch. **Not caught in the act**: with a temporary in-app tracker of the same
+      starts and stops (not committed) it did not recur in about 90 Edit openings (the RacketEdit class with each
+      test twice, under 8 busy loops, twice; testShareTurnedRecording 6× under 12; a throwaway probe opening Edit 24
+      times per launch, under 8 busy loops and with the app in the background CPU band), nor in about 55 before that
+      with only a layer-animation dump (0, 8 and 16 busy loops); every tracked start got its stop. **Inferred from the
+      code, not proven**: the app starts no repeating or never-ending animation on this path (no `repeatForever`,
+      `TimelineView`, display link or UIKit animation call; the `withAnimation`s are
+      0.2–0.25 s one-shots; the playback's periodic observer only updates while playing, and Edit pauses). Two of the
+      three occurrences are in testShareTurnedRecording right after the share sheet's Cancel, and all three at a
+      `fullScreenCover` presenting Edit, whose `onAppear` takes the portrait lock
+      (`setNeedsUpdateOfSupportedInterfaceOrientations` on every presented controller, `requestGeometryUpdate`)
+      mid-transition, and which shows the status
+      bar and home indicator the player hides. One of those UIKit transitions dropping its animation stop under load
+      is the likeliest candidate; nothing shows which. **No app change was made for it** (a guess would not be a
+      fix). If it recurs, the next step is the same tracker behind a UI-test-only launch argument on CI, extended to
+      record who created each animation state, which would name the leaked one.
+    - Local check of this round (iPhone 17 Pro, iOS 26.5, Photos revoked, app uninstalled before each class):
+      `SnappetTests` 3205 tests, 0 failures; RacketEdit 8/8, RacketPlayer 8/8, RacketVideos 2/2 in two unloaded rounds
+      and one under 8 busy loops, no 60 s idle wait in any of them; `intoRally` needed one double tap every time. A
+      first loaded round, on the same code, is the stall reproduced above (5 of 8 Edit tests had passed when it was
+      stopped). The next CI run is the check.
   - A 3 s toast (Activity page "Added to Push Day"): XCUITest's post-tap idle wait was 2.6 s of it locally and 18 s on
     CI. It can't be caught reliably, so the test checks what it confirms: Push Day's exercise count goes up by one.
     The one assertion that changed target.

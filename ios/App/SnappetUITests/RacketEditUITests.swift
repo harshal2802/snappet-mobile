@@ -85,16 +85,26 @@ final class RacketEditUITests: XCTestCase {
 
     private func button(_ id: String) -> XCUIElement { app.buttons[id].firstMatch }
 
-    /// The Watch player at rally `n` (2 s in), paused, then Edit.
+    /// With the controls showing and paused: the playhead 4 s into rally `n` (not on its first frame), paused, however
+    /// slow the runner. It seeks rather than plays (prompt 267: "play a moment, then pause" ran past the 6.2 s rally 12
+    /// when each XCUITest step took 1–4 s). Game 1's seeded rallies start 14 s apart and last at least 4.2 s
+    /// (`RacketVideoSeed`), so 10 s back from rally n + 1's start is 4 s into rally n. A double tap read as two single
+    /// taps leaves the playhead where it was (see `doubleTapBack`): try again.
+    private func intoRally(_ n: Int, file: StaticString = #filePath, line: UInt = #line) {
+        goToRally(n + 1)
+        for _ in 0..<3 where !at(n) {
+            player.doubleTapBack()
+            showControls(file: file, line: line)
+        }
+        XCTAssertTrue(at(n), "4 s into rally \(n)", file: file, line: line)
+        XCTAssertEqual(player.playPause.label, "Play", "still paused", file: file, line: line)
+    }
+
+    /// The Watch player 4 s into rally `n`, paused, then Edit.
     private func openEdit(row: Int = 0, rally n: Int? = 12) {
         openPlayer(row: row)
         pause()
-        if let n {
-            goToRally(n)
-            // A moment of play, so the playhead is inside rally n (not on its first frame), then paused for Edit.
-            player.playAMoment()
-            XCTAssertTrue(at(n), "still in rally \(n)")
-        }
+        if let n { intoRally(n) }
         button("racket.player.edit").tap()
         XCTAssertTrue(button("racket.edit.done").waitForExistence(timeout: 5), "Edit mode")
     }
@@ -369,9 +379,7 @@ final class RacketEditUITests: XCTestCase {
         launch(extra: ["-uiTestShareName", "v2"])
         openPlayer()
         pause()
-        goToRally(12)
-        player.playAMoment()
-        XCTAssertTrue(at(12), "still in rally 12")
+        intoRally(12)
         share("whole")
         share("rally")
         share("ralliesOnly")

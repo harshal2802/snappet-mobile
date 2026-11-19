@@ -67,7 +67,24 @@ what local runs can and cannot prove.
    - `RacketEditUITests` (run 44206031436, three tests) and `RacketVideosUITests` (same pattern, not yet failed): the
      player's auto-hide race in their own copies of the helpers. The helpers move to `RacketPlayerControls.swift`
      (shared); "play 1.5 s then pause" becomes Play then Pause at once (`playAMoment`) plus a check the playhead is
-     still in the rally.
+     still in the rally. **Superseded after run 44443276721** (leg 8: "still in rally 12" at lines 96 and 374, first
+     tries of testSelectTrimShotsMarkUndoListAndDiscard, testTennisDoublesInspector and twice testShareVariants; the
+     retries passed): with 1–4 s per XCUITest step, the Pause landed after the 6.2 s rally had played out. No order of
+     steps fixes a playback window, so the tests seek instead of play: `intoRally(n)` goes to rally n + 1 and double-taps
+     the video's left half (10 s back), which lands 4 s into rally n for every rally of the seeded game 1 (starts 14 s
+     apart, at least 4.2 s long), paused, with the controls as they were; a double tap the app read as two single taps
+     leaves the playhead and is tried again (up to 3). `playAMoment` went (no other callers: RacketPlayer and
+     RacketVideos never used it); `RacketPlayerControls.doubleTapBack()` replaces it. No app change.
+   - `RacketEditUITests.testShareTurnedRecording` (run 44443276721, leg 8, 1302 s; the leg was cancelled at its 90-minute
+     limit seconds before finishing): from the first tap after Edit opened, every XCUITest step waited the full 60 s for
+     the app to idle ("App animations complete notification not received"), through Done, the player and the share
+     sheet, to the end of the test (18 waits). Once locally (2026-11-18, testTapTogglesControlsSpeedMenuSkipAndModes,
+     303 s) it began with the Edit tap's own idle wait. Reproduced locally once on the final code (same test, same step,
+     8 busy loops); lldb on the stalled app showed XCTest's in-app animation counter (`XCTActiveAnimationsCount`, fed by
+     swizzled `UIViewAnimationState` start/stop) stuck at 2 with no animation state left alive: a leaked count, not a
+     running animation. A temporary tracker of those starts and stops did not catch it in about 90 more Edit openings.
+     The app runs no never-ending animation on this path (code survey). **Cause not identified; no app change made for
+     it** (see decisions).
    - `RacketProCameraUITests` (two tests): the same race with the focus sun (3 s) and the zoom dial (2 s). Read the
      overlay from one app snapshot, drag through the preview's coordinates, retry the focus tap if it faded first.
    - `FestivalUITests.testShareSheetRendersAPlanCodeAndOffersScan`: after "Share my plan" the app did not idle for 60 s
@@ -86,7 +103,7 @@ what local runs can and cannot prove.
 
 - `SnappetUITests/UITestTaps.swift` (new): `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`.
 - `SnappetUITests/RacketPlayerControls.swift` (new): the racket player's controls (`showControls`, `tapControl`,
-  `pause`, `playAMoment`, `hideAfterArguments`), shared by `RacketPlayerUITests`, `RacketEditUITests`,
+  `pause`, `doubleTapBack`, `hideAfterArguments`), shared by `RacketPlayerUITests`, `RacketEditUITests`,
   `RacketVideosUITests`.
 - `Snappet/Features/WorkoutTracker/RacketPlayerWatch.swift` (`RacketPlayerChrome.hideAfter(arguments:)`, the UI-test
   hide-delay hook; `shouldHide(…, hideAfter:)`), `RacketWatchPlayerViews.swift` (uses it),
@@ -108,6 +125,9 @@ what local runs can and cannot prove.
       auto-hide is still asserted by a UI test launched without it.
 - [ ] RacketPlayer, RacketEdit, RacketVideos: 3 consecutive local runs on the final code, one under 8 busy loops, and
       one more under 16.
+- [ ] (After run 44443276721) RacketEdit opens Edit and shares from inside rally 12 by seeking, not playing
+      (`intoRally`); RacketPlayer, RacketEdit, RacketVideos pass two unloaded local rounds and one under 8 busy loops
+      with no 60 s idle wait; the idle stall after Edit is recorded with what is proven and what is not.
 
 ## Constraints
 
