@@ -43,7 +43,9 @@ what local runs can and cannot prove.
      realized because Photos access is denied on the CI simulator, so the Photos & videos card is 24 pt taller ("Enable
      Photos access in Settings"); with Photos revoked locally the layout matches and one swipe reaches the menu. Not
      proven, and not changed: why the list does not scroll after this flow on iOS 26.4.1 (the 26.4 runtime is not
-     available locally). Needs a diagnostic CI run (the user's call: it means a push).
+     available locally). Needs a diagnostic CI run (the user's call: it means a push). **Run 44411257920** (with the
+     temporary `PROBE267` diagnostic): passed on its first try and the probe never ran (the menu was there after the
+     swipes), after failing 3/3 on each of the two runs before. Unexplained; nothing changed for it; the probe stays.
    - `RacketDrillUITests.testEverySportsDrillScreens`: after the relaunch for the second sport, Quick Start was tapped
      while the Gym Tracker was still sliding in and the tap was dropped (the hierarchy is still the Gym Tracker home).
      `XCUIApplication.startQuickSession()` taps until the session's timer shows; used by the racket suites that start a
@@ -53,6 +55,15 @@ what local runs can and cannot prove.
      outcome, go round; pause before stepping rallies instead of stepping while playing. (Tapping through the video's
      coordinates was tried: in the landscape walk, whose scene is turned on an upright simulator, such taps never
      reach the controls. The landscape walk checks rally 12 paused at its start instead of after 1.5 s of play.)
+     **Superseded after run 44411257920** (legs 5 and 8 failed at `RacketPlayerControls.swift:62`, "No matches found":
+     RacketPlayer testBoardWalk 3/3, testBoardWalkLandscape, testBoardWalkLetterbox, four RacketEdit tests). On that
+     runner one tap step takes 3–4 s (find, interrupting elements, synthesize, wait for idle): the touch on the video
+     at t=38.16 and the Pause tap step's "Synthesize event" at t=42.29 are 4.1 s apart, past the 3 s timer, so no order of test steps can
+     win. Stop racing it: the app takes `-uiTestPlayerControlsHideAfter <seconds>` (read once, honoured only with the
+     UI-test store, `UITestStore.isFreshStore`; bad values ignored; `shouldHide` takes the delay; unit-tested), the
+     suites that tap the controls while playing launch with 60 s, `RacketPlayerControls` is plain show-then-tap with
+     outcome checks, and `testControlsHideByThemselvesWhilePlaying` keeps the real 3 s without tapping any control
+     while playing (see decisions).
    - `RacketEditUITests` (run 44206031436, three tests) and `RacketVideosUITests` (same pattern, not yet failed): the
      player's auto-hide race in their own copies of the helpers. The helpers move to `RacketPlayerControls.swift`
      (shared); "play 1.5 s then pause" becomes Play then Pause at once (`playAMoment`) plus a check the playhead is
@@ -68,14 +79,18 @@ what local runs can and cannot prove.
    - `ActivityProgressUITests.testClimbDashboardAndClimbingOverview`: the first test of its leg; the app launch timed
      out on a just-booted simulator. Fixed by the retry fix (it is now retried) and by booting the simulator in the
      "Resolve" step so it settles during the build.
-3. **No app behaviour changes** beyond the QR renderer (same image, faster), so `docs/knowledge-graph/data.js` is not
-   touched.
+3. **No app behaviour changes** beyond the QR renderer (same image, faster) and the player's UI-test-only hide-delay
+   hook (a real launch can't reach it), so `docs/knowledge-graph/data.js` is not touched.
 
 ## Output
 
 - `SnappetUITests/UITestTaps.swift` (new): `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`.
-- `SnappetUITests/RacketPlayerControls.swift` (new): the racket player's controls (`tapControl`, `pause`,
-  `playAMoment`, `freshControls`), shared by `RacketPlayerUITests`, `RacketEditUITests`, `RacketVideosUITests`.
+- `SnappetUITests/RacketPlayerControls.swift` (new): the racket player's controls (`showControls`, `tapControl`,
+  `pause`, `playAMoment`, `hideAfterArguments`), shared by `RacketPlayerUITests`, `RacketEditUITests`,
+  `RacketVideosUITests`.
+- `Snappet/Features/WorkoutTracker/RacketPlayerWatch.swift` (`RacketPlayerChrome.hideAfter(arguments:)`, the UI-test
+  hide-delay hook; `shouldHide(…, hideAfter:)`), `RacketWatchPlayerViews.swift` (uses it),
+  `SnappetTests/RacketPlayerWatchTests.swift` (the hook's gating and values).
 - Changed tests: the 27 files with async hooks, `RacketPlayerUITests`, `RacketProCameraUITests` (also `@MainActor`),
   `RacketSportsUITests`, `RacketDrillUITests`, `ActivityPageUITests`, `LibraryKilterUITests`.
 - `Snappet/Core/SnappetShareable.swift` (`QRCodeImage`).
@@ -89,6 +104,10 @@ what local runs can and cannot prove.
 - [ ] Every touched UI class passes 3 consecutive local runs (app uninstalled first); `SnappetTests` passes.
 - [ ] No timeout raised, no sleep added, no test skipped or deleted. One assertion changes target: Activity page's
       transient toast → the routine's lasting change it confirms.
+- [ ] The player hide-delay override is ignored without the UI-test store and for bad values (unit test); the real 3 s
+      auto-hide is still asserted by a UI test launched without it.
+- [ ] RacketPlayer, RacketEdit, RacketVideos: 3 consecutive local runs on the final code, one under 8 busy loops, and
+      one more under 16.
 
 ## Constraints
 

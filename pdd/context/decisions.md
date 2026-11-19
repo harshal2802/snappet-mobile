@@ -11996,6 +11996,40 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
     and in portrait they missed it in one local run of four. A small gap remains (show → tap is one step, ~1–2 s on
     CI, inside the 3 s). The landscape walk now checks rally 12 paused at its start instead of after 1.5 s of play
     (the slower pause could run past the 6.2 s rally); its assertions are unchanged.
+    **Superseded for the player after run 44411257920 (2026-11-18), see the next bullet.**
+  - **Player controls: stop racing the timer; a UI-test hook lengthens it** (after run 44411257920, legs 5 and 8:
+    `RacketPlayerControls.swift:62` "No matches found" in RacketPlayer testBoardWalk 3/3, testBoardWalkLandscape,
+    testBoardWalkLetterbox and four RacketEdit tests). The log shows why no test-side order can win: from the touch on
+    the video (synthesized at t=38.16) to the Pause tap step reaching "Synthesize event" (t=42.29) was 4.1 s, and by
+    then Pause was gone: one XCUITest tap step there takes 3–4 s (find, check interrupting elements, synthesize, wait
+    for idle), and the controls hide 3 s after the last touch. The run before passed the player tests with the same
+    approach: luck of the runner's speed. Decision (reviewing session): the
+    app reads `-uiTestPlayerControlsHideAfter <seconds>` once (`RacketPlayerChrome.hideAfter(arguments:)`, pure) and
+    uses it as the delay, **only when the launch is on the UI-test store** (`UITestStore.isFreshStore`), so a real
+    launch always gets the 3 s default; a missing, non-numeric, zero, negative or non-finite value is ignored.
+    `shouldHide` takes the delay as a parameter. Unit-tested in `RacketPlayerWatchTests` (default 3, applied only with
+    the store marker or a seed implying it, bad values ignored). RacketPlayer, RacketEdit and RacketVideos launch with
+    60 s (`RacketPlayerControls.hideAfterArguments`; no other suite taps the Watch player's controls), and
+    `RacketPlayerControls` is plain show-then-tap with the outcome checked (the retry rounds and `freshControls` went).
+    **The real 3 s stays covered** by `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying`, launched
+    without the override, which taps no control while playing: game 2 opens playing → the clock moves → the controls
+    disappear by themselves (condition wait, 20 s) with the progress line still there → a tap on the video brings them
+    back → they disappear again by themselves → double taps on the video (not a control) skip to the end → Replay
+    shows, the button reads Play, and the controls are still there 6 s later (not playing, they stay). "Paused" is
+    covered as "ended" there, since pausing needs a tap on Pause while playing; the pure rule (`shouldHide` false when
+    not playing) is unit-tested. Its one remaining window: the check after the tap on the video must land within 3 s
+    of the touch (on run 44411257920's runner the tap's idle wait ended 1.2 s after the touch; the check is `exists`
+    first, one query). The assertion "they hide by themselves while playing" moved there from
+    testTapTogglesControlsSpeedMenuSkipAndModes; the board walk's "they hide by themselves" wait after PlayerChrome
+    became "playing, with the controls showing" (the hide is the focused test's). RacketVideos' split test no longer
+    waits for the auto-hide before Edit; it checks it opened playing with the controls, then taps Edit.
+    Local (iPhone 17 Pro, iOS 26.5, Photos revoked, app uninstalled before each class): `SnappetTests` passed; the
+    three classes passed four consecutive full-class rounds (no load, no load, 8 busy loops, 16 busy loops; 8 + 8 + 2
+    tests each round). In the focused test the controls were found 1.6–1.8 s after the touch locally. Local speed
+    can't prove the runner; the next CI run is the check.
+  - Table tennis "⋯ menu" in run 44411257920 (2026-11-18): **passed**, with the PROBE267 diagnostic not firing (the menu
+    existed after the swipes), after failing 3/3 on the two runs before. Not explained; nothing changed for it. The
+    temporary probe stays in for the next runs.
   - A 3 s toast (Activity page "Added to Push Day"): XCUITest's post-tap idle wait was 2.6 s of it locally and 18 s on
     CI. It can't be caught reliably, so the test checks what it confirms: Push Day's exercise count goes up by one.
     The one assertion that changed target.

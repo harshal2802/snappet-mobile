@@ -11,10 +11,14 @@ import XCTest
 final class RacketPlayerUITests: XCTestCase {
     var app: XCUIApplication!
 
-    private func launch(_ variant: String) {
+    /// `holdControls`: the controls stay 60 s after the last touch instead of 3 (`RacketPlayerControls.hideAfterArguments`),
+    /// so steps that tap them while playing can't race the auto-hide on a slow runner. Only the auto-hide's own test
+    /// launches without it.
+    private func launch(_ variant: String, holdControls: Bool = true, extra: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", variant]
+        app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", variant] + extra
+        if holdControls { app.launchArguments += RacketPlayerControls.hideAfterArguments }
         app.launchOnTestStore()
     }
 
@@ -54,10 +58,10 @@ final class RacketPlayerUITests: XCTestCase {
         XCTAssertTrue(surface.waitForExistence(timeout: 8) || any("racket.player.missing.title").exists, "the Watch-mode player")
     }
 
-    /// The player's auto-hiding controls, driven without racing the hide (shared: `RacketPlayerControls`).
+    /// The player's controls (shared: `RacketPlayerControls`).
     private var player: RacketPlayerControls { RacketPlayerControls(app: app) }
     private func tapVideo(dx: CGFloat = 0.5) { player.tapVideo(dx: dx) }
-    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.freshControls(file: file, line: line) }
+    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.showControls(file: file, line: line) }
     private func playPause(_ label: String) -> XCUIElement { player.playPause(label) }
     private func tapControl(_ el: XCUIElement, until shows: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         player.tapControl(el, until: shows, file: file, line: line)
@@ -91,26 +95,51 @@ final class RacketPlayerUITests: XCTestCase {
 
     // MARK: Watch mode
 
+    /// The auto-hide itself, with the real 3 s (launched without `hideAfterArguments`). Playing, the controls hide by
+    /// themselves and a tap on the video brings them back; at the end of the game (not playing) they stay. No control is
+    /// tapped while playing: on the CI runner a tap step (3–4 s) outlasts the 3 s. Game 2 (1:00, no rallies), so a few
+    /// skips reach its end. The one remaining window: the check that a tap shows them must land within 3 s of the
+    /// touch (about 1.5 s on the runner: the tap's idle wait plus one query).
+    func testControlsHideByThemselvesWhilePlaying() {
+        launch("portrait", holdControls: false)
+        openPlayer(row: 1)
+        // Playing: the clock moves, and the controls go by themselves.
+        let clock = surface.value as? String ?? ""
+        expectation(for: NSPredicate(format: "value != %@", clock), evaluatedWith: surface)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(controls.waitForNonExistence(timeout: 20), "playing, the controls hide by themselves")
+        XCTAssertTrue(any("racket.player.progress").exists, "the thin progress line stays")
+
+        // A tap on the video brings them back; still playing, they go again.
+        tapVideo()
+        XCTAssertTrue(controls.exists || controls.waitForExistence(timeout: 2), "a tap brings the controls back")
+        XCTAssertTrue(controls.waitForNonExistence(timeout: 20), "and they hide again while playing")
+
+        // Skip to the end of the game (double taps on the video, never a control): it stops, the controls show and stay.
+        for _ in 0..<7 { surface.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.33)).doubleTap() }
+        XCTAssertTrue(app.buttons["racket.player.replay"].waitForExistence(timeout: 15), "PlayerEnd")
+        XCTAssertTrue(playPause("Play").exists, "not playing, with the controls showing")
+        XCTAssertFalse(controls.waitForNonExistence(timeout: 6), "not playing: the controls stay")
+        XCTAssertEqual(controls.label, "Play")
+    }
+
     func testTapTogglesControlsSpeedMenuSkipAndModes() {
         launch("portrait")
         openPlayer()
-        // It opens playing with the controls showing; they hide by themselves while playing.
-        // One query for "showing and reads Pause": reading the label after a separate existence check can land after
-        // the auto-hide on a slow runner.
+        // It opens playing with the controls showing. (They hide by themselves while playing: that is
+        // `testControlsHideByThemselvesWhilePlaying`, with the real 3 s; this launch holds them.)
         XCTAssertTrue(playPause("Pause").waitForExistence(timeout: 4), "Play opens playing, with the controls showing")
-        XCTAssertTrue(controls.waitForNonExistence(timeout: 8), "the controls hide by themselves while playing")
-        XCTAssertTrue(any("racket.player.progress").exists, "the thin progress line stays")
 
-        // Tap shows them, tap again hides them.
-        tapVideo()
-        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        // Tap hides them (the thin progress line stays), tap again shows them.
         tapVideo()
         XCTAssertTrue(controls.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(any("racket.player.progress").exists, "the thin progress line stays")
+        tapVideo()
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
 
-        // Paused, they stay.
+        // Paused: the controls.
         pause()
-        Thread.sleep(forTimeInterval: 4)
-        XCTAssertTrue(controls.exists, "paused: the controls stay")
+        XCTAssertTrue(controls.exists, "paused: the controls show")
         XCTAssertEqual(app.buttons["racket.player.back"].label, "Videos")
         XCTAssertTrue(app.buttons["racket.player.share"].exists)
         XCTAssertTrue(app.buttons["racket.player.edit"].exists)
@@ -227,8 +256,8 @@ final class RacketPlayerUITests: XCTestCase {
         pause()
         shot("PlayerPaused")
         controls.tap()
+        XCTAssertTrue(playPause("Pause").waitForExistence(timeout: 2), "playing, with the controls showing")
         shot("PlayerChrome", delay: 0.2, hold: 0.8)
-        XCTAssertTrue(controls.waitForNonExistence(timeout: 6))
         pause()
         tapVideo()
         XCTAssertTrue(controls.waitForNonExistence(timeout: 3))
@@ -302,16 +331,12 @@ final class RacketPlayerUITests: XCTestCase {
     /// Landscape: the headless simulator doesn't turn the app with `XCUIDevice.orientation`, so the app asks its scene
     /// to turn (`-uiTestRacketLandscape YES`, DEBUG only).
     func testBoardWalkLandscape() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", "landscape",
-                                "-uiTestRacketLandscape", "YES"]
-        app.launchOnTestStore()
+        launch("landscape", extra: ["-uiTestRacketLandscape", "YES"])
         openPlayer()
         Thread.sleep(forTimeInterval: 1.5)
         pause()
-        // Paused at rally 12's start. (The portrait walks play it for 1.5 s first; here a pause costs a few seconds
-        // more, see `tapControl`, and rally 12 is only 6.2 s long.)
+        // Paused at rally 12's start. (The portrait walks play 1.5 s into it first; this walk has checked it at its
+        // start since prompt 267, and its assertions are the same.)
         goToRally(12)
         XCTAssertTrue(any("racket.player.title").label.hasPrefix("Game 1 · 7 – 5 · Rally 12 of 21"), any("racket.player.title").label)
         XCTAssertFalse(any("racket.player.turnHint").exists)

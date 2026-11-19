@@ -1,14 +1,21 @@
 import XCTest
 
-/// The Watch-mode racket player's controls, driven without racing their auto-hide (prompt 267). Shared by the suites
-/// that open the player (`RacketPlayerUITests`, `RacketEditUITests`, `RacketVideosUITests`).
+/// The Watch-mode racket player's controls (prompt 267). Shared by the suites that drive them (`RacketPlayerUITests`,
+/// `RacketEditUITests`, `RacketVideosUITests`).
 ///
-/// While playing, the controls hide 3 s after the last touch (`RacketPlayerChrome.hideAfter`); paused, they stay. On
-/// the CI runner one XCUITest step takes 1–3 s, so "look, read, then tap" can find a control gone at the tap ("no
-/// matches"). So a tap comes straight after the controls get a fresh 3 s, and the outcome is checked, not assumed.
+/// While playing, the controls hide 3 s after the last touch (`RacketPlayerChrome.hideAfter`); paused, they stay. On the
+/// CI runner one XCUITest tap step takes 3–4 s (find, interrupting elements, synthesize, wait for idle), longer than the
+/// timer, so no order of test steps can tap a control reliably while playing. So these suites launch with
+/// `hideAfterArguments` (a long delay, UI-test store only), and the helpers are plain show-then-tap with the outcome
+/// checked. The auto-hide itself, with the real 3 s, is `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying`,
+/// which launches without the override.
 @MainActor
 struct RacketPlayerControls {
     let app: XCUIApplication
+
+    /// Launch arguments that hold the controls for 60 s after the last touch instead of 3 (the app honours them only on
+    /// the UI-test store: `RacketPlayerChrome.hideAfter(arguments:)`).
+    nonisolated static let hideAfterArguments = ["-uiTestPlayerControlsHideAfter", "60"]
 
     private func any(_ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
@@ -18,7 +25,7 @@ struct RacketPlayerControls {
     /// The play/pause button, whatever it reads.
     var playPause: XCUIElement { app.buttons["racket.player.playPause"] }
 
-    /// The play/pause button only while it reads `label`. A query: asking never fails once the controls have hidden.
+    /// The play/pause button only while it reads `label`.
     func playPause(_ label: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "identifier == 'racket.player.playPause' AND label == %@", label)).firstMatch
     }
@@ -28,57 +35,33 @@ struct RacketPlayerControls {
         surface.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.33)).tap()
     }
 
-    /// The controls with a fresh 3 s before they hide by themselves: if they show (and may be about to fade), hide
-    /// them first, then tap again (apart enough not to be a double tap).
-    func freshControls(file: StaticString = #filePath, line: UInt = #line) {
-        if playPause.exists {
-            tapVideo()
-            _ = playPause.waitForNonExistence(timeout: 2)
-            Thread.sleep(forTimeInterval: 0.8)
-        }
-        tapVideo()
+    /// The controls showing: a tap on the video if they are hidden.
+    func showControls(file: StaticString = #filePath, line: UInt = #line) {
+        if !playPause.exists { tapVideo() }
         XCTAssertTrue(playPause.waitForExistence(timeout: 3), "the controls show", file: file, line: line)
     }
 
-    /// Taps a control that hides with the others while playing, until `shows` appears. A tap on the video gives the
-    /// controls a fresh 3 s (it shows them, or hides them if showing and the next tap shows them); the control is
-    /// tapped straight after, the outcome checked and, if they hid first anyway, it goes round. `fresh`: the caller
-    /// has just touched the controls (e.g. tapped Play), so the first round taps the control at once if it is there.
-    /// (Tapping through the video's coordinates instead was tried: in the landscape walk, whose scene is turned on an
-    /// upright simulator, such taps never reach the control, and in portrait they missed it in one local run of four.)
-    func tapControl(_ el: XCUIElement, until shows: XCUIElement, fresh: Bool = false,
-                    file: StaticString = #filePath, line: UInt = #line) {
-        for round in 0..<4 {
-            let atOnce = fresh && round == 0    // no extra query before the tap: each one is a CI step
-            if !atOnce && shows.exists { break }
-            if !(atOnce && el.exists) {
-                tapVideo()
-                if !el.waitForExistence(timeout: 1) {
-                    if shows.exists { break }      // e.g. already paused, the controls were hidden
-                    tapVideo()
-                    guard el.waitForExistence(timeout: 2) else { continue }
-                }
-            }
-            el.tap()
-            if shows.waitForExistence(timeout: 2) { break }
-        }
-        XCTAssertTrue(shows.exists, "\(shows) after tapping \(el)", file: file, line: line)
+    /// Show the controls, tap `el` (one of them), and check that `shows` appears.
+    func tapControl(_ el: XCUIElement, until shows: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        showControls(file: file, line: line)
+        XCTAssertTrue(el.waitForExistence(timeout: 3), "\(el) with the controls", file: file, line: line)
+        el.tap()
+        XCTAssertTrue(shows.waitForExistence(timeout: 3), "\(shows) after tapping \(el)", file: file, line: line)
     }
 
-    /// Pause (paused, the controls stay and the button reads Play). Playing, the controls may be hidden or about to
-    /// hide, so this shows them if needed and taps Pause without racing the auto-hide.
+    /// Paused, with the controls showing (the button reads Play). Taps Pause only if playing.
     func pause(file: StaticString = #filePath, line: UInt = #line) {
-        tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
+        showControls(file: file, line: line)
+        if !playPause("Play").exists {
+            tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
+        }
         XCTAssertEqual(playPause.label, "Play", file: file, line: line)
     }
 
     /// Paused with the controls showing: play for a moment and pause again, so the playhead sits just inside where it
-    /// was (e.g. a rally's start). The Play tap is a touch, so the controls have a fresh 3 s and Pause goes at once;
-    /// on the runner that is about one step (1–2 s), locally well under a second.
+    /// was (e.g. a rally's start).
     func playAMoment(file: StaticString = #filePath, line: UInt = #line) {
-        let play = playPause("Play")
-        XCTAssertTrue(play.waitForExistence(timeout: 3), "paused, with the controls showing", file: file, line: line)
-        play.tap()
-        tapControl(playPause("Pause"), until: playPause("Play"), fresh: true, file: file, line: line)
+        tapControl(playPause("Play"), until: playPause("Pause"), file: file, line: line)
+        tapControl(playPause("Pause"), until: playPause("Play"), file: file, line: line)
     }
 }

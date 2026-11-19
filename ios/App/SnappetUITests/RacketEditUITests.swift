@@ -7,10 +7,14 @@ import XCTest
 final class RacketEditUITests: XCTestCase {
     var app: XCUIApplication!
 
+    /// The player's controls stay 60 s after the last touch instead of 3 (`RacketPlayerControls.hideAfterArguments`):
+    /// these tests tap them while playing, which can't beat the 3 s on a slow runner. The auto-hide itself is
+    /// `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying`.
     private func launch(_ variant: String = "portrait", extra: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketPlayer", variant] + extra
+            + RacketPlayerControls.hideAfterArguments
         app.launchOnTestStore()
     }
 
@@ -46,10 +50,10 @@ final class RacketEditUITests: XCTestCase {
         XCTAssertTrue(surface.waitForExistence(timeout: 8) || any("racket.player.missing.title").exists, "the Watch-mode player")
     }
 
-    /// The player's auto-hiding controls, driven without racing the hide (shared: `RacketPlayerControls`).
+    /// The player's controls (shared: `RacketPlayerControls`).
     private var player: RacketPlayerControls { RacketPlayerControls(app: app) }
     private func tapVideo(dx: CGFloat = 0.5) { player.tapVideo(dx: dx) }
-    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.freshControls(file: file, line: line) }
+    private func showControls(file: StaticString = #filePath, line: UInt = #line) { player.showControls(file: file, line: line) }
     private func pause(file: StaticString = #filePath, line: UInt = #line) { player.pause(file: file, line: line) }
 
     /// The controls showing: the playhead is in rally `k`. Portrait has the label line; landscape only the one-line
@@ -88,8 +92,6 @@ final class RacketEditUITests: XCTestCase {
         if let n {
             goToRally(n)
             // A moment of play, so the playhead is inside rally n (not on its first frame), then paused for Edit.
-            // Not a timed 1.5 s: playing, the controls hide 3 s after the Play tap, and on the runner the sleep plus
-            // the next step outlasted that (Pause, then Edit, found no button).
             player.playAMoment()
             XCTAssertTrue(at(n), "still in rally \(n)")
         }
