@@ -76,10 +76,17 @@ pure `MediaLinkPlanner` (`MediaLinkTests`).
   `SessionMedia` row (acceptance criterion 1). The other 1,684 clips no longer resolve (almost all
   filed in 2026-07; Oct–Nov clips are 101/104 live) and none of them re-linked, i.e. no unique
   match exists in the library for them.
-- **Still owed — needs hands on the phone** (not yet done): "Not on this phone" seen on a dead clip
-  after tapping it; re-link to a duplicate after deleting the original; an iCloud-offloaded original
-  opening in Studio; restore on a second device signed into the same iCloud. Whether 1,684 dead
-  clips matches what the user expects of their library is also unconfirmed.
+- **"Not on this phone" confirmed on the phone, automated.** `MediaLinkDeviceUITests` (device-only,
+  opt-in via `TEST_RUNNER_SNAPPET_DEVICE_MEDIA_LINK=1`, READ-ONLY against the real store) searches
+  Clips for a session the store shows has dead clips (`…_QUERY`), plays the first post and asserts
+  the copy + "This video was removed from Photos". Passed in 25 s; the store was re-pulled
+  afterwards and is row-for-row unchanged. Scrolling the feed blind to find a dead clip was far too
+  slow — read the store, then search. The rest of the UI suite must NOT be run on a phone: many
+  tests launch without a fresh-store argument and would write to real data.
+- **Still owed — needs hands on the phone** (not automated, because they delete from the user's
+  Photos library or need a second device): re-link to a duplicate after deleting the original; an
+  iCloud-offloaded original opening in Studio; restore on a second device signed into the same
+  iCloud. Whether 1,684 dead clips matches what the user expects of their library is unconfirmed.
 
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 
