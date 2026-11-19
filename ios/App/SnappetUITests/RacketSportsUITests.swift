@@ -31,11 +31,7 @@ final class RacketSportsUITests: XCTestCase {
         let card = app.buttons["moduleCard.workout-log"]
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()
-        let quick = app.buttons["workout.quickStart"]
-        XCTAssertTrue(quick.waitForExistence(timeout: 6))
-        quick.tap()
-        XCTAssertTrue(app.staticTexts["overallWorkoutTimer"].waitForExistence(timeout: 8)
-            || app.otherElements["overallWorkoutTimer"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.startQuickSession(), "Quick Start opens an empty session")
     }
 
     private func tapWhenHittable(_ el: XCUIElement, swipeIn container: XCUIElement? = nil, file: StaticString = #filePath, line: UInt = #line) {
@@ -165,7 +161,28 @@ final class RacketSportsUITests: XCTestCase {
         app.buttons["freeform.finishSession"].tap()
         let viewDetail = app.buttons["freeform.viewDetail"]
         tapWhenHittable(viewDetail)
-        let menu = app.buttons["session.exerciseMenu"].firstMatch
+        // The detail opens on its recap cards (stats, badges, the racket card, Photos & videos), which can fill the
+        // first screen; the exercise sections sit below them in a lazy List that only realizes rows near the viewport.
+        let menu = app.scrollIntoView(app.buttons["session.exerciseMenu"].firstMatch)
+        // TEMPORARY diagnostic (prompt 267), to be removed: on the CI runner (iOS 26.4.1) `swipeUp()` did not move this
+        // list. Try other ways to scroll and log which one moves it. NOT the fix.
+        if !menu.exists {
+            let win = app.windows.firstMatch
+            let anchor = app.staticTexts["Photos & videos"].firstMatch
+            func state(_ step: String) {
+                print("PROBE267 \(step): menu=\(menu.exists) anchorY=\(anchor.exists ? anchor.frame.minY : -1) "
+                      + "collections=\(app.collectionViews.count) tables=\(app.tables.count) scrolls=\(app.scrollViews.count)")
+            }
+            state("start")
+            for (name, x, y0, y1) in [("drag-low", 0.5, 0.85, 0.35), ("drag-left-edge", 0.06, 0.8, 0.3),
+                                      ("drag-high", 0.5, 0.3, 0.12)] where !menu.exists {
+                win.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y0))
+                    .press(forDuration: 0.05, thenDragTo: win.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y1)))
+                state(name)
+            }
+            if !menu.exists, app.collectionViews.firstMatch.exists { app.collectionViews.firstMatch.swipeUp(); state("collection-swipe") }
+            if !menu.exists { app.swipeUp(velocity: .fast); state("fast-swipe") }
+        }
         XCTAssertTrue(menu.waitForExistence(timeout: 8), "each exercise header should have a ⋯ menu")
         XCTAssertTrue(app.staticTexts["R16 vs Alex Chen · Won 3–1"].exists, "the match header carries its result")
         shot("10-session-detail")

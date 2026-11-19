@@ -10,7 +10,7 @@ import XCTest
 final class RacketEditMatchUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestRacketEditMatch", "-uiTestFakeCamera"]

@@ -7,10 +7,12 @@ import XCTest
 final class RacketVideosUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera"]
+        // The player's controls stay 60 s after the last touch instead of 3: the split test taps Edit while playing,
+        // which can't beat the 3 s on a slow runner (prompt 267; the auto-hide is tested in `RacketPlayerUITests`).
+        app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera"] + RacketPlayerControls.hideAfterArguments
         app.launchOnTestStore()
     }
 
@@ -122,11 +124,10 @@ final class RacketVideosUITests: XCTestCase {
         app.buttons["racket.videos.play.0"].tap()
         XCTAssertTrue(any("racket.player.surface").waitForExistence(timeout: 5))
         XCTAssertTrue(any("racket.player.standIn").exists, "no Photos video in the simulator")
-        // It opens playing with the controls showing; they hide by themselves, and a tap brings them back.
-        _ = app.buttons["racket.player.edit"].waitForNonExistence(timeout: 8)
-        any("racket.player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.33)).tap()
-        XCTAssertTrue(app.buttons["racket.player.edit"].waitForExistence(timeout: 3))
-        app.buttons["racket.player.edit"].tap()
+        // It opens playing with the controls showing (held here; the auto-hide is `RacketPlayerUITests`'s): Edit.
+        let player = RacketPlayerControls(app: app)
+        XCTAssertTrue(player.playPause("Pause").waitForExistence(timeout: 4), "it opens playing, with the controls showing")
+        player.tapControl(app.buttons["racket.player.edit"], until: app.buttons["racket.edit.list"])
         // Edit mode (prompt 254): the analysis view is under the rally list.
         XCTAssertTrue(app.buttons["racket.edit.list"].waitForExistence(timeout: 5))
         app.buttons["racket.edit.list"].tap()

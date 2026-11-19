@@ -14,8 +14,8 @@ import XCTest
 final class StructuredIntervalRunnerTests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]

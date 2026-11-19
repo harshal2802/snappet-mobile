@@ -11698,6 +11698,29 @@ screen could remove it without breaking `baseSetIndex` and the split's links.
   random test 3000 sequences). UI suites alone, app uninstalled first: RacketEditMatch 3 (new), RacketVideos 2,
   RacketSplitTimeout 3, RacketTagging 15, RacketMatch 14, RacketPlayer 7, RacketEdit 8, RacketGameHR 1 — all green.
 
+## 2026-11-16 — CI: the UI suite runs as eight parallel legs (prompt 261)
+
+- **Why**: the one UI leg was cancelled at the 90-minute ceiling on every run since at least 2026-11-05, on main and
+  on PRs. No test failed (PR #439: 106 ran, 106 passed, then the cut). About 45 s per test on the runner × 272 tests
+  ≈ 200 min, so no ceiling fits; classes run alphabetically, so everything after "N" — every racket UI test — had never
+  run on CI.
+- **Split, not a higher ceiling**: `scripts/ci-ui-shard.py` reads the test sources and deals the 89 classes into
+  shards by number of tests, heaviest first onto the lightest shard, deterministic. No list to maintain: a new class
+  lands in a leg by itself; `--check` (run by every leg) fails if a class is in no shard or in two.
+- **Eight legs** (`UI_SHARDS` in the `changes` job, mirrored in the `app` matrix fallback): 34 tests each. Six was
+  tried first on the PR's own run: four legs finished by themselves in 47–66 min (two green), but two hit the 90-min
+  cancel — one carried 77 min of slow, green tests (RacketTagging 23 min, Budget 19 min), one was retrying tests that
+  fail on CI three times each. A test count is a poor weight for the racket suites, so the margin comes from more legs.
+- **Found by finally running them** (not fixed here): on the CI simulator `RacketSportsUITests` (6 tests) and
+  `RacketEditUITests` (4) fail all three tries — they pass on the local simulator and the phone; `RacketPlayerUITests`
+  (3), `CompletionMomentTests`, `JournalUITests`, `LibraryCreateUITests`, `BuddyPrototypeUITests` (1 each) failed once
+  and passed on retry.
+- **Each leg builds the app** (no build-once artifact): simpler, and the build is ~8 min of each leg. Cost: eight macOS
+  runners at once and eight builds per run that touches `ios/**`.
+- **Weights are test counts, not measured times**: good enough at this size; if one leg runs long, raise
+  `UI_SHARDS` first.
+- **Check names changed** to `App tests (SnappetUITests-KofN)`. Main has no required checks, so nothing blocks.
+
 ## 2026-11-16 — Racket screens reachable on any finished session; removing the last exercise (prompt 262)
 
 - **Context**: state-machine review findings F9 and F16. Your videos, Edit match, Keep rallies only… and a game's heart
@@ -11923,3 +11946,200 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
   range (left in a bag across the hall while scoring from the wrist) is queued and the racket face stays; before this
   change the Watch would have left the face 15 s after the first such tap and scoring from the wrist would stop. The
   phone-kill case is still covered: a reachable phone is woken by the tap, activates, and answers with a clear.
+
+## 2026-11-16 — CI UI tests: failures get their retries, and tests wait on conditions (prompt 267)
+
+- **Why some failures were never retried** (run 43935201896): each one is followed in the job log by "Restarting after
+  unexpected exit, crash, or test timeout" and a new runner pid; xcodebuild resumes at the NEXT test, so
+  `-retry-tests-on-failure` never sees it. All were in classes with an `async` `setUp` or `tearDown`
+  (`ActivityPageUITests`, `ActivityProgressUITests`, `RacketPlayerUITests`). A local probe (Xcode 27.2, not committed)
+  reproduced it: with `continueAfterFailure = false`, a failing test in a class with an async `setUp`, an async
+  `tearDown`, or an async test method exits the runner and is not retried; the same test with sync hooks
+  (`setUp` / `setUpWithError`) or with `continueAfterFailure = true` is retried twice. Not a shard-script bug.
+- **Fix**: the 27 UI test files' async hooks became `setUpWithError` / `tearDownWithError`; `LibraryKilterUITests`'s
+  async tests became sync (`wait(for:)`). `scripts/ci-ui-shard.py --check` fails on any async hook or test in
+  `SnappetUITests`, so it can't come back unnoticed. Kept `continueAfterFailure = false` (a later step on a wrong
+  screen only adds noise).
+- **The failures themselves were races with the runner's speed**, not wrong states: one XCUITest step takes 1–3 s
+  there and "wait for the app to idle" up to a minute. Fixed by waiting on conditions, not by longer timeouts or sleeps:
+  - RacketSports "⋯ menu" (all 3 tries) — **first diagnosis wrong, corrected after run 44206031436**. It was read as
+    "below the fold of a lazy `List`, scroll to it" (`scrollIntoView`, 8 slow swipes). The next run failed the same
+    way, 3/3, and its xcresult shows why that was not the whole story: in all nine hierarchies (one before the swipes,
+    one after each) the list's scroll bar stays at "2 pages, 0%" and the cells keep their frames, and the screen
+    recording has no new frame at all between the push finishing and the end of the swipes. The swipes never moved
+    the list. What is proven: (a) the session detail is the screen showing (title "City Open", recap cards, Photos &
+    videos); (b) the menu is not in the tree because the first exercise header is not realized: on the CI simulator
+    Photos access is denied, so the Photos & videos card adds "Enable Photos access in Settings" (114 pt instead of
+    90), pushing the header just past what the `List` realizes; locally, with Photos revoked
+    (`simctl privacy … revoke photos`), the same layout appears (114 pt, no menu in the tree) and one swipe scrolls
+    to it; (c) on the same runner a swipe on a session detail opened from History scrolls (RacketMixedSession, idle
+    wait 2 s after the swipe, as a scroll's deceleration), while here the idle wait after each swipe is 0.5 s and
+    nothing moves. Not proven: why the list does not scroll after this flow on iOS 26.4.1 (not reproducible on the
+    local iOS 26.5 runtime; the 26.4 runtime is not installed). No speculative change was made for it; see prompt 267.
+  - A dropped toolbar tap (RacketDrill): after a relaunch, Quick Start tapped mid-transition left the Gym Tracker home
+    on screen; `startQuickSession()` taps until the session timer shows.
+  - Racket Edit (run 44206031436, leg 8: three tests, "racket.player.playPause" / "racket.player.edit" not found):
+    the same auto-hide race as the player, in `RacketEditUITests`' own copies of the helpers (read the label, then
+    tap; play 1.5 s by `Thread.sleep`, then tap Pause and Edit). The player helpers moved to
+    `SnappetUITests/RacketPlayerControls.swift` (shared by RacketPlayer, RacketEdit, RacketVideos); "play a moment"
+    is now Play then Pause at once (`playAMoment`, the Play tap is the fresh touch) with an added check that the
+    playhead is still in the rally. `RacketVideosUITests` had the same read-then-tap on Edit; fixed the same way. The
+    other classes that open the player (AI, RealMatchWalk, EditMatch, SplitTimeout, Tagging) only read the surface's
+    value or non-hiding elements.
+  - Auto-hiding overlays (racket player controls 3 s, camera focus sun 3 s, zoom dial 2 s): reads and taps went in
+    separate steps that outlasted the timer. Camera: read the overlay from one `app.snapshot()` (throws instead of
+    failing), drag through the always-present preview's coordinates, check the outcome, retry the focus tap if it had
+    faded. Player: tap a control straight after giving the controls a fresh 3 s (a tap on the video shows them, or
+    hides them and the next shows them), check the outcome, go round; queries that ask "showing AND reads Pause" in one
+    go. Tapping the player's controls through the video's coordinates was tried and dropped: in the landscape walk
+    (scene turned on an upright simulator) such taps never reached the control although its `screenPoint` matched,
+    and in portrait they missed it in one local run of four. A small gap remains (show → tap is one step, ~1–2 s on
+    CI, inside the 3 s). The landscape walk now checks rally 12 paused at its start instead of after 1.5 s of play
+    (the slower pause could run past the 6.2 s rally); its assertions are unchanged.
+    **Superseded for the player after run 44411257920 (2026-11-18), see the next bullet.**
+  - **Player controls: stop racing the timer; a UI-test hook lengthens it** (after run 44411257920, legs 5 and 8:
+    `RacketPlayerControls.swift:62` "No matches found" in RacketPlayer testBoardWalk 3/3, testBoardWalkLandscape,
+    testBoardWalkLetterbox and four RacketEdit tests). The log shows why no test-side order can win: from the touch on
+    the video (synthesized at t=38.16) to the Pause tap step reaching "Synthesize event" (t=42.29) was 4.1 s, and by
+    then Pause was gone: one XCUITest tap step there takes 3–4 s (find, check interrupting elements, synthesize, wait
+    for idle), and the controls hide 3 s after the last touch. The run before passed the player tests with the same
+    approach: luck of the runner's speed. Decision (reviewing session): the
+    app reads `-uiTestPlayerControlsHideAfter <seconds>` once (`RacketPlayerChrome.hideAfter(arguments:)`, pure) and
+    uses it as the delay, **only when the launch is on the UI-test store** (`UITestStore.isFreshStore`), so a real
+    launch always gets the 3 s default; a missing, non-numeric, zero, negative or non-finite value is ignored.
+    `shouldHide` takes the delay as a parameter. Unit-tested in `RacketPlayerWatchTests` (default 3, applied only with
+    the store marker or a seed implying it, bad values ignored). RacketPlayer, RacketEdit and RacketVideos launch with
+    60 s (`RacketPlayerControls.hideAfterArguments`; no other suite taps the Watch player's controls), and
+    `RacketPlayerControls` is plain show-then-tap with the outcome checked (the retry rounds and `freshControls` went).
+    **The real 3 s stays covered** by `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying`, launched
+    without the override, which taps no control while playing: game 2 opens playing → the clock moves → the controls
+    disappear by themselves (condition wait, 20 s) with the progress line still there → a tap on the video brings them
+    back → they disappear again by themselves → double taps on the video (not a control) skip to the end → Replay
+    shows, the button reads Play, and the controls are still there 6 s later (not playing, they stay). "Paused" is
+    covered as "ended" there, since pausing needs a tap on Pause while playing; the pure rule (`shouldHide` false when
+    not playing) is unit-tested. Its one remaining window: the check after the tap on the video must land within 3 s
+    of the touch (on run 44411257920's runner the tap's idle wait ended 1.2 s after the touch; the check is `exists`
+    first, one query). The assertion "they hide by themselves while playing" moved there from
+    testTapTogglesControlsSpeedMenuSkipAndModes; the board walk's "they hide by themselves" wait after PlayerChrome
+    became "playing, with the controls showing" (the hide is the focused test's). RacketVideos' split test no longer
+    waits for the auto-hide before Edit; it checks it opened playing with the controls, then taps Edit.
+    Local (iPhone 17 Pro, iOS 26.5, Photos revoked, app uninstalled before each class): `SnappetTests` passed; the
+    three classes passed four consecutive full-class rounds (no load, no load, 8 busy loops, 16 busy loops; 8 + 8 + 2
+    tests each round). In the focused test the controls were found 1.6–1.8 s after the touch locally. Local speed
+    can't prove the runner; the next CI run is the check.
+  - Table tennis "⋯ menu" in run 44411257920 (2026-11-18): **passed**, with the PROBE267 diagnostic not firing (the menu
+    existed after the swipes), after failing 3/3 on the two runs before. Not explained; nothing changed for it. The
+    temporary probe stays in for the next runs.
+  - **Run 44443276721 (e372362e, 2026-11-19)**: unit tests and UI legs 3–7 green; the hide-delay hook held
+    (RacketPlayerUITests 8/8 on first tries). Leg 8 was cancelled at its 90-minute limit seconds before finishing,
+    every test in it having passed, for two reasons:
+    - **"Still in rally 12"** (`RacketEditUITests` lines 96 and 374): first tries of
+      testSelectTrimShotsMarkUndoListAndDiscard and testTennisDoublesInspector, and two tries of testShareVariants,
+      failed; the retries passed and cost minutes. "Play, then Pause at once" (`playAMoment`) still leaves a window of
+      playback as long as one tap step (1–4 s there), and rally 12 is 6.2 s, so the Pause can land after it. Decision:
+      seek, don't play. `intoRally(n)` steps to rally n + 1 and double-taps the video's left half (10 s back,
+      `RacketPlayerTaps`): game 1's seeded rallies start 14 s apart and last at least 4.2 s (`RacketVideoSeed`), so that
+      is 4 s into rally n, paused, for any n < 21, however slow the runner; the pair toggles the controls twice, so they
+      stay showing. If the app reads the two taps more than 0.3 s apart (busy main thread) they are two single taps and
+      the playhead stays, so it tries again (up to 3) and then asserts rally n and Play. Real controls, no app hook,
+      no timing in the outcome. `playAMoment` had no other callers (RacketPlayer and RacketVideos never played "a
+      moment"), so it went; `RacketPlayerControls.doubleTapBack()` replaces it.
+    - **The app stopped going idle after Edit opened** (testShareTurnedRecording, 1302 s): from the first tap after
+      `racket.edit.done` appeared, every step waited the full 60 s for idle ("App animations complete notification not
+      received, will attempt to continue"), through Done, the player and the share sheet, to the end of the test (18
+      waits); earlier taps in the same test were fast, and no other test of the leg had a single such wait. Once
+      locally (2026-11-18, testTapTogglesControlsSpeedMenuSkipAndModes, 303 s) it began with the Edit tap's own wait
+      and held through Cancel and the tear-down. **Proven** (XCTAutomationSupport, the part XCTest loads into the app):
+      the idle check is `XCTAnimationsIdleNotifier`, which swizzles `UIViewAnimationState`'s `animationDidStart:` /
+      `animationDidStop:finished:` and reports idle when no started UIKit animation is still open (UIKit block
+      animations and SwiftUI's in-process animations of UIKit-backed views both go through it). So the symptom is a
+      start whose stop never came, and the count stays open until the app is relaunched, which is why it outlives Edit.
+      **Reproduced locally once, on the final code** (iPhone 17 Pro, iOS 26.5, 8 busy loops, the full RacketEdit class,
+      sixth test): the same test at the same step, share Cancel then Edit, then 60 s waits from the first tap in Edit
+      (9 in all before the run was stopped). lldb on the stalled app: `+[XCTAnimationsIdleNotifier
+      isAnimationInProgress]` YES, its counter `XCTActiveAnimationsCount` = 2, and no `UIViewAnimationState` left alive
+      in the heap (`objc_refs`). So two UIKit animations were reported started and their animation state went away
+      without a stop: the count leaked; nothing was left animating, so on a phone it should cost nothing, but it blinds
+      XCTest's idle check until the next launch. **Not caught in the act**: with a temporary in-app tracker of the same
+      starts and stops (not committed) it did not recur in about 90 Edit openings (the RacketEdit class with each
+      test twice, under 8 busy loops, twice; testShareTurnedRecording 6× under 12; a throwaway probe opening Edit 24
+      times per launch, under 8 busy loops and with the app in the background CPU band), nor in about 55 before that
+      with only a layer-animation dump (0, 8 and 16 busy loops); every tracked start got its stop. **Inferred from the
+      code, not proven**: the app starts no repeating or never-ending animation on this path (no `repeatForever`,
+      `TimelineView`, display link or UIKit animation call; the `withAnimation`s are
+      0.2–0.25 s one-shots; the playback's periodic observer only updates while playing, and Edit pauses). Two of the
+      three occurrences are in testShareTurnedRecording right after the share sheet's Cancel, and all three at a
+      `fullScreenCover` presenting Edit, whose `onAppear` takes the portrait lock
+      (`setNeedsUpdateOfSupportedInterfaceOrientations` on every presented controller, `requestGeometryUpdate`)
+      mid-transition, and which shows the status
+      bar and home indicator the player hides. One of those UIKit transitions dropping its animation stop under load
+      is the likeliest candidate; nothing shows which. **No app change was made for it** (a guess would not be a
+      fix). If it recurs, the next step is the same tracker behind a UI-test-only launch argument on CI, extended to
+      record who created each animation state, which would name the leaked one.
+    - Local check of this round (iPhone 17 Pro, iOS 26.5, Photos revoked, app uninstalled before each class):
+      `SnappetTests` 3205 tests, 0 failures; RacketEdit 8/8, RacketPlayer 8/8, RacketVideos 2/2 in two unloaded rounds
+      and one under 8 busy loops, no 60 s idle wait in any of them; `intoRally` needed one double tap every time. A
+      first loaded round, on the same code, is the stall reproduced above (5 of 8 Edit tests had passed when it was
+      stopped). The next CI run is the check.
+  - A 3 s toast (Activity page "Added to Push Day"): XCUITest's post-tap idle wait was 2.6 s of it locally and 18 s on
+    CI. It can't be caught reliably, so the test checks what it confirms: Push Day's exercise count goes up by one.
+    The one assertion that changed target.
+  - First launch on a just-booted simulator timed out (ActivityProgress, first test of its leg): retried now, and the
+    workflow boots the simulator in the Resolve step so it settles during the ~8-minute build.
+- **One app change**: `QRCodeImage` built a new `CIContext` on every call from a view body; on CI the app did not idle
+  for 52–60 s after opening the festival share code (21 s after switching to Whole lineup). Now one shared CPU
+  (`useSoftwareRenderer`) context and an `NSCache` of drawn codes. Same image (the unit tests decode it). Attributed
+  from the timings, not profiled on the runner.
+- **Local runs cannot prove the CI result**: the local simulator is fast. The next CI run on PR #457 is the check.
+
+## 2026-11-18 — CI: UI tests by area on PRs, the full suite nightly (prompt 268)
+
+- **User decision (2026-11-18)**: the full UI suite (94 classes, 294 tests, ~8 h of machine time in 8 legs, ~2 h of
+  waiting for a PR on the few macOS runners) no longer runs on every PR. **Trade-off, accepted**: a PR's UI run covers
+  the areas it touches plus a smoke set, so a regression it causes in ANOTHER area is caught by the next nightly, not
+  before merge. Main has no required checks, so nothing blocks on the changing UI check names.
+- **What runs** (`scripts/ci-ui-shard.py`, the single place for the rules and the area map):
+  - PR: the merge commit vs its first parent (exactly what the PR changes against today's base; `fetch-depth: 2`, no
+    API). Nothing under ios/ (or only `SnappetTests` / engine tests / docs there) → unit + engine only. Other `ios/**`
+    outside every area (Core, Services, DesignSystem, Shared, project.yml, engine sources, watch, widgets) → + the smoke
+    leg. An app file in an area → + smoke + that area's classes. A UI test file → its classes + the classes that use
+    what it declares (helpers found by grepping their type / free-function / extension-member names; an extension
+    function with required labels must be called with them, so UITestTaps' `tap(_:until:)` isn't every `.tap()`); a
+    helper with no user found → full; `TestStoreGuard.swift` is used by every class → full. ci.yml or the script →
+    full (the recipe itself).
+  - Legs: ceil(tests / 35), balanced with the prompt-261 split; a selection needing 8 legs or more runs as the full
+    suite. Names: `SnappetUITests-smoke`, `SnappetUITests-targeted-KofN`, `SnappetUITests-picked-KofN` (dispatch),
+    `SnappetUITests-KofN` (full, unchanged).
+  - **Smoke** (always with any UI): SuiteSmokeTests (every module opens), TestStoreGuardUITests (the guard every test
+    leans on), WorkoutDashboardUITests (seeded store → Gym Tracker → History), FeedViewUITests (Recap tab): 6 tests,
+    ~5 min of tests at the runner's ~45 s a test, under 10 at the slow end, plus the leg's ~8 min build.
+  - Push to main: the same rules on `before..after`, but ci.yml / the script don't force full (their PR ran it, the
+    nightly re-runs it) and the choice fails open to **smoke**, not full: a merge already passed its PR's selection,
+    and putting 8 legs on every merge would bring back the queue this removes. A new branch / force push → smoke.
+  - Nightly (`schedule`, 08:37 UTC): full suite on main; skipped (all jobs) when the newest finished (success or
+    failure) nightly ran the same commit; if that API check fails, it runs.
+  - `workflow_dispatch`: full, or with `ui_classes` exactly those classes (no smoke). An unknown class name FAILS the
+    `changes` job and the `app` job does not fall back: the one place that is not fail-open, so a typo can't become a
+    2-hour full run or an empty one.
+  - PR labels (user, 2026-11-18): `full-ui` → full; `ui-quick` → unit + engine + smoke only, even when ci.yml changed
+    (a quick turnaround for PRs like #457); both → full-ui (fail toward more testing). Read from the event payload,
+    which carries the PR's current labels on every push, so a label added later applies from the next push.
+    `labeled` is a trigger type so adding either label starts a run at once; any other label gives a no-op run (all
+    jobs skipped) in a concurrency group of its own, so it cancels nothing. The labels must exist in the repo.
+- **Area map**: follows `Features/*`. WorkoutTracker splits cleanly by file name: `Racket*` → racket, the rest →
+  workout. Services / Shared files with an area prefix join it. A class may be in several areas
+  (HeartRateOwnership: workout + kilter; LiveSessionSafety: racket + workout; RoutineSchedule: workout + habit;
+  RacketMixedSession, a match plus lifts in one session, also in workout). `--check` fails when a class is in no area
+  and not in smoke (a new class can't silently drop out of targeted runs), an area pattern matches no class or no
+  file, or the ci.yml fallback is not the full matrix.
+- **Matrix rows carry their class list** (`{"suite","classes"}`) for smoke / targeted / picked legs, so `changes` and
+  the leg can't disagree; the leg validates it (`--only`, unknown class → error). Full legs keep recomputing
+  `KofN` from the sources (same commit), which keeps the `fromJSON(… || '[full]')` fallback short.
+- **Concurrency**: PR runs share `ci-pr-<ref>` and cancel stale ones; push / schedule / dispatch runs get a group per
+  run. A run waiting as "pending" in a shared group is replaced by the next one, which would have dropped a nightly
+  queued behind a merge's run.
+- **Engine now `needs: changes`** (~20 s later) so a skipped nightly / no-op label skips it too; it still runs if
+  `changes` fails.
+- **Verified**: the script by `scripts/test_ci_ui_shard.py` (unittest, run in the new Linux `ui-selection` job) and
+  `--check 8`; the workflow only by parsing and reading. The event handling (merge-commit diff, `before` fetch, the
+  nightly skip query, labels, dispatch input) is checked by the first real runs.

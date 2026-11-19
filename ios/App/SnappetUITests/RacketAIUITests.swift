@@ -11,7 +11,7 @@ final class RacketAIUITests: XCTestCase {
     /// A reply as another app might write it: one rally over yours, one new, one past the video; "long" is unknown.
     private let reply = #"{"analyzer":{"app":"ChatGPT","model":"gpt-5"},"rallies":[{"start_s":1,"end_s":5,"winner":"far","ending":"net"},{"start_s":40,"end_s":48,"winner":"near","ending":"long"},{"start_s":9000,"end_s":9010}]}"#
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera"]

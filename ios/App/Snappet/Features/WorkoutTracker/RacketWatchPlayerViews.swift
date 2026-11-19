@@ -125,10 +125,11 @@ struct RacketWatchPlayerScreen: View {
             }
         }
         .task(id: hideKey) {
-            try? await Task.sleep(for: .seconds(RacketPlayerChrome.hideAfter))
+            let delay = RacketPlayerChrome.hideAfter
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let pb = playback else { return }
-            if RacketPlayerChrome.shouldHide(visible: chrome, playing: pb.playing, idleSec: RacketPlayerChrome.hideAfter,
-                                             dragging: dragging, menuOpen: speedMenu || editing) {
+            if RacketPlayerChrome.shouldHide(visible: chrome, playing: pb.playing, idleSec: delay,
+                                             dragging: dragging, menuOpen: speedMenu || editing, hideAfter: delay) {
                 withAnimation(.easeInOut(duration: 0.25)) { chrome = false }
             }
         }

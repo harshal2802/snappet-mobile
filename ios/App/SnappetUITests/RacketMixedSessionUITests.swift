@@ -16,7 +16,7 @@ import XCTest
 final class RacketMixedSessionUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
     }
 

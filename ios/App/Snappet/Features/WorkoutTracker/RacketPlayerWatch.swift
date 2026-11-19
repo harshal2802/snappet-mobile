@@ -202,10 +202,30 @@ enum RacketPlayerCopy {
 
 enum RacketPlayerChrome {
     /// Photos / YouTube: about 3 s without a touch.
-    static let hideAfter: Double = 3
+    static let defaultHideAfter: Double = 3
 
-    /// Hide the controls now? Only while playing (paused, they stay), never mid-drag or with the speed menu open.
-    static func shouldHide(visible: Bool, playing: Bool, idleSec: Double, dragging: Bool, menuOpen: Bool) -> Bool {
+    /// UI tests only (prompt 267): `-uiTestPlayerControlsHideAfter <seconds>` lengthens the delay, so a test that drives
+    /// the controls while playing doesn't race the 3 s on a slow CI runner. Honoured only on the in-memory UI-test store.
+    static let uiTestHideAfterArgument = "-uiTestPlayerControlsHideAfter"
+
+    /// The delay this launch uses, read once: the default unless a UI-test launch overrides it.
+    static let hideAfter: Double = hideAfter(arguments: ProcessInfo.processInfo.arguments)
+
+    /// The delay for a launch with `arguments`. Pure. The override counts only together with the UI-test store
+    /// (`UITestStore.isFreshStore`), so a real launch always gets `defaultHideAfter`; a missing, non-numeric, zero,
+    /// negative or non-finite value is ignored.
+    static func hideAfter(arguments: [String]) -> Double {
+        guard UITestStore.isFreshStore(arguments),
+              let i = arguments.firstIndex(of: uiTestHideAfterArgument), i + 1 < arguments.count,
+              let seconds = Double(arguments[i + 1]), seconds.isFinite, seconds > 0
+        else { return defaultHideAfter }
+        return seconds
+    }
+
+    /// Hide the controls now? Only while playing (paused, they stay), never mid-drag or with the speed menu open, and
+    /// only once `idleSec` without a touch has reached `hideAfter`.
+    static func shouldHide(visible: Bool, playing: Bool, idleSec: Double, dragging: Bool, menuOpen: Bool,
+                           hideAfter: Double) -> Bool {
         visible && playing && !dragging && !menuOpen && idleSec >= hideAfter
     }
 }

@@ -124,12 +124,41 @@ final class RacketPlayerWatchTests: XCTestCase {
     // MARK: Controls
 
     func testControlsHideOnlyWhilePlayingAfterThreeIdleSeconds() {
-        XCTAssertTrue(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 3, dragging: false, menuOpen: false))
-        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: false, idleSec: 30, dragging: false, menuOpen: false), "paused: they stay")
-        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 2.9, dragging: false, menuOpen: false))
-        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 9, dragging: true, menuOpen: false))
-        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 9, dragging: false, menuOpen: true))
-        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: false, playing: true, idleSec: 9, dragging: false, menuOpen: false))
+        let d = RacketPlayerChrome.defaultHideAfter
+        XCTAssertEqual(d, 3)
+        XCTAssertTrue(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 3, dragging: false, menuOpen: false, hideAfter: d))
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: false, idleSec: 30, dragging: false, menuOpen: false, hideAfter: d), "paused: they stay")
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 2.9, dragging: false, menuOpen: false, hideAfter: d))
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 9, dragging: true, menuOpen: false, hideAfter: d))
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 9, dragging: false, menuOpen: true, hideAfter: d))
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: false, playing: true, idleSec: 9, dragging: false, menuOpen: false, hideAfter: d))
+        // A longer delay (the UI tests' override) moves the threshold and nothing else.
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 3, dragging: false, menuOpen: false, hideAfter: 60))
+        XCTAssertTrue(RacketPlayerChrome.shouldHide(visible: true, playing: true, idleSec: 60, dragging: false, menuOpen: false, hideAfter: 60))
+        XCTAssertFalse(RacketPlayerChrome.shouldHide(visible: true, playing: false, idleSec: 60, dragging: false, menuOpen: false, hideAfter: 60))
+    }
+
+    /// Prompt 267: `-uiTestPlayerControlsHideAfter <seconds>` lengthens the delay for UI tests only.
+    func testHideDelayOverrideOnlyOnTheUITestStore() {
+        let arg = RacketPlayerChrome.uiTestHideAfterArgument
+        XCTAssertEqual(arg, "-uiTestPlayerControlsHideAfter")
+        let app = "/var/containers/Bundle/Application/X/Snappet.app/Snappet"
+        // A normal launch: the default.
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: []), 3)
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app]), 3)
+        // The override without the UI-test store is ignored: it can never reach a real launch.
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, arg, "60"]), 3)
+        // With the store marker (or a seed that implies it): applied.
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, "-uiTestFreshStore", arg, "60"]), 60)
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, "-uiTestSeedRacketVideos", "-uiTestRacketPlayer", "portrait", arg, "60"]), 60)
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, arg, "7.5", "-uiTestFreshStore"]), 7.5, "order doesn't matter")
+        // Bad values are ignored: the default.
+        for bad in ["-5", "0", "abc", "", "nan", "inf", "-inf"] {
+            XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, "-uiTestFreshStore", arg, bad]), 3, "'\(bad)' is ignored")
+        }
+        XCTAssertEqual(RacketPlayerChrome.hideAfter(arguments: [app, "-uiTestFreshStore", arg]), 3, "no value: ignored")
+        // The unit-test process itself has no override.
+        XCTAssertEqual(RacketPlayerChrome.hideAfter, 3)
     }
 
     func testSingleTapTogglesAtOnce() {

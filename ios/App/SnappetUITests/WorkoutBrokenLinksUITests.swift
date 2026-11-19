@@ -10,7 +10,7 @@ import XCTest
 final class WorkoutBrokenLinksUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
     }

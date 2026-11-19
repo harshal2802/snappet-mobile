@@ -6,7 +6,7 @@ import XCTest
 @MainActor final class WorkoutLinkUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         // `system.open` reaches whatever Snappet is installed — never the user's phone (prompt 266).
         try TestStoreGuard.skipLinkTestsOnDevice()
         continueAfterFailure = false
