@@ -64,6 +64,32 @@ enum WorkoutMath {
         return result
     }
 
+    /// `topSet` for every exercise at once, in ONE pass over the history (prompt 279). The Gym Tracker's
+    /// records list asked `topSet` per exercise, which walked the whole history once for each of them —
+    /// over a second on a real phone, on every redraw. Same rule and the same tie-break (the first set
+    /// reached wins) as `topSet`.
+    static func topSets(history: [WorkoutSession]) -> [String: TopSet] {
+        var bestScore: [String: Double] = [:]
+        var result: [String: TopSet] = [:]
+        for session in history {
+            for ex in session.exercises {
+                for set in ex.sets {
+                    guard set.completedAt != nil else { continue }
+                    let reps = set.actualReps ?? 0
+                    guard reps > 0 else { continue }
+                    let weightKg = set.actualWeight.map { toKg($0, set.weightUnit) } ?? 1
+                    let score = weightKg * Double(reps)
+                    if score > bestScore[ex.exerciseId, default: 0] {
+                        bestScore[ex.exerciseId] = score
+                        result[ex.exerciseId] = TopSet(bestKg: set.actualWeight != nil ? weightKg : 0,
+                                                       bestReps: reps, date: session.startedAt)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
     /// The best **weighted** set for an exercise across history, ranked by `weightKg × reps`. Unlike
     /// `topSet`, bodyweight sets (no weight logged) are EXCLUDED entirely — so the result always carries
     /// a real `bestKg` and a high-rep bodyweight set can neither mask nor zero-out a genuine weighted PR.

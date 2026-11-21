@@ -50,9 +50,11 @@ struct WorkoutDashboardSection: View {
                     heroCard
                     startCTA
                     planEntry
-                    if !recents.isEmpty { recentSection }
+                    let recents = recents   // once per redraw, not once per row (prompt 279)
+                    let personalRecords = Self.records(in: history)
+                    if !recents.isEmpty { recentSection(recents) }
                     if weeklyVolume.contains(where: { $0.volumeKg > 0 }) { volumeChart }
-                    if !personalRecords.isEmpty { recordsSection }
+                    if !personalRecords.isEmpty { recordsSection(personalRecords) }
                 }
 
                 if !quickStart.isEmpty && !isEmptyState { quickStartSection }
@@ -203,7 +205,7 @@ struct WorkoutDashboardSection: View {
 
     // MARK: - Recent sessions feed (#181 — the previously-missing surface)
 
-    private var recentSection: some View {
+    private func recentSection(_ recents: [RecentSessions.Row]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Recent sessions").snappetTitle()
@@ -261,7 +263,7 @@ struct WorkoutDashboardSection: View {
         .snappetPanel()
     }
 
-    private var recordsSection: some View {
+    private func recordsSection(_ personalRecords: [PRItem]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Personal records").snappetLabel()
             ForEach(personalRecords, id: \.exerciseId) { pr in
@@ -362,13 +364,13 @@ struct WorkoutDashboardSection: View {
         return buckets.keys.sorted().suffix(8).map { WeeklyPoint(weekStart: $0, volumeKg: buckets[$0] ?? 0) }
     }
 
-    private var personalRecords: [PRItem] {
-        let ids = Set(history.flatMap { $0.exercises.map(\.exerciseId) })
-        return ids.compactMap { id in
-            WorkoutMath.topSet(history: history, exerciseId: id).map { PRItem(exerciseId: id, top: $0) }
-        }
-        .sorted { ($0.top.bestKg * Double($0.top.bestReps)) > ($1.top.bestKg * Double($1.top.bestReps)) }
-        .prefix(5).map { $0 }
+    /// One pass over the history, once per redraw (prompt 279): this view sits under the live player and redraws
+    /// each time the app comes forward. It used to walk the history once per exercise, three times a redraw.
+    private static func records(in history: [WorkoutSession]) -> [PRItem] {
+        func score(_ item: PRItem) -> Double { item.top.bestKg * Double(item.top.bestReps) }
+        return WorkoutMath.topSets(history: history).map { PRItem(exerciseId: $0.key, top: $0.value) }
+            .sorted { (score($0), $1.exerciseId) > (score($1), $0.exerciseId) }
+            .prefix(5).map { $0 }
     }
 
     private var quickStart: [Routine] { Array(routines.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)) }

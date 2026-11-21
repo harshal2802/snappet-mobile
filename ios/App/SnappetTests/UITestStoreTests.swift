@@ -18,7 +18,8 @@ final class UITestStoreTests: XCTestCase {
     func testEverySeedImpliesTheFreshStore() {
         let seeds = ["-uiTestSeedStudioDemo", "-uiTestSeedRecapClip", "-uiTestSeedRoutineHistory",
                      "-uiTestSeedActivityClips", "-uiTestSeedRacketHR", "-uiTestSeedRacketVideos",
-                     "-uiTestSeedFestivalLineup", "-uiTestSeedFestivalNight", "-uiTestSeedFestivalPlan"]
+                     "-uiTestSeedFestivalLineup", "-uiTestSeedFestivalNight", "-uiTestSeedFestivalPlan",
+                     "-uiTestSeedRunningWorkout", "-uiTestSeedRunningWorkoutOld"]
         for seed in seeds {
             XCTAssertTrue(UITestStore.isFreshStore([seed]), seed)
         }

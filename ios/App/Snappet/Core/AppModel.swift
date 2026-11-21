@@ -269,11 +269,31 @@ final class AppModel {
     /// no-ops without full Photos access and never prompts. Runs on launch, foreground and restore.
     func reconcileMediaLinks() async {
         guard let context = modelContainer?.mainContext else { return }
+        guard !sessionIsRunning() else { return }   // a library scan can wait for the session to end (prompt 279)
         let report = await MediaLinkService().reconcile(context: context)
         // Only a pass that could SEE the library knows what is missing; a no-op pass (no / limited
         // Photos access) leaves the last answer alone.
         // A clip with a copy in the vault still plays, so it is not "missing" (prompt 269).
         if report.libraryVisible { mediaLinks.missing = report.missing.filter { !mediaVault.contains($0.id) } }
+    }
+
+    /// A workout or board session is on right now (prompt 279): its Live Activity is up, or the store
+    /// holds an unfinished session that started recently. Cloud work waits for it to end.
+    func sessionIsRunning() -> Bool {
+        var starts: [Date] = []
+        if let context = modelContainer?.mainContext {
+            var workouts = FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.completedAt == nil },
+                                                           sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+            workouts.fetchLimit = 1
+            var boards = FetchDescriptor<KilterSession>(predicate: #Predicate { $0.endedAt == nil },
+                                                        sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+            boards.fetchLimit = 1
+            starts += ((try? context.fetch(workouts)) ?? []).map(\.startedAt)
+            starts += ((try? context.fetch(boards)) ?? []).map(\.startedAt)
+        }
+        return SessionQuietTime.isRunning(unfinishedStarts: starts,
+                                          liveActivityRunning: liveActivity.isRunning || kilterLiveActivity.isRunning,
+                                          now: .now)
     }
 
     // MARK: - Clip vault (cloud-connect P4, prompt 269)
@@ -305,8 +325,14 @@ final class AppModel {
             return
         }
         #endif
+        if sessionIsRunning() {   // no listing, no copying while a session is on (prompt 279)
+            if mediaVault.settings.keepCopies, mediaVault.settings.started {
+                mediaVault.sayPausedForSession()
+            }
+            return
+        }
         if mediaVault.settings.keepCopies, mediaVault.settings.started {
-            await mediaVault.runIfNeeded(context: context)
+            await mediaVault.runIfNeeded(context: context, sessionRunning: { [weak self] in self?.sessionIsRunning() ?? false })
         } else {
             await mediaVault.refreshIndex()
         }
@@ -353,7 +379,8 @@ final class AppModel {
     /// Upload a backup if one is due. Called on launch, foreground and background; cheap when off.
     func runCloudBackup(manual: Bool = false) async {
         guard let context = modelContainer?.mainContext else { return }
-        await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual)
+        await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual,
+                                      sessionRunning: sessionIsRunning())
     }
 
     /// On launch: if this install holds no records yet and a backup exists, offer it.

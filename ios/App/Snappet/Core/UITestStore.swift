@@ -24,6 +24,8 @@ enum UITestStore {
         // The night seed layers over the lineup seed, so it implies the fresh store too.
         FestivalNightSeed.argument,
         FestivalPlanSeed.argument,
+        RunningWorkoutSeed.argument,
+        RunningWorkoutSeed.oldArgument,
     ]
 
     /// True when `arguments` ask for the in-memory test store. Pure: pass `ProcessInfo.processInfo.arguments`.

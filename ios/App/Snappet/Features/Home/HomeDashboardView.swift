@@ -69,10 +69,21 @@ struct HomeDashboardView: View {
                 .receive(on: DispatchQueue.main)) { _ in now = .now }
             // Returning from a suspension (the phone slept past midnight) — the notification may
             // not have been delivered, so re-read the clock on every foregrounding.
+            // Only while Home is the tab on screen (prompt 279): a new `now` re-derives the whole dashboard from
+            // every session, and doing that behind the Gym Tracker made a return to a running workout stutter.
+            // Coming back to the Home tab catches up.
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { now = .now }
+                if phase == .active { refreshClock() }
             }
+            .onChange(of: router.tab) { _, _ in refreshClock() }
         }
+    }
+
+    /// Re-read the clock when Home is showing and what it shows could be out of date: a minute has passed, or the day.
+    private func refreshClock() {
+        guard router.tab == .home else { return }
+        let fresh = Date.now
+        if fresh.timeIntervalSince(now) >= 60 || !Calendar.current.isDate(fresh, inSameDayAs: now) { now = fresh }
     }
 
     // MARK: first run
