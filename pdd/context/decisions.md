@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-19] Google sign-in without Google's SDK; Drive app-data folder; hidden until configured (cloud-connect P3, prompt 268)
+
+**Decision.** Google Drive is a second destination for the automatic backup. Sign-in is the standard
+OAuth "installed app" flow written directly (URLSession + the system browser sheet, PKCE, no client
+secret) — **no Google SDK**. Why: the repo's no-third-party-SDK rule (privacy policy says so), and
+the flow is ~200 testable lines.
+
+- **Hidden until configured.** The client ID is the `GOOGLE_CLIENT_ID` build setting → Info.plist
+  `GoogleClientID`. Empty (the default) ⇒ `GoogleOAuthConfig` is nil ⇒ no Google row, no Google
+  request. User's call ("build now, ID later"); steps in `docs/google-cloud-setup.md`.
+- **Least scope: `drive.appdata`** — a hidden per-app folder; Snappet cannot see the rest of the
+  person's Drive. Plus `openid email`, used only to show "Signed in as …" (the ID token's email is
+  read, not verified, and never used for access).
+- **State + PKCE on every sign-in**; a redirect with the wrong scheme or state exchanges no code.
+  Unticking the Drive permission on Google's consent screen is reported, not stored.
+- **Tokens in the keychain, this device only** (not synchronizable): a new phone signs in again. The
+  backup *key* is still the synchronizable one from 267 — so a Drive backup restores on another
+  iPhone with iCloud Keychain, and NOT on Android. Rules out cross-platform restore for now.
+- **A revoked session signs out locally** (`invalid_grant`) instead of failing every backup silently.
+- **Resumable upload always** — multipart caps at 5 MB and a backup with heart-rate samples exceeds it.
+- **Sign-in is split around the browser sheet** (`beginSignIn` / `finishSignIn`) so the view owns
+  presentation and the account logic is tested with a fake Google.
+- Google's Testing-status consent screen expires sessions after 7 days — documented, not worked around.
+
+**Verified (simulator):** SnappetTests 3,277 run, 0 failures, 5 standing skips; BackupUITests 4/4.
+**Not verified (no client ID exists yet):** the real consent sheet, any real Drive request.
+
 ## [2026-11-19] Automatic cloud backup — the first NAMED exception to on-device-only; opt-in, sealed on the phone (cloud-connect P2, prompt 267)
 
 **Decision.** Snappet may now send data off the phone in exactly one way: when the person turns on

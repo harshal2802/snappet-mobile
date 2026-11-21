@@ -13,7 +13,7 @@ device.** This policy explains what the app accesses, why, and what we do — an
 - **Everything is processed and stored locally on your iPhone, Apple Watch, and iCloud backup** (if you
   enable it). Your workouts, heart-rate data, photos, videos, highlight reels, journal entries, habits,
   expenses, and budgets never leave your device except when **you** explicitly export or share them,
-  or turn on the optional encrypted **Automatic backup** to your own iCloud (below).
+  or turn on the optional encrypted **Automatic backup** to your own iCloud or Google Drive (below).
 - **No analytics, no tracking, no advertising, no third-party SDKs.** We do not collect usage data, we
   do not use trackers, and we do not include any third-party advertising or analytics frameworks.
 - **We never sell, rent, or share your data with anyone.**
@@ -51,6 +51,10 @@ The only time content leaves your device is when **you** take an explicit action
   Heart-rate samples are left out unless you switch on "Include heart-rate samples". Photos and
   videos are not part of it. Turn it off at any time; delete the copies from iCloud Drive storage
   settings.
+- **Google Drive (optional).** Automatic backup can go to your Google Drive instead of iCloud. You
+  sign in with Google in the system browser sheet; SnappetAI asks only for a private app folder in
+  your Drive (it cannot see your other files) and your email address, which is shown in the app and
+  sent nowhere else. The backup is encrypted the same way. Signing out revokes the access.
 - **iCloud device backup**, if you have it enabled for the device, may include the app's local data — this is
   Apple's encrypted backup, governed by Apple's privacy policy.
 

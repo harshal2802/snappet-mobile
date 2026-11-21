@@ -14,6 +14,17 @@ import Foundation
 enum CloudBackupDestination: String, Codable, CaseIterable, Sendable {
     case off
     case iCloud
+    /// The hidden per-app folder of the person's Google Drive (prompt 268). Needs a Google sign-in.
+    case googleDrive
+
+    /// How the destination is named in the UI.
+    var label: String {
+        switch self {
+        case .off: "Off"
+        case .iCloud: "iCloud"
+        case .googleDrive: "Google Drive"
+        }
+    }
 }
 
 struct CloudBackupSettings: Codable, Equatable, Sendable {
@@ -218,11 +229,14 @@ extension SnappetBackup.File {
 
 /// Wording for the backup status line (pure, so it is tested without a device).
 enum CloudBackupStatusText {
-    static func skipped(_ reason: CloudBackupPolicy.SkipReason) -> String? {
+    static func skipped(_ reason: CloudBackupPolicy.SkipReason,
+                        destination: CloudBackupDestination = .iCloud) -> String? {
         switch reason {
         case .off, .unchanged, .tooSoon: nil
         case .storeUnhealthy: "Storage is in a temporary state — nothing to back up."
-        case .noAccount: "Sign in to iCloud in Settings to back up."
+        case .noAccount:
+            destination == .googleDrive ? "Sign in to Google to back up."
+                                        : "Sign in to iCloud in Settings to back up."
         case .nothingToBackUp: "Nothing to back up yet."
         case .offline: "Waiting for a connection."
         case .waitingForWiFi: "Waiting for Wi-Fi."
