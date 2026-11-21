@@ -263,6 +263,15 @@ final class AppModel {
     /// Guards against registering the HealthKit observer more than once across foreground cycles.
     private var watchObserverStarted = false
 
+    /// Keep every clip's link to its Photos asset alive (cloud-connect P1, prompt 265): stamp the
+    /// cross-device identifier + fingerprint while the asset resolves, and re-link rows whose
+    /// `localIdentifier` died (deleted / freed-up asset, restore onto a new phone). Idempotent;
+    /// no-ops without full Photos access and never prompts. Runs on launch, foreground and restore.
+    func reconcileMediaLinks() async {
+        guard let context = modelContainer?.mainContext else { return }
+        await MediaLinkService().reconcile(context: context)
+    }
+
     /// Reconcile completed Apple Watch workouts into Clips — mint media-bearing anchors + attach late
     /// clips. Safe to call repeatedly (idempotent); drives the launch, foreground, and background paths.
     func reconcileWatchWorkouts() async {

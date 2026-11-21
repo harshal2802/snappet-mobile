@@ -4,6 +4,90 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-19] Media link resilience — durable handles stamped by ONE reconcile pass; re-link never guesses (cloud-connect P1, prompt 265)
+
+**Decision.** A clip's PHAsset `localIdentifier` is valid on one phone's library only, so
+`SessionMedia` now also carries a `cloudIdentifier` (`PHCloudIdentifier.stringValue`) and a
+fingerprint (`linkCapturedAt` / `linkDurationSec` / `linkPixelWidth` / `linkPixelHeight` /
+`linkFilename`). `MediaLinkService` stamps them while the asset resolves and, when the identifier
+later dies, re-links via the cloud identifier, else a unique fingerprint match. The decisions are the
+pure `MediaLinkPlanner` (`MediaLinkTests`).
+
+- **One reconcile pass, not twelve call-site edits.** Rows are created in ~12 places; stamping at
+  creation would touch all of them and still miss existing rows. The pass runs after the watch
+  import (launch + foreground) and after a backup restore, and is idempotent — already-stamped rows
+  reuse their stored fingerprint, so a settled store costs one batched `PHAsset` fetch and no writes.
+- **A tie is no match.** Two candidates with the same top score (burst photos) leave the row
+  unlinked. A wrong re-link would show the wrong footage under someone's HR overlay; an honest
+  "Not on this phone" is the better failure. Ruled out: "closest capture time wins".
+- **Fingerprint columns are separate from `durationSec` / `aspectRatio`.** Those describe how
+  Snappet plays the clip and diverge after a Studio bake; the fingerprint is the Photos asset as
+  last seen. Sharing them would re-stamp on every pass.
+- **The handles ARE in the backup** (unlike the re-derivable `aspectRatio`): restoring onto another
+  phone is exactly when `localIdentifier` is dead and they are the only way back. Optional fields →
+  old backups still decode; `formatVersion` unchanged.
+- **Never-stamped rows get a weaker fallback** (`session.startedAt + offsetSec`, kind, duration) —
+  except when `offsetSec == 0`, because the clamp hides the true capture instant.
+- **Only with full `.authorized` Photos access, never prompting.** Under `.limited` an unresolvable
+  id may be an asset the user has not shared, so the pass no-ops and `ClipMediaSurface` keeps the
+  generic "Couldn't load" copy instead of "Not on this phone".
+- **"Missing" is not persisted yet.** The feed derives it at load time; a stored flag arrives with
+  the manual relink sheet (P1b), which is its first reader.
+- **`StudioComposer.avAsset` now allows network access**, so an iCloud-offloaded original opens in
+  Studio (the feed, share and reel paths already did). Posters/thumbnails stay local-only for speed.
+- **On-device-only rule unaffected**: these are lookups inside the user's own Photos library; PhotoKit
+  downloading an iCloud original is the OS's transfer, not Snappet sending anything.
+
+- **The feed's "Couldn’t load" / "Not on this phone" copy only appears once a clip is PLAYED.**
+  A feed post shows its still poster until tapped; `ClipMediaSurface` (and so the placeholder)
+  mounts on play or fullscreen. A test or a device check that just scrolls the feed sees neither
+  string (found on the Mac pass, 2026-11-19).
+- **The simulator cannot show "Not on this phone".** `xcodebuild test` leaves the app's Photos
+  permission DENIED on the simulator even after `simctl privacy grant photos` (the TCC row reads 2
+  before the run and 0 after), and re-granting mid-run kills the app. So the `.missing` branch and
+  the whole `MediaLinkService` pass are device-only; the simulator can only prove the negative
+  (`ClipsFeedUITests.testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing`).
+- **Every `-uiTestSeed…` argument that seeds clips uses an in-memory store**, so the seeds cannot
+  prove an on-disk migration. That was checked against a real store instead (below).
+
+**Verification (Mac, 2026-11-19, Xcode 27.2, iPhone 17 simulator / iOS 26.5).**
+- **Build:** the commit compiled as written — no source change was needed in the app, the PhotoKit
+  edge included. No warnings in any file this prompt added or edited (the three in `RootShell` /
+  `StudioComposer` are on older lines).
+- **Unit:** `MediaLinkTests` 24/24 as written (no test or planner change). `SnappetBackupTests`
+  13/13, including the new `testPre265BackupWithoutLinkHandlesStillRestoresAndCurrentOneCarriesThem`
+  (a file with the six new keys stripped restores un-stamped; a current file carries them). Full
+  `SnappetTests`: 3212 run, 0 failures, 5 skipped (the standing environment skips — on-device
+  intelligence, Studio profiling, real-closet data).
+- **UI:** full `SnappetUITests` — 286 run, 272 passed, 13 skipped (the standing device/two-phone
+  skips), 1 failure: `RacketSportsUITests.testTableTennisMatchIsScoredGameByGameAndDecides`
+  ("each exercise header should have a ⋯ menu"). It fails identically on the parent commit
+  `883382c8`, so it is not from this prompt; left untouched, forward-fix owed separately. The new
+  `ClipsFeedUITests.testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing` passes.
+- **Store migration:** the pre-265 build (`883382c8`) created the on-disk store, two `SessionMedia`
+  rows were inserted into it, and this build opened the same file: the six columns were added in
+  place, both rows kept their values, the new fields are NULL.
+- **Device (MrRobot, iPhone 13 Pro Max, real library, 2026-11-19).** Before installing, the
+  phone's store was copied to the Mac and its schema diffed against this build's (nothing on the
+  phone missing from the build; only the six columns added), and the upgrade was rehearsed on that
+  copy in the simulator. On the phone: all 43 tables kept their row counts (6,299 rows), integrity
+  check ok, no `localIdentifier` changed. First pass stamped 191 of 1,875 clips — every one with a
+  cloud identifier, capture instant, pixel size and original filename. A second launch changed no
+  `SessionMedia` row (acceptance criterion 1). The other 1,684 clips no longer resolve (almost all
+  filed in 2026-07; Oct–Nov clips are 101/104 live) and none of them re-linked, i.e. no unique
+  match exists in the library for them.
+- **"Not on this phone" confirmed on the phone, automated.** `MediaLinkDeviceUITests` (device-only,
+  opt-in via `TEST_RUNNER_SNAPPET_DEVICE_MEDIA_LINK=1`, READ-ONLY against the real store) searches
+  Clips for a session the store shows has dead clips (`…_QUERY`), plays the first post and asserts
+  the copy + "This video was removed from Photos". Passed in 25 s; the store was re-pulled
+  afterwards and is row-for-row unchanged. Scrolling the feed blind to find a dead clip was far too
+  slow — read the store, then search. The rest of the UI suite must NOT be run on a phone: many
+  tests launch without a fresh-store argument and would write to real data.
+- **Still owed — needs hands on the phone** (not automated, because they delete from the user's
+  Photos library or need a second device): re-link to a duplicate after deleting the original; an
+  iCloud-offloaded original opening in Studio; restore on a second device signed into the same
+  iCloud. Whether 1,684 dead clips matches what the user expects of their library is unconfirmed.
+
 ## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
 
 **Decision** (implementing `pdd/prompts/features/festival/07-festival-getting-started.md`;

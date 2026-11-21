@@ -205,6 +205,50 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(restored.importSourceLabel, "Google Health")
     }
 
+    /// Prompt 265: a backup written BEFORE the link handles existed has none of the new keys on its
+    /// `sessionMedia` rows. It must still decode and restore (the clip comes back un-stamped), and a
+    /// current backup must carry the handles through — they are the only way back to the asset on
+    /// another phone.
+    func testPre265BackupWithoutLinkHandlesStillRestoresAndCurrentOneCarriesThem() throws {
+        let context = sourceContainer.mainContext
+        let media = SessionMedia(sessionID: UUID(), localIdentifier: "ASSET/L0/001", kind: .video,
+                                 offsetSec: 30, durationSec: 9.5)
+        media.cloudIdentifier = "cloud-id-123"
+        let fingerprint = MediaFingerprint(
+            capturedAt: Date(timeIntervalSinceReferenceDate: 700_000_012.5), isVideo: true,
+            durationSec: 9.5, pixelWidth: 1920, pixelHeight: 1080, originalFilename: "IMG_0123.MOV")
+        media.linkFingerprint = fingerprint
+        context.insert(media)
+        try context.save()
+        let current = try SnappetBackup.encode(try SnappetBackup.snapshot(of: context))
+
+        // Current file: the handles survive export → restore.
+        try SnappetBackup.restore(try SnappetBackup.decode(current), into: targetContainer.mainContext)
+        let carried = try XCTUnwrap(targetContainer.mainContext.fetch(FetchDescriptor<SessionMedia>()).first)
+        XCTAssertEqual(carried.cloudIdentifier, "cloud-id-123")
+        XCTAssertEqual(carried.linkFingerprint, fingerprint)
+
+        // The same file as an older build wrote it: strip every key this prompt added.
+        let newKeys = ["cloudIdentifier", "linkCapturedAt", "linkDurationSec",
+                       "linkPixelWidth", "linkPixelHeight", "linkFilename"]
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        var rows = try XCTUnwrap(json["sessionMedia"] as? [[String: Any]])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(newKeys.allSatisfy { rows[0][$0] != nil }, "the current file carries every handle")
+        for key in newKeys { rows[0].removeValue(forKey: key) }
+        json["sessionMedia"] = rows
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+
+        try SnappetBackup.restore(try SnappetBackup.decode(legacy), into: targetContainer.mainContext)
+        let all = try targetContainer.mainContext.fetch(FetchDescriptor<SessionMedia>())
+        XCTAssertEqual(all.count, 1, "restore is replace-everything")
+        let restored = try XCTUnwrap(all.first)
+        XCTAssertEqual(restored.localIdentifier, "ASSET/L0/001")
+        XCTAssertEqual(restored.offsetSec, 30)
+        XCTAssertNil(restored.cloudIdentifier)
+        XCTAssertNil(restored.linkFingerprint, "an old backup restores un-stamped, not rejected")
+    }
+
     func testRestoreReplacesExistingDataIncludingUniqueKeyOverlap() throws {
         // The backup: one favorite + one session.
         let source = sourceContainer.mainContext
@@ -441,6 +485,12 @@ final class SnappetBackupTests: XCTestCase {
                                  assignedSetIndex: 1,
                                  assignedClimbUUID: "climb-uuid",
                                  source: .manual)
+        // Durable link handles (prompt 265) must survive a round trip — they are the only way a
+        // restore onto another phone finds the clip again.
+        media.cloudIdentifier = "cloud-id-123"
+        media.linkFingerprint = MediaFingerprint(
+            capturedAt: Date(timeIntervalSinceReferenceDate: 700_000_012.5), isVideo: true,
+            durationSec: 9.5, pixelWidth: 1920, pixelHeight: 1080, originalFilename: "IMG_0123.MOV")
         context.insert(media)
 
         context.insert(TimedExerciseCatalog(name: "7s max hang", category: .hangboard,

@@ -40,7 +40,9 @@ struct ClipMediaSurface: View {
     /// fullscreen viewer keeps the default `false` so the whole clip is visible.
     var fill: Bool = false
 
-    private enum LoadState: Equatable { case loading, ready, failed }
+    /// `.missing` = the clip's Photos asset no longer resolves (deleted, freed up by another app, or a
+    /// store restored onto a new phone) — distinct from `.failed`, a load error on an asset that exists.
+    private enum LoadState: Equatable { case loading, ready, failed, missing }
 
     /// The load task's identity: the clip plus its kept range (so a re-trim rebuilds the player).
     private var loadKey: String {
@@ -143,7 +145,13 @@ struct ClipMediaSurface: View {
         VStack(spacing: 8) {
             Image(systemName: clip.kind == "video" ? "play.slash" : "photo")
                 .font(.system(size: 56)).foregroundStyle(.white.opacity(0.85))
-            Text("Couldn’t load this clip").font(.caption).foregroundStyle(.white.opacity(0.65))
+            Text(state == .missing ? "Not on this phone" : "Couldn’t load this clip")
+                .font(.caption).foregroundStyle(.white.opacity(0.65))
+            if state == .missing {
+                // The session keeps its record, heart rate and stats; only the footage is gone.
+                Text("This \(clip.kind == "video" ? "video" : "photo") was removed from Photos")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.5))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("feed.media.placeholder")
@@ -178,7 +186,13 @@ struct ClipMediaSurface: View {
         let fetched: Box<PHAsset?> = await Task.detached(priority: .userInitiated) {
             Box(PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject)
         }.value
-        guard let asset = fetched.value else { state = .failed; return }
+        guard let asset = fetched.value else {
+            // Only call it "missing" when we can actually see the library — without full access an
+            // unresolvable id may just be an asset the user has not shared with Snappet.
+            let canSeeLibrary = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+            state = canSeeLibrary ? .missing : .failed
+            return
+        }
 
         if clip.kind == "video" {
             let opts = PHVideoRequestOptions()

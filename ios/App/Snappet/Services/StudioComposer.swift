@@ -609,7 +609,7 @@ final class StudioComposer: Sendable {
         guard let phAsset = assets.firstObject else { return nil }
         let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in
             let opts = PHVideoRequestOptions()
-            opts.isNetworkAccessAllowed = false
+            opts.isNetworkAccessAllowed = true   // an iCloud-offloaded original must still open in Studio (prompt 265)
             opts.deliveryMode = .highQualityFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: opts) { avAsset, _, _ in
                 cont.resume(returning: Box(avAsset))

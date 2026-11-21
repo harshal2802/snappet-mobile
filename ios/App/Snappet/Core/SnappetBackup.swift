@@ -714,6 +714,15 @@ extension SnappetBackup {
         /// lift the feed's stand-down and double-render the burned-in HR tile. Optional → old backups
         /// decode `nil` (= false).
         var isBakedRaw: Bool?
+        /// Durable link handles (prompt 265) — the WHOLE point of carrying them is a restore onto
+        /// another phone, where `localIdentifier` is dead and these are the only way back to the
+        /// asset. Optional → old backups decode `nil`.
+        var cloudIdentifier: String?
+        var linkCapturedAt: Date?
+        var linkDurationSec: Double?
+        var linkPixelWidth: Int?
+        var linkPixelHeight: Int?
+        var linkFilename: String?
 
         init(_ m: SessionMedia) {
             id = m.id; sessionID = m.sessionID; localIdentifier = m.localIdentifier
@@ -723,6 +732,10 @@ extension SnappetBackup {
             assignmentSourceRaw = m.assignmentSourceRaw; assignedClimbUUID = m.assignedClimbUUID
             createdAt = m.createdAt
             isBakedRaw = m.isBakedRaw
+            cloudIdentifier = m.cloudIdentifier
+            linkCapturedAt = m.linkCapturedAt; linkDurationSec = m.linkDurationSec
+            linkPixelWidth = m.linkPixelWidth; linkPixelHeight = m.linkPixelHeight
+            linkFilename = m.linkFilename
         }
         func make() -> SessionMedia {
             let media = SessionMedia(id: id, sessionID: sessionID, localIdentifier: localIdentifier,
@@ -735,6 +748,10 @@ extension SnappetBackup {
             media.kindRaw = kindRaw
             media.assignmentSourceRaw = assignmentSourceRaw
             media.isBakedRaw = isBakedRaw
+            media.cloudIdentifier = cloudIdentifier
+            media.linkCapturedAt = linkCapturedAt; media.linkDurationSec = linkDurationSec
+            media.linkPixelWidth = linkPixelWidth; media.linkPixelHeight = linkPixelHeight
+            media.linkFilename = linkFilename
             return media
         }
         var sortKey: String { id.uuidString }

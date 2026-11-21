@@ -223,7 +223,12 @@ struct RootShell: View {
     /// Skipped under UI-test launches (the fresh in-memory store has no Health/Photos data anyway).
     private func importWatchWorkouts() {
         guard !Self.isUITestLaunch else { return }
-        Task(priority: .utility) { await app.reconcileWatchWorkouts() }
+        Task(priority: .utility) {
+            await app.reconcileWatchWorkouts()
+            // After the import (it can add rows): stamp durable handles on live clips and re-link
+            // any whose Photos identifier died (cloud-connect P1, prompt 265).
+            await app.reconcileMediaLinks()
+        }
     }
 
     private func dispatch(_ action: PendingAppAction) {
