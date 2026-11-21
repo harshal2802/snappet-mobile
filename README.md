@@ -10,7 +10,8 @@ minimal manual editing.
 
 > 🔒 **On-device by default.** No backend, no Snappet account, no analytics. Nothing leaves the device
 > unless you turn on **Automatic backup**, which keeps an encrypted copy of your records in your own
-> iCloud (heart-rate samples left out unless you include them; photos and videos never).
+> iCloud or Google Drive (heart-rate samples left out unless you include them), or the separate
+> **Clip copies** switch, which copies session clips to your own Google Drive.
 
 ## Screens
 

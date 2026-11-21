@@ -272,7 +272,57 @@ final class AppModel {
         let report = await MediaLinkService().reconcile(context: context)
         // Only a pass that could SEE the library knows what is missing; a no-op pass (no / limited
         // Photos access) leaves the last answer alone.
-        if report.libraryVisible { mediaLinks.missing = report.missing }
+        // A clip with a copy in the vault still plays, so it is not "missing" (prompt 269).
+        if report.libraryVisible { mediaLinks.missing = report.missing.filter { !mediaVault.contains($0.id) } }
+    }
+
+    // MARK: - Clip vault (cloud-connect P4, prompt 269)
+
+    /// Opt-in copies of clips in the person's Google Drive, and footage brought back from Google Photos.
+    let mediaVault = MediaVaultService()
+
+    /// Learn what the vault holds, then copy a batch if the switch is on. Cheap when Google is unused.
+    func runMediaVault() async {
+        guard google.isConfigured, google.isSignedIn, let context = modelContainer?.mainContext else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-vaultStreamProbe") {   // device check, read-only (prompt 276)
+            await mediaVault.streamProbe()
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("-vaultExtrasProbe") {   // device check on throwaway data only
+            await mediaVault.extrasProbe(context: context)
+            await reconcileMediaLinks()
+            return
+        }
+        if UserDefaults.standard.bool(forKey: "vaultHoldCopies") {   // device UI checks: look, do not start a copy pass
+            await mediaVault.refreshIndex()
+            await mediaVault.refreshCoverage(context: context)
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("-vaultRoundTripProbe") {   // device check, frees ONE clip and brings it back
+            await mediaVault.roundTripProbe(context: context)
+            await reconcileMediaLinks()
+            return
+        }
+        #endif
+        if mediaVault.settings.keepCopies, mediaVault.settings.started {
+            await mediaVault.runIfNeeded(context: context)
+        } else {
+            await mediaVault.refreshIndex()
+        }
+        await mediaVault.refreshCoverage(context: context)
+        mediaLinks.missing.removeAll { mediaVault.contains($0.id) }
+    }
+
+    /// Copy the Google Photos picks that match a missing clip into the vault.
+    func importGooglePicks(_ picks: [GooglePickedItem]) async -> MediaVaultService.ImportResult {
+        guard let context = modelContainer?.mainContext else { return .init() }
+        let rows = MediaLinkService.rows(for: mediaLinks.missingIDs, context: context)
+        let result = await mediaVault.importFromGoogle(picks, missing: rows,
+                                                       placements: mediaVault.placements(context: context))
+        mediaLinks.missing.removeAll { mediaVault.contains($0.id) }
+        await mediaVault.refreshCoverage(context: context)
+        return result
     }
 
     // MARK: - Cloud backup (cloud-connect P2, prompt 267)
@@ -318,6 +368,7 @@ final class AppModel {
     func applyRestore(_ file: SnappetBackup.File, into context: ModelContext) throws {
         kilterSessions.detachForStoreRestore()
         try SnappetBackup.restore(file, into: context)
+        mediaVault.storeWasReplaced()   // clips missing after a restore were not deleted by the person (prompt 274)
         HouseholdStore.rerollDevices(context: context)   // two phones restored from one backup must not collide
         HouseholdXP.shared.load(context: context)        // chore XP from the restored log (household 01)
         resetHouseholdStore()

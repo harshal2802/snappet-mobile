@@ -78,6 +78,15 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟡 **Clip vault (2026-11-19, P4 of Cloud Connect, prompt 269).** With Google set up, Cloud & Backup
+has **Clip copies** → *Keep clip copies in Google Drive* (off by default): clips are copied to a
+"Snappet Clips" folder and a clip no longer in Photos plays from there. **Find missing clips** gains
+*Pick from Google Photos*: picks that match a missing clip are copied Google Photos → Drive without
+using phone storage. **Folders (2026-11-20, prompt 270):** a *Folders* picker files the copies by
+session (default), by activity then session, by month, or in one folder, named by capture date and
+time; changing it moves the existing copies. Tested against a fake Google only; gaps listed in
+`decisions.md`.
+
 🟡 **Google Drive backup (2026-11-19, P3 of Cloud Connect, prompt 268).** *Back up to* gains **Google
 Drive** with a *Sign in with Google* row — but only in a build that carries a Google client ID
 (`GOOGLE_CLIENT_ID` in `ios/App/project.yml`, empty today; steps in `docs/google-cloud-setup.md`).

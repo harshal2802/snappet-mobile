@@ -35,6 +35,8 @@ struct KilterSessionDetailView: View {
     @State private var clipStudio: ClipStudioPresentation?
     /// Present the shared reel editor (preview / pin / remove / reorder / export).
     @State private var showingReel = false
+    /// A Drive-only clip the person tried to edit (prompt 274).
+    @State private var bringBack: UUID?
     /// Present the session metadata editor (name · notes · date · angle), writing the P4 additive
     /// `KilterSession.title`/`notes` + the long-standing `startedAt`/`angle`. This is session-level
     /// metadata editing — NOT the gym `SessionDetailView` per-set edit. A date change shifts the whole
@@ -113,6 +115,7 @@ struct KilterSessionDetailView: View {
             }
         }
         .navigationTitle(session?.title ?? "Session")
+        .bringBackToEdit($bringBack)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if session != nil {
@@ -513,6 +516,7 @@ struct KilterSessionDetailView: View {
                 Text("\(videoCount) video\(videoCount == 1 ? "" : "s")"
                      + (photoCount > 0 ? " · \(photoCount) photo\(photoCount == 1 ? "" : "s")" : ""))
                     .font(.caption).foregroundStyle(.secondary)
+                SessionCopyLine(clipIDs: media.map(\.id))
                 // Clips that fell outside every climb's window (the General bucket) — still editable.
                 let unassigned = KilterMediaGrouping.unassigned(in: media,
                     climbUUIDOf: { $0.assignedClimbUUID }, offsetOf: { $0.offsetSec })
@@ -589,6 +593,7 @@ struct KilterSessionDetailView: View {
     /// for the clip's climb. Videos only — photos aren't clip-editable.
     private func editClip(_ clip: SessionMedia) {
         guard clip.kind == .video, let session else { return }
+        if app.mediaVault.onlyInDrive.contains(clip.id) { bringBack = clip.id; return }
         presentStudio(session, visible: [clip.id], focusing: clip.id,
                       climbUUID: clip.assignedClimbUUID, single: clip)
     }

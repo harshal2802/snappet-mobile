@@ -105,6 +105,14 @@ struct MediaLinkService {
         return result
     }
 
+    /// The planner's view of specific clips (the ones known to be missing) — for matching footage
+    /// that comes from somewhere other than this phone's Photos (prompt 269).
+    static func rows(for ids: Set<UUID>, context: ModelContext) -> [MediaLinkRow] {
+        guard !ids.isEmpty, let media = try? context.fetch(FetchDescriptor<SessionMedia>()) else { return [] }
+        let sessions = Self.sessions(in: context)
+        return media.filter { ids.contains($0.id) }.map { row(for: $0, sessionStart: sessions[$0.sessionID]?.start) }
+    }
+
     /// Which row identifiers still resolve, and the fingerprints of the picked assets.
     nonisolated private static func lookUp(picked: [String], rows: [MediaLinkRow])
         -> (present: Set<String>, picks: [MediaLinkCandidate]) {

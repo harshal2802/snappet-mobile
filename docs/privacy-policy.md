@@ -55,6 +55,11 @@ The only time content leaves your device is when **you** take an explicit action
   sign in with Google in the system browser sheet; SnappetAI asks only for a private app folder in
   your Drive (it cannot see your other files) and your email address, which is shown in the app and
   sent nowhere else. The backup is encrypted the same way. Signing out revokes the access.
+- **Clip copies in Google Drive (optional, off by default).** If you switch on "Keep clip copies in
+  Google Drive", SnappetAI copies your session photos and videos to a "Snappet Clips" folder in your
+  own Google Drive. These are ordinary files you can see and delete there; they are **not
+  encrypted** by SnappetAI. If you use "Pick from Google Photos", SnappetAI reads only the items you
+  choose in Google's picker and copies the ones that match a missing clip into that folder.
 - **iCloud device backup**, if you have it enabled for the device, may include the app's local data — this is
   Apple's encrypted backup, governed by Apple's privacy policy.
 

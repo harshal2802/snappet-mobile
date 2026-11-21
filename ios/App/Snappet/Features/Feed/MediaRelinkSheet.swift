@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 // MARK: - "Find missing clips" (cloud-connect P1b, prompt 266)
@@ -92,6 +93,8 @@ struct MediaRelinkSheet: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // Footage that lives in Google Photos, not on this iPhone (prompt 269).
+                if app.google.isConfigured { GooglePhotosPickSection() }
                 if groups.isEmpty {
                     Section {
                         Label("Every clip is on this phone", systemImage: "checkmark.circle")
@@ -154,4 +157,100 @@ extension EnvironmentValues {
     /// Set by a screen that can present `MediaRelinkSheet` (the Clips feed). `nil` elsewhere, so the
     /// missing-clip placeholder shows no button it cannot honour.
     @Entry var mediaRelinkRequest: MediaRelinkRequest? = nil
+}
+
+/// "Pick from Google Photos" in Find missing clips (prompt 269). The person chooses items in
+/// Google's own picker; Snappet checks each against the missing clips and copies the matches from
+/// Google Photos into the "Snappet Clips" folder of their Google Drive, where they play from.
+/// Nothing is saved to this iPhone's Photos, so it needs no free space here.
+struct GooglePhotosPickSection: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @Environment(\.openURL) private var openURL
+    @State private var stage: Stage = .idle
+    @State private var message: String?
+    @State private var failure: String?
+    @State private var work: Task<Void, Never>?
+
+    private enum Stage: Equatable { case idle, signingIn, waiting, copying }
+    private static let scopes = [GoogleScope.photosPicker, GoogleScope.driveFile]
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Button { start() } label: {
+                    HStack {
+                        Image(systemName: "cloud")
+                        Text("Pick from Google Photos").fontWeight(.medium)
+                        Spacer()
+                        if stage != .idle { ProgressView() }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .foregroundStyle(SnappetColor.ink)
+                    .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(stage != .idle)
+                .accessibilityIdentifier("clips.missing.pickGoogle")
+                switch stage {
+                case .idle, .signingIn: EmptyView()
+                case .waiting:
+                    HStack {
+                        Text("Choose your clips in Google Photos, then come back here.")
+                            .font(.footnote).foregroundStyle(SnappetColor.textSecondary)
+                        Spacer()
+                        Button("Cancel") { work?.cancel() }.font(.footnote)
+                    }
+                case .copying:
+                    Text(copyingText).font(.footnote).foregroundStyle(SnappetColor.textSecondary)
+                }
+                Text("Matching clips are copied from Google Photos to a “Snappet Clips” folder in your Google Drive and play from there. Nothing is saved to this iPhone, so it needs no free space.")
+                    .font(.footnote).foregroundStyle(SnappetColor.textTertiary)
+                if let message {
+                    Label(message, systemImage: "checkmark.circle")
+                        .font(.subheadline.weight(.medium)).foregroundStyle(SnappetColor.ink)
+                        .accessibilityIdentifier("clips.missing.googleOutcome")
+                }
+                if let failure {
+                    Label(failure, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("clips.missing.googleFailure")
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .onDisappear { work?.cancel() }
+    }
+
+    private var copyingText: String {
+        if case let .working(done, total) = app.mediaVault.phase { return "Copying \(done) of \(total) to Google Drive…" }
+        return "Checking your picks…"
+    }
+
+    private func start() {
+        message = nil
+        failure = nil
+        work = Task {
+            defer { stage = .idle }
+            do {
+                if !(app.google.isSignedIn && Self.scopes.allSatisfy(app.google.grants)) {
+                    stage = .signingIn
+                    let pending = try app.google.beginSignIn(scopes: Self.scopes)
+                    let callback = try await webAuthenticationSession.authenticate(
+                        using: pending.url, callback: .customScheme(pending.callbackScheme), additionalHeaderFields: [:])
+                    try await app.google.finishSignIn(pending, callback: callback)
+                }
+                stage = .waiting
+                let session = try await app.mediaVault.beginGooglePick()
+                openURL(session.pickerURL)
+                let picks = try await app.mediaVault.waitForPicks(session)
+                stage = .copying
+                message = (await app.importGooglePicks(picks)).message
+            } catch is CancellationError {
+            } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            } catch GoogleAuthError.cancelled {
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+    }
 }

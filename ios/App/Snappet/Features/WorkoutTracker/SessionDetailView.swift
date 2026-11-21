@@ -618,6 +618,8 @@ private struct SessionMediaSection: View {
     /// the parent `List`) makes them fight — the first presentation collapses immediately, the second
     /// works. A single `item:`-driven sheet (stable identity) presents reliably on the first tap.
     @State private var activeSheet: MediaSheet?
+    /// A Drive-only clip the person tried to edit (prompt 274).
+    @State private var bringBack: UUID?
 
     private enum MediaSheet: Identifiable {
         case picker, highlight
@@ -788,6 +790,7 @@ private struct SessionMediaSection: View {
             if app.sessionMedia.canAutoDiscover { await autoDiscover(prompt: false) }
             reconcileAssignments()
         }
+        .bringBackToEdit($bringBack)
     }
 
     // MARK: Actions header
@@ -866,6 +869,9 @@ private struct SessionMediaSection: View {
                 Label("Add photos/videos", systemImage: "plus")
             }
             .listRowBackground(SnappetColor.surface)
+
+            SessionCopyLine(clipIDs: media.map(\.id))
+                .listRowBackground(SnappetColor.surface)
 
             // #4: an escape hatch when Photos access is blocked — auto-discovery can't time-scan the
             // library without full access, so route the user to Settings.
@@ -1151,6 +1157,7 @@ private struct SessionMediaSection: View {
         // Reels are excluded from the Studio timeline (highlights P5) — opening scoped to one
         // would land on an empty editor.
         guard item.kind == .video, !item.isReel else { return }
+        if app.mediaVault.onlyInDrive.contains(item.id) { bringBack = item.id; return }
         onOpenStudio(StudioPresentation(
             project: StudioEntry.resolveProject(for: session, media: media, context: context),
             visibleClipMediaIDs: [item.id], focusClipMediaID: item.id))
@@ -1399,6 +1406,7 @@ struct SessionMediaThumb: View {
                 .padding(4)
         }
         .frame(width: side, height: side)
+        .overlay(alignment: .topTrailing) { ClipCopyMark(clipID: item.id, style: .onMedia) }
         .accessibilityElement()
         .accessibilityIdentifier("mediaThumb")
         .accessibilityLabel("\(item.kind == .video ? "Video" : "Photo") at \(offsetBadge)")

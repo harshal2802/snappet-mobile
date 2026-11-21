@@ -132,6 +132,12 @@ enum CloudBackupPolicy {
         return Array(mine.dropFirst(max(0, keep)))
     }
 
+    /// Is this backup really in the vault — both its payload and its manifest?
+    static func isStored(_ manifest: CloudBackupManifest, in names: [String]) -> Bool {
+        names.contains(manifest.fileName)
+            && names.contains(CloudBackupNaming.manifestName(forPayload: manifest.fileName))
+    }
+
     /// The backup to offer on launch: only when this install holds no user records yet (a fresh
     /// install / new phone), and only one the person has not already declined.
     static func restoreOffer(_ manifests: [CloudBackupManifest], localUserRecordCount: Int,
