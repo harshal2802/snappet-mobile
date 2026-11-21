@@ -269,7 +269,22 @@ final class AppModel {
     /// no-ops without full Photos access and never prompts. Runs on launch, foreground and restore.
     func reconcileMediaLinks() async {
         guard let context = modelContainer?.mainContext else { return }
-        await MediaLinkService().reconcile(context: context)
+        let report = await MediaLinkService().reconcile(context: context)
+        // Only a pass that could SEE the library knows what is missing; a no-op pass (no / limited
+        // Photos access) leaves the last answer alone.
+        if report.libraryVisible { mediaLinks.missing = report.missing }
+    }
+
+    /// Clips whose Photos asset is gone, as of the last reconcile pass (prompt 266) — what the Clips
+    /// feed's "aren't on this phone" row and the "Find missing clips" sheet read.
+    let mediaLinks = MediaLinkStatus()
+
+    /// Attach hand-picked library assets to missing clips (prompt 266), then refresh `mediaLinks`.
+    func relinkMissingClips(pickedIdentifiers: [String]) async -> MediaRelinkPlanner.Result {
+        guard let context = modelContainer?.mainContext else { return .init() }
+        let result = await MediaLinkService().attach(pickedIdentifiers: pickedIdentifiers, context: context)
+        await reconcileMediaLinks()
+        return result
     }
 
     /// Reconcile completed Apple Watch workouts into Clips — mint media-bearing anchors + attach late

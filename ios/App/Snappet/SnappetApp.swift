@@ -175,6 +175,12 @@ struct SnappetApp: App {
         if seedFestivalNight {
             FestivalNightSeed.seedIfRequested(into: container.mainContext)
         }
+        // Test-only (prompt 266): report the seeded clips as missing so the notice + relink sheet
+        // are reachable on a simulator, which cannot hold Photos access under test.
+        if args.contains(MediaLinkService.assumeMissingArgument) {
+            UserDefaults.standard.removeObject(forKey: "clips.missing.dismissedAtCount")   // each run starts un-dismissed
+            _appModel.wrappedValue.mediaLinks.missing = MediaLinkService.assumeAllMissing(in: container.mainContext)
+        }
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production impact.
         // Installs the lineup + a pre-starred plan + past HR history for the For-You UI test.
         if seedFestivalPlan {

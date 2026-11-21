@@ -4,6 +4,41 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-19] Manual relink — a hand pick is still verified; "missing" lives in memory (cloud-connect P1b, prompt 266)
+
+**Decision.** Clips whose footage is gone surface as one row in the Clips feed ("N clips aren’t on
+this phone · Review") and a sheet that lists them by session with a single action, **Pick from this
+iPhone**. The picked assets go through the pure `MediaRelinkPlanner`, which attaches a pick only on
+a unique fingerprint match.
+
+- **The person choosing does not make it true.** A pick that fits no missing clip, fits two equally,
+  ties with another pick, or is already a live clip's footage is counted in the result line
+  ("1 clip found · 2 picks didn’t match a missing clip") and NOT attached. Ruled out: "the user
+  picked it, attach it to the row they were looking at" — there is no per-row pick precisely so one
+  round of picking can restore many clips, and so a slip of the thumb cannot mislabel a session.
+- **A clip with nothing to verify against can never be re-attached by hand** (never stamped AND
+  offset 0). 9 of the 1,684 on the first real library. Accepted; forcing those needs a deliberate
+  "attach anyway" which is not built.
+- **"Missing" is in memory (`MediaLinkStatus`), not a column.** It is re-derived on every launch /
+  foreground pass, so it cannot go stale when footage returns, and a pass that could not see the
+  library (no / limited Photos access) leaves the last answer alone rather than clearing it.
+- **The notice remembers the COUNT at dismissal**, and returns only when more clips are missing.
+  With 1,684 missing, a notice that came back every launch would be noise.
+- **The "Find clip" button reaches the sheet through an environment object, not a closure.** A
+  closure in the environment invalidates every clip surface on each feed update (the compiler warns
+  about it); `MediaRelinkRequest` is a reference, set only by the Clips feed, so other hosts of
+  `ClipMediaSurface` show no button they cannot honour.
+- **A fingerprint re-link now clears the old `cloudIdentifier`** (also in the automatic pass): the
+  match is a different asset, and the stale id would otherwise ride along until PhotoKit mapped a
+  new one.
+- **Picks come from the Photos library only.** Footage in Files or another app must be saved to
+  Photos first; the sheet says so. Google's picker is P4.
+
+**Verification (Mac, iPhone 17 simulator).** `MediaRelinkTests` 12 + `MissingClipsNoticeTests` 6;
+full `SnappetTests` 3230 run, 0 failures, 5 skipped; `ClipsFeedUITests` 14/14 incl. the new
+notice → sheet → dismiss case. **Not run:** the pick → verify → attach round trip on a real
+library (the simulator cannot hold Photos access under test).
+
 ## [2026-11-19] Media link resilience — durable handles stamped by ONE reconcile pass; re-link never guesses (cloud-connect P1, prompt 265)
 
 **Decision.** A clip's PHAsset `localIdentifier` is valid on one phone's library only, so
