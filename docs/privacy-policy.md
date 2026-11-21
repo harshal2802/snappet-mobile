@@ -12,7 +12,8 @@ device.** This policy explains what the app accesses, why, and what we do — an
   receives, stores, or processes your data.
 - **Everything is processed and stored locally on your iPhone, Apple Watch, and iCloud backup** (if you
   enable it). Your workouts, heart-rate data, photos, videos, highlight reels, journal entries, habits,
-  expenses, and budgets never leave your device except when **you** explicitly export or share them.
+  expenses, and budgets never leave your device except when **you** explicitly export or share them,
+  or turn on the optional encrypted **Automatic backup** to your own iCloud (below).
 - **No analytics, no tracking, no advertising, no third-party SDKs.** We do not collect usage data, we
   do not use trackers, and we do not include any third-party advertising or analytics frameworks.
 - **We never sell, rent, or share your data with anyone.**
@@ -43,7 +44,14 @@ The only time content leaves your device is when **you** take an explicit action
 - **Sharing or exporting** a highlight reel, a workout, or other content via the iOS share sheet
   (e.g., saving to Photos, AirDrop, Messages). What happens to it then is governed by the destination
   you pick, not by SnappetAI.
-- **iCloud backup**, if you have it enabled for the device, may include the app's local data — this is
+- **Automatic backup (optional, off by default).** If you turn it on in Apps → Cloud & Backup,
+  SnappetAI keeps a copy of your records (workouts, climbing, journal, habits, finance, and the rest
+  of the app's database) in **your own iCloud Drive**. The copy is encrypted on your iPhone before it
+  leaves, with a key stored in your keychain; we cannot read it and it is never sent to us.
+  Heart-rate samples are left out unless you switch on "Include heart-rate samples". Photos and
+  videos are not part of it. Turn it off at any time; delete the copies from iCloud Drive storage
+  settings.
+- **iCloud device backup**, if you have it enabled for the device, may include the app's local data — this is
   Apple's encrypted backup, governed by Apple's privacy policy.
 
 ## Improving the app
@@ -73,4 +81,5 @@ this URL.
 
 Questions about this policy or your privacy: **snappet.ai.dev@gmail.com**
 
-*SnappetAI has no backend and collects no data on any server. This policy describes on-device behavior.*
+*SnappetAI has no backend and collects no data on any server. This policy describes on-device behavior
+and the optional backup to your own iCloud.*

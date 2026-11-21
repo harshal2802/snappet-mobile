@@ -132,7 +132,7 @@ struct SnappetApp: App {
         let corruptStore = args.contains("-uiTestCorruptStore")
         func inMemory() -> ModelContainer {
             try! ModelContainer(
-                for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         }
         var health = StoreHealth.Mode.ok
         if freshStore {
@@ -140,7 +140,7 @@ struct SnappetApp: App {
         } else if corruptStore {
             container = inMemory()
             health = .fallbackInMemory
-        } else if let c = try? ModelContainer(for: schema) {
+        } else if let c = try? ModelContainer(for: schema, configurations: SnappetSchema.onDiskConfiguration) {
             container = c
         } else {
             // The previously-silent branch: an empty in-memory store, now flagged so the
@@ -152,6 +152,7 @@ struct SnappetApp: App {
         // Hand the store to AppModel so the Apple Watch → Clips import can reconcile from a background
         // HealthKit callback, where no SwiftUI environment context exists (watch-workouts-clips P2).
         _appModel.wrappedValue.modelContainer = container
+        _appModel.wrappedValue.storeIsHealthy = health == .ok   // the fallback store has nothing to back up (prompt 267)
         // The workout App Intents (prompt 199) run in this process and write to this same store.
         let shared = container
         AppDependencyManager.shared.add(dependency: shared)

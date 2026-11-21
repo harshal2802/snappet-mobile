@@ -4,6 +4,41 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-19] Automatic cloud backup — the first NAMED exception to on-device-only; opt-in, sealed on the phone (cloud-connect P2, prompt 267)
+
+**Decision.** Snappet may now send data off the phone in exactly one way: when the person turns on
+*Automatic backup* (Cloud & Backup → Back up to → iCloud), the `SnappetBackup` file is encrypted on
+the phone and written to their own iCloud Drive app container. It is **off by default**; there is
+still no Snappet server, no account of ours, no analytics. README / privacy policy / store listing
+say so. This was the user's call (2026-11-19), as were the next two points.
+
+- **Heart-rate samples are a default-off switch** ("Include heart-rate samples"). Off = the per-second
+  series is stripped from the cloud file (summaries stay) and re-read from Apple Health after a
+  restore, best effort. Why default off: App Review 5.1.3(ii) forbids storing personal health
+  information in iCloud; the switch on is the person's explicit choice and an accepted review risk.
+- **Sealed on the phone**: ChaCha20-Poly1305, 256-bit key in the keychain as a *synchronizable* item
+  (iCloud Keychain carries it to the next iPhone). Consequence, accepted: without iCloud Keychain a
+  backup opens only on the phone that made it — and is then not offered elsewhere. The manual
+  backup file stays plaintext and says so.
+- **Backup, not sync.** One phone's safety net; restore is deliberate and replaces everything. Rules
+  out merging two phones.
+- **Never back up nothing.** An empty store or the in-memory fallback store is never uploaded; 3
+  generations are kept per device; another device's backups are never deleted.
+- **Unchanged data is not re-uploaded**: the content hash is taken with `exportedAt` pinned.
+- **`cloudKitDatabase: .none` on every `ModelConfiguration`.** Adding the iCloud container
+  entitlement made SwiftData's default (`.automatic`) turn on CloudKit mirroring, which rejects this
+  schema — the store failed to open and the app crashed at launch (caught by `BackupUITests` on the
+  simulator; on a phone it would have come up on the empty fallback). `SnappetSchema.onDiskConfiguration`
+  + `StoreConfigurationTests` hold this. Any new `ModelConfiguration` must say `.none`.
+- **`CloudVault` is the seam** for P3 (Google Drive): opaque named blobs only, never plaintext.
+- **Settings live in UserDefaults**, not SwiftData — no schema change, and they are not themselves
+  restored from a backup (a restored phone does not silently start uploading).
+
+**Verified (simulator, 2026-11-19):** SnappetTests 3,254 run, 0 failures, 5 standing skips;
+BackupUITests 3/3 against a local folder vault. **Not verified:** any real iCloud transfer (the test
+simulator has no iCloud account), second-iPhone restore, Health re-read, and release signing — the
+TestFlight lane needs the iCloud capability on the App ID (see the capability-signing recipe).
+
 ## [2026-11-19] Manual relink — a hand pick is still verified; "missing" lives in memory (cloud-connect P1b, prompt 266)
 
 **Decision.** Clips whose footage is gone surface as one row in the Clips feed ("N clips aren’t on

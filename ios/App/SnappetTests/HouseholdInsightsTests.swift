@@ -217,7 +217,7 @@ final class HouseholdInsightsTests: XCTestCase {
     @MainActor
     func testCooperativeOpsConvergeAcrossTwoPhones() throws {
         func store() throws -> (HouseholdStore, ModelContainer) {
-            let c = try ModelContainer(for: Schema(SnappetSchema.models), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            let c = try ModelContainer(for: Schema(SnappetSchema.models), configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
             return (HouseholdStore(context: c.mainContext), c)
         }
         let (a, ca) = try store(), (b, cb) = try store()

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Settings (prompt 212) — what Home's avatar opens: the app-wide things that don't belong to one mini-app.
 /// Appearance (accent + System/Dark/Light), your heart-rate profile and sources (the Gym Tracker's settings, where
-/// they live today), and Back up & restore.
+/// they live today), and Cloud & Backup.
 struct SuiteSettingsView: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(StoreHealth.self) private var storeHealth
@@ -37,7 +37,7 @@ struct SuiteSettingsView: View {
                 }
                 Section {
                     Button { showingBackup = true } label: {
-                        Label("Back up & restore", systemImage: "externaldrive")
+                        Label("Cloud & Backup", systemImage: "externaldrive")
                     }
                     .accessibilityIdentifier("settings.backup")
                 }

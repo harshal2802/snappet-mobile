@@ -21,7 +21,7 @@ final class HouseholdLoopbackSyncTests: XCTestCase {
 
     private func newStore() throws -> HouseholdStore {
         let c = try ModelContainer(for: Schema(SnappetSchema.models),
-                                   configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                   configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         containers.append(c)
         return HouseholdStore(context: c.mainContext)
     }

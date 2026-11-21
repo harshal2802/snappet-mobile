@@ -275,6 +275,85 @@ final class AppModel {
         if report.libraryVisible { mediaLinks.missing = report.missing }
     }
 
+    // MARK: - Cloud backup (cloud-connect P2, prompt 267)
+
+    /// Automatic encrypted backup to the person's own cloud. OFF until they choose a destination.
+    /// UI tests swap in a local folder + fixed key (`-uiTestCloudVault`): the simulator under test
+    /// has no iCloud account.
+    let cloudBackup: CloudBackupService = {
+        guard CommandLine.arguments.contains("-uiTestCloudVault") else { return CloudBackupService() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("uitest-cloud-vault")
+        if CommandLine.arguments.contains("-uiTestCloudVaultReset") { try? FileManager.default.removeItem(at: folder) }
+        let defaults = UserDefaults(suiteName: "uitest.cloudbackup") ?? .standard
+        if CommandLine.arguments.contains("-uiTestCloudVaultReset") {
+            defaults.removePersistentDomain(forName: "uitest.cloudbackup")
+        }
+        return CloudBackupService(defaults: defaults, vaultFor: { _ in FolderVault(directory: folder) },
+                                  keys: FixedBackupKeyStore(key: .init(data: Data(repeating: 7, count: 32))),
+                                  network: { .wifi }, deviceName: "Test iPhone")
+    }()
+
+    /// Set by `SnappetApp`: false while running on the in-memory fallback store (nothing to back up).
+    var storeIsHealthy = true
+
+    /// Upload a backup if one is due. Called on launch, foreground and background; cheap when off.
+    func runCloudBackup(manual: Bool = false) async {
+        guard let context = modelContainer?.mainContext else { return }
+        await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual)
+    }
+
+    /// On launch: if this install holds no records yet and a backup exists, offer it.
+    func checkCloudRestoreOffer() async {
+        guard storeIsHealthy, let context = modelContainer?.mainContext,
+              let file = try? SnappetBackup.snapshot(of: context) else { return }
+        await cloudBackup.checkRestoreOffer(localUserRecordCount: file.userRecordCount)
+    }
+
+    /// Replace everything in the store with `file` — the one restore path, shared by the file
+    /// importer and cloud restore. Detaches live `@Model` holders first (#68 review fix 2).
+    func applyRestore(_ file: SnappetBackup.File, into context: ModelContext) throws {
+        kilterSessions.detachForStoreRestore()
+        try SnappetBackup.restore(file, into: context)
+        HouseholdStore.rerollDevices(context: context)   // two phones restored from one backup must not collide
+        HouseholdXP.shared.load(context: context)        // chore XP from the restored log (household 01)
+        resetHouseholdStore()
+        // Restored rows carry another install's Photos identifiers — re-link them now through
+        // the cloud identifier / fingerprint the backup carried (prompt 265).
+        Task { await reconcileMediaLinks() }
+    }
+
+    /// Download, open and apply a cloud backup. When it was made without heart-rate samples, re-read
+    /// what Apple Health still holds for the restored sessions (best effort, never prompts).
+    func restoreFromCloud(_ manifest: CloudBackupManifest, into context: ModelContext) async throws -> Int {
+        let file = try await cloudBackup.download(manifest)
+        try applyRestore(file, into: context)
+        cloudBackup.noteRestored(manifest)
+        if !manifest.includesHeartRate { Task { await refillHeartRateFromHealth(in: context) } }
+        return file.recordCount
+    }
+
+    /// Sessions restored without samples get them back from Apple Health where it still has them.
+    private func refillHeartRateFromHealth(in context: ModelContext) async {
+        var wrote = false
+        for session in (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        where session.hrSeries.isEmpty {
+            guard let end = session.completedAt, end > session.startedAt,
+                  let samples = try? await health.heartRateSamples(start: session.startedAt, end: end),
+                  !samples.isEmpty, !session.isDeleted else { continue }
+            session.hrSeries = samples.map { HRPoint(t: $0.t, bpm: $0.bpm) }
+            wrote = true
+        }
+        for session in (try? context.fetch(FetchDescriptor<KilterSession>())) ?? []
+        where session.hrSeries.isEmpty {
+            guard let end = session.endedAt, end > session.startedAt,
+                  let samples = try? await health.heartRateSamples(start: session.startedAt, end: end),
+                  !samples.isEmpty, !session.isDeleted else { continue }
+            session.hrSeries = samples.map { HRPoint(t: $0.t, bpm: $0.bpm) }
+            wrote = true
+        }
+        if wrote { try? context.save() }
+    }
+
     /// Clips whose Photos asset is gone, as of the last reconcile pass (prompt 266) — what the Clips
     /// feed's "aren't on this phone" row and the "Find missing clips" sheet read.
     let mediaLinks = MediaLinkStatus()

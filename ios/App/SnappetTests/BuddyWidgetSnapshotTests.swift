@@ -39,7 +39,7 @@ final class BuddyWidgetSnapshotTests: XCTestCase {
 
     func testTheAppBuildsItLikeHome() throws {
         let container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         RoutineHistorySeed.seed(into: container.mainContext, now: now)
         let sessions = try container.mainContext.fetch(FetchDescriptor<WorkoutSession>())

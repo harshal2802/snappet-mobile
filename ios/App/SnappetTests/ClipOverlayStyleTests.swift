@@ -126,7 +126,7 @@ final class ClipOverlayStyleTests: XCTestCase {
 
     private func makeContext() throws -> ModelContext {
         ModelContext(try ModelContainer(for: Schema(SnappetSchema.models),
-                                        configurations: ModelConfiguration(isStoredInMemoryOnly: true)))
+                                        configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)))
     }
 
     func testStoreSavesOneRowSurvivesBackupAndResets() throws {

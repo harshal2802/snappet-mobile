@@ -492,7 +492,7 @@ final class KilterSessionBackupMigrationTests: XCTestCase {
 
     private nonisolated func makeContainer() throws -> ModelContainer {
         try ModelContainer(for: Schema(SnappetSchema.models),
-                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                           configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
     }
 
     // MARK: - FA: date edit shifts the whole session + its logs by one delta (relative offsets preserved)

@@ -11,7 +11,7 @@ final class SessionInsightsTests: XCTestCase {
 
     override func setUp() async throws {
         container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         RoutineHistorySeed.seed(into: container.mainContext, now: Date(timeIntervalSince1970: 1_790_000_000))
         all = try container.mainContext.fetch(FetchDescriptor<WorkoutSession>(sortBy: [SortDescriptor(\.startedAt)]))
     }

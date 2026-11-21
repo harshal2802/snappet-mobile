@@ -86,7 +86,7 @@ struct StoreHealthBanner: View {
             Label("Storage was reset", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.bold())
             Text("Quit and reopen Snappet to start fresh — then restore your backup from "
-                 + "Apps → Back up & restore.")
+                 + "Apps → Cloud & Backup.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

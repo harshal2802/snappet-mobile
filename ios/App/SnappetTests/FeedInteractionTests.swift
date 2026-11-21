@@ -15,7 +15,7 @@ final class FeedInteractionTests: XCTestCase {
 
     @MainActor func testReactionAndSaveToggle() throws {
         let container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let ctx = ModelContext(container)
 
         XCTAssertTrue(FeedInteractionWriter.toggleReaction(contentId: "C", in: ctx))
