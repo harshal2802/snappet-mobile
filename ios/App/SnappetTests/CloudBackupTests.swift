@@ -226,6 +226,52 @@ final class CloudBackupServiceTests: XCTestCase {
         ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     }
 
+    /// Device finding (2026-11-20): the first backup to a brand-new iCloud container vanished from
+    /// the cloud, and every later run said "unchanged" — so nothing was ever backed up again.
+    func testABackupMissingFromTheCloudIsUploadedAgain() async throws {
+        try seed()
+        let backup = service()
+        backup.update { $0.destination = .iCloud }
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true, manual: true)
+        XCTAssertEqual(try vaultNames().count, 2, "payload + manifest")
+
+        for name in try vaultNames() { try FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
+        await backup.refreshRemote()
+        XCTAssertTrue(backup.remote.isEmpty)
+        XCTAssertNil(backup.remoteProblem, "an empty cloud folder is not an error")
+
+        // Same data, not manual, minutes after the last run: still uploads, because the copy is gone.
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true)
+        XCTAssertEqual(try vaultNames().count, 2, "the lost backup is replaced")
+        XCTAssertEqual(backup.remote.count, 1)
+
+        // And while it IS there, unchanged data is not uploaded twice.
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true, manual: true)
+        XCTAssertEqual(try vaultNames().count, 2)
+    }
+
+    func testAnUnreadableBackupIsNamedNotReportedAsNoBackups() async throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: folder.appendingPathComponent(
+            CloudBackupNaming.manifestName(forPayload: "snappet-20261120T000000Z-abcd1234.snpbak")))
+        let backup = service()
+        backup.update { $0.destination = .iCloud }
+        await backup.refreshRemote()
+        XCTAssertTrue(backup.remote.isEmpty)
+        XCTAssertNotNil(backup.remoteProblem, "a backup that can't be read is a problem to show")
+    }
+
+    func testIsStoredNeedsBothThePayloadAndItsManifest() {
+        let manifest = CloudBackupManifest(
+            fileName: "a.snpbak", createdAt: .now, deviceID: "d", deviceName: "n", contentHash: "h",
+            byteCount: 1, recordCount: 1, sessionCount: 0, clipCount: 0,
+            backupFormatVersion: SnappetBackup.formatVersion, includesHeartRate: false)
+        XCTAssertTrue(CloudBackupPolicy.isStored(manifest, in: ["a.snpbak", "a.snpbak.manifest.json"]))
+        XCTAssertFalse(CloudBackupPolicy.isStored(manifest, in: ["a.snpbak"]))
+        XCTAssertFalse(CloudBackupPolicy.isStored(manifest, in: ["a.snpbak.manifest.json"]))
+        XCTAssertFalse(CloudBackupPolicy.isStored(manifest, in: []))
+    }
+
     func testNothingIsWrittenWhileOff() async throws {
         try seed()
         let backup = service()

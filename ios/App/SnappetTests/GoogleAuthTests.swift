@@ -153,21 +153,74 @@ final class GoogleAuthTests: XCTestCase {
 // MARK: - A fake Google: token endpoint + Drive app-data folder, in memory
 
 final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
+    struct Stored { var id: String; var name: String; var data: Data; var parent: String; var isFolder = false
+                    var props: [String: String] = [:] }
+    struct PickerItem { var id: String; var createTime: String; var isVideo: Bool; var fileName: String; var data: Data
+                        var width = 1920; var height = 1080 }
+
     private let lock = NSLock()
-    private var files: [(id: String, name: String, data: Data)] = []
-    private var sessions: [String: (name: String, existingID: String?)] = [:]
+    private var stored: [Stored] = []
+    private var sessions: [String: (name: String, existingID: String?, parent: String, props: [String: String])] = [:]
     private var counter = 0
     private var validAccess = ""
+    private var pollsLeft = 0
     private(set) var refreshCount = 0
     private(set) var requests: [String] = []
     var grantedScope = "openid email " + GoogleScope.driveAppData
     var refreshRevoked = false
     var pageSize = 1000
     var email = "me@example.com"
+    /// What the person "picks" in Google Photos, and how many polls it takes them.
+    var pickerItems: [PickerItem] = []
+    var pollsBeforePicked = 1
+    var failingDownloads: Set<String> = []
+    /// Drive file NAMES whose bytes cannot be fetched (a dropped connection).
+    var failingFileDownloads: Set<String> = []
+    /// A server that answers a range request with the whole file.
+    var ignoresRanges = false
+    private(set) var rangeRequests: [String] = []
+    /// The person deletes a copy in Drive by hand.
+    func deleteFile(named name: String) { lock.withLock { stored.removeAll { $0.name == name } } }
+    /// Names of what was moved to the trash, in order.
+    private(set) var trashedNames: [String] = []
 
-    var fileNames: [String] { lock.withLock { files.map(\.name).sorted() } }
-    func data(named name: String) -> Data? { lock.withLock { files.first { $0.name == name }?.data } }
+    /// Files in the hidden app-data folder (the backup vault).
+    var fileNames: [String] { lock.withLock { stored.filter { $0.parent == "appDataFolder" }.map(\.name).sorted() } }
+    /// Files in visible Drive folders (the clip vault).
+    var driveFileNames: [String] { lock.withLock { stored.filter { !$0.isFolder && $0.parent != "appDataFolder" }.map(\.name).sorted() } }
+    var folderNames: [String] { lock.withLock { stored.filter(\.isFolder).map(\.name) } }
+    /// Every visible Drive file as "Folder/Sub/name" from the top (the clip vault's layout).
+    var drivePaths: [String] {
+        lock.withLock { stored.filter { !$0.isFolder && $0.parent != "appDataFolder" }.map(path).sorted() }
+    }
+    private func path(_ item: Stored) -> String {
+        var parts = [item.name], parent = item.parent
+        while let folder = stored.first(where: { $0.isFolder && $0.id == parent }) {
+            parts.insert(folder.name, at: 0)
+            parent = folder.parent
+        }
+        return parts.joined(separator: "/")
+    }
+    func props(named name: String) -> [String: String]? { lock.withLock { stored.first { $0.name == name }?.props } }
+    /// The person renames a file in Drive.
+    func rename(_ name: String, to new: String) {
+        lock.withLock { if let index = stored.firstIndex(where: { $0.name == name }) { stored[index].name = new } }
+    }
+    /// A file put in Drive by an older build: no private properties, parent given by folder NAME.
+    func addLegacyFile(named name: String, data: Data, inFolderNamed folder: String, props: [String: String] = [:]) {
+        lock.withLock {
+            counter += 1
+            let parent = stored.first { $0.isFolder && $0.name == folder }?.id ?? "root"
+            stored.append(Stored(id: "file-\(counter)", name: name, data: data, parent: parent, props: props))
+        }
+    }
+    func data(named name: String) -> Data? { lock.withLock { stored.first { $0.name == name }?.data } }
+    /// Drive ends up holding something other than what was sent (a broken upload).
+    func replaceData(named name: String, with data: Data) {
+        lock.withLock { if let i = stored.firstIndex(where: { $0.name == name }) { stored[i].data = data } }
+    }
     func expireAccessToken() { lock.withLock { validAccess = "" } }
+    func count(of prefix: String) -> Int { lock.withLock { requests.filter { $0.hasPrefix(prefix) }.count } }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         lock.withLock { handle(request) }
@@ -176,10 +229,16 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     private func reply(_ request: URLRequest, _ status: Int, _ body: String = "", headers: [String: String] = [:]) -> (Data, HTTPURLResponse) {
         (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!)
     }
+    private func bytes(_ request: URLRequest, _ data: Data) -> (Data, HTTPURLResponse) {
+        (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
 
     private func handle(_ request: URLRequest) -> (Data, HTTPURLResponse) {
         let url = request.url!, method = request.httpMethod ?? "GET"
         requests.append("\(method) \(url.host ?? "")\(url.path)")
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func param(_ name: String) -> String? { query.first { $0.name == name }?.value }
+
         if url == GoogleOAuth.revokeEndpoint { return reply(request, 200, "{}") }
         if url == GoogleOAuth.tokenEndpoint {
             let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
@@ -198,36 +257,126 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
         if url.host == "upload.test" {   // the resumable session URL carries no auth
             guard let session = sessions.removeValue(forKey: url.lastPathComponent) else { return reply(request, 404) }
             let data = request.httpBody ?? Data()
-            if let id = session.existingID, let index = files.firstIndex(where: { $0.id == id }) {
-                files[index].data = data
-            } else {
-                counter += 1
-                files.append((id: "file-\(counter)", name: session.name, data: data))
+            if let id = session.existingID, let index = stored.firstIndex(where: { $0.id == id }) {
+                stored[index].data = data
+                return reply(request, 200, #"{"id":"\#(id)","name":"\#(session.name)"}"#)
             }
-            return reply(request, 200, "{}")
+            counter += 1
+            stored.append(Stored(id: "file-\(counter)", name: session.name, data: data, parent: session.parent,
+                                 props: session.props))
+            return reply(request, 200, #"{"id":"file-\#(counter)","name":"\#(session.name)"}"#)
         }
         guard !validAccess.isEmpty, request.value(forHTTPHeaderField: "Authorization") == "Bearer \(validAccess)" else {
             return reply(request, 401, #"{"error":{"code":401,"message":"Invalid Credentials"}}"#)
         }
+
+        // Google Photos: picked-item bytes + the Picker API.
+        if url.host == "lh3.test" {
+            let name = url.lastPathComponent
+            guard let item = pickerItems.first(where: { name == $0.id + ($0.isVideo ? "=dv" : "=d") }),
+                  !failingDownloads.contains(item.id) else { return reply(request, 404) }
+            return bytes(request, item.data)
+        }
+        if url.host == "photospicker.googleapis.com" {
+            if url.path == "/v1/sessions", method == "POST" {
+                pollsLeft = pollsBeforePicked
+                return reply(request, 200, #"{"id":"sess-1","pickerUri":"https://photos.google.com/picker/sess-1","mediaItemsSet":false,"pollingConfig":{"pollInterval":"3s","timeoutIn":"60s"}}"#)
+            }
+            if url.path == "/v1/sessions/sess-1" {
+                if method == "DELETE" { return reply(request, 200, "{}") }
+                pollsLeft -= 1
+                return reply(request, 200, #"{"id":"sess-1","mediaItemsSet":\#(pollsLeft <= 0)}"#)
+            }
+            if url.path == "/v1/mediaItems" {
+                let start = Int(param("pageToken") ?? "0") ?? 0
+                let size = min(pageSize, 100)
+                let list = pickerItems.dropFirst(start).prefix(size).map {
+                    #"{"id":"\#($0.id)","createTime":"\#($0.createTime)","type":"\#($0.isVideo ? "VIDEO" : "PHOTO")","mediaFile":{"baseUrl":"https://lh3.test/\#($0.id)","mimeType":"\#($0.isVideo ? "video/mp4" : "image/jpeg")","filename":"\#($0.fileName)","mediaFileMetadata":{"width":\#($0.width),"height":\#($0.height)}}}"#
+                }.joined(separator: ",")
+                let next = start + size < pickerItems.count ? #","nextPageToken":"\#(start + size)""# : ""
+                return reply(request, 200, #"{"mediaItems":[\#(list)]\#(next)}"#)
+            }
+            return reply(request, 404)
+        }
+
+        // Drive.
         if url.path.hasPrefix("/upload/drive/v3/files") {
             let metadata = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
             counter += 1
             let existing = method == "PATCH" ? url.lastPathComponent : nil
-            sessions["s\(counter)"] = (name: metadata?["name"] as? String ?? "", existingID: existing)
+            sessions["s\(counter)"] = (name: metadata?["name"] as? String ?? "", existingID: existing,
+                                       parent: (metadata?["parents"] as? [String])?.first ?? "root",
+                                       props: metadata?["appProperties"] as? [String: String] ?? [:])
             return reply(request, 200, headers: ["Location": "https://upload.test/session/s\(counter)"])
         }
+        if url.path == "/drive/v3/files", method == "POST" {   // create a folder
+            let metadata = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
+            counter += 1
+            let name = metadata?["name"] as? String ?? ""
+            stored.append(Stored(id: "folder-\(counter)", name: name, data: Data(),
+                                 parent: (metadata?["parents"] as? [String])?.first ?? "root", isFolder: true))
+            return reply(request, 200, #"{"id":"folder-\#(counter)","name":"\#(name)"}"#)
+        }
         if url.path == "/drive/v3/files" {
-            let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "pageToken" }?.value
-            let start = Int(token ?? "0") ?? 0
-            let slice = files.dropFirst(start).prefix(pageSize)
-            let next = start + pageSize < files.count ? #","nextPageToken":"\#(start + pageSize)""# : ""
-            let list = slice.map { #"{"id":"\#($0.id)","name":"\#($0.name)"}"# }.joined(separator: ",")
+            var matching: [Stored]
+            if let q = param("q") {
+                if q.contains("appProperties has") {
+                    matching = stored.filter { item in
+                        !item.isFolder && item.props.contains { q.contains("key='\($0.key)' and value='\($0.value)'") } }
+                } else if q.contains("mimeType = 'application/vnd.google-apps.folder'") {
+                    matching = stored.filter { item in
+                        item.isFolder && (!q.contains("name = '") || q.contains("name = '\(item.name)'")) }
+                } else {   // like Drive: a folder's children are its files AND its subfolders
+                    matching = stored.filter { item in q.contains("'\(item.parent)' in parents") }
+                }
+            } else {
+                matching = stored.filter { $0.parent == "appDataFolder" }
+            }
+            let start = Int(param("pageToken") ?? "0") ?? 0
+            let slice = matching.dropFirst(start).prefix(pageSize)
+            let next = start + pageSize < matching.count ? #","nextPageToken":"\#(start + pageSize)""# : ""
+            let list = slice.map { item -> String in
+                let props = String(decoding: (try? JSONSerialization.data(withJSONObject: item.props, options: [.sortedKeys])) ?? Data("{}".utf8), as: UTF8.self)
+                let md5 = Insecure.MD5.hash(data: item.data).map { String(format: "%02x", $0) }.joined()
+                return #"{"id":"\#(item.id)","name":"\#(item.name)","size":"\#(item.data.count)","md5Checksum":"\#(md5)","parents":["\#(item.parent)"],"appProperties":\#(props)}"#
+            }.joined(separator: ",")
             return reply(request, 200, #"{"files":[\#(list)]\#(next)}"#)
         }
         let id = url.lastPathComponent
-        guard let index = files.firstIndex(where: { $0.id == id }) else { return reply(request, 404) }
-        if method == "DELETE" { files.remove(at: index); return reply(request, 204) }
-        return (files[index].data, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        guard let index = stored.firstIndex(where: { $0.id == id }) else { return reply(request, 404) }
+        if method == "DELETE" { stored.remove(at: index); return reply(request, 204) }
+        if method == "PATCH" {   // rename / re-tag / move
+            let metadata = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
+            if metadata?["trashed"] as? Bool == true {   // to the trash, with everything inside
+                trashedNames.append(stored[index].name)
+                var gone: Set<String> = [id]
+                while true {
+                    let more = stored.filter { gone.contains($0.parent) && !gone.contains($0.id) }.map(\.id)
+                    if more.isEmpty { break }
+                    gone.formUnion(more)
+                }
+                stored.removeAll { gone.contains($0.id) }
+                return reply(request, 200, #"{"id":"\#(id)"}"#)
+            }
+            if let name = metadata?["name"] as? String { stored[index].name = name }
+            if let props = metadata?["appProperties"] as? [String: String] { stored[index].props.merge(props) { _, new in new } }
+            if let add = param("addParents") {
+                guard param("removeParents") == stored[index].parent else { return reply(request, 400, #"{"error":{"code":400}}"#) }
+                stored[index].parent = add
+            }
+            return reply(request, 200, #"{"id":"\#(id)","name":"\#(stored[index].name)"}"#)
+        }
+        if failingFileDownloads.contains(stored[index].name) { return reply(request, 500, #"{"error":{"code":500}}"#) }
+        // A byte range, as Drive serves it: "bytes=a-b" (inclusive) → 206 with just that part.
+        if let range = request.value(forHTTPHeaderField: "Range"), range.hasPrefix("bytes="), !ignoresRanges {
+            rangeRequests.append(range)
+            let parts = range.dropFirst(6).split(separator: "-").compactMap { Int($0) }
+            let data = stored[index].data
+            guard parts.count == 2, parts[0] <= parts[1], parts[1] < data.count else { return reply(request, 416) }
+            return (data.subdata(in: parts[0]..<(parts[1] + 1)),
+                    HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil, headerFields: nil)!)
+        }
+        return bytes(request, stored[index].data)
     }
 }
 

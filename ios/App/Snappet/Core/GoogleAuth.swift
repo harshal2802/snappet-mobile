@@ -250,14 +250,15 @@ enum GoogleDriveAPI {
     /// Step 1 of a resumable upload (no 5 MB cap, unlike multipart): describe the file; the reply's
     /// `Location` header is where the bytes go. `existingID` replaces that file's content instead.
     static func startUpload(name: String, byteCount: Int, parent: String = "appDataFolder",
-                            existingID: String? = nil) -> URLRequest {
+                            existingID: String? = nil, appProperties: [String: String]? = nil) -> URLRequest {
         var request = URLRequest(url: URL(string: existingID.map { "\(uploadEndpoint)/\($0)?uploadType=resumable" }
                                           ?? "\(uploadEndpoint)?uploadType=resumable")!)
         request.httpMethod = existingID == nil ? "POST" : "PATCH"
         request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         request.setValue("application/octet-stream", forHTTPHeaderField: "X-Upload-Content-Type")
         request.setValue(String(byteCount), forHTTPHeaderField: "X-Upload-Content-Length")
-        let metadata: [String: Any] = existingID == nil ? ["name": name, "parents": [parent]] : ["name": name]
+        var metadata: [String: Any] = existingID == nil ? ["name": name, "parents": [parent]] : ["name": name]
+        if let appProperties { metadata["appProperties"] = appProperties }
         request.httpBody = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys])
         return request
     }

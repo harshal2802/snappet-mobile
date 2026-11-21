@@ -50,9 +50,19 @@ enum AssetPosterLoader {
         return out
     }
 
+    private struct ImageBox: @unchecked Sendable { let image: UIImage? }
+
+    /// The still saved for a clip whose original left this phone; nil when there is none.
+    static func savedPoster(_ localIdentifier: String) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) { ImageBox(image: MediaVaultPosters.image(for: localIdentifier)) }.value.image
+    }
+
     /// - Parameter pointSize: the on-screen point size; the request targets 3× for Retina sharpness.
     static func poster(localIdentifier: String, pointSize: CGSize) async -> UIImage? {
-        guard let asset = await assets([localIdentifier])[localIdentifier] else { return nil }
+        guard let asset = await assets([localIdentifier])[localIdentifier] else {
+            // No longer in Photos: the still kept when its original was freed up (prompt 276).
+            return await savedPoster(localIdentifier)
+        }
         let target = CGSize(width: pointSize.width * 3, height: pointSize.height * 3)
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat      // single callback (no degraded pass)

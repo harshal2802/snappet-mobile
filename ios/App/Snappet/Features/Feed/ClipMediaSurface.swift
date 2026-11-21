@@ -43,6 +43,12 @@ struct ClipMediaSurface: View {
     /// `.missing` = the clip's Photos asset no longer resolves (deleted, freed up by another app, or a
     /// store restored onto a new phone) — distinct from `.failed`, a load error on an asset that exists.
     private enum LoadState: Equatable { case loading, ready, failed, missing }
+    /// The clip vault (prompt 269); nil where no host provides one (previews, tests).
+    @Environment(\.mediaVault) private var mediaVault
+    /// This load is coming from the vault (drives the "from Google Drive" wording).
+    @State private var fromVault = false
+    /// Why the copy in Google Drive cannot be fetched right now (signed out, offline, Wi-Fi only).
+    @State private var blocked: MediaVaultFetch.Blocked?
 
     /// The load task's identity: the clip plus its kept range (so a re-trim rebuilds the player).
     private var loadKey: String {
@@ -108,7 +114,19 @@ struct ClipMediaSurface: View {
         if state == .loading {
             // Transparent while loading so the caller's still poster (feed) / black backing (fullscreen)
             // shows through — no spinner flash when an autoplay clip starts (prompt 90 polish).
-            Color.clear
+            // A clip coming from Google Drive can take a while: say so (prompt 276).
+            Color.clear.overlay(alignment: .bottom) {
+                if fromVault, isActive {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini).tint(.white)
+                        Text("Loading from Google Drive…").font(.caption2).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(.bottom, 14)
+                    .accessibilityIdentifier("feed.media.loadingFromDrive")
+                }
+            }
         } else if clip.kind == "video", let player {
             StudioPlayerLayerView(player: player, backgroundColor: background,
                                   videoGravity: fill ? .resizeAspectFill : .resizeAspect,
@@ -137,16 +155,47 @@ struct ClipMediaSurface: View {
         } else if let image {
             Image(uiImage: image).resizable().scaledToFit()
                 .accessibilityIdentifier("feed.media.photo")
+        } else if let blocked {
+            blockedPlaceholder(blocked)
         } else {
             placeholder
         }
+    }
+
+    /// The copy is in Drive but cannot be fetched now: why, and for Wi-Fi only a way past it.
+    private func blockedPlaceholder(_ why: MediaVaultFetch.Blocked) -> some View {
+        let words = MediaVaultText.blocked(why)
+        return VStack(spacing: 8) {
+            Image(systemName: why == .gone ? (clip.kind == "video" ? "play.slash" : "photo") : "icloud")
+                .font(.system(size: 44)).foregroundStyle(.white.opacity(0.85))
+            Text(words.line).font(.caption).foregroundStyle(.white.opacity(0.8))
+            if let detail = words.detail {
+                Text(detail).font(.caption2).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
+            }
+            if let action = words.action {
+                Button(action) {
+                    mediaVault?.allowOnCellular(clip.id)
+                    Task { await load() }
+                }
+                .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(.white.opacity(0.16), in: Capsule())
+                .padding(.top, 6)
+                .accessibilityIdentifier("feed.media.playAnyway")
+            }
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.35))
+        .accessibilityIdentifier("feed.media.blocked")
     }
 
     private var placeholder: some View {
         VStack(spacing: 8) {
             Image(systemName: clip.kind == "video" ? "play.slash" : "photo")
                 .font(.system(size: 56)).foregroundStyle(.white.opacity(0.85))
-            Text(state == .missing ? "Not on this phone" : "Couldn’t load this clip")
+            Text(state == .missing ? "Not on this phone"
+                 : fromVault ? "Couldn’t load this clip from Google Drive" : "Couldn’t load this clip")
                 .font(.caption).foregroundStyle(.white.opacity(0.65))
             if state == .missing {
                 // The session keeps its record, heart rate and stats; only the footage is gone.
@@ -187,6 +236,8 @@ struct ClipMediaSurface: View {
     private func load() async {
         teardown()
         state = .loading
+        fromVault = false
+        blocked = nil
         image = nil
         fraction = ClipHROverlay.atEnd(for: payload)   // the at-end reading until the video actually plays
         // Fetch the PHAsset off-main (it's a synchronous Photos-library query, a few ms): a warm surface
@@ -196,25 +247,59 @@ struct ClipMediaSurface: View {
         let fetched: Box<PHAsset?> = await Task.detached(priority: .userInitiated) {
             Box(PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject)
         }.value
-        guard let asset = fetched.value else {
-            // Only call it "missing" when we can actually see the library — without full access an
-            // unresolvable id may just be an asset the user has not shared with Snappet.
-            let canSeeLibrary = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
-            state = canSeeLibrary ? .missing : .failed
-            return
+        let asset = fetched.value
+        // Not in Photos → the clip vault, if a copy is there (prompt 269): a file already fetched,
+        // or a download from the person's Google Drive.
+        var vaultFile: URL?
+        var vaultStream: AVURLAsset?
+        if asset == nil {
+            guard let mediaVault, mediaVault.contains(clip.id) else {
+                // Only call it "missing" when we can actually see the library — without full access an
+                // unresolvable id may just be an asset the user has not shared with Snappet.
+                let canSeeLibrary = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
+                state = canSeeLibrary ? .missing : .failed
+                return
+            }
+            fromVault = true
+            do {
+                switch try await mediaVault.playback(for: clip.id, isVideo: clip.kind == "video") {
+                case .file(let url): vaultFile = url
+                case .stream(let streamed): vaultStream = streamed
+                }
+            } catch let why as MediaVaultFetch.Blocked {
+                blocked = why
+                state = why == .gone ? .missing : .failed
+                if why == .gone { blocked = nil }   // the ordinary "not on this phone" screen, with Find clip
+                return
+            } catch {
+                state = .failed
+                return
+            }
+            guard !Task.isCancelled else { return }
         }
 
         if clip.kind == "video" {
-            let opts = PHVideoRequestOptions()
-            opts.isNetworkAccessAllowed = true            // allow iCloud-stored clips to download
-            opts.deliveryMode = .automatic
-            // AVPlayerItem isn't Sendable → box it to cross the continuation boundary (mirrors ReelExporter).
-            let boxed: Box<AVPlayerItem?> = await withCheckedContinuation { cont in
-                PHImageManager.default().requestPlayerItem(forVideo: asset, options: opts) { pItem, _ in
-                    cont.resume(returning: Box(pItem))
+            let playerItem: AVPlayerItem
+            if let vaultFile {
+                playerItem = AVPlayerItem(url: vaultFile)
+            } else if let vaultStream {
+                playerItem = AVPlayerItem(asset: vaultStream)
+            } else if let asset {
+                let opts = PHVideoRequestOptions()
+                opts.isNetworkAccessAllowed = true            // allow iCloud-stored clips to download
+                opts.deliveryMode = .automatic
+                // AVPlayerItem isn't Sendable → box it to cross the continuation boundary (mirrors ReelExporter).
+                let boxed: Box<AVPlayerItem?> = await withCheckedContinuation { cont in
+                    PHImageManager.default().requestPlayerItem(forVideo: asset, options: opts) { pItem, _ in
+                        cont.resume(returning: Box(pItem))
+                    }
                 }
+                guard let item = boxed.value else { state = .failed; return }
+                playerItem = item
+            } else {
+                state = .failed
+                return
             }
-            guard let playerItem = boxed.value else { state = .failed; return }
             // Studio trim (prompt 116): the feed PLAYS the kept range. The trim VERDICT comes from the
             // SAME derivation every other surface uses (`ClipHROverlay.keptFootage` — evaluated against
             // the STORED duration), so playback, poster, chip, and HR window can't disagree about
@@ -293,7 +378,14 @@ struct ClipMediaSurface: View {
                 // proves perceptible on device.
             }
             state = .ready   // `.onChange(of: state)` starts playback iff still active (live isActive)
-        } else {
+        } else if let vaultFile {
+            let decoded: Box<UIImage?> = await Task.detached(priority: .userInitiated) {
+                Box(UIImage(contentsOfFile: vaultFile.path))
+            }.value
+            guard let loaded = decoded.value else { state = .failed; return }
+            image = loaded
+            state = .ready
+        } else if let asset {
             let target = CGSize(width: 1080, height: 1920)
             let opts = PHImageRequestOptions()
             opts.deliveryMode = .highQualityFormat

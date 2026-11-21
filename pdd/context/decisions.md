@@ -4,6 +4,160 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-11-21] Destructive questions in Cloud & Backup are alerts, not confirmation dialogs (prompt 278)
+
+Seen on a phone: a `confirmationDialog` opened from a list row renders as a popover with the red
+button and NO Cancel. An alert always shows both. Applies to every remove / replace / reset question
+there. Also: the missing-clips list has a standing row in Cloud & Backup, because the feed's notice
+can be dismissed and stays dismissed until more clips go missing. Attach a sheet to the Form, not
+to a Section — on a Section it opened empty.
+
+## [2026-11-21] A brought-back clip is re-dated only when Photos stamped it "now" (prompt 277)
+
+The file's own capture date wins; Snappet's date (the original's recorded creation date, else
+session start + offset) is written only when the new asset's date falls within 2 minutes of the
+save. Rejected: always setting the date — the session-derived time is an estimate and would
+overwrite exact metadata. A failed date change does not fail the bring-back.
+
+## [2026-11-20] Large Drive-only clips stream; an original leaves the phone only on a checksum (prompt 276)
+
+User: "yes build it and also fix the gaps above". Choices worth remembering:
+- **Streaming is by byte range through the app**, not a signed URL: `AVAssetResourceLoaderDelegate`
+  on a custom scheme, 1 MB per Drive request, so the token is renewed mid-play and never sits in a
+  URL. Only videos over 25 MB; smaller ones download whole because a cached replay is worth more.
+  Streamed bytes are not cached (deliberately left out of the first version).
+- **Supersedes 274's "verifies size, not hash"**: the MD5 of what was sent is stored on the Drive
+  file at upload and compared with Drive's own `md5Checksum`. No original is read twice — only
+  copies older than this are hashed at free-up time. A missing Drive checksum verifies nothing.
+- **Wi-Fi only now covers downloads and streams**, with a per-clip "Play anyway". Bring back is an
+  explicit request and is not held back.
+- **Limited Photos access means "unknown", not "gone"**: every clip is treated as present and the
+  features that depend on knowing (Drive-only marks, free-up, copying) stand down and say why.
+- **A 404 on fetch forgets the copy** instead of promising it until the next listing.
+- Thumbnails of freed clips live in Application Support, not Caches: the original is gone, so iOS
+  must not be able to purge them.
+
+## [2026-11-20] Free up space is chosen, not all-or-nothing (prompt 275)
+
+User asked to pick what leaves the phone: one clip from its menu, or a chooser with age, activity
+and session filters that narrow each other. Choices worth remembering:
+- **A shared original needs every clip chosen** in the chooser (a session filter must not remove
+  footage another session uses); from a single clip's menu the whole original goes, because there
+  the person means the footage.
+- **Ticks are literal**: no activity ticked = nothing selected, not "all". Sessions have an explicit
+  "All sessions" row instead of an empty-means-all rule.
+- The all-at-once button was removed; the chooser's default selection is everything.
+- Age is the filming date. Copy date was not used: a clip filmed years ago and copied today is old.
+
+## [2026-11-20] Clip copies can be cleaned up: five ways, all through a trash (prompt 274)
+
+User: "build all of them". Follow deletions (switch, on), leftovers offered, remove one copy (then
+excluded from copying), remove all, free up the phone. Choices worth remembering:
+- **How a deletion is recognised**: the service keeps the clip ids it saw last pass. Known-then-gone
+  = deleted here. No hooks at the dozen delete sites. Not-known orphans (another phone's clips) are
+  only offered. Empty store / restore / mass disappearance (>10 and >25% of known) ⇒ offered only.
+- **Free up space verifies size, not hash**: the sent size is written on the Drive file
+  (`appProperties.bytes`) and compared with a fresh listing; copies from before that are measured
+  against the original at that moment. A hash would mean reading every original twice.
+- **Drive-only clips and the Studio**: not "edit from Drive" — "Bring back to this iPhone" (download,
+  save to Photos, repoint the row). Edit paths offer it instead of an empty editor.
+- A Drive-only clip's menu has no "Remove copy": that would delete the last footage.
+
+## [2026-11-20] Emptied folders are offered for removal, to the trash; same-second clips get " 2" (prompt 273)
+
+Supersedes "folders are never deleted" (270). User's call after the first phone run left 17 empty
+session folders: the app counts folders holding no copy at the end of a pass (only when nothing is
+still waiting to move) and offers "Remove empty folders…". It re-lists before removing, uses Drive's
+trash (never DELETE), and the confirmation says files the person added themselves are invisible to
+the app and would go too. Names: two clips in one second in one folder — the later gets " 2", by
+capture time then id, so it is stable.
+
+## [2026-11-20] A copied clip says so where it is shown (prompt 272)
+
+User asked for all three: a cloud mark (feed header + session thumbnails), "Copied to <folders>" +
+Open in Google Drive in the clip menu, and a per-session count. "Where" comes from folder paths
+remembered at the last pass, never a fresh Drive call; an unknown folder reads "Google Drive".
+The marks are leaf views that observe the vault themselves so uploads do not redraw the feed.
+Not on the Clips zoom grid (a cover stands for several clips).
+
+## [2026-11-20] Switching clip copies on uploads nothing; "Start copying" does (prompt 271)
+
+User's call after the first phone run, 2026-11-20: the switch began uploading before a folder
+layout could be picked. Now the switch only reveals the choices; `MediaVaultSettings.started`
+gates every upload and move (`MediaVaultPolicy` → `.skip(.notStarted)`). It is asked once: switching
+off is a pause (user's second call the same day — a reset read as "starting from the beginning").
+Settings saved before the field decode `started = keepCopies` so a running vault is not paused.
+
+## [2026-11-20] Clip copies are filed in folders the person picks; the link is a private Drive property (prompt 270)
+
+**Decision.** Clip copies are arranged under "Snappet Clips" by one of four layouts the person picks
+— by session (default), by activity then session, by month, one folder — and named by capture date
+and time (`2026-11-14 18.42.07 Climbing.mov`). Changing the layout moves the existing copies.
+User's call, 2026-11-20. **Supersedes** "the file NAME is the link" in the entry below.
+
+- **The clip id lives in Drive `appProperties`** (`snappet=clip`, `clip=<SessionMedia.id>`), not the
+  file name. Names and folders are for people. Still no SwiftData field: a listing by the marker
+  rebuilds the index on any phone. A prompt-269 copy (id in the name, in the root) is still
+  recognized, then filed and tagged.
+- **A copy is moved only when the place the APP wants changes.** Each file also stores `placed`, a
+  hash of the folders + name the app last gave it; a pass moves a file only when the wanted hash
+  differs (layout change, retag, session edit). Why: so a rename or move the person makes in Drive
+  is not undone on the next launch. Rules out "compare the Drive path with the wanted path".
+- **A session stays in one folder.** The folder uses the SESSION's activity (festival night → Kilter
+  → Health import label → most common exercise activity), even where the Clips tab shows one of its
+  clips under another activity. Per-exercise folders were considered and left out: they split a
+  session and every retag would move a file.
+- **Festival: festival name is a folder, artist is in the file name.** Tags are added and corrected
+  after the night; a tag then renames one file instead of moving it.
+- **Names are written in one fixed time zone**, remembered the first time clips are copied
+  (`MediaVaultSettings.timeZoneID`). Why: otherwise a trip abroad renames every folder.
+- **Folders are never deleted.** With `drive.file` the app cannot see a file the person put in one of
+  its folders, so an "empty" folder may not be empty. Changing layout leaves the old folders behind.
+- **Fetched files are cached by clip id**, since Drive names may repeat (two clips in one second).
+- **A copy this phone uploaded in the last 10 minutes is kept in the index even if a listing misses
+  it** — Drive search can lag, and re-uploading a video is the expensive mistake.
+- **New activities need no change:** the folder name is the activity's display label; unknown → Other.
+
+**Verified (simulator):** MediaVaultTests 25, MediaVaultServiceTests 13, GoogleAccountTests and
+CloudBackupTests — 63 run, 0 failures. **Not verified:** anything against real Drive — that
+`appProperties` sent with a resumable upload come back from the marker query, and that one PATCH can
+rename, re-tag and move, are from Google's documentation, not a live reply.
+
+## [2026-11-19] Clip vault — the file NAME is the link; Photos first; Google picks obey the relink rules (cloud-connect P4, prompt 269)
+
+**Decision.** Session clips can have a copy in a "Snappet Clips" folder of the person's Google Drive
+(opt-in switch, default off), and footage that only exists in Google Photos can be picked there and
+copied Google → Drive. A clip not in Photos plays from the vault. User's call to build it.
+
+- **No SwiftData field.** A vault file is named `<SessionMedia.id>.<ext>`; row ids survive
+  backup/restore, so any phone rebuilds the index from a folder listing. No migration, nothing for a
+  backup to carry, and a clip row is never rewritten by the vault (its dead `localIdentifier` stays,
+  so it re-links by itself if the footage ever returns to Photos). Rules out renaming vault files.
+- **Source order: Photos → cached file → vault download → missing.** A vaulted clip is not "missing".
+- **Visible folder (`drive.file`), not the hidden app folder.** The person can see, watch and delete
+  their clips in Drive; Snappet sees only files it created. Consequence stated in the UI: clip
+  copies are ordinary **unencrypted** files (unlike the backup).
+- **Google picks use `MediaRelinkPlanner` unchanged** — unique best score, a tie is no match, rows
+  sharing a dead identifier land on the same pick. The Picker API gives no duration, so a Google
+  pick matches on capture time (±2 s), kind, and pixel size / file name when known. If Google's
+  `createTime` drifts from the capture instant for this library, picks will simply not match; the
+  tolerance is NOT to be widened to fix that without device evidence.
+- **Google Photos → Drive directly**, through a temp file: the phone needs no free space and nothing
+  is written to its Photos. Why: the user cannot bring the footage back onto the phone.
+- **Fetched vault files live in Caches**, 400 MB least-recently-used; the system may purge them.
+- **Copies run while the app is in front** (no background URLSession yet). Originally batches of 20;
+  since 2026-11-20 (user) one pass copies everything, skips a clip that will not copy, and stops after 3
+  failures in a row or when the network no longer fits the settings.
+
+**Known gaps (not built):** a vault-only clip has no still in the feed until opened; Studio and reel
+export still need the footage in Photos; rows sharing one dead identifier upload the bytes twice;
+clip copies are not deleted from Drive when a clip is deleted in Snappet.
+
+**Verified (simulator):** SnappetTests 3,299 run, 0 failures, 5 standing skips; BackupUITests 4/4,
+ClipsFeedUITests 14/14. **Not verified:** anything against real Google (no client ID yet) — the
+Picker API request/response shapes are written from Google's documentation, not from a live reply —
+and playback of a real vault clip on a phone. The Clip copies section was not looked at on screen.
+
 ## [2026-11-19] Google sign-in without Google's SDK; Drive app-data folder; hidden until configured (cloud-connect P3, prompt 268)
 
 **Decision.** Google Drive is a second destination for the automatic backup. Sign-in is the standard
@@ -52,6 +206,17 @@ say so. This was the user's call (2026-11-19), as were the next two points.
 - **Never back up nothing.** An empty store or the in-memory fallback store is never uploaded; 3
   generations are kept per device; another device's backups are never deleted.
 - **Unchanged data is not re-uploaded**: the content hash is taken with `exportedAt` pinned.
+- **"Unchanged" is only true while the last backup is still in the cloud (device finding, 2026-11-20).**
+  The first real backup (204.5 MB, written minutes after the iCloud container was created) was gone
+  from the container 14 minutes later — the folder was empty on the phone and on a Mac syncing the
+  same container. Cause not established; a second backup made later uploaded, synced and survived a
+  reinstall. What was certainly wrong was ours: the service compared the data's hash with its LOCAL
+  record of the last upload, so every later run (and "Back up now") said "unchanged" and nothing was
+  ever backed up again, while the screen kept showing "Last backup". Now each run lists the vault
+  first (`CloudBackupPolicy.isStored`: payload AND manifest) and uploads again when its last backup
+  is not there. The restore list also names a backup it cannot read (`remoteProblem`) instead of
+  saying "No cloud backups found". Cost: one listing per run on the chosen destination.
+  Device check: `CloudBackupDeviceUITests` (opt-in, real iCloud, never restores).
 - **`cloudKitDatabase: .none` on every `ModelConfiguration`.** Adding the iCloud container
   entitlement made SwiftData's default (`.automatic`) turn on CloudKit mirroring, which rejects this
   schema — the store failed to open and the app crashed at launch (caught by `BackupUITests` on the

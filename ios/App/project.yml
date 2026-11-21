@@ -62,7 +62,7 @@ targets:
         # control in the app is hidden. Paste the iOS OAuth client ID from the Google Cloud console
         # (`<numbers>-<letters>.apps.googleusercontent.com`) — steps in docs/google-cloud-setup.md.
         # It is not a secret (iOS clients have none), so committing it is fine.
-        GOOGLE_CLIENT_ID: ""
+        GOOGLE_CLIENT_ID: "280483660361-o33jid0i5a7r4fg3uq2vbv6addfl7a65.apps.googleusercontent.com"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"

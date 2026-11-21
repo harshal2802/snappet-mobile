@@ -7,6 +7,25 @@ import Security
 /// The network seam: production = URLSession; tests = an in-memory fake Google.
 protocol GoogleHTTP: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    /// Send `file` as the body without loading it into memory (clips can be hundreds of MB).
+    func upload(_ request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse)
+    /// Stream the reply's body to `destination` (replacing it).
+    func download(_ request: URLRequest, to destination: URL) async throws -> HTTPURLResponse
+}
+
+extension GoogleHTTP {
+    // In-memory fallbacks, enough for a fake; `URLSessionGoogleHTTP` streams.
+    func upload(_ request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        var copy = request
+        copy.httpBody = try Data(contentsOf: file)
+        return try await send(copy)
+    }
+
+    func download(_ request: URLRequest, to destination: URL) async throws -> HTTPURLResponse {
+        let (data, response) = try await send(request)
+        if (200..<300).contains(response.statusCode) { try data.write(to: destination, options: .atomic) }
+        return response
+    }
 }
 
 struct URLSessionGoogleHTTP: GoogleHTTP {
@@ -14,6 +33,63 @@ struct URLSessionGoogleHTTP: GoogleHTTP {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw GoogleAuthError.badResponse }
         return (data, http)
+    }
+
+    func upload(_ request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await URLSession.shared.upload(for: request, fromFile: file)
+        guard let http = response as? HTTPURLResponse else { throw GoogleAuthError.badResponse }
+        return (data, http)
+    }
+
+    func download(_ request: URLRequest, to destination: URL) async throws -> HTTPURLResponse {
+        let (temporary, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse else { throw GoogleAuthError.badResponse }
+        if (200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: temporary, to: destination)
+        } else {
+            try? FileManager.default.removeItem(at: temporary)
+        }
+        return http
+    }
+}
+
+/// Bearer-authorized Google calls with one retry on 401 (a token Google rejects before our clock does).
+struct GoogleAuthorizedHTTP: Sendable {
+    /// (forceRefresh) → access token; throws when signed out.
+    let accessToken: @Sendable (Bool) async throws -> String
+    var http: any GoogleHTTP = URLSessionGoogleHTTP()
+
+    static func forSharedAccount() -> GoogleAuthorizedHTTP {
+        GoogleAuthorizedHTTP(accessToken: { force in try await GoogleAccount.shared.accessToken(forceRefresh: force) })
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        try await retrying { token in
+            try await http.send(GoogleDriveAPI.authorized(request, accessToken: token))
+        }
+    }
+
+    func upload(_ request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        try await retrying { token in
+            try await http.upload(GoogleDriveAPI.authorized(request, accessToken: token), fromFile: file)
+        }
+    }
+
+    func download(_ request: URLRequest, to destination: URL) async throws {
+        _ = try await retrying { token in
+            (Data(), try await http.download(GoogleDriveAPI.authorized(request, accessToken: token), to: destination))
+        }
+    }
+
+    private func retrying(_ call: (String) async throws -> (Data, HTTPURLResponse)) async throws -> (Data, HTTPURLResponse) {
+        var (data, response) = try await call(try await accessToken(false))
+        if response.statusCode == 401 { (data, response) = try await call(try await accessToken(true)) }
+        guard (200..<300).contains(response.statusCode) else {
+            if response.statusCode == 404 { throw CloudVaultError.notFound(response.url?.lastPathComponent ?? "") }
+            throw GoogleOAuth.error(status: response.statusCode, body: data)
+        }
+        return (data, response)
     }
 }
 
@@ -70,6 +146,11 @@ final class GoogleAccount {
     /// that never touches the network or the keychain — Google's own sign-in sheet can't be driven
     /// from a test, and the test vault is a local folder.
     static let shared: GoogleAccount = {
+        // `-uiTestNoGoogle`: a build with no client ID, whatever this build carries — keeps the
+        // "Google stays hidden" UI test meaningful once a real client ID is configured.
+        if CommandLine.arguments.contains("-uiTestNoGoogle") {
+            return GoogleAccount(config: nil, store: MemoryGoogleTokenStore())
+        }
         guard CommandLine.arguments.contains("-uiTestGoogleSignedIn") else { return GoogleAccount() }
         let tokens = GoogleTokens(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture,
                                   scopes: [GoogleScope.driveAppData], email: "tester@example.com")

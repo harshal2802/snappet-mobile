@@ -23,6 +23,7 @@ struct RootShell: View {
                 content
                     .environment(core)
                     .environment(router)
+                    .environment(\.mediaVault, app.mediaVault)   // clips play from the vault (prompt 269)
             } else {
                 LoadingView()
                     .task {
@@ -57,6 +58,7 @@ struct RootShell: View {
                             Task(priority: .utility) {
                                 await app.checkCloudRestoreOffer()   // fresh install + a backup exists (prompt 267)
                                 await app.runCloudBackup()
+                                if !Self.isUITestLaunch { await app.runMediaVault() }
                             }
                         }
                     }
@@ -70,7 +72,10 @@ struct RootShell: View {
         // is picked up when the app comes forward or leaves; the policy spaces the uploads.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active || phase == .background, Self.cloudBackupRuns else { return }
-            Task(priority: .utility) { await app.runCloudBackup() }
+            Task(priority: .utility) {
+                await app.runCloudBackup()
+                if phase == .active, !Self.isUITestLaunch { await app.runMediaVault() }   // clip copies (prompt 269)
+            }
         }
         // "Welcome back": a fresh install with a backup in the person's cloud is offered it once.
         .sheet(item: Bindable(app.cloudBackup).restoreOffer) { manifest in

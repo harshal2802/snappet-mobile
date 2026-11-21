@@ -65,7 +65,7 @@ final class BackupUITests: XCTestCase {
     /// test has no iCloud account; the real iCloud transfer is device-owed.
     func testAutomaticBackupIsOptInBacksUpAndRestores() {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestSeedFestivalNight", "-uiTestCloudVault", "-uiTestCloudVaultReset"]
+        app.launchArguments = ["-uiTestSeedFestivalNight", "-uiTestCloudVault", "-uiTestCloudVaultReset", "-uiTestNoGoogle"]
         app.launch()
         app.tabBars.buttons["Apps"].tap()
         let open = app.buttons["suite.backup.open"]
@@ -75,11 +75,12 @@ final class BackupUITests: XCTestCase {
         let destination = app.descendants(matching: .any)["cloudBackup.destination"]
         XCTAssertTrue(destination.waitForExistence(timeout: 6))
         XCTAssertFalse(app.buttons["cloudBackup.now"].exists, "off: no backup controls, nothing uploads")
+        XCTAssertFalse(app.switches["mediaVault.keepCopies"].exists, "no Google client ID: no clip-copies section")
         XCTAssertFalse(app.switches["cloudBackup.includeHeartRate"].exists)
 
         destination.tap()
         XCTAssertTrue(app.buttons["iCloud"].waitForExistence(timeout: 4))
-        XCTAssertFalse(app.buttons["Google Drive"].exists, "no Google client ID in this build: Google stays hidden")
+        XCTAssertFalse(app.buttons["Google Drive"].exists, "no Google client ID: Google stays hidden")
         app.buttons["iCloud"].tap()
         XCTAssertTrue(app.staticTexts["Last backup"].waitForExistence(timeout: 10), "choosing a destination backs up")
         let heartRate = app.switches["cloudBackup.includeHeartRate"]
@@ -114,6 +115,19 @@ final class BackupUITests: XCTestCase {
 
         let destination = app.descendants(matching: .any)["cloudBackup.destination"]
         XCTAssertTrue(destination.waitForExistence(timeout: 6))
+        // Prompt 269: clip copies are offered with Google set up, and are OFF until switched on.
+        let keepCopies = app.switches["mediaVault.keepCopies"]
+        XCTAssertTrue(keepCopies.waitForExistence(timeout: 4))
+        XCTAssertEqual(keepCopies.value as? String, "0")
+        XCTAssertFalse(app.buttons["mediaVault.now"].exists)
+        // Prompt 271: switching on shows the choices and a Start button; nothing copies by itself.
+        keepCopies.switches.firstMatch.tap()
+        let start = app.buttons["mediaVault.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 4), "on: a Start button, not an upload")
+        XCTAssertTrue(app.descendants(matching: .any)["mediaVault.layout"].exists, "folders are chosen before starting")
+        XCTAssertFalse(app.buttons["mediaVault.now"].exists)
+        keepCopies.switches.firstMatch.tap()
+        XCTAssertFalse(start.waitForExistence(timeout: 2))
         destination.tap()
         let drive = app.buttons["Google Drive"]
         XCTAssertTrue(drive.waitForExistence(timeout: 4))

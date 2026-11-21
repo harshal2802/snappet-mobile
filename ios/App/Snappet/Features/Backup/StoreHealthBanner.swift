@@ -69,9 +69,8 @@ struct StoreHealthBanner: View {
         .sheet(isPresented: $showingRestore) {
             BackupView(storeIsFallback: true)
         }
-        .confirmationDialog("Reset stored data?",
-                            isPresented: $confirmingReset,
-                            titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on current iOS a dialog can show as a popover without its Cancel button.
+        .alert("Reset stored data?", isPresented: $confirmingReset) {
             Button("Reset storage", role: .destructive) { reset() }
                 .accessibilityIdentifier("store.health.confirmReset")
             Button("Cancel", role: .cancel) {}

@@ -71,6 +71,9 @@ struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
+    /// A Drive-only clip the person tried to edit (prompt 274).
+    @State private var bringBack: UUID?
+    @Environment(\.mediaVault) private var mediaVault
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
@@ -159,6 +162,7 @@ struct ClipPostCard: View {
         .alert("Couldn’t prepare this clip", isPresented: $shareFailed) {
             Button("OK", role: .cancel) {}
         } message: { Text("The clip couldn’t be exported to share. Try again, or open it in the Studio.") }
+        .bringBackToEdit($bringBack)
     }
 
     // The "yellow circle": session + exercise/climb name; the "red circle": the ⋯ options menu.
@@ -176,6 +180,7 @@ struct ClipPostCard: View {
                     if post.isReel { reelBadge }
                     if let result = post.climbResult, let word = result.badge { outcomeBadge(result.status, word) }
                     if post.isFromAppleWatch { watchSourceBadge }
+                    ClipCopyMark(clipID: currentClip.media.id)
                 }
                 Text(post.subtitle).snappetLabel().lineLimit(1)
             }
@@ -282,6 +287,7 @@ struct ClipPostCard: View {
                     .accessibilityIdentifier("clips.post.tagArtist")
             }
             Button { goToSession() } label: { Label("Go to session", systemImage: "arrow.up.forward.square") }
+            ClipCopyMenuItems(clipID: currentClip.media.id)
             // Hide from Clips (prompt 164) — non-destructive: the clip stays in the session and Photos.
             Divider()
             let all = Set(post.clips.map(\.media.id))
@@ -608,6 +614,7 @@ struct ClipPostCard: View {
     private func editCurrentClip() {
         let clip = currentClip
         guard clip.media.kind == "video", !clip.media.isReel else { return }
+        if mediaVault?.onlyInDrive.contains(clip.media.id) == true { bringBack = clip.media.id; return }
         studio = StudioPresentation(project: project(), focus: clip.media.id, visible: [clip.media.id])
     }
 

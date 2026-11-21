@@ -31,6 +31,7 @@ struct BackupView: View {
     @State private var showingImporter = false
     @State private var pendingRestore: SnappetBackup.File?
     @State private var status: Status?
+    @State private var findingMissingClips = false
 
     private enum Status: Equatable {
         case success(String)
@@ -41,6 +42,8 @@ struct BackupView: View {
         NavigationStack {
             Form {
                 CloudBackupSection(storeIsFallback: storeIsFallback)
+                if app.google.isConfigured, !storeIsFallback { ClipVaultSection() }
+                missingClipsSection
                 backupSection
                 restoreSection
                 moduleExportsSection
@@ -65,15 +68,14 @@ struct BackupView: View {
                 }
                 exportDocument = nil
             }
+            .sheet(isPresented: $findingMissingClips) { MediaRelinkSheet() }
             .fileImporter(isPresented: $showingImporter,
                           allowedContentTypes: [.json],
                           allowsMultipleSelection: false) { result in
                 handlePickedBackup(result)
             }
-            .confirmationDialog("Replace all data?",
-                                isPresented: confirmingRestore,
-                                titleVisibility: .visible,
-                                presenting: pendingRestore) { _ in
+            // An alert, not a confirmation dialog: on current iOS a dialog can show as a popover without its Cancel button.
+            .alert("Replace all data?", isPresented: confirmingRestore, presenting: pendingRestore) { _ in
                 Button("Replace everything", role: .destructive) { runRestore() }
                     .accessibilityIdentifier("backup.confirmRestore")
                 Button("Cancel", role: .cancel) { pendingRestore = nil }
@@ -93,6 +95,28 @@ struct BackupView: View {
     }
 
     // MARK: - Sections
+
+    /// A standing way to the missing-clips list (prompt 278): the feed's notice can be dismissed,
+    /// and this row is how to get back to it. Hidden when nothing is missing.
+    @ViewBuilder private var missingClipsSection: some View {
+        let count = app.mediaLinks.missing.count
+        if count > 0, !storeIsFallback {
+            Section {
+                Button { findingMissingClips = true } label: {
+                    HStack {
+                        Label("Find missing clips", systemImage: "photo.badge.exclamationmark")
+                        Spacer()
+                        Text(count.formatted()).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("backup.findMissingClips")
+            } header: {
+                Text("Missing clips")
+            } footer: {
+                Text(MissingClipsNotice.title(count: count) + ". Their sessions, heart rate and stats are kept; only the footage is gone. Pick the footage again to bring it back.")
+            }
+        }
+    }
 
     @ViewBuilder private var backupSection: some View {
         Section {

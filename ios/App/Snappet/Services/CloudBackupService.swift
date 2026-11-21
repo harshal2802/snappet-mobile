@@ -26,6 +26,8 @@ final class CloudBackupService {
     private(set) var lastManifest: CloudBackupManifest?
     /// Backups found in the vault (any device), newest first.
     private(set) var remote: [CloudBackupManifest] = []
+    /// Why `remote` is empty when the cloud could not be read (nil = it really is empty).
+    private(set) var remoteProblem: String?
     /// A backup to offer on a fresh install; presented once by the shell.
     var restoreOffer: CloudBackupManifest?
 
@@ -111,11 +113,20 @@ final class CloudBackupService {
             let prepared = try await Task.detached(priority: .utility) {
                 try CloudBackupPayload.prepare(file, includeHeartRate: includeHeartRate)
             }.value
+            // "Unchanged since the last backup" only holds while that backup is still in the cloud:
+            // if it is gone (removed there, or it never arrived), this run must upload again.
+            let accountAvailable = await vault.isAvailable()
+            var last = lastManifest
+            if let known = last, accountAvailable, let names = try? await vault.names(),
+               !CloudBackupPolicy.isStored(known, in: names) {
+                cloudBackupLog.error("cloud backup: the last backup is no longer in the cloud — backing up again")
+                last = nil
+            }
             let decision = CloudBackupPolicy.decide(.init(
                 settings: settings, storeHealthy: storeHealthy,
-                accountAvailable: await vault.isAvailable(), network: await network(),
+                accountAvailable: accountAvailable, network: await network(),
                 recordCount: prepared.recordCount, contentHash: prepared.contentHash,
-                lastUploadedHash: lastManifest?.contentHash, lastUploadAt: lastManifest?.createdAt,
+                lastUploadedHash: last?.contentHash, lastUploadAt: last?.createdAt,
                 now: .now, manual: manual))
             guard decision == .upload else {
                 if case let .skip(reason) = decision {
@@ -164,8 +175,23 @@ final class CloudBackupService {
     // MARK: - List + restore
 
     func refreshRemote() async {
-        guard let vault = readVault, await vault.isAvailable() else { remote = []; return }
-        remote = (try? await Self.manifests(in: vault)) ?? []
+        guard let vault = readVault else { remote = []; remoteProblem = nil; return }
+        guard await vault.isAvailable() else {
+            remote = []
+            remoteProblem = CloudVaultError.unavailable.localizedDescription
+            return
+        }
+        do {
+            let scan = try await Self.scan(vault)
+            remote = scan.manifests
+            // Backups that are there but can't be read are a problem to name, not "no backups".
+            remoteProblem = scan.manifests.isEmpty ? scan.problems.first : nil
+            for problem in scan.problems { cloudBackupLog.error("cloud backup list: \(problem, privacy: .public)") }
+        } catch {
+            remote = []
+            remoteProblem = error.localizedDescription
+            cloudBackupLog.error("cloud backup list failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Download + open one backup. The caller applies it (replace-everything, after confirming).
@@ -216,13 +242,28 @@ final class CloudBackupService {
     }()
 
     private static func manifests(in vault: any CloudVault) async throws -> [CloudBackupManifest] {
+        try await scan(vault).manifests
+    }
+
+    /// Every readable manifest, newest first, plus one line per backup that is there but could not
+    /// be read — so the list can say why it is empty instead of claiming nothing was backed up.
+    private static func scan(_ vault: any CloudVault) async throws
+        -> (manifests: [CloudBackupManifest], problems: [String]) {
         var out: [CloudBackupManifest] = []
-        for name in try await vault.names() where CloudBackupNaming.isManifest(name) {
-            guard let data = try? await vault.read(name),
-                  let manifest = try? JSONDecoder().decode(CloudBackupManifest.self, from: data),
-                  manifest.scheme <= CloudBackupManifest.currentScheme else { continue }
-            out.append(manifest)
+        var problems: [String] = []
+        let names = try await vault.names()
+        for name in names where CloudBackupNaming.isManifest(name) {
+            do {
+                let manifest = try JSONDecoder().decode(CloudBackupManifest.self, from: try await vault.read(name))
+                if manifest.scheme <= CloudBackupManifest.currentScheme { out.append(manifest) }
+                else { problems.append("A backup here was made by a newer version of Snappet.") }
+            } catch {
+                problems.append("Couldn’t read a backup (\(error.localizedDescription))")
+            }
         }
-        return out.sorted(by: CloudBackupPolicy.newestFirst)
+        if out.isEmpty, problems.isEmpty, !names.isEmpty {
+            problems.append("The cloud folder has \(names.count) file(s) but no backup list.")
+        }
+        return (out.sorted(by: CloudBackupPolicy.newestFirst), problems)
     }
 }
