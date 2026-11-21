@@ -52,7 +52,7 @@ workout,reels,heart rate,fitness,highlights,gym,climbing,kilter,pomodoro,habits,
 ```
 SnappetAI turns your workouts into share-ready highlight reels — automatically. As you train, your heart rate marks the moments that mattered, and SnappetAI stitches the photos and videos you shot into a reel built around your real effort. No scrubbing through footage. No guesswork.
 
-And it all happens on your device. There's no account, no sign-up, and no server — your workouts, heart rate, photos, and reels never leave your iPhone unless you choose to share them.
+And it all happens on your device. There's no account, no sign-up, and no server — your workouts, heart rate, photos, and reels never leave your iPhone unless you choose to share them or turn on the optional encrypted backup to your own iCloud.
 
 WORKOUT REELS (the flagship)
 • Auto-generates a highlight reel from a workout's heart-rate peaks and the media you captured.
@@ -112,6 +112,13 @@ Specifically: when asked "Do you or your third-party partners collect data from 
 answer is **No** (HealthKit/Photos/Camera/Bluetooth are processed on-device and never leave it, which is
 *access*, not *collection* in Apple's sense). If you later add any off-device feature, revisit this.
 
+**Revisited 2026-11-19 (prompt 267, automatic backup):** the optional backup writes an encrypted file
+to the *user's own* iCloud container; the developer never receives it, so "Data Not Collected" still
+holds. Two things to state in review notes when this ships: (1) the iCloud capability is used only for
+that encrypted backup file; (2) heart-rate samples are excluded from it by default (Guideline
+5.1.3(ii)) and included only if the user switches "Include heart-rate samples" on — if Review objects,
+remove the switch rather than argue.
+
 ## Screenshots (required uploads)
 The app supports iPhone + iPad and embeds an Apple Watch app, so Apple requires screenshots for:
 - **iPhone 6.9"** (e.g. 16 Pro Max, 1320×2868) — required; 3–10 shots.
@@ -128,7 +135,8 @@ HTTPS/system encryption), so no per-build prompt and no extra documentation need
 
 ## Review notes (paste into "Notes for Reviewer")
 ```
-SnappetAI is fully on-device: no account, no backend/server, no analytics or third-party SDKs.
+SnappetAI is on-device: no account, no backend/server, no analytics or third-party SDKs. The only
+off-device feature is an optional, off-by-default encrypted backup to the user's own iCloud Drive.
 HealthKit (heart rate / workouts) and Photos are used only locally to build heart-rate-driven
 highlight reels and workout summaries; nothing is transmitted off the device. The flagship feature
 needs a completed workout (Apple Watch) plus photos/videos shot during that workout's time window —

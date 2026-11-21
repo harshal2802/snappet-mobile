@@ -74,6 +74,11 @@ targets:
         # /.well-known/apple-app-site-association (the harshal2802.github.io repo) claims the path for this app id.
         com.apple.developer.associated-domains:
           - applinks:harshal2802.github.io
+        # Automatic cloud backup (prompt 267): the person's own iCloud Drive app container holds the
+        # ENCRYPTED backup file. Opt-in at runtime; iCloud Documents only (no CloudKit database).
+        com.apple.developer.icloud-container-identifiers: [iCloud.com.snappet.app]
+        com.apple.developer.ubiquity-container-identifiers: [iCloud.com.snappet.app]
+        com.apple.developer.icloud-services: [CloudDocuments]
         com.apple.developer.healthkit: true
         # NOTE: no `com.apple.developer.healthkit.access: [health-records]` — the app reads only standard
         # HealthKit (heart rate / workouts), never clinical records. Declaring the unused Health Records

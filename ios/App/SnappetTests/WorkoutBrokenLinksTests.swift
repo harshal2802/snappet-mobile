@@ -97,7 +97,7 @@ final class WorkoutBrokenLinksTests: XCTestCase {
 
     func testTheCascadeTakesTheSessionsWaitingScanOutOfTheQueue() throws {
         let container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let context = ModelContext(container)
         var ex = SessionExercise(exerciseId: RacketStats.matchExerciseId(.tableTennis), targetSets: 0, targetReps: "",
                                  targetRestSeconds: 0, sets: [], displayName: "Table tennis match",

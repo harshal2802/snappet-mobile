@@ -26,9 +26,10 @@ initiative makes clips survive those events and gives the store an optional clou
 |---|---|---|---|
 | P1 | `265-ios-media-link-resilience.md` | Stamp cloud identifier + fingerprint on every clip; re-link dead identifiers; "Not on this phone" state; Studio opens iCloud-offloaded originals | No |
 | P1b | `266-ios-manual-relink.md` | Missing-clip notice in Clips + "Find missing clips" sheet: pick footage from this iPhone, verified against the fingerprint | No |
-| P2 | (later) | Automatic encrypted backup of the `SnappetBackup` file to iCloud | **Yes — needs a named exception to the on-device-only rule** |
+| P2 | `267-ios-icloud-backup.md` | Opt-in automatic backup of the `SnappetBackup` file to the person's iCloud, encrypted on the phone; restore list; welcome-back offer | **Yes, when switched on** (named exception, decisions 2026-11-19) |
 | P3 | (later) | Google sign-in + Drive backup (`CloudVault` second implementation) | Yes |
 | P4 | (later) | Opt-in copies of session clips (the vault) + Google Photos Picker relink | Yes |
 
-P2–P4 are blocked on product decisions listed in the design page (privacy promise, HR samples
-in iCloud, whether the vault is worth building). P1/P1b are not.
+Product decisions (user, 2026-11-19): cloud features are an **opt-in exception** to on-device-only
+(off by default, backups encrypted on the phone); heart-rate samples are a **default-off switch**;
+Google code is built now with the client ID supplied later; the clip vault is built.

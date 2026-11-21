@@ -11,7 +11,7 @@ final class WorkoutIntentTests: XCTestCase {
 
     override func setUp() async throws {
         container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         // Last week's bench: 3 × 8 @ 75 kg, and a named climb.
         var bench = SessionExercise(exerciseId: "Barbell_Bench_Press_-_Medium_Grip", targetSets: 0, targetReps: "",
                                     targetRestSeconds: 0, sets: [], kindRaw: SetKind.repsWeight.rawValue)
@@ -101,7 +101,7 @@ final class WorkoutIntentTests: XCTestCase {
     /// The `snappet://log` path end-to-end against the UI-test seed: route → resolve "Bench" → logged + worded the
     /// way the player's ledger shows it.
     func testTheLogLinkAgainstTheSeededHistory() throws {
-        let c = try ModelContainer(for: Schema(SnappetSchema.models), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let c = try ModelContainer(for: Schema(SnappetSchema.models), configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         RoutineHistorySeed.seed(into: c.mainContext, now: now)
         guard case .workout(.log(let activity, let reps, let weight, let unit, let seconds, let meters))? =
                 SnappetDeepLink.route(for: URL(string: "snappet://log?activity=Bench&reps=5&weight=82.5")!) else {

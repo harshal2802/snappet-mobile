@@ -40,11 +40,12 @@ struct BackupView: View {
     var body: some View {
         NavigationStack {
             Form {
+                CloudBackupSection(storeIsFallback: storeIsFallback)
                 backupSection
                 restoreSection
                 moduleExportsSection
             }
-            .navigationTitle("Back up & restore")
+            .navigationTitle("Cloud & Backup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -104,7 +105,7 @@ struct BackupView: View {
             .accessibilityIdentifier("backup.export")
             statusRow
         } header: {
-            Text("Backup")
+            Text("Backup file")
         } footer: {
             if storeIsFallback {
                 Text("Storage is in a temporary state — a backup made now would not contain "
@@ -117,8 +118,8 @@ struct BackupView: View {
                      + "heart-rate series), climbing, festivals (installed lineups, your "
                      + "plan & tagged clips), wardrobe, journal, habits, finance, studio "
                      + "projects. Settings and the highlight-feedback log aren't included; "
-                     + "export feedback separately below. It only goes where you save it in "
-                     + "Files; nothing is uploaded by Snappet.")
+                     + "export feedback separately below. This file is not encrypted and only "
+                     + "goes where you save it in Files.")
             }
         }
     }
@@ -297,15 +298,8 @@ struct BackupView: View {
         // restored data on the next Kilter entry (#68 review fix 2). The manager is the only
         // AppModel-level @Model holder; the workout player's `playing` is view-local @State
         // on WorkoutHomeView, unreachable while this sheet is presented.
-        app.kilterSessions.detachForStoreRestore()
         do {
-            try SnappetBackup.restore(file, into: context)
-            HouseholdStore.rerollDevices(context: context)   // two phones restored from one backup must not collide
-            HouseholdXP.shared.load(context: context)   // chore XP from the restored log (household 01)
-            app.resetHouseholdStore()
-            // Restored rows carry another install's Photos identifiers — re-link them now through
-            // the cloud identifier / fingerprint the backup carried (prompt 265).
-            Task { await app.reconcileMediaLinks() }
+            try app.applyRestore(file, into: context)
             if storeIsFallback {
                 // Honest about ephemerality: the in-memory preview vanishes on relaunch.
                 finish(.success("Restored \(file.recordCount) records into temporary storage "

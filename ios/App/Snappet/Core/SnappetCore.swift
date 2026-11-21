@@ -36,6 +36,14 @@ final class UsageRecord {
 /// Adding a model? Also add its Row to `SnappetBackup` (Core/SnappetBackup.swift) so the
 /// suite backup keeps covering everything — `SnappetBackupTests` fails until you do.
 enum SnappetSchema {
+    /// The real store: SwiftData's default location (the App Group container), with CloudKit
+    /// sync explicitly OFF. That last part is load-bearing since prompt 267 added an iCloud
+    /// container entitlement (for the encrypted backup FILE): with the default `.automatic`,
+    /// SwiftData sees the entitlement, turns on CloudKit mirroring, rejects this schema (unique
+    /// attributes, non-optional fields) and the store FAILS TO OPEN — the app would come up on
+    /// the empty in-memory fallback. Every `ModelConfiguration` in the app and tests says `.none`.
+    static var onDiskConfiguration: ModelConfiguration { ModelConfiguration(cloudKitDatabase: .none) }
+
     static let models: [any PersistentModel.Type] = [
         UsageRecord.self,
         // mini-app @Model types:

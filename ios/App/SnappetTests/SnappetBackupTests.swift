@@ -32,7 +32,7 @@ final class SnappetBackupTests: XCTestCase {
     private nonisolated func makeContainer() throws -> ModelContainer {
         try ModelContainer(
             for: Schema(SnappetSchema.models),
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
     }
 
     // MARK: - Drift tripwire

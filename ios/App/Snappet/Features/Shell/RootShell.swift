@@ -53,6 +53,12 @@ struct RootShell: View {
                         // Re-weight the highlight fusion from the user's own feedback log — used to
                         // ride the retired Workout Reels module's bootstrap (highlights P3).
                         app.recomputeFeedbackTuning()
+                        if Self.cloudBackupRuns {
+                            Task(priority: .utility) {
+                                await app.checkCloudRestoreOffer()   // fresh install + a backup exists (prompt 267)
+                                await app.runCloudBackup()
+                            }
+                        }
                     }
             }
         }
@@ -60,6 +66,16 @@ struct RootShell: View {
         // whenever the app foregrounds (it may have changed elsewhere) or backgrounds (capture the
         // latest before we lose the foreground). Per-mutation refreshes (habit toggle, focus done)
         // land with the widget UI in Phase 2; scenePhase covers the read path now.
+        // Automatic cloud backup (prompt 267): off unless the person chose a destination. A change
+        // is picked up when the app comes forward or leaves; the policy spaces the uploads.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active || phase == .background, Self.cloudBackupRuns else { return }
+            Task(priority: .utility) { await app.runCloudBackup() }
+        }
+        // "Welcome back": a fresh install with a backup in the person's cloud is offered it once.
+        .sheet(item: Bindable(app.cloudBackup).restoreOffer) { manifest in
+            CloudRestoreOfferSheet(manifest: manifest)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active || phase == .background {
                 WidgetSnapshotService.refresh(context: context)
@@ -298,6 +314,11 @@ struct RootShell: View {
         let template = LibraryEntry.entry(for: row.key, in: context, create: false)?.template
         return ActivityLauncher.sessionExercise(for: row.key, history: history.filter { !$0.isActive },
                                                 identity: ActivityIdentity(sessions: history), template: template)
+    }
+
+    /// Cloud backup stays out of UI-test launches unless a test asked for the local test vault.
+    private static var cloudBackupRuns: Bool {
+        !isUITestLaunch || CommandLine.arguments.contains("-uiTestCloudVault")
     }
 
     private static var isUITestLaunch: Bool {

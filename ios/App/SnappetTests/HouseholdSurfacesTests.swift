@@ -12,7 +12,7 @@ final class HouseholdSurfacesTests: XCTestCase {
 
     override func setUp() async throws {
         container = try ModelContainer(for: Schema(SnappetSchema.models),
-                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                                       configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
     }
 
     override func tearDown() async throws {

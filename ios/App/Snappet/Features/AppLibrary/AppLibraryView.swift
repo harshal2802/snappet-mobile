@@ -75,7 +75,7 @@ struct AppLibraryView: View {
                     Button {
                         showingBackup = true
                     } label: {
-                        Label("Back up & restore", systemImage: "externaldrive")
+                        Label("Cloud & Backup", systemImage: "externaldrive")
                     }
                     .accessibilityIdentifier("suite.backup.open")
                 }

@@ -8,8 +8,9 @@ rate (Apple Watch / Wear OS / BLE band), film however you like, and the app auto
 shot during the workout window and assembles a highlight reel ranked by heart-rate intensity, with
 minimal manual editing.
 
-> 🔒 **On-device only.** No backend, no accounts, no network sync, no analytics. Health and media data
-> never leave the device.
+> 🔒 **On-device by default.** No backend, no Snappet account, no analytics. Nothing leaves the device
+> unless you turn on **Automatic backup**, which keeps an encrypted copy of your records in your own
+> iCloud (heart-rate samples left out unless you include them; photos and videos never).
 
 ## Screens
 

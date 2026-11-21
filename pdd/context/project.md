@@ -78,6 +78,13 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟡 **Automatic cloud backup (2026-11-19, P2 of Cloud Connect, prompt 267).** Apps → **Cloud & Backup**
+has an *Automatic backup* section: **Back up to** Off / iCloud (off by default), *Include heart-rate
+samples* (off), *Wi-Fi only* (on), *Back up now*, and *Restore from a cloud backup…*. The backup
+file is encrypted on the phone and kept in the person's iCloud (3 generations per device); an empty
+install is offered the newest backup once ("Welcome back"). Simulator-verified against a local
+folder vault; real iCloud transfer, second-phone restore and release signing are device-owed.
+
 🟡 **Manual relink (2026-11-19, P1b of Cloud Connect, prompt 266).** Clips whose footage is gone
 show as one row in Clips ("N clips aren’t on this phone") opening **Find missing clips**: the list
 by session plus "Pick from this iPhone". Each pick is verified against the clip's fingerprint and
@@ -96,7 +103,7 @@ restores, a pre-265 on-disk store migrates in place. **On the phone (MrRobot) 20
 1,684 no longer resolve and found no match. "Not on this phone" confirmed by a read-only device test
 (`MediaLinkDeviceUITests`). **Still owed, hands-on:** the duplicate re-link, Studio opening an offloaded original, restore on a second device. See the 2026-11-19 entry
 in `decisions.md`. Later
-phases (cloud backup, Google) are blocked on the decisions in `docs/ux-research/cloud-connect/`.
+phases: see `pdd/prompts/features/cloud-connect/PLAN.md`.
 
 🟢 **Highlights convergence (2026-07-15, `pdd/prompts/features/highlights-convergence/`).** The
 standalone **Workout Reels tile is RETIRED** — its list was made redundant by the watch→Clips import
