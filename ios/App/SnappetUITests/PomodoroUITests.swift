@@ -22,7 +22,7 @@ final class PomodoroUITests: XCTestCase {
     func testTimerControlsAndHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openPomodoro(app)
 
         // Timer label and controls are present.
@@ -63,7 +63,7 @@ final class PomodoroUITests: XCTestCase {
     func testTimerSurvivesNavigation() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openPomodoro(app)
 
         let start = app.buttons["pomodoro.start"]
@@ -103,7 +103,7 @@ final class PomodoroUITests: XCTestCase {
     func testSettingsPersistAcrossRelaunch() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         openPomodoro(app)
 
         // Open settings and bump the focus length up one step.
@@ -122,7 +122,7 @@ final class PomodoroUITests: XCTestCase {
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
 
         app.terminate()
-        app.launch()
+        app.launchOnTestStore()
         openPomodoro(app)
         app.buttons["pomodoro.settings"].tap()
 

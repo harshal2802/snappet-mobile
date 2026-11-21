@@ -13,7 +13,7 @@ final class RacketRecordingUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement {

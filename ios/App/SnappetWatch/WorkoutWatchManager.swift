@@ -99,6 +99,7 @@ final class WorkoutWatchManager: NSObject {
             Task { @MainActor [weak self] in self?.household = snapshot }
         }
         racket.send = { [weak self] command in self?.link.sendRacket(command) }
+        racket.phoneReachable = { [weak self] in self?.link.isPhoneReachable ?? false }
         link.onRacket = { [weak self] message in
             Task { @MainActor [weak self] in self?.racket.receive(message) }
         }

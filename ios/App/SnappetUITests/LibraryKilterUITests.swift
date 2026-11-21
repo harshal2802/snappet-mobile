@@ -6,16 +6,16 @@ import XCTest
 final class LibraryKilterUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         // `-uiTestFreshStore` spelled out: it's what clears a Kilter catalog a previous test installed.
         app.launchArguments += ["-uiTestSeedActivityClips", "-uiTestFreshStore"]
     }
 
-    private func launchToClimbing(catalog: Bool = false) async {
+    private func launchToClimbing(catalog: Bool = false) {
         if catalog { app.launchArguments += ["-uiTestInstallKilterCatalog"] }
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
         app.buttons["moduleCard.workout-log"].tap()
@@ -24,7 +24,7 @@ final class LibraryKilterUITests: XCTestCase {
         // Explore until there's history) — wait for Yours before tapping.
         let yours = app.segmentedControls.matching(identifier: "library.mode").firstMatch.buttons["Yours"]
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: yours)
-        await fulfillment(of: [selected], timeout: 10)
+        wait(for: [selected], timeout: 10)
         let chip = app.descendants(matching: .any).matching(identifier: "library.chip.climb").firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 6))
         chip.tap()
@@ -39,8 +39,8 @@ final class LibraryKilterUITests: XCTestCase {
         a.name = name; a.lifetime = .keepAlways; add(a)
     }
 
-    func testBoardClimbShowsInYoursAndOpensInKilter() async {
-        await launchToClimbing()
+    func testBoardClimbShowsInYoursAndOpensInKilter() {
+        launchToClimbing()
         let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6), "the board climb is in Yours")
         // The outlined "Kilter" tag after the name (prompt 218; was a "KILTER" badge) — not just the "Kilter Board" subtitle.
@@ -68,8 +68,8 @@ final class LibraryKilterUITests: XCTestCase {
         missing.buttons["OK"].tap()
     }
 
-    func testHideABoardClimbThenBringItBack() async {
-        await launchToClimbing()
+    func testHideABoardClimbThenBringItBack() {
+        launchToClimbing()
         let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6))
         row.swipeLeft()
@@ -90,8 +90,8 @@ final class LibraryKilterUITests: XCTestCase {
         XCTAssertFalse(app.buttons["library.showHidden"].exists, "nothing left hidden")
     }
 
-    func testBoardClimbOpensOnItsPageWithItsClips() async {
-        await launchToClimbing(catalog: true)
+    func testBoardClimbOpensOnItsPageWithItsClips() {
+        launchToClimbing(catalog: true)
         let row = boardRow
         XCTAssertTrue(row.waitForExistence(timeout: 6))
         row.tap()

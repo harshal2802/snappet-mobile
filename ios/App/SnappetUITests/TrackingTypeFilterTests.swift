@@ -21,11 +21,11 @@ import XCTest
 
     // Async setUp so the @MainActor class isolates it too (a sync `setUp()` override stays nonisolated and
     // warns on every main-actor `app` access).
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

@@ -6,11 +6,11 @@ import XCTest
 final class RacketGameHRUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketHR"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement {

@@ -10,11 +10,11 @@ import XCTest
 final class RacketEditMatchUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestRacketEditMatch", "-uiTestFakeCamera"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

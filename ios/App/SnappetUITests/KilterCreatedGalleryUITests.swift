@@ -10,7 +10,7 @@ final class KilterCreatedGalleryUITests: XCTestCase {
     private func openKilter() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
 
         let card = app.buttons["moduleCard.kilter"]

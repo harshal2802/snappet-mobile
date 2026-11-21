@@ -121,6 +121,8 @@ struct WorkoutHomeView: View {
     @State private var startConflict: Routine?
     /// A gym start refused because a Kilter board session is live (prompt 264, F7).
     @State private var boardRefusal: OwnershipNotice?
+    /// A reminder's Start now for a routine that's gone or empty (prompt 265, F13): said, not skipped silently.
+    @State private var routineStartNotice: RoutineStartNotice?
     /// A routine arriving over QR / a `snappet://routine/v1/…` link (E6) awaiting the import-confirm
     /// preview. Set by `consumePendingImport` from the router one-shot; cleared when the sheet closes.
     @State private var importingRoutine: SharedRoutine?
@@ -225,6 +227,8 @@ struct WorkoutHomeView: View {
         // WorkoutHistoryStats fed by the @MainActor resolver join, surfaced as an editable draft.
         .navigationDestination(for: WorkoutPlanRoute.self) { _ in
             WorkoutPlanView(history: history, resolver: resolver, unit: unit,
+                            running: activeSession?.routineName,
+                            goToRunning: { if let s = activeSession { resume(s) } },
                             start: { exercises, name in startPlannedSession(exercises, name: name) },
                             saveAsRoutine: { exercises, name in
                                 plannerPrefill = PlannerRoutinePrefill(name: name, exercises: exercises)
@@ -324,6 +328,7 @@ struct WorkoutHomeView: View {
         // presents. Minimizing drops `playing`, which releases the hold and lets the phone lock.
         .onChange(of: playing?.id, initial: true) { _, id in
             app.screenAwake.set("workoutPlayer", reason: .workout, active: id != nil)
+            router.workoutPlayerOpen = id != nil   // prompt 265: the Live Activity's tap stays on an open player
         }
         // The module-level Video Studio (#74): presented from the dashboard's "Open in Studio"
         // rows / a History row's swipe shortcut, on this stable host (the session detail keeps
@@ -356,6 +361,13 @@ struct WorkoutHomeView: View {
             seedStarters()
             consumePendingResume()
         }
+        // The same one-shot when this view is ALREADY the Gym Tracker (prompt 265, F15): the shell's `open(module:)`
+        // then sets an equal path, nothing is rebuilt and `.task` never runs again, so the Live Activity's tap did
+        // nothing (seen on a phone). One tick later, so the tab switch settles before the player presents.
+        .onChange(of: router.pendingWorkoutResume) { _, pending in
+            guard pending else { return }
+            Task { @MainActor in consumePendingResume() }
+        }
         // Consume the one-shot routine-import intent (E6, the `pendingKilterClimb` pattern): `initial: true`
         // covers cold start (the intent was set before this view existed), the change closure the warm case
         // (the shell replaced the path with this root, then set a new intent). Clearing the router flag
@@ -367,14 +379,28 @@ struct WorkoutHomeView: View {
             importingRoutine = pending
         }
         // Scheduled-routine reminder → Start now (prompt 136). Through the normal start path, so a
-        // workout already in progress still gets the resume / replace choice.
+        // workout already in progress still gets the resume / replace choice. A routine that's gone or has no
+        // exercises says so and lands on the workout home (prompt 265, F13) instead of doing nothing.
         .onChange(of: router.pendingRoutineStart, initial: true) { _, id in
             guard let id else { return }
             router.pendingRoutineStart = nil
-            section = .routines
-            if let routine = routines.first(where: { $0.id == id }), !routine.exercises.isEmpty {
-                startWorkout(from: routine)
+            let routine = routines.first(where: { $0.id == id })
+            switch ReminderStart.outcome(routine: routine.map { ($0.name, $0.exercises.count) }) {
+            case .start:
+                section = .routines
+                if let routine { startWorkout(from: routine) }
+            case .notice(let notice):
+                section = .dashboard
+                routineStartNotice = notice
             }
+        }
+        .alert(routineStartNotice?.title ?? "",
+               isPresented: Binding(get: { routineStartNotice != nil },
+                                    set: { if !$0 { routineStartNotice = nil } })) {
+            Button("OK", role: .cancel) { routineStartNotice = nil }
+                .accessibilityIdentifier("workout.routineStartNotice.ok")
+        } message: {
+            Text(routineStartNotice?.message ?? "")
         }
         // "Log it now" from an Activity page (prompt 184): add to the running session, or start a Quick Session
         // with it — the same paths Quick Start / resume use (live metrics, Live Activity, the player).
@@ -669,7 +695,8 @@ struct WorkoutHomeView: View {
     /// Start a session from the smart planner's draft (workout-redesign E7). The plan is a `[RoutineExercise]`;
     /// we seed a freeform (routineless) session from it via the same `RoutineSessionBuilder` the guided player
     /// uses, so the planned exercises arrive as proper session entities and the user grows/edits them in the
-    /// freeform logbook. If a workout is already active, resume it instead of stacking a second one.
+    /// freeform logbook. A workout already active never gets here silently: the planner asks first (prompt 265, F12:
+    /// Go to running workout / Cancel, the plan stays); this guard only backs that up and never drops the running one.
     private func startPlannedSession(_ exercises: [RoutineExercise], name: String) {
         if let active = activeSession { resume(active); return }
         if refuseIfBoardLive() { return }

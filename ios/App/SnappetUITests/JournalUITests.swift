@@ -11,7 +11,7 @@ final class JournalUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     /// Wait until `element` is no longer present (the inverse of `waitForExistence`).

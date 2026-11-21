@@ -8,12 +8,12 @@ import XCTest
 final class RacketTaggingUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketBundledVideo",
                                 "-uiTestPickPhotosVideo"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement {
@@ -163,7 +163,7 @@ final class RacketTaggingUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestRacketSport", sport]
         if doubles { app.launchArguments += ["-uiTestRacketDoubles", "YES"] }
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func walk(_ sport: String, doubles: Bool = false) {

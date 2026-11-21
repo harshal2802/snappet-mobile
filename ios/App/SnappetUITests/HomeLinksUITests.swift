@@ -10,7 +10,7 @@ final class HomeLinksUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Home"].tap()
         let hatch = app.buttons["buddy.hatch"]
         XCTAssertTrue(hatch.waitForExistence(timeout: 8))

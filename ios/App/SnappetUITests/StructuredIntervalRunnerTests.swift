@@ -14,12 +14,12 @@ import XCTest
 final class StructuredIntervalRunnerTests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {
@@ -269,7 +269,7 @@ final class StructuredIntervalRunnerTests: XCTestCase {
     func testForceSensorShowsLiveForceAndTargetBand() {
         app.terminate()
         app.launchArguments += ["-uiTestFakeForceSensor"]
-        app.launch()
+        app.launchOnTestStore()
 
         // Workout → Settings → Force sensor: connected, set a two-hand max of 52 kg.
         XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 8))

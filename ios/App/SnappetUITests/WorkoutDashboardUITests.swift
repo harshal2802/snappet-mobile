@@ -10,7 +10,7 @@ final class WorkoutDashboardUITests: XCTestCase {
     func testDashboardSectionsAndSeeAllOpensHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         let card = app.buttons["moduleCard.workout-log"]
         XCTAssertTrue(card.waitForExistence(timeout: 8))

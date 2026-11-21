@@ -23,6 +23,10 @@ struct WorkoutPlanView: View {
     let history: [WorkoutSession]
     let resolver: ExerciseResolver
     let unit: WeightUnit
+    /// The running workout's name, nil when none is (prompt 265, F12): Start then asks instead of silently resuming it.
+    var running: String? = nil
+    /// "Go to running workout": open its player; this plan stays on its screen underneath.
+    var goToRunning: () -> Void = {}
     /// Start a freeform session seeded from the plan's `[RoutineExercise]`.
     let start: ([RoutineExercise], String) -> Void
     /// Open the routine editor pre-filled with the plan (Save as routine).
@@ -47,6 +51,8 @@ struct WorkoutPlanView: View {
     @State private var tweakSource: WorkoutPlanIntelligence.Source?
     @State private var sharpening = false
     @State private var swapping: WorkoutRecommender.Pick?
+    /// Start was tapped while a workout runs (prompt 265, F12).
+    @State private var startConflict: WorkoutStartConflict?
 
     /// The strategy the verb suggests, unless the user overrode it.
     private var strategy: WorkoutRecommender.Strategy {
@@ -137,6 +143,15 @@ struct WorkoutPlanView: View {
         }
         .task { if !built { regenerate() } }
         .sheet(item: $swapping) { pick in swapSheet(for: pick) }
+        .alert(startConflict?.title ?? "",
+               isPresented: Binding(get: { startConflict != nil }, set: { if !$0 { startConflict = nil } })) {
+            Button(startConflict?.goTo ?? "") { startConflict = nil; goToRunning() }
+                .accessibilityIdentifier("workout.plan.goToRunning")
+            Button(startConflict?.cancel ?? "Cancel", role: .cancel) { startConflict = nil }
+                .accessibilityIdentifier("workout.plan.startCancel")
+        } message: {
+            Text(startConflict?.message ?? "")
+        }
     }
 
     // MARK: - Today verb card
@@ -309,7 +324,10 @@ struct WorkoutPlanView: View {
     private var actionSection: some View {
         Section {
             Button {
-                start(draftRoutine, draftName)
+                switch PlannedStart.decide(running: running) {
+                case .start: start(draftRoutine, draftName)
+                case .ask(let conflict): startConflict = conflict
+                }
             } label: {
                 Label("Start this session", systemImage: "play.circle.fill")
                     .fontWeight(.semibold).frame(maxWidth: .infinity)

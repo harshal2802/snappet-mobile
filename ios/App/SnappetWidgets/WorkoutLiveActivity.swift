@@ -17,6 +17,8 @@ struct WorkoutLiveActivity: Widget {
                 .padding()
                 .activityBackgroundTint(Color.black.opacity(0.5))
                 .activitySystemActionForegroundColor(.white)
+                // A tap opens the running workout (prompt 265, F15), not wherever the app last was.
+                .widgetURL(WorkoutActivityAttributes.openURL)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -51,6 +53,7 @@ struct WorkoutLiveActivity: Widget {
                     .foregroundStyle(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
             }
             .keylineTint(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
+            .widgetURL(WorkoutActivityAttributes.openURL)
         }
     }
 

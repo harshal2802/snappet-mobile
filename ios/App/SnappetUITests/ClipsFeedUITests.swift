@@ -14,7 +14,7 @@ import XCTest
     func testClipsTabSitsBetweenHomeAndRecapAndRendersEmptyState() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
 
         // The four tabs all exist: Home · Clips · Recap · Apps.
         let home = app.tabBars.buttons["Home"]
@@ -43,7 +43,7 @@ import XCTest
     func testHealthOfferShowsOnFreshStoreAndDismisses() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
 
         let card = app.descendants(matching: .any)["clips.healthOffer"]
         XCTAssertTrue(card.waitForExistence(timeout: 15),
@@ -99,7 +99,7 @@ import XCTest
     func testFestivalPostAndChipFromASeededNight() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
 
         // The tagged clip composes into an artist · stage post (search would match "Neon" free).
@@ -138,7 +138,7 @@ import XCTest
     func testOverlayStyleSheetSavesTheDefault() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
 
         let button = app.buttons["clips.style.button"]
@@ -166,7 +166,7 @@ import XCTest
     func testHideFromClipsAndUnhide() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
 
         let post = app.staticTexts["Neon Harbor · Pyramid Stage"]
@@ -204,7 +204,7 @@ import XCTest
     func testAutoplayControlIsLabelledAndConfirms() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let toggle = app.buttons["clips.autoplay.toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
@@ -220,7 +220,7 @@ import XCTest
     func testSessionHeadersAndGridMonths() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["clips.session.header"].firstMatch.waitForExistence(timeout: 15),
                       "the seeded session's posts sit under a session header")
@@ -234,7 +234,7 @@ import XCTest
     func testTagArtistOpensReviewOnTheTappedClip() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let tag = app.buttons["clips.post.tagArtistButton"].firstMatch
         XCTAssertTrue(reveal(tag, in: app), "the festival night's unmatched post offers Tag artist")
@@ -251,7 +251,7 @@ import XCTest
     func testGridMonthHeaderSummaryDayStripAndReel() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let grid = app.buttons["clips.grid.button"]
         XCTAssertTrue(grid.waitForExistence(timeout: 15))
@@ -268,7 +268,7 @@ import XCTest
     func testGridLongPressActions() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let grid = app.buttons["clips.grid.button"]
         XCTAssertTrue(grid.waitForExistence(timeout: 15))
@@ -288,7 +288,7 @@ import XCTest
     func testGridSelectModeBulkHide() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let grid = app.buttons["clips.grid.button"]
         XCTAssertTrue(grid.waitForExistence(timeout: 15))
@@ -313,7 +313,7 @@ import XCTest
     func testGridZoomLevels() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let gridButton = app.buttons["clips.grid.button"]
         XCTAssertTrue(gridButton.waitForExistence(timeout: 15))

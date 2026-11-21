@@ -29,6 +29,8 @@ enum WorkoutSessionFinisher {
         }
         app.liveWorkout.stop()
         app.liveActivity.end()
+        // Prompt 265 (F10): the session's racket screens are gone; so is any racket face it left on the Watch.
+        RacketWatchRelay.shared.sessionEnded(exerciseIDs: Set(session.exercises.map(\.id)))
         session.completedAt = now
         FeedActivityWriter.recordWorkoutFinish(session, in: context)
         try? context.save()

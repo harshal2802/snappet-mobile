@@ -9,6 +9,7 @@ import XCTest
 /// On the simulator the camera is the fake (`-uiTestFakeCamera`) with a fake capability set (`-uiTestCameraLenses`,
 /// `-uiTestCameraFormats`, `-uiTestCameraFreeGB`, `-uiTestCameraBattery`). Built for a phone, the suite uses the real
 /// camera and reads what it reports; it never taps the shutter there. `RACKET_SHOTS=<dir>` writes the board screenshots.
+@MainActor
 final class RacketProCameraUITests: XCTestCase {
     var app: XCUIApplication!
 
@@ -31,7 +32,7 @@ final class RacketProCameraUITests: XCTestCase {
             app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
         }
         app.launchArguments += extra
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func shot(_ name: String) {
@@ -65,9 +66,7 @@ final class RacketProCameraUITests: XCTestCase {
         let card = app.buttons["moduleCard.workout-log"]
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         card.tap()
-        let quick = app.buttons["workout.quickStart"]
-        XCTAssertTrue(quick.waitForExistence(timeout: 6))
-        quick.tap()
+        XCTAssertTrue(app.startQuickSession(), "Quick Start opens an empty session")
         tapWhenHittable(app.buttons["freeform.cardRacket"])
         let tt = app.buttons["racket.sport.tableTennis"]
         XCTAssertTrue(tt.waitForExistence(timeout: 5))
@@ -84,6 +83,29 @@ final class RacketProCameraUITests: XCTestCase {
     }
 
     private var preview: XCUIElement { any("racket.camera.preview") }
+
+    /// The screen's elements with an identifier, from ONE snapshot. The focus square with its sun and the zoom dial
+    /// fade 2–3 s after the last touch, and on a slow runner a few separate queries take that long: a label read
+    /// after the overlay has gone fails the test with "no matches". Values read from one snapshot can't.
+    private func onScreen() -> [String: any XCUIElementSnapshot] {
+        guard let root = try? app.snapshot() else { return [:] }
+        var out: [String: any XCUIElementSnapshot] = [:]
+        func walk(_ s: any XCUIElementSnapshot) {
+            if !s.identifier.isEmpty, out[s.identifier] == nil { out[s.identifier] = s }
+            s.children.forEach(walk)
+        }
+        walk(root)
+        return out
+    }
+
+    /// Drags up from the middle of `el` as it was in `shown`, through the preview's coordinates (the preview never
+    /// goes away), so an overlay that faded in the meantime can't fail the gesture; the caller checks the outcome.
+    private func dragUp(on el: any XCUIElementSnapshot, in shown: [String: any XCUIElementSnapshot]) {
+        guard let p = shown["racket.camera.preview"]?.frame else { return }
+        let start = preview.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: el.frame.midX - p.minX, dy: el.frame.midY - p.minY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -60)))
+    }
 
     /// A point on the preview, in its own unit coordinates.
     private func previewPoint(_ x: Double, _ y: Double) -> XCUICoordinate {
@@ -129,10 +151,16 @@ final class RacketProCameraUITests: XCTestCase {
         XCTAssertTrue(zoomed.hasPrefix("Zoom 1."), "between 1× and 2× after a short drag: \(zoomed)")
         shot("ProCameraZoom")
 
-        // VoiceOver's adjustable zoom on the dial.
-        let before = dial.value as? String
-        dial.swipeUp()
-        _ = before
+        // A touch on the dial keeps it open. It fades 2 s after the last touch, which the checks above can outlast on
+        // a slow runner: open it again from the lenses if it has gone, then touch it where one snapshot saw it.
+        var shown = onScreen()
+        if shown["racket.camera.dial"] == nil {
+            from.press(forDuration: 0.1, thenDragTo: from.withOffset(CGVector(dx: 20, dy: 0)))
+            _ = dial.waitForExistence(timeout: 3)
+            shown = onScreen()
+        }
+        let dialShown = try XCTUnwrap(shown["racket.camera.dial"], "dragging the lenses opens the zoom dial")
+        dragUp(on: dialShown, in: shown)
         // The dial fades by itself.
         XCTAssertTrue(dial.waitForNonExistence(timeout: 6), "the dial hides after a moment")
 
@@ -161,15 +189,23 @@ final class RacketProCameraUITests: XCTestCase {
         launch(["-uiTestCameraLenses", "0.5,1,2,3"])
         openCamera()
         XCTAssertTrue(app.buttons["racket.camera.shutter"].waitForExistence(timeout: 10))
-        previewPoint(0.55, 0.45).tap()
+        // The square and the sun fade 3 s after the last touch (a drag on the sun is a touch). Read them from one
+        // snapshot and drag the sun where it was; if they faded first, the drag misses, so tap to focus again.
         let square = any("racket.camera.focus")
-        XCTAssertTrue(square.waitForExistence(timeout: 3), "a tap on the camera always focuses")
-        XCTAssertEqual(square.label, "Focus")
-        let sun = any("racket.camera.exposure")
-        XCTAssertTrue(sun.exists, "the brightness slider sits beside the square")
-        XCTAssertEqual(sun.value as? String, "0")
-        sun.swipeUp()
-        XCTAssertNotEqual(sun.value as? String, "0", "dragging the sun up brightens")
+        let brighter = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'racket.camera.exposure' AND value != '0'")).firstMatch
+        var brightened = false
+        for _ in 0..<3 where !brightened {
+            previewPoint(0.55, 0.45).tap()
+            XCTAssertTrue(square.waitForExistence(timeout: 3), "a tap on the camera always focuses")
+            let shown = onScreen()
+            guard let squareShown = shown["racket.camera.focus"], let sun = shown["racket.camera.exposure"] else { continue }
+            XCTAssertEqual(squareShown.label, "Focus")
+            XCTAssertEqual(sun.value as? String, "0", "the brightness starts at 0")
+            dragUp(on: sun, in: shown)
+            brightened = brighter.waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(brightened, "the brightness slider sits beside the square; dragging the sun up brightens")
         shot("ProCameraFocus")
         XCTAssertTrue(square.waitForNonExistence(timeout: 8), "the square fades after a few seconds")
         XCTAssertFalse(any("racket.camera.lockBadge").exists)

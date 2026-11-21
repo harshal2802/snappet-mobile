@@ -9,7 +9,7 @@ import XCTest
 final class RacketSplitTimeoutUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestRacketSplitTimeout", "-uiTestFakeCamera"]
@@ -17,7 +17,7 @@ final class RacketSplitTimeoutUITests: XCTestCase {
 
     private func launch(_ extra: [String] = []) {
         app.launchArguments += extra
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

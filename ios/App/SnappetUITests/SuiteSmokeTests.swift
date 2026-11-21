@@ -6,7 +6,7 @@ final class SuiteSmokeTests: XCTestCase {
 
     func testEverySuiteAppOpens() {
         let app = XCUIApplication()
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
 
         // "workout" (Workout Reels) retired by the highlights convergence (P3) — reels are now an

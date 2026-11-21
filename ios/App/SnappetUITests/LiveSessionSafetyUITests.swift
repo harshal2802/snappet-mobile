@@ -11,14 +11,14 @@ import XCTest
 final class LiveSessionSafetyUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
     }
 
     private func launchLive(_ extra: [String]) {
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestRacketLive", "-uiTestFakeCamera"] + extra
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
@@ -153,7 +153,8 @@ final class LiveSessionSafetyUITests: XCTestCase {
         shot("05-saved-in-history")
     }
 
-    func testTheFinishLinkSavesASessionWithRecordingsButNoGames() {
+    func testTheFinishLinkSavesASessionWithRecordingsButNoGames() throws {
+        try TestStoreGuard.skipLinkTestsOnDevice()
         launchLive(["-uiTestRacketLiveCrash"])
         openLivePlayer()
         XCUIDevice.shared.system.open(URL(string: "snappet://finish")!)
@@ -222,10 +223,11 @@ final class LiveSessionSafetyUITests: XCTestCase {
 
     // MARK: F4
 
-    func testTheFinishLinkWhileRecordingEverythingFinishesNothing() {
+    func testTheFinishLinkWhileRecordingEverythingFinishesNothing() throws {
+        try TestStoreGuard.skipLinkTestsOnDevice()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]
         app.launchEnvironment["SNAPPET_FAKE_CAMERA"] = "1"
-        app.launch()
+        app.launchOnTestStore()
         XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 8))
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 8))

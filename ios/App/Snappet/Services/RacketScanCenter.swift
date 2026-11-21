@@ -27,6 +27,16 @@ final class RacketScanCenter {
         let exerciseID: UUID
         let store: RacketVideoStore
         var hold: Hold = .none
+        /// The session the scan belongs to (prompt 265: dropped when it is deleted). Read once, while the model lives.
+        let sessionID: UUID
+
+        @MainActor init(recordID: UUID, exerciseID: UUID, store: RacketVideoStore, hold: Hold = .none) {
+            self.recordID = recordID
+            self.exerciseID = exerciseID
+            self.store = store
+            self.hold = hold
+            self.sessionID = store.session.id
+        }
     }
 
     /// The scan running now (its record id).
@@ -45,6 +55,9 @@ final class RacketScanCenter {
     @ObservationIgnored private var rate: [(wall: Date, done: Double)] = []
     @ObservationIgnored private var lastSaved: Double = 0
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    /// Sessions deleted while this process runs (prompt 265, F11): their scans are gone, and a late result, progress
+    /// or pause for one is dropped instead of written into a deleted model.
+    @ObservationIgnored private(set) var deletedSessionIDs: Set<UUID> = []
 
     /// UI tests: the synthetic signal instead of Photos video (`-uiTestStubRallySignal`).
     static var useSyntheticSignal: Bool { ProcessInfo.processInfo.arguments.contains(RacketSyntheticMotionSource.argument) }
@@ -72,6 +85,7 @@ final class RacketScanCenter {
     @discardableResult
     func enqueue(_ refs: [RacketPartRef], model: RallyModelInfo, compare: Bool = false, waitForCharger: Bool = false,
                  store: RacketVideoStore, now: Date = .now) -> [UUID] {
+        deletedSessionIDs.remove(store.session.id)   // it exists (a backup restore can bring an id back)
         var ids: [UUID] = []
         for ref in refs {
             guard let log = store.ex(ref.exerciseID)?.racketRecordingLog else { continue }
@@ -107,6 +121,7 @@ final class RacketScanCenter {
     /// Resume a paused scan.
     func resume(_ recordID: UUID, exerciseID: UUID, store: RacketVideoStore) {
         guard !jobs.contains(where: { $0.recordID == recordID }) else { kick(); return }
+        deletedSessionIDs.remove(store.session.id)
         store.updateLog(exerciseID) { l in
             l.updateScan(recordID) { $0.statusRaw = RacketScanRecord.Status.queued.rawValue; $0.note = nil }
         }
@@ -133,6 +148,22 @@ final class RacketScanCenter {
     }
 
     func isQueued(_ recordID: UUID) -> Bool { jobs.contains { $0.recordID == recordID } }
+
+    /// The session is being deleted (`SessionCascade.deleteWorkoutSession`, every delete path): its waiting scans
+    /// leave the queue and its running scan is cancelled, all WITHOUT writing to the session (it is about to go). The
+    /// next scan in the queue starts once the cancelled one has wound down.
+    func forgetSession(_ sessionID: UUID) {
+        deletedSessionIDs.insert(sessionID)
+        let plan = RacketScanSessionDrop.plan(jobs: jobs.map { ($0.recordID, $0.sessionID) }, running: runningID,
+                                              deleting: sessionID)
+        jobs.removeAll { plan.remove.contains($0.recordID) }
+        if plan.cancelRunning {
+            stopReason = "Session deleted"
+            task?.cancel()
+        }
+    }
+
+    private func isDropped(_ job: Job) -> Bool { deletedSessionIDs.contains(job.sessionID) }
 
     /// After a relaunch, records left "running" / "queued" with no job here are paused (they resume on Resume).
     func settle(_ store: RacketVideoStore) {
@@ -179,14 +210,21 @@ final class RacketScanCenter {
     // MARK: Running
 
     private func record(_ job: Job) -> RacketScanRecord? {
-        job.store.ex(job.exerciseID)?.racketRecordingLog?.allScans.first { $0.id == job.recordID }
+        guard !isDropped(job) else { return nil }
+        return job.store.ex(job.exerciseID)?.racketRecordingLog?.allScans.first { $0.id == job.recordID }
     }
 
     private func write(_ job: Job, _ body: (inout RacketScanRecord) -> Void) {
+        guard !isDropped(job) else { return }
         job.store.updateLog(job.exerciseID) { $0.updateScan(job.recordID, body) }
     }
 
     private func run(_ job: Job) {
+        if isDropped(job) {
+            jobs.removeAll { $0.recordID == job.recordID }
+            kick()
+            return
+        }
         guard let rec = record(job), let log = job.store.ex(job.exerciseID)?.racketRecordingLog,
               let sport = job.store.ex(job.exerciseID)?.racketSport,
               let info = RacketCapabilityRegistry.model(id: rec.modelID, version: rec.modelVersion),
@@ -257,6 +295,11 @@ final class RacketScanCenter {
         }
         let reason = stopReason
         stopReason = nil
+        // Prompt 265 (F11): the session was deleted while this scan ran: drop the result, write nothing.
+        if isDropped(job) {
+            jobs.removeAll { $0.recordID == job.recordID }
+            return
+        }
         switch result {
         case .success(let guesses):
             jobs.removeAll { $0.recordID == job.recordID }
@@ -287,6 +330,7 @@ final class RacketScanCenter {
 
     /// Store the results; put them on the timeline unless they wait for ModelCompare.
     private func complete(_ job: Job, _ guesses: [RallyGuess]) {
+        guard !isDropped(job) else { return }
         job.store.updateLog(job.exerciseID) { l in
             guard let rec = l.allScans.first(where: { $0.id == job.recordID }) else { return }
             let waits = rec.compare == true && l.appliedScan(partStart: rec.partStart, partEnd: rec.partEnd) != nil
@@ -329,7 +373,7 @@ final class RacketScanCenter {
 
     private func backgroundExpired() {
         // Cancel; `finish` holds the job for `.background` and it resumes when Snappet is active again.
-        if let id = runningID, let job = jobs.first(where: { $0.recordID == id }) {
+        if let id = runningID, let job = jobs.first(where: { $0.recordID == id }), !isDropped(job) {
             write(job) { $0.statusRaw = RacketScanRecord.Status.paused.rawValue; $0.note = "Paused when Snappet left the screen" }
         }
         task?.cancel()

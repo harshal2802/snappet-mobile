@@ -33,7 +33,7 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
         continueAfterFailure = true
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedStudioDemo"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func snap(_ name: String) {

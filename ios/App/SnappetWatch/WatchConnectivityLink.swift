@@ -51,6 +51,9 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
         send(.ended(startedAt: startedAt?.timeIntervalSince1970))
     }
 
+    /// The phone app can be reached right now (prompt 265). Out of range, taps are queued and the racket face stays.
+    var isPhoneReachable: Bool { session?.activationState == .activated && session?.isReachable == true }
+
     /// A racket tap (prompt 245): `sendMessage` while the phone is reachable (it wakes the phone app), else queued
     /// with `transferUserInfo` so a point isn't lost. The command id lets the phone apply a re-sent copy once.
     func sendRacket(_ command: RacketWatchCommandEnvelope) {

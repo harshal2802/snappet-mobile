@@ -10,7 +10,7 @@ final class TipUITests: XCTestCase {
     private func openTip() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
 
         let card = app.buttons["moduleCard.tip"]

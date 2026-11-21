@@ -16,14 +16,14 @@ import XCTest
 final class RacketMixedSessionUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     private func launch(_ args: [String]) {
         app = XCUIApplication()
         app.launchArguments += args
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }

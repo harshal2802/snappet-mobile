@@ -6,11 +6,11 @@ import XCTest
 final class ActivityPageUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedActivityClips"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
         app.buttons["moduleCard.workout-log"].tap()
@@ -31,7 +31,23 @@ final class ActivityPageUITests: XCTestCase {
         XCTAssertTrue(any("activity.tabs").waitForExistence(timeout: 6), "the page's tabs")
     }
 
+    /// Push Day's exercise count, read from its row on the Gym Tracker's Routines segment ("4 exercises · 12 sets").
+    private func pushDayExercises(file: StaticString = #filePath, line: UInt = #line) -> Int {
+        app.segmentedControls.buttons["Routines"].tap()
+        let row = app.scrollIntoView(app.buttons
+            .matching(NSPredicate(format: "identifier == 'routineRow' AND label CONTAINS 'Push Day'")).firstMatch)
+        XCTAssertTrue(row.exists, "the seeded Push Day routine", file: file, line: line)
+        guard let r = row.label.range(of: #"\d+ exercise"#, options: .regularExpression),
+              let n = Int(row.label[r].prefix { $0.isNumber }) else {
+            XCTFail("no exercise count in \(row.label)", file: file, line: line)
+            return -1
+        }
+        return n
+    }
+
     func testTabsAboutAndAddToRoutine() {
+        let exercisesBefore = pushDayExercises()
+        app.segmentedControls.buttons["Library"].tap()
         openBench()
         let tabs = app.segmentedControls.matching(identifier: "activity.tabs").firstMatch
         XCTAssertTrue(tabs.buttons["Progress"].isSelected)
@@ -51,8 +67,12 @@ final class ActivityPageUITests: XCTestCase {
         let push = app.buttons["Push Day"]
         XCTAssertTrue(push.waitForExistence(timeout: 3))
         push.tap()
-        XCTAssertTrue(app.staticTexts["Added to Push Day"].waitForExistence(timeout: 3), "the confirmation")
+        // The confirmation is a 3 s toast. XCUITest waits for the app to idle after a tap before it looks: about
+        // 2.6 s of the 3 s locally, 18 s on the CI runner (run 43935201896), so the toast can't be caught reliably.
+        // Check what it confirms instead: the routine now has the exercise (prompt 267).
         snap("04-added")
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        XCTAssertEqual(pushDayExercises(), exercisesBefore + 1, "Add to routine added the exercise to Push Day")
     }
 
     func testLogItNowStartsAQuickSessionWithIt() {

@@ -10,7 +10,7 @@ import XCTest
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedActivityClips"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
     }
 
@@ -130,7 +130,7 @@ import XCTest
         // Remembered.
         app.terminate()
         app.launchArguments = ["clips"]   // keep the seeded store? the level lives in UserDefaults — relaunch plainly
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Clips"].tap()
         let again = app.segmentedControls.matching(identifier: "clips.level").firstMatch
         if again.waitForExistence(timeout: 10) {

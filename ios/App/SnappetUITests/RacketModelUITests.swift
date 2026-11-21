@@ -9,11 +9,11 @@ import XCTest
 final class RacketModelUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() async throws {
+    override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestSeedRacketVideos", "-uiTestFakeCamera", "-uiTestStubRallySignal"]
-        app.launch()
+        app.launchOnTestStore()
     }
 
     private func any(_ id: String) -> XCUIElement {

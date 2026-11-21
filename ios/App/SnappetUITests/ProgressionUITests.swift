@@ -45,7 +45,7 @@ final class ProgressionUITests: XCTestCase {
 
     func testFinishScreenShowsXPThenHomeOffersTheEgg() {
         app.launchArguments += ["-uiTestFreshStore", "-uiTestXPAnyLength"]
-        app.launch()
+        app.launchOnTestStore()
         finishAQuickLift()
 
         let total = any("xp.total")
@@ -65,7 +65,7 @@ final class ProgressionUITests: XCTestCase {
 
     func testHistoryHatchesStraightToItsLevel() {
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Home"].tap()
         let hatch = app.buttons["buddy.hatch"]
         XCTAssertTrue(hatch.waitForExistence(timeout: 8), "an unhatched buddy offers Hatch")
@@ -83,7 +83,7 @@ final class ProgressionUITests: XCTestCase {
     /// end pause → how XP works → style (others locked).
     func testBuddyScreenFormPauseRulesAndStyle() {
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Home"].tap()
         let hatch = app.buttons["buddy.hatch"]
         XCTAssertTrue(hatch.waitForExistence(timeout: 8))
@@ -135,7 +135,7 @@ final class ProgressionUITests: XCTestCase {
     /// Prompt 150: the training-first Home — hero, today, the week in XP, wins, coming up, other apps.
     func testTrainingHomeLeadsWithTheBuddy() {
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Home"].tap()
         XCTAssertTrue(any("trainingHome").waitForExistence(timeout: 8))
         let hatch = app.buttons["buddy.hatch"]
@@ -159,7 +159,7 @@ final class ProgressionUITests: XCTestCase {
     /// Mid-workout, the hero shows the live session, Resume works, and the buddy is still one tap away.
     func testTrainingNowHeroStillReachesYourBuddy() {
         app.launchArguments += ["-uiTestSeedRoutineHistory"]
-        app.launch()
+        app.launchOnTestStore()
         app.tabBars.buttons["Home"].tap()
         let hatch = app.buttons["buddy.hatch"]
         XCTAssertTrue(hatch.waitForExistence(timeout: 8))

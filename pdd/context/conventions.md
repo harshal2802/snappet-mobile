@@ -75,6 +75,32 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
   dependency that breaks that.
 - Services + UI need a device/simulator to *run*; a clean type-check is necessary but **not**
   sufficient — never report a device-only feature as "verified" from a type-check alone.
+- **UI tests launch with `app.launchOnTestStore()`, never `app.launch()`** (`SnappetUITests/TestStoreGuard.swift`,
+  prompt 266). It waits for the app's invisible `uiTest.freshStore` marker before the first tap (always on a real
+  device; on the simulator when the launch arguments ask for the test store) and terminates the app and fails if it is
+  missing. A new test-store argument goes in `UITestStore.freshStoreArguments` (`Snappet/Core/UITestStore.swift`) AND
+  the mirrored list in `TestStoreGuard`. Tests that open links with `XCUIDevice.shared.system.open` call
+  `try TestStoreGuard.skipLinkTestsOnDevice()` first: link tests are simulator-only.
+- **UI tests have no `async` hooks or tests** (prompt 267): use `setUpWithError` / `tearDownWithError` and
+  `wait(for:)`. A failure under `continueAfterFailure = false` in an async `setUp` / `tearDown` / test makes the
+  runner exit, and xcodebuild resumes at the next test without retrying it. `scripts/ci-ui-shard.py --check` fails on one.
+- **UI tests wait on conditions, not on time.** On the CI runner one XCUITest step takes 1–4 s, so don't read or tap
+  something that hides by itself (player controls, camera overlays, toasts) in separate steps that must fit inside its
+  timer: read from one `snapshot()`, or check the lasting effect. When a test must *tap* a control on a short timer
+  (a single tap step can outlast it), give the app a UI-test-only launch argument that lengthens the timer, gated on
+  `UITestStore.isFreshStore` so a real launch never sees it, and keep one focused test on the real timer that taps
+  nothing on it. The racket player's controls: `-uiTestPlayerControlsHideAfter <seconds>`
+  (`RacketPlayerControls.hideAfterArguments`, 60 s); every suite that taps them while playing launches with it, and
+  `RacketPlayerUITests.testControlsHideByThemselvesWhilePlaying` keeps the real 3 s. `SnappetUITests/UITestTaps.swift`
+  has `tap(_:until:)`, `startQuickSession()`, `scrollIntoView(_:)`; `SnappetUITests/RacketPlayerControls.swift` drives
+  the racket player's controls (use it, don't copy it).
+- **CI runs UI tests by area** (prompt 268): a PR runs the UI classes of the areas it touches plus a smoke set;
+  the full suite runs nightly, on dispatch, on a ci.yml / `scripts/ci-ui-shard.py` change, or with the `full-ui`
+  label (`ui-quick`: smoke only). The area map is `AREAS` in `scripts/ci-ui-shard.py`: a **new UI test class must
+  match an area's class pattern** (or the smoke set), or `--check` fails; a new feature folder gets an area. Name UI
+  test classes after their area (`Racket…`, `Kilter…`) so the existing patterns pick them up. Preview a change's
+  legs with `git diff --name-only origin/main...HEAD | python3 scripts/ci-ui-shard.py --select -`; run chosen
+  classes on CI with a manual dispatch's `ui_classes`.
 
 ## Experiments (spikes)
 
