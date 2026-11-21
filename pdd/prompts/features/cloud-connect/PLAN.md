@@ -27,7 +27,7 @@ initiative makes clips survive those events and gives the store an optional clou
 | P1 | `265-ios-media-link-resilience.md` | Stamp cloud identifier + fingerprint on every clip; re-link dead identifiers; "Not on this phone" state; Studio opens iCloud-offloaded originals | No |
 | P1b | `266-ios-manual-relink.md` | Missing-clip notice in Clips + "Find missing clips" sheet: pick footage from this iPhone, verified against the fingerprint | No |
 | P2 | `267-ios-icloud-backup.md` | Opt-in automatic backup of the `SnappetBackup` file to the person's iCloud, encrypted on the phone; restore list; welcome-back offer | **Yes, when switched on** (named exception, decisions 2026-11-19) |
-| P3 | (later) | Google sign-in + Drive backup (`CloudVault` second implementation) | Yes |
+| P3 | `268-ios-google-drive-backup.md` | Google sign-in (PKCE, no SDK) + Google Drive as a second backup destination; hidden until a client ID is configured (`docs/google-cloud-setup.md`) | Yes, when switched on |
 | P4 | (later) | Opt-in copies of session clips (the vault) + Google Photos Picker relink | Yes |
 
 Product decisions (user, 2026-11-19): cloud features are an **opt-in exception** to on-device-only

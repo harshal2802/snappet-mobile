@@ -78,6 +78,12 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟡 **Google Drive backup (2026-11-19, P3 of Cloud Connect, prompt 268).** *Back up to* gains **Google
+Drive** with a *Sign in with Google* row — but only in a build that carries a Google client ID
+(`GOOGLE_CLIENT_ID` in `ios/App/project.yml`, empty today; steps in `docs/google-cloud-setup.md`).
+Backups go, encrypted, to a hidden app folder in the person's Drive. Tested against an in-memory
+fake Google; nothing has run against real Google yet.
+
 🟡 **Automatic cloud backup (2026-11-19, P2 of Cloud Connect, prompt 267).** Apps → **Cloud & Backup**
 has an *Automatic backup* section: **Back up to** Off / iCloud (off by default), *Include heart-rate
 samples* (off), *Wi-Fi only* (on), *Back up now*, and *Restore from a cloud backup…*. The backup

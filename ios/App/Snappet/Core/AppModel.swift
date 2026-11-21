@@ -293,6 +293,10 @@ final class AppModel {
                                   network: { .wifi }, deviceName: "Test iPhone")
     }()
 
+    /// The Google account behind the Google Drive backup destination (prompt 268). Signed out, and
+    /// hidden entirely, unless the build carries a Google client ID.
+    let google = GoogleAccount.shared
+
     /// Set by `SnappetApp`: false while running on the in-memory fallback store (nothing to back up).
     var storeIsHealthy = true
 

@@ -58,6 +58,11 @@ targets:
         # are compiled/bundled automatically — only the icon name needs declaring).
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Snappet
+        # Google sign-in for the Google Drive backup destination (prompt 268). EMPTY = every Google
+        # control in the app is hidden. Paste the iOS OAuth client ID from the Google Cloud console
+        # (`<numbers>-<letters>.apps.googleusercontent.com`) — steps in docs/google-cloud-setup.md.
+        # It is not a secret (iOS clients have none), so committing it is fine.
+        GOOGLE_CLIENT_ID: ""
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"

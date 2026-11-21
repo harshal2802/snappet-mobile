@@ -45,7 +45,7 @@ final class CloudBackupService {
     }
 
     init(defaults: UserDefaults = .standard,
-         vaultFor: @escaping @Sendable (CloudBackupDestination) -> (any CloudVault)? = { $0 == .iCloud ? ICloudVault() : nil },
+         vaultFor: @escaping @Sendable (CloudBackupDestination) -> (any CloudVault)? = CloudBackupService.productionVault,
          keys: any CloudBackupKeyStore = KeychainBackupKeyStore(),
          network: @escaping @Sendable () async -> CloudBackupNetwork = { await CloudBackupNetworkProbe.current() },
          deviceName: String = UIDevice.current.name) {
@@ -66,6 +66,15 @@ final class CloudBackupService {
         }
     }
 
+    /// iCloud, or the signed-in Google account's Drive (prompt 268).
+    static let productionVault: @Sendable (CloudBackupDestination) -> (any CloudVault)? = { destination in
+        switch destination {
+        case .off: nil
+        case .iCloud: ICloudVault()
+        case .googleDrive: GoogleDriveVault.forSharedAccount()
+        }
+    }
+
     // MARK: - Settings
 
     func update(_ change: (inout CloudBackupSettings) -> Void) {
@@ -81,8 +90,9 @@ final class CloudBackupService {
     /// The vault backups are read from: the chosen destination, else iCloud (so a fresh install,
     /// where nothing is chosen yet, can still be offered an existing backup). Reading the person's
     /// own cloud folder sends nothing anywhere.
-    private var readVault: (any CloudVault)? {
-        vaultFor(settings.destination == .off ? .iCloud : settings.destination)
+    private var readVault: (any CloudVault)? { vaultFor(readDestination) }
+    var readDestination: CloudBackupDestination {
+        settings.destination == .off ? .iCloud : settings.destination
     }
 
     // MARK: - Back up
@@ -108,7 +118,9 @@ final class CloudBackupService {
                 lastUploadedHash: lastManifest?.contentHash, lastUploadAt: lastManifest?.createdAt,
                 now: .now, manual: manual))
             guard decision == .upload else {
-                if case let .skip(reason) = decision { note = CloudBackupStatusText.skipped(reason) }
+                if case let .skip(reason) = decision {
+                    note = CloudBackupStatusText.skipped(reason, destination: settings.destination)
+                }
                 if case .failed = phase, decision == .skip(.unchanged) { phase = .idle }
                 return
             }

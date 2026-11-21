@@ -78,6 +78,8 @@ final class BackupUITests: XCTestCase {
         XCTAssertFalse(app.switches["cloudBackup.includeHeartRate"].exists)
 
         destination.tap()
+        XCTAssertTrue(app.buttons["iCloud"].waitForExistence(timeout: 4))
+        XCTAssertFalse(app.buttons["Google Drive"].exists, "no Google client ID in this build: Google stays hidden")
         app.buttons["iCloud"].tap()
         XCTAssertTrue(app.staticTexts["Last backup"].waitForExistence(timeout: 10), "choosing a destination backs up")
         let heartRate = app.switches["cloudBackup.includeHeartRate"]
@@ -94,6 +96,36 @@ final class BackupUITests: XCTestCase {
         confirm.firstMatch.tap()
         let result = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Restored '")).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 10))
+    }
+
+    /// Prompt 268: with a Google client ID and a signed-in account, Google Drive is a backup
+    /// destination — it names the account and backs up. Google's own sign-in sheet can't be driven
+    /// from a test, so `-uiTestGoogleSignedIn` supplies a signed-in stand-in and the vault is the
+    /// local test folder; the real sign-in and Drive transfer are device-owed.
+    func testGoogleDriveDestinationNamesTheAccountAndBacksUp() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestSeedFestivalNight", "-uiTestCloudVault", "-uiTestCloudVaultReset",
+                               "-uiTestGoogleSignedIn"]
+        app.launch()
+        app.tabBars.buttons["Apps"].tap()
+        let open = app.buttons["suite.backup.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+
+        let destination = app.descendants(matching: .any)["cloudBackup.destination"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 6))
+        destination.tap()
+        let drive = app.buttons["Google Drive"]
+        XCTAssertTrue(drive.waitForExistence(timeout: 4))
+        drive.tap()
+
+        let account = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS 'tester@example.com' OR value CONTAINS 'tester@example.com'")).firstMatch
+        XCTAssertTrue(account.waitForExistence(timeout: 6), "the account is named")
+        XCTAssertTrue(app.buttons["google.signOut"].exists)
+        XCTAssertTrue(app.staticTexts["Last backup"].waitForExistence(timeout: 10), "choosing a destination backs up")
+        app.buttons["google.signOut"].tap()
+        XCTAssertTrue(app.buttons["google.signIn"].waitForExistence(timeout: 6), "signed out: the sign-in button returns")
     }
 
     /// The form is lazy: rows below the fold aren't in the tree until scrolled to.

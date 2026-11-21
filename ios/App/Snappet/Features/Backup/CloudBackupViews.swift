@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftData
 import SwiftUI
 
@@ -16,10 +17,17 @@ struct CloudBackupSection: View {
             Picker("Back up to", selection: destination) {
                 Text("Off").tag(CloudBackupDestination.off)
                 Text("iCloud").tag(CloudBackupDestination.iCloud)
+                // Only in a build that carries a Google client ID (prompt 268).
+                if app.google.isConfigured || backup.settings.destination == .googleDrive {
+                    Text("Google Drive").tag(CloudBackupDestination.googleDrive)
+                }
             }
             .disabled(storeIsFallback)
             .accessibilityIdentifier("cloudBackup.destination")
 
+            if backup.settings.destination == .googleDrive {
+                GoogleAccountRow { Task { await app.runCloudBackup(manual: true) } }
+            }
             if backup.settings.destination != .off {
                 statusRow
                 Toggle("Include heart-rate samples", isOn: includeHeartRate)
@@ -50,9 +58,11 @@ struct CloudBackupSection: View {
     private var footer: String {
         switch backup.settings.destination {
         case .off:
-            "Off: everything stays on this iPhone. Turn it on and Snappet keeps an encrypted copy of your records in your own iCloud, updated when things change."
-        case .iCloud:
-            (backup.settings.includeHeartRate
+            "Off: everything stays on this iPhone. Turn it on and Snappet keeps an encrypted copy of your records in your own cloud storage, updated when things change."
+        case .iCloud, .googleDrive:
+            (backup.settings.destination == .googleDrive
+                ? "Backups go to a private app folder in your Google Drive that only Snappet can open. " : "")
+            + (backup.settings.includeHeartRate
                 ? "Heart-rate samples are included in the encrypted copy. "
                 : "Heart-rate samples are left out of the copy; after a restore Snappet re-reads what Apple Health still has. ")
             + "Backups are encrypted on this iPhone before they leave it, with a key kept in your keychain. Photos and videos are not part of the backup."
@@ -95,6 +105,68 @@ struct CloudBackupSection: View {
     }
     private var wifiOnly: Binding<Bool> {
         Binding(get: { backup.settings.wifiOnly }, set: { new in backup.update { $0.wifiOnly = new } })
+    }
+}
+
+/// The Google account row under "Back up to: Google Drive" (prompt 268): sign in through the system
+/// browser sheet, or see who is signed in and sign out.
+struct GoogleAccountRow: View {
+    /// Run once sign-in succeeds (the first backup).
+    var onSignedIn: () -> Void = {}
+    @Environment(AppModel.self) private var app
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @State private var working = false
+    @State private var failure: String?
+
+    var body: some View {
+        if app.google.isSignedIn {
+            LabeledContent("Google account") {
+                Text(app.google.email ?? "Signed in").lineLimit(1).truncationMode(.middle)
+            }
+            .accessibilityIdentifier("google.account")
+            Button("Sign out of Google", role: .destructive) {
+                Task { await app.google.signOut() }
+            }
+            .accessibilityIdentifier("google.signOut")
+        } else {
+            Button {
+                signIn()
+            } label: {
+                HStack {
+                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.plus")
+                    if working { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(working || !app.google.isConfigured)
+            .accessibilityIdentifier("google.signIn")
+            if !app.google.isConfigured {
+                Text("Google Drive isn’t set up in this build.").font(.footnote).foregroundStyle(.secondary)
+            }
+            if let failure {
+                Label(failure, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.footnote)
+                    .accessibilityIdentifier("google.failure")
+            }
+        }
+    }
+
+    private func signIn() {
+        working = true
+        failure = nil
+        Task {
+            defer { working = false }
+            do {
+                let pending = try app.google.beginSignIn(scopes: [GoogleScope.driveAppData])
+                let callback = try await webAuthenticationSession.authenticate(
+                    using: pending.url, callback: .customScheme(pending.callbackScheme), additionalHeaderFields: [:])
+                try await app.google.finishSignIn(pending, callback: callback)
+                onSignedIn()
+            } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+                // Closing the sheet is not an error worth showing.
+            } catch GoogleAuthError.cancelled {
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -198,7 +270,7 @@ struct CloudRestoreOfferSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Snappet found a backup in your iCloud.")
+                Text("Snappet found a backup in your \(app.cloudBackup.readDestination.label).")
                     .font(.title3.weight(.medium)).foregroundStyle(SnappetColor.ink)
                 VStack(alignment: .leading, spacing: 10) {
                     LabeledContent("From", value: manifest.deviceName)
