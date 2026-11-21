@@ -86,7 +86,7 @@ enum CloudBackupPolicy {
     static let generationsKept = 3
 
     enum SkipReason: Equatable, Sendable {
-        case off, storeUnhealthy, noAccount, nothingToBackUp, unchanged, offline, waitingForWiFi, tooSoon
+        case off, storeUnhealthy, noAccount, nothingToBackUp, unchanged, offline, waitingForWiFi, tooSoon, sessionRunning
     }
     enum Decision: Equatable, Sendable { case upload, skip(SkipReason) }
 
@@ -105,6 +105,28 @@ enum CloudBackupPolicy {
         var manual = false
     }
 
+    /// What can be ruled out WITHOUT reading the store (prompt 279). Taking the snapshot reads every
+    /// record on the main thread, so an automatic run asks this first and stops here when it can.
+    /// "Back up now" skips the session rule (and the spacing rule, `isTooSoon`), nothing else.
+    static func precheck(settings: CloudBackupSettings, storeHealthy: Bool, sessionRunning: Bool,
+                         network: CloudBackupNetwork, manual: Bool) -> SkipReason? {
+        guard settings.destination != .off else { return .off }
+        guard storeHealthy else { return .storeUnhealthy }
+        if sessionRunning, !manual { return .sessionRunning }
+        switch network {
+        case .offline: return .offline
+        case .cellular where settings.wifiOnly: return .waitingForWiFi
+        default: return nil
+        }
+    }
+
+    /// The spacing rule on its own, so it too can be asked before the store is read. `lastUploadAt`
+    /// is nil when the last backup is no longer in the cloud — that one is replaced at once.
+    static func isTooSoon(lastUploadAt: Date?, now: Date, manual: Bool) -> Bool {
+        guard !manual, let last = lastUploadAt else { return false }
+        return now.timeIntervalSince(last) < minimumInterval && now >= last
+    }
+
     static func decide(_ input: Input) -> Decision {
         guard input.settings.destination != .off else { return .skip(.off) }
         guard input.storeHealthy else { return .skip(.storeUnhealthy) }
@@ -117,8 +139,7 @@ enum CloudBackupPolicy {
         case .cellular where input.settings.wifiOnly: return .skip(.waitingForWiFi)
         default: break
         }
-        if !input.manual, let last = input.lastUploadAt,
-           input.now.timeIntervalSince(last) < minimumInterval, input.now >= last {
+        if isTooSoon(lastUploadAt: input.lastUploadAt, now: input.now, manual: input.manual) {
             return .skip(.tooSoon)
         }
         return .upload
@@ -246,6 +267,7 @@ enum CloudBackupStatusText {
         case .nothingToBackUp: "Nothing to back up yet."
         case .offline: "Waiting for a connection."
         case .waitingForWiFi: "Waiting for Wi-Fi."
+        case .sessionRunning: "Paused while a session is running."
         }
     }
 

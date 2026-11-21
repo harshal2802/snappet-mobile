@@ -40,20 +40,27 @@ struct RootShell: View {
                             HouseholdSurfaces.shared.reconcile()
                             HouseholdSurfaces.shared.publishSoon()
                         }
-                        // Publish the first Today snapshot for the home-screen widgets (#81 Phase 1)
-                        // as soon as the store is up, so a widget added before the app is reopened
-                        // has data. Subsequent refreshes ride scenePhase below.
-                        WidgetSnapshotService.refresh(context: context)
+                        // Where to go comes first (prompt 279): everything in this task runs before the first
+                        // screen is drawn, and a fresh start behind a running workout should show the workout,
+                        // not wait on housekeeping.
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
                         uiTestReminderStart()   // prompt 265 (F13): UI tests only
+                        reopenRunningWorkout()   // prompt 279: a fresh start mid-workout returns to the workout
                         reconcileLiveActivities()   // prompt 198: no stale "session on" left on the Lock Screen
-                        RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)   // prompt 136
-                        SpotlightIndexer.reindex(context: context)   // #81 Phase 4
                         app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
-                        importWatchWorkouts()   // Apple Watch workouts → Clips (watch-workouts-clips P1)
-                        // Re-weight the highlight fusion from the user's own feedback log — used to
-                        // ride the retired Workout Reels module's bootstrap (highlights P3).
-                        app.recomputeFeedbackTuning()
+                        // Housekeeping nothing on screen waits for, once the first screen is up.
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            // The first Today snapshot for the home-screen widgets (#81 Phase 1), so a widget
+                            // added before the app is reopened has data. Later refreshes ride scenePhase below.
+                            WidgetSnapshotService.refresh(context: context)
+                            RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)   // prompt 136
+                            SpotlightIndexer.reindex(context: context)   // #81 Phase 4
+                            importWatchWorkouts()   // Apple Watch workouts → Clips (watch-workouts-clips P1)
+                            // Re-weight the highlight fusion from the user's own feedback log — used to
+                            // ride the retired Workout Reels module's bootstrap (highlights P3).
+                            app.recomputeFeedbackTuning()
+                        }
                         if Self.cloudBackupRuns {
                             Task(priority: .utility) {
                                 await app.checkCloudRestoreOffer()   // fresh install + a backup exists (prompt 267)
@@ -69,12 +76,14 @@ struct RootShell: View {
         // latest before we lose the foreground). Per-mutation refreshes (habit toggle, focus done)
         // land with the widget UI in Phase 2; scenePhase covers the read path now.
         // Automatic cloud backup (prompt 267): off unless the person chose a destination. A change
-        // is picked up when the app comes forward or leaves; the policy spaces the uploads.
+        // is picked up when the app comes forward; the policy spaces the uploads. Not on the way to
+        // the background (prompt 279): a backup cannot finish there, and starting one got the app
+        // closed while a session was on.
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active || phase == .background, Self.cloudBackupRuns else { return }
+            guard phase == .active, Self.cloudBackupRuns else { return }
             Task(priority: .utility) {
                 await app.runCloudBackup()
-                if phase == .active, !Self.isUITestLaunch { await app.runMediaVault() }   // clip copies (prompt 269)
+                if !Self.isUITestLaunch { await app.runMediaVault() }   // clip copies (prompt 269)
             }
         }
         // "Welcome back": a fresh install with a backup in the person's cloud is offered it once.
@@ -82,8 +91,15 @@ struct RootShell: View {
             CloudRestoreOfferSheet(manifest: manifest)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active || phase == .background {
+            // Leaving: capture the latest now. Returning: after the screen has settled (prompt 279) — the
+            // refresh reads the store on the main thread, and nothing on screen waits for it.
+            if phase == .background {
                 WidgetSnapshotService.refresh(context: context)
+            } else if phase == .active {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    WidgetSnapshotService.refresh(context: context)
+                }
             }
             app.householdSync.setForeground(phase == .active)   // sockets don't survive the background
             if phase == .active {
@@ -233,6 +249,18 @@ struct RootShell: View {
         app.routineReminders.pendingAction = .start(id)
     }
 
+    /// The app was closed behind a running workout and has just started again: open that workout's
+    /// screen (the Home "Resume" card's own route) unless a link already chose where to go.
+    private func reopenRunningWorkout() {
+        var running = FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.completedAt == nil },
+                                                      sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        running.fetchLimit = 1
+        let start = (try? context.fetch(running))?.first?.startedAt
+        guard SessionReturn.shouldReopen(runningStart: start, now: .now, alreadyRouted: !router.path.isEmpty) else { return }
+        router.pendingWorkoutResume = true
+        router.open(module: WorkoutTrackerModule.id)
+    }
+
     private func drainAppActions() {
         guard !Self.isUITestLaunch else { return }
         for action in AppActionInbox.drain() { dispatch(action) }
@@ -245,6 +273,9 @@ struct RootShell: View {
     private func importWatchWorkouts() {
         guard !Self.isUITestLaunch else { return }
         Task(priority: .utility) {
+            // Not behind a running session, and not during the return itself (prompt 279).
+            guard !app.sessionIsRunning() else { return }
+            try? await Task.sleep(for: .seconds(2))
             await app.reconcileWatchWorkouts()
             // After the import (it can add rows): stamp durable handles on live clips and re-link
             // any whose Photos identifier died (cloud-connect P1, prompt 265).

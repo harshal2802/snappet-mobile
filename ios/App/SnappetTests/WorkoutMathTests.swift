@@ -44,6 +44,23 @@ final class WorkoutMathTests: XCTestCase {
         XCTAssertEqual(top?.bestReps, 5)
     }
 
+    /// Prompt 279: the one-pass `topSets` answers exactly what `topSet` answers per exercise.
+    func testTopSetsInOnePassMatchesTopSetPerExercise() {
+        let history = [
+            session([exercise("bench", [set(10, 50)]), exercise("bench", [set(5, 120)]), exercise("ohp", [set(8, 40)])]),
+            session([exercise("bench", [set(6, 100)]), exercise("pullup", [set(12, nil)]), exercise("ohp", [set(8, 40)])]),
+        ]
+        let all = WorkoutMath.topSets(history: history)
+        XCTAssertEqual(Set(all.keys), ["bench", "ohp", "pullup"])
+        for id in all.keys {
+            let one = WorkoutMath.topSet(history: history, exerciseId: id)
+            XCTAssertEqual(all[id]?.bestKg, one?.bestKg, id)
+            XCTAssertEqual(all[id]?.bestReps, one?.bestReps, id)
+            XCTAssertEqual(all[id]?.date, one?.date, id)
+        }
+        XCTAssertEqual(all["pullup"]?.bestKg, 0, "bodyweight ranks, and reports no weight")
+    }
+
     // MARK: - Baseline
 
     func testTotalVolumeAcrossSessions() {

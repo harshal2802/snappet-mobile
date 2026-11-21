@@ -151,6 +151,25 @@ final class WorkoutBrokenLinksUITests: XCTestCase {
         XCTAssertTrue(minimize.exists, "still on the player")
     }
 
+    // MARK: Prompt 279 — a fresh start mid-workout
+
+    /// iOS closed the app behind a running workout; opening it again lands on the workout, not on Home.
+    func testAFreshStartWithAWorkoutRunningOpensTheWorkout() {
+        app.launchArguments += ["-uiTestSeedRunningWorkout"]
+        app.launchOnTestStore()
+        XCTAssertTrue(app.buttons["minimizeWorkout"].waitForExistence(timeout: 12), "the running workout's player opened")
+        shot("08-fresh-start-opens-running-workout")
+    }
+
+    /// A workout left unfinished for hours is offered on Home, not jumped to.
+    func testAFreshStartWithAForgottenWorkoutStaysOnHome() {
+        app.launchArguments += ["-uiTestSeedRunningWorkoutOld"]
+        app.launchOnTestStore()
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["minimizeWorkout"].waitForExistence(timeout: 4), "no jump into the player")
+        XCTAssertTrue(app.tabBars.buttons["Home"].isSelected)
+    }
+
     func testTheLiveActivityLinkNeverTearsDownAnOpenRecording() throws {
         try TestStoreGuard.skipLinkTestsOnDevice()
         app.launchArguments += ["-uiTestFreshStore", "-uiTestFakeCamera"]

@@ -196,6 +196,7 @@ struct SnappetApp: App {
         if seedRacketHR {
             RacketHRSeed.seedIfRequested(into: container.mainContext)
         }
+        RunningWorkoutSeed.seedIfRequested(into: container.mainContext)   // prompt 279; no-op without its argument
         if seedRacketVideos {
             RacketVideoSeed.seedIfRequested(into: container.mainContext)
         }

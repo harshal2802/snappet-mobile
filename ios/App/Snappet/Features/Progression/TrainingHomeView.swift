@@ -29,6 +29,9 @@ struct TrainingHomeView<Activity: View>: View {
     @AppStorage(BuddyDefaults.hatchedKey, store: BuddyDefaults.store) private var hatched = false
     @State private var showingPause = false
     @State private var showingSettings = false
+    /// Recent wins, worked out when the finished sessions change — not on every redraw (prompt 279: it walks the
+    /// whole history, and Home redraws every time the app comes forward).
+    @State private var recentWins: [TrainingHome.Win] = []
 
     private var inputs: [ScheduledRoutineInput] { RoutineScheduleSync.inputs(routines: routines, sessions: sessions) }
 
@@ -73,6 +76,7 @@ struct TrainingHomeView<Activity: View>: View {
             PauseSheet { RoutineScheduleSync.replan(context: context, reminders: app.routineReminders) }
         }
         .sheet(isPresented: $showingSettings) { SuiteSettingsView() }
+        .task(id: winsKey) { recentWins = TrainingHome.recentWins(sessions, now: now) }
         .accessibilityIdentifier("trainingHome")
     }
 
@@ -225,8 +229,15 @@ struct TrainingHomeView<Activity: View>: View {
 
     // MARK: Recent wins (→ the session)
 
+    /// What the wins depend on, cheaply: which sessions are finished, and the day (prompt 279).
+    private var winsKey: String {
+        let done = sessions.filter { $0.completedAt != nil }
+        let latest = done.compactMap(\.completedAt).max()?.timeIntervalSinceReferenceDate ?? 0
+        return "\(done.count)|\(latest)|\(Calendar.current.startOfDay(for: now).timeIntervalSinceReferenceDate)"
+    }
+
     @ViewBuilder private var wins: some View {
-        let wins = TrainingHome.recentWins(sessions, now: now)
+        let wins = recentWins
         if !wins.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Recent wins").snappetLabel().padding(.bottom, 4)

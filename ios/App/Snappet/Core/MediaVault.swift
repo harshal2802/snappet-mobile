@@ -666,13 +666,15 @@ enum MediaVaultFetch {
 }
 
 enum MediaVaultPolicy {
-    enum SkipReason: Equatable, Sendable { case off, notStarted, signedOut, needsPermission, offline, waitingForWiFi, needsPhotos }
+    enum SkipReason: Equatable, Sendable { case off, notStarted, signedOut, needsPermission, offline, waitingForWiFi, needsPhotos, sessionRunning }
     enum Decision: Equatable, Sendable { case run, skip(SkipReason) }
 
     static func decide(settings: MediaVaultSettings, signedIn: Bool, hasDrivePermission: Bool,
-                       network: CloudBackupNetwork) -> Decision {
+                       network: CloudBackupNetwork, sessionRunning: Bool = false) -> Decision {
         guard settings.keepCopies else { return .skip(.off) }
         guard settings.started else { return .skip(.notStarted) }
+        // Copying exports and uploads video: not while a session is running (prompt 279).
+        guard !sessionRunning else { return .skip(.sessionRunning) }
         guard signedIn else { return .skip(.signedOut) }
         guard hasDrivePermission else { return .skip(.needsPermission) }
         switch network {
@@ -816,6 +818,7 @@ enum MediaVaultText {
         case .offline: "Waiting for a connection."
         case .waitingForWiFi: "Waiting for Wi-Fi."
         case .needsPhotos: "Allow full access to Photos to copy clips."
+        case .sessionRunning: "Paused while a session is running."
         }
     }
 

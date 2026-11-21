@@ -12489,3 +12489,35 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
 - **Verified**: the script by `scripts/test_ci_ui_shard.py` (unittest, run in the new Linux `ui-selection` job) and
   `--check 8`; the workflow only by parsing and reading. The event handling (merge-commit diff, `before` fetch, the
   nightly skip query, labels, dispatch input) is checked by the first real runs.
+
+## 2026-11-21 — Cloud work waits for a running session; Wi-Fi only is enforced by the connection (prompt 279)
+
+- **Found on the phone the day cloud-connect merged**: warm phone during a session, the session screen gone after
+  leaving the app, copies continuing off Wi-Fi. Cause read from the code (no crash report: the phone was reachable
+  over Wi-Fi pairing only): the automatic backup snapshotted and hashed the whole store on the main thread on every
+  foreground AND background before deciding anything, a copy pass and a library scan ran on every return, and a
+  backup begun while backgrounding sat under a background task with no expiration handler.
+- **Rule**: while a session is running the app does no cloud work on its own. "Running" is the pure
+  `SessionQuietTime`: a session Live Activity is up, or the store has an unfinished session started within 12 h (so an
+  abandoned one cannot hold backups off forever). "Back up now" is exempt.
+- **Cheap checks first**: `CloudBackupPolicy.precheck` / `isTooSoon` run before `SnappetBackup.snapshot`. The
+  lost-backup rule (2026-11-20) is kept by asking the vault for its names before the spacing rule, not after.
+- **No backup on the way to the background**: it cannot finish there. `BackgroundTaskHold` ends its task on expiry.
+- **Wi-Fi only**: clip uploads carry `allowsExpensiveNetworkAccess = false` + `allowsCellularAccess = false`; the
+  between-clips check stays for the status line. Playback after "Play anyway" is untouched.
+- **A fresh start mid-workout opens the workout** (user's call, same day): `SessionReturn` — started within 4 h, and
+  no link already routed. Four hours rather than the quiet-time 12 so a forgotten workout does not hijack every
+  launch; Home's Resume card covers that. Gym sessions only; Kilter has its own recovery. Test seed
+  `-uiTestSeedRunningWorkout[Old]` is in both fresh-store lists.
+- **The slow return to a session was mostly old code, found by measuring**: a per-exercise walk of the whole history
+  in the Gym dashboard's records list (1.2 s a redraw at 417 sessions). `WorkoutMath.topSets` is the one-pass
+  equivalent of `topSet` (a test pins them equal). Records and recent rows are computed once per redraw rather
+  than cached in state, so an edited past session still shows at once. Home's wins ARE cached (keyed by finished
+  count, latest finish, day): an edit to an old session's sets can leave them stale until the next finish.
+- **Nothing the screen does not wait for runs during a return or before the first frame**: widget snapshot,
+  reminder replan, Spotlight, Watch import and feedback tuning run 2 s later; Home's clock only moves while Home
+  is the visible tab. The backup snapshot uses its own `ModelContext` off the main thread (the main context is
+  saved first).
+- **Open**: the backup upload holds the sealed file in memory (~200 MB on the user's phone); the Kilter Live Activity
+  has no tap link. Not verified on a phone yet.
+

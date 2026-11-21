@@ -31,6 +31,8 @@ final class MediaVaultTests: XCTestCase {
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .offline), .skip(.offline))
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .cellular), .skip(.waitingForWiFi))
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .wifi), .run)
+        XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .wifi,
+                                               sessionRunning: true), .skip(.sessionRunning), "no copying mid-session (prompt 279)")
         XCTAssertEqual(MediaVaultPolicy.decide(settings: .init(keepCopies: true, started: true, wifiOnly: false), signedIn: true,
                                                hasDrivePermission: true, network: .cellular), .run)
     }
@@ -781,6 +783,44 @@ final class MediaVaultServiceTests: XCTestCase {
         XCTAssertEqual(google.folderNames, ["Snappet Clips", "2026-05-28 20.26 Other"], "and creates no folder twice")
         XCTAssertEqual(library.exports, 2)
         XCTAssertEqual(google.count(of: "PATCH www.googleapis.com/drive/v3/files/"), 0, "and moves nothing: every copy is where it belongs")
+    }
+
+    // MARK: - Quiet during a session, and Wi-Fi only means it (prompt 279)
+
+    func testNothingIsCopiedWhileASessionIsRunning() async throws {
+        try addClip("L1", offset: 10, bytes: "one")
+        let vault = vaultOn()
+        await vault.runIfNeeded(context: container.mainContext, sessionRunning: { true })
+        XCTAssertTrue(google.driveFileNames.isEmpty)
+        XCTAssertEqual(google.count(of: "GET www.googleapis.com/drive"), 0, "not even a listing")
+        XCTAssertEqual(vault.note, "Paused while a session is running.")
+
+        await vault.runIfNeeded(context: container.mainContext, sessionRunning: { false })
+        XCTAssertEqual(google.driveFileNames.count, 1, "and it picks up once the session has ended")
+    }
+
+    func testACopyPassStopsWhenASessionStarts() async throws {
+        try addClip("L1", offset: 10, bytes: "one")
+        try addClip("L2", offset: 20, bytes: "two-two")
+        let vault = vaultOn()
+        var asked = 0
+        // Not running when the pass begins; running by the time the second clip's turn comes.
+        await vault.runIfNeeded(context: container.mainContext, sessionRunning: { asked += 1; return asked > 1 })
+        XCTAssertEqual(google.driveFileNames.count, 1, "the clip in flight finishes, the next one waits")
+        XCTAssertEqual(vault.phase, .idle)
+        XCTAssertEqual(vault.note, "Paused while a session is running.")
+    }
+
+    func testWiFiOnlyCopiesAreBarredFromCellularAtTheConnection() async throws {
+        try addClip("L1", offset: 10, bytes: "one")
+        let vault = vaultOn()
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(google.putsBarredFromCellular, [true], "an upload begun on Wi-Fi cannot finish on mobile data")
+
+        try addClip("L2", offset: 20, bytes: "two-two")
+        vault.update { $0.wifiOnly = false }
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(google.putsBarredFromCellular, [true, false])
     }
 
     // MARK: - Folder layout (prompt 270)

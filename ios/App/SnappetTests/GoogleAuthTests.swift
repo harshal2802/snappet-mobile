@@ -166,6 +166,8 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     private var pollsLeft = 0
     private(set) var refreshCount = 0
     private(set) var requests: [String] = []
+    /// For every PUT (the bytes of an upload): was it barred from cellular and hotspots?
+    private(set) var putsBarredFromCellular: [Bool] = []
     var grantedScope = "openid email " + GoogleScope.driveAppData
     var refreshRevoked = false
     var pageSize = 1000
@@ -236,6 +238,7 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     private func handle(_ request: URLRequest) -> (Data, HTTPURLResponse) {
         let url = request.url!, method = request.httpMethod ?? "GET"
         requests.append("\(method) \(url.host ?? "")\(url.path)")
+        if method == "PUT" { putsBarredFromCellular.append(!request.allowsExpensiveNetworkAccess && !request.allowsCellularAccess) }
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func param(_ name: String) -> String? { query.first { $0.name == name }?.value }
 

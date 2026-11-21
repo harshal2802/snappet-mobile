@@ -250,6 +250,65 @@ final class CloudBackupServiceTests: XCTestCase {
         XCTAssertEqual(try vaultNames().count, 2)
     }
 
+    /// Phone finding (2026-11-21, prompt 279): with a session on, the app got warm and was closed in
+    /// the background. An automatic run during a session uploads nothing; "Back up now" still works.
+    func testNothingIsBackedUpOnItsOwnWhileASessionIsRunning() async throws {
+        try seed()
+        let backup = service()
+        backup.update { $0.destination = .iCloud }
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true, sessionRunning: true)
+        XCTAssertTrue(try vaultNames().isEmpty)
+        XCTAssertEqual(backup.note, "Paused while a session is running.")
+
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true, manual: true, sessionRunning: true)
+        XCTAssertEqual(try vaultNames().count, 2, "the person asked for this one")
+    }
+
+    func testWhatCanBeRuledOutBeforeTheStoreIsRead() {
+        var on = CloudBackupSettings()
+        on.destination = .iCloud
+        func check(_ settings: CloudBackupSettings, healthy: Bool = true, session: Bool = false,
+                   network: CloudBackupNetwork = .wifi, manual: Bool = false) -> CloudBackupPolicy.SkipReason? {
+            CloudBackupPolicy.precheck(settings: settings, storeHealthy: healthy, sessionRunning: session,
+                                       network: network, manual: manual)
+        }
+        XCTAssertEqual(check(CloudBackupSettings()), .off)
+        XCTAssertEqual(check(on, healthy: false), .storeUnhealthy)
+        XCTAssertEqual(check(on, session: true), .sessionRunning)
+        XCTAssertNil(check(on, session: true, manual: true))
+        XCTAssertEqual(check(on, network: .offline), .offline)
+        XCTAssertEqual(check(on, network: .cellular), .waitingForWiFi)
+        XCTAssertEqual(check(on, network: .cellular, manual: true), .waitingForWiFi, "Back up now still honors Wi-Fi only")
+        XCTAssertNil(check(on))
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertTrue(CloudBackupPolicy.isTooSoon(lastUploadAt: now.addingTimeInterval(-60), now: now, manual: false))
+        XCTAssertFalse(CloudBackupPolicy.isTooSoon(lastUploadAt: now.addingTimeInterval(-60), now: now, manual: true))
+        XCTAssertFalse(CloudBackupPolicy.isTooSoon(lastUploadAt: nil, now: now, manual: false), "a lost backup is replaced at once")
+        XCTAssertFalse(CloudBackupPolicy.isTooSoon(lastUploadAt: now.addingTimeInterval(-CloudBackupPolicy.minimumInterval - 1),
+                                                   now: now, manual: false))
+    }
+
+    func testASessionIsRunningWhileItsLiveActivityIsUpOrItStartedRecently() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertFalse(SessionQuietTime.isRunning(unfinishedStarts: [], liveActivityRunning: false, now: now))
+        XCTAssertTrue(SessionQuietTime.isRunning(unfinishedStarts: [], liveActivityRunning: true, now: now))
+        XCTAssertTrue(SessionQuietTime.isRunning(unfinishedStarts: [now.addingTimeInterval(-3600)], liveActivityRunning: false, now: now))
+        XCTAssertFalse(SessionQuietTime.isRunning(unfinishedStarts: [now.addingTimeInterval(-3 * 86_400)],
+                                                  liveActivityRunning: false, now: now),
+                       "a session abandoned days ago does not hold backups off forever")
+    }
+
+    func testAFreshStartReturnsToAWorkoutLeftRecently() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertTrue(SessionReturn.shouldReopen(runningStart: now.addingTimeInterval(-40 * 60), now: now, alreadyRouted: false))
+        XCTAssertFalse(SessionReturn.shouldReopen(runningStart: nil, now: now, alreadyRouted: false))
+        XCTAssertFalse(SessionReturn.shouldReopen(runningStart: now.addingTimeInterval(-40 * 60), now: now, alreadyRouted: true),
+                       "a link that started the app decides where it goes")
+        XCTAssertFalse(SessionReturn.shouldReopen(runningStart: now.addingTimeInterval(-6 * 3600), now: now, alreadyRouted: false),
+                       "a workout forgotten for hours stays on Home's Resume card")
+    }
+
     func testAnUnreadableBackupIsNamedNotReportedAsNoBackups() async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data("not json".utf8).write(to: folder.appendingPathComponent(

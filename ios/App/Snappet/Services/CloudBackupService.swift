@@ -100,28 +100,45 @@ final class CloudBackupService {
     // MARK: - Back up
 
     /// Upload a backup if the policy says so. Safe to call often (launch, foreground, background).
-    func runIfNeeded(context: ModelContext, storeHealthy: Bool, manual: Bool = false) async {
+    func runIfNeeded(context: ModelContext, storeHealthy: Bool, manual: Bool = false,
+                     sessionRunning: Bool = false) async {
         guard settings.destination != .off, !running, let vault = vaultFor(settings.destination) else { return }
         running = true
         defer { running = false }
-        let background = UIApplication.shared.beginBackgroundTask(withName: "snappet.cloudbackup")
-        defer { UIApplication.shared.endBackgroundTask(background) }
+        // Everything that can be ruled out without reading the store, first (prompt 279): the snapshot
+        // below reads every record on the main thread.
+        if let reason = CloudBackupPolicy.precheck(settings: settings, storeHealthy: storeHealthy,
+                                                   sessionRunning: sessionRunning, network: await network(),
+                                                   manual: manual) {
+            note = CloudBackupStatusText.skipped(reason, destination: settings.destination)
+            return
+        }
+        // "Unchanged since the last backup" and "too soon" only hold while that backup is still in
+        // the cloud: if it is gone (removed there, or it never arrived), this run must upload again.
+        let accountAvailable = await vault.isAvailable()
+        var last = lastManifest
+        if let known = last, accountAvailable, let names = try? await vault.names(),
+           !CloudBackupPolicy.isStored(known, in: names) {
+            cloudBackupLog.error("cloud backup: the last backup is no longer in the cloud — backing up again")
+            last = nil
+        }
+        guard !CloudBackupPolicy.isTooSoon(lastUploadAt: last?.createdAt, now: .now, manual: manual) else { return }
+        // Finish an upload the person walks away from; when iOS calls time, give the time back
+        // rather than be closed for overstaying.
+        let hold = BackgroundTaskHold("snappet.cloudbackup")
+        defer { hold.end() }
 
         do {
-            let file = try SnappetBackup.snapshot(of: context)   // main context → on the main actor
+            // Read on a context of its own, off the main thread (prompt 279): on a real store the
+            // snapshot takes seconds, and on the main context it froze the app each time it came
+            // forward. Saved first, so the other context sees what this one holds.
+            try? context.save()
+            let container = context.container
             let includeHeartRate = settings.includeHeartRate
             let prepared = try await Task.detached(priority: .utility) {
-                try CloudBackupPayload.prepare(file, includeHeartRate: includeHeartRate)
+                let file = try SnappetBackup.snapshot(of: ModelContext(container))
+                return try CloudBackupPayload.prepare(file, includeHeartRate: includeHeartRate)
             }.value
-            // "Unchanged since the last backup" only holds while that backup is still in the cloud:
-            // if it is gone (removed there, or it never arrived), this run must upload again.
-            let accountAvailable = await vault.isAvailable()
-            var last = lastManifest
-            if let known = last, accountAvailable, let names = try? await vault.names(),
-               !CloudBackupPolicy.isStored(known, in: names) {
-                cloudBackupLog.error("cloud backup: the last backup is no longer in the cloud — backing up again")
-                last = nil
-            }
             let decision = CloudBackupPolicy.decide(.init(
                 settings: settings, storeHealthy: storeHealthy,
                 accountAvailable: accountAvailable, network: await network(),
@@ -265,5 +282,24 @@ final class CloudBackupService {
             problems.append("The cloud folder has \(names.count) file(s) but no backup list.")
         }
         return (out.sorted(by: CloudBackupPolicy.newestFirst), problems)
+    }
+}
+
+/// A background-task assertion that ends itself when iOS says time is up (prompt 279). One that is
+/// never ended gets the app closed, and with it whatever screen the person was on.
+@MainActor
+final class BackgroundTaskHold {
+    private var id = UIBackgroundTaskIdentifier.invalid
+
+    init(_ name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }

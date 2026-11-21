@@ -73,7 +73,10 @@ struct GoogleDriveMediaStore: Sendable {
     }
 
     /// Upload a file (streamed from disk); returns the new Drive file id.
-    func upload(_ file: URL, name: String, folderID: String, properties: [String: String]) async throws -> String {
+    /// `wifiOnly`: the bytes may not travel over cellular or a hotspot, so an upload that began on
+    /// Wi-Fi stops when the Wi-Fi goes instead of finishing on mobile data (prompt 279).
+    func upload(_ file: URL, name: String, folderID: String, properties: [String: String],
+                wifiOnly: Bool = false) async throws -> String {
         let byteCount = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
         let (_, start) = try await google.send(GoogleDriveAPI.startUpload(name: name, byteCount: byteCount, parent: folderID,
                                                                           appProperties: properties))
@@ -82,6 +85,10 @@ struct GoogleDriveMediaStore: Sendable {
         }
         var put = GoogleDriveAPI.finishUpload(session: session, data: Data())
         put.httpBody = nil
+        if wifiOnly {
+            put.allowsExpensiveNetworkAccess = false
+            put.allowsCellularAccess = false
+        }
         let (data, _) = try await google.upload(put, fromFile: file)
         guard let created = try? JSONDecoder().decode(GoogleDriveFile.self, from: data) else { throw GoogleAuthError.badResponse }
         return created.id
@@ -790,11 +797,18 @@ final class MediaVaultService {
     }
 
     /// Copy a batch of clips that are on this phone and not in the vault yet. Cheap when off.
-    func runIfNeeded(context: ModelContext) async {
+    /// Copies wait for the running session to end (prompt 279); the status line says so.
+    func sayPausedForSession() {
+        guard !running else { return }
+        note = MediaVaultText.skipped(.sessionRunning)
+    }
+
+    /// `sessionRunning` is asked before the pass and again before every clip (prompt 279).
+    func runIfNeeded(context: ModelContext, sessionRunning: () -> Bool = { false }) async {
         guard settings.keepCopies, settings.started, !running else { return }
         let decision = MediaVaultPolicy.decide(settings: settings, signedIn: account.isSignedIn(),
                                                hasDrivePermission: account.grants(GoogleScope.driveFile),
-                                               network: await network())
+                                               network: await network(), sessionRunning: sessionRunning())
         guard decision == .run else {
             if case let .skip(reason) = decision { note = MediaVaultText.skipped(reason) }
             return
@@ -825,10 +839,11 @@ final class MediaVaultService {
             var failed = 0, failedInARow = 0
             for (done, clip) in batch.enumerated() {
                 guard settings.keepCopies else { break }   // switched off mid-pass: pause here
-                // A long pass can outlive the Wi-Fi it started on.
+                // A long pass can outlive the Wi-Fi it started on, and a session can start during it.
                 if done > 0, case let .skip(reason) = MediaVaultPolicy.decide(
                     settings: settings, signedIn: account.isSignedIn(),
-                    hasDrivePermission: account.grants(GoogleScope.driveFile), network: await network()) {
+                    hasDrivePermission: account.grants(GoogleScope.driveFile), network: await network(),
+                    sessionRunning: sessionRunning()) {
                     phase = .idle
                     note = MediaVaultText.skipped(reason)
                     return
@@ -838,7 +853,8 @@ final class MediaVaultService {
                     defer { try? FileManager.default.removeItem(at: exported.url) }
                     let bytes = (try? FileManager.default.attributesOfItem(atPath: exported.url.path)[.size] as? NSNumber)?.int64Value ?? 0
                     let entry = try await put(exported.url, fileExtension: exported.fileExtension, rowID: clip.rowID,
-                                              byteCount: bytes, placement: placements[clip.rowID], tree: &tree)
+                                              byteCount: bytes, placement: placements[clip.rowID], tree: &tree,
+                                              wifiOnly: settings.wifiOnly)
                     var next = index
                     next.insert(entry)
                     setIndex(next)
@@ -866,14 +882,16 @@ final class MediaVaultService {
     /// Upload one clip's bytes to its place. With no placement (the clip is unknown to the store)
     /// it goes to the root under its id and is left unplaced, so a later pass files it.
     private func put(_ file: URL, fileExtension: String, rowID: UUID, byteCount: Int64,
-                       placement: MediaVaultPlacement?, tree: inout MediaVaultFolderTree) async throws -> MediaVaultEntry {
+                       placement: MediaVaultPlacement?, tree: inout MediaVaultFolderTree,
+                       wifiOnly: Bool = false) async throws -> MediaVaultEntry {
         let name = placement?.fileName(fileExtension: fileExtension)
             ?? MediaVaultNaming.fileName(rowID: rowID, fileExtension: fileExtension)
         let folder = try await ensureFolder(placement?.folders ?? [], tree: &tree)
         let md5 = try? await MediaVaultHash.md5(of: file)   // without it the copy is measured again before a free-up
         let fileID = try await store.upload(file, name: name, folderID: folder,
                                             properties: MediaVaultTag.properties(rowID: rowID, stamp: placement?.stamp,
-                                                                                 bytes: byteCount, md5: md5))
+                                                                                 bytes: byteCount, md5: md5),
+                                            wifiOnly: wifiOnly)
         return MediaVaultEntry(rowID: rowID, fileID: fileID, name: name, byteCount: byteCount,
                                parentID: folder, stamp: placement?.stamp, addedAt: .now, sentBytes: byteCount, sentMD5: md5)
     }

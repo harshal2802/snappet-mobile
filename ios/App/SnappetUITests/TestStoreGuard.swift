@@ -19,6 +19,8 @@ enum TestStoreGuard {
         "-uiTestSeedFestivalLineup",
         "-uiTestSeedFestivalNight",
         "-uiTestSeedFestivalPlan",
+        "-uiTestSeedRunningWorkout",
+        "-uiTestSeedRunningWorkoutOld",
     ]
     /// `UITestStore.markerIdentifier`.
     static let markerIdentifier = "uiTest.freshStore"
