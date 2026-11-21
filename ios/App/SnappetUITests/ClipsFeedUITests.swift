@@ -93,6 +93,31 @@ import XCTest
                        "without full Photos access an unresolvable id must not be reported as missing")
     }
 
+    /// Prompt 266: clips whose footage is gone surface as ONE quiet row; Review opens the sheet that
+    /// lists them by session with the pick-from-this-iPhone action; ✕ dismisses the row. (The pick +
+    /// verify round trip needs a real library — device-owed; the planner is unit-tested.)
+    func testMissingClipsNoticeOpensTheRelinkSheetAndDismisses() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight", "-uiTestAssumeMissingClips"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+
+        let notice = app.descendants(matching: .any)["clips.missing"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 15), "missing clips → the notice row")
+        XCTAssertTrue(app.staticTexts["3 clips aren’t on this phone"].exists)
+
+        app.buttons["clips.missing.review"].tap()
+        XCTAssertTrue(app.navigationBars["Find 3 missing clips"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.buttons["clips.missing.pick"].exists, "the one way back: pick from this iPhone")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "clips.missing.row").count, 3)
+        app.buttons["clips.missing.done"].tap()
+
+        XCTAssertTrue(notice.waitForExistence(timeout: 6))
+        app.buttons["clips.missing.dismiss"].tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: notice)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 5), .completed, "✕ puts the notice away")
+    }
+
     /// Festival prompt 03: the seeded night's auto-tagged clip surfaces in Clips as an
     /// artist·stage post behind the ONE new 🎪 Festival chip. (Poster pixels need real Photos
     /// assets — device-owed; the post card + chip behavior are what the simulator can prove.)

@@ -50,6 +50,7 @@ struct ClipMediaSurface: View {
         return "\(clip.id)-\(Int(played.start * 100))-\(Int(played.span * 100))"
     }
 
+    @Environment(\.mediaRelinkRequest) private var relinkRequest
     @State private var player: AVPlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
@@ -151,6 +152,15 @@ struct ClipMediaSurface: View {
                 // The session keeps its record, heart rate and stats; only the footage is gone.
                 Text("This \(clip.kind == "video" ? "video" : "photo") was removed from Photos")
                     .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                // Only where the host can present the relink sheet (the Clips feed) — prompt 266.
+                if let relinkRequest {
+                    Button("Find clip") { relinkRequest.isPresented = true }
+                        .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(.white.opacity(0.16), in: Capsule())
+                        .padding(.top, 6)
+                        .accessibilityIdentifier("feed.media.findClip")
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

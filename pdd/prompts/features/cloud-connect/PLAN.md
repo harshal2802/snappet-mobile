@@ -25,7 +25,7 @@ initiative makes clips survive those events and gives the store an optional clou
 | # | Prompt | What | Leaves the phone? |
 |---|---|---|---|
 | P1 | `265-ios-media-link-resilience.md` | Stamp cloud identifier + fingerprint on every clip; re-link dead identifiers; "Not on this phone" state; Studio opens iCloud-offloaded originals | No |
-| P1b | (next) | Manual relink: missing-clip summary + "Find clip" via the system picker, verified against the fingerprint | No |
+| P1b | `266-ios-manual-relink.md` | Missing-clip notice in Clips + "Find missing clips" sheet: pick footage from this iPhone, verified against the fingerprint | No |
 | P2 | (later) | Automatic encrypted backup of the `SnappetBackup` file to iCloud | **Yes — needs a named exception to the on-device-only rule** |
 | P3 | (later) | Google sign-in + Drive backup (`CloudVault` second implementation) | Yes |
 | P4 | (later) | Opt-in copies of session clips (the vault) + Google Photos Picker relink | Yes |

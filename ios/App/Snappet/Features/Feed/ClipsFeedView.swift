@@ -84,6 +84,9 @@ struct ClipsFeedView: View {
     @State private var playback = ClipFeedPlayback()
     /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
     @State private var showGrid = false
+    /// "Find missing clips" (prompt 266).
+    @State private var relink = MediaRelinkRequest()
+    @AppStorage("clips.missing.dismissedAtCount") private var missingDismissedAtCount = 0
     @State private var scrollTarget: String?
     /// Favorite reactions (prompt 88) — `FeedReaction` rows keyed by clip, so they're backed up and
     /// survive regrouping (prompt 162). Bound to the context in `rebuildFeed`.
@@ -180,6 +183,14 @@ struct ClipsFeedView: View {
                                 if showsHealthOffer {
                                     ClipsHealthOfferCard(onConnect: connectHealth,
                                                          onDismiss: { healthOfferResolved = true })
+                                }
+                                // Footage that is no longer on this phone (prompt 266): one quiet row,
+                                // back only when MORE clips go missing than were dismissed.
+                                if MissingClipsNotice.shouldShow(count: app.mediaLinks.missing.count,
+                                                                 dismissedAtCount: missingDismissedAtCount) {
+                                    ClipsMissingCard(count: app.mediaLinks.missing.count,
+                                                     onReview: { relink.isPresented = true },
+                                                     onDismiss: { missingDismissedAtCount = app.mediaLinks.missing.count })
                                 }
                                 // Weekly Highlight Reel hero (highlights P4): offered over the composed
                                 // posts (pure, cheap) once this week has ≥2 video clips; opens the
@@ -379,6 +390,9 @@ struct ClipsFeedView: View {
             .sheet(isPresented: $showStyle) {
                 ClipOverlayStyleSheet(store: overlayStore, preview: stylePreviewInput)
             }
+            .sheet(isPresented: $relink.isPresented) { MediaRelinkSheet() }
+            // A missing clip's placeholder gets a "Find clip" button that opens the same sheet.
+            .environment(\.mediaRelinkRequest, relink)
             .sheet(isPresented: $showGrid) {
                 // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
                 // The same posts, chips and filter as the feed (prompt 173) — the grid and the feed agree.

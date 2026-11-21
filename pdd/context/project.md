@@ -78,6 +78,12 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟡 **Manual relink (2026-11-19, P1b of Cloud Connect, prompt 266).** Clips whose footage is gone
+show as one row in Clips ("N clips aren’t on this phone") opening **Find missing clips**: the list
+by session plus "Pick from this iPhone". Each pick is verified against the clip's fingerprint and
+attached only on a unique match. Unit + simulator UI tests green; the real pick → attach round trip
+is device-owed.
+
 🟡 **Media link resilience (2026-11-19, `pdd/prompts/features/cloud-connect/`, P1 of Cloud Connect).**
 Clips no longer depend on a single phone's PHAsset `localIdentifier`: `MediaLinkService` stamps a
 cross-device `cloudIdentifier` + fingerprint on every `SessionMedia` while its asset resolves, and

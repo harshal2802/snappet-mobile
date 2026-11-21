@@ -221,3 +221,202 @@ enum MediaLinkPlanner {
         return s
     }
 }
+
+// MARK: - Manual relink (cloud-connect P1b, prompt 266) — the PURE core
+//
+// The automatic pass above can only re-link what it can find unaided. When it can't, the person
+// picks the footage themselves (system photo picker; Google's picker arrives in P4). A hand pick is
+// still VERIFIED against what Snappet remembers about the clip: a pick that doesn't match a missing
+// clip is reported, never silently attached — the wrong footage under someone's heart-rate overlay
+// is worse than a clip that stays missing.
+
+/// A clip whose Photos asset is gone, as the "Find missing clips" sheet lists it.
+struct MissingClip: Identifiable, Equatable, Sendable {
+    /// The `SessionMedia.id`.
+    let id: UUID
+    let localIdentifier: String
+    let isVideo: Bool
+    /// When it was shot, if known (stamped fingerprint, else `session.startedAt + offsetSec`).
+    let capturedAt: Date?
+    let durationSec: Double?
+    /// The session it is filed under ("Bouldering", "Kilter Board", a festival name…).
+    let sessionTitle: String?
+}
+
+/// What happened to one hand-picked asset.
+enum MediaRelinkVerdict: Equatable, Sendable {
+    /// Attached to these missing rows (more than one when the same clip is filed in two sessions).
+    case attached(rowIDs: [UUID])
+    /// Doesn't match any missing clip's capture time / kind / length.
+    case noMatch
+    /// Matches two different missing clips equally, or ties with another pick — not guessed.
+    case ambiguous
+    /// Already the footage of a clip that is not missing.
+    case alreadyInUse
+}
+
+enum MediaRelinkPlanner {
+    struct Result: Equatable, Sendable {
+        /// missing row id → the picked asset it should now point at.
+        var relinks: [UUID: String] = [:]
+        /// picked asset identifier → what happened to it.
+        var verdicts: [String: MediaRelinkVerdict] = [:]
+
+        var attachedRowCount: Int { relinks.count }
+        var unmatchedPickCount: Int {
+            verdicts.values.filter { if case .attached = $0 { false } else { true } }.count
+        }
+    }
+
+    /// Match hand-picked assets to missing rows. `owned` = identifiers already used by live rows.
+    /// Deterministic (order of `missing` / `picks` does not matter).
+    static func assign(missing: [MediaLinkRow], picks: [MediaLinkCandidate],
+                       owned: Set<String>) -> Result {
+        var result = Result()
+        var usable: [MediaLinkCandidate] = []
+        var seen = Set<String>()
+        for pick in picks.sorted(by: { $0.localIdentifier < $1.localIdentifier })
+        where seen.insert(pick.localIdentifier).inserted {
+            if owned.contains(pick.localIdentifier) {
+                result.verdicts[pick.localIdentifier] = .alreadyInUse
+            } else {
+                usable.append(pick)
+            }
+        }
+
+        // One decision per dead identifier — rows sharing it are the same physical clip filed twice.
+        var groups: [String: [MediaLinkRow]] = [:]
+        for row in missing { groups[row.localIdentifier, default: []].append(row) }
+
+        // Each dead identifier names its single best pick (a tie between picks is no match)…
+        var claims: [String: [(dead: String, score: Int)]] = [:]
+        var contested = Set<String>()
+        for dead in groups.keys.sorted() {
+            guard let row = groups[dead]?.min(by: { $0.id.uuidString < $1.id.uuidString }),
+                  let want = MediaLinkPlanner.searchFingerprint(for: row) else { continue }
+            let scored = usable.compactMap { pick in
+                MediaLinkMatcher.score(want: want, have: pick.fingerprint).map { (pick.localIdentifier, $0) }
+            }
+            guard let top = scored.map(\.1).max() else { continue }
+            let best = scored.filter { $0.1 == top }
+            if best.count == 1 {
+                claims[best[0].0, default: []].append((dead: dead, score: top))
+            } else {
+                best.forEach { contested.insert($0.0) }
+            }
+        }
+        // …and each pick goes to the single dead identifier that wants it most (a tie is no match).
+        for pick in usable {
+            let id = pick.localIdentifier
+            let wanted = claims[id] ?? []
+            guard let top = wanted.map(\.score).max() else {
+                result.verdicts[id] = contested.contains(id) ? .ambiguous : .noMatch
+                continue
+            }
+            let winners = wanted.filter { $0.score == top }
+            guard winners.count == 1, let rows = groups[winners[0].dead] else {
+                result.verdicts[id] = .ambiguous
+                continue
+            }
+            let ids = rows.map(\.id).sorted { $0.uuidString < $1.uuidString }
+            ids.forEach { result.relinks[$0] = id }
+            result.verdicts[id] = .attached(rowIDs: ids)
+        }
+        return result
+    }
+}
+
+/// Pure wording + grouping for the missing-clips notice and sheet (prompt 266).
+enum MissingClipsNotice {
+    static func title(count: Int) -> String {
+        count == 1 ? "1 clip isn’t on this phone" : "\(count.formatted()) clips aren’t on this phone"
+    }
+
+    static func sheetTitle(count: Int) -> String {
+        switch count {
+        case 0: "Missing clips"
+        case 1: "Find 1 missing clip"
+        default: "Find \(count.formatted()) missing clips"
+        }
+    }
+
+    /// Show the feed notice? Dismissing remembers the count at that moment; the notice returns only
+    /// when MORE clips are missing than the person already waved away.
+    static func shouldShow(count: Int, dismissedAtCount: Int) -> Bool {
+        count > 0 && count > dismissedAtCount
+    }
+
+    /// Clips of one session on one day.
+    struct Group: Identifiable, Equatable, Sendable {
+        let id: String
+        let title: String
+        let clips: [MissingClip]
+    }
+
+    /// Group by session title + calendar day, keeping the input order (newest first).
+    static func groups(_ clips: [MissingClip], calendar: Calendar = .current,
+                       locale: Locale = .current) -> [Group] {
+        var order: [String] = []
+        var buckets: [String: (title: String, clips: [MissingClip])] = [:]
+        for clip in clips {
+            let day = clip.capturedAt.map { calendar.startOfDay(for: $0) }
+            let dayText = day.map {
+                $0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, calendar: calendar,
+                                        timeZone: calendar.timeZone))
+            }
+            let name = clip.sessionTitle?.trimmingCharacters(in: .whitespaces)
+            let title = [name?.isEmpty == false ? name : nil, dayText].compactMap { $0 }.joined(separator: " · ")
+            let key = "\(name ?? "")|\(day?.timeIntervalSinceReferenceDate ?? -1)"
+            if buckets[key] == nil {
+                order.append(key)
+                buckets[key] = (title.isEmpty ? "Unknown session" : title, [])
+            }
+            buckets[key]?.clips.append(clip)
+        }
+        return order.compactMap { key in buckets[key].map { Group(id: key, title: $0.title, clips: $0.clips) } }
+    }
+
+    /// "7:31 PM · 0:14" / "7:31 PM · Photo" / "Video · 0:14" when the time is unknown.
+    static func line(for clip: MissingClip, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        var parts: [String] = []
+        if let at = clip.capturedAt {
+            parts.append(at.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar,
+                                               timeZone: calendar.timeZone)))
+        } else {
+            parts.append(clip.isVideo ? "Video" : "Photo")
+        }
+        if clip.isVideo, let seconds = clip.durationSec, seconds > 0 {
+            let total = Int(seconds.rounded())
+            parts.append("\(total / 60):" + String(format: "%02d", total % 60))
+        } else if clip.capturedAt != nil {
+            parts.append(clip.isVideo ? "Video" : "Photo")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The plain-language result of one round of picking.
+    struct Outcome: Equatable, Sendable {
+        let attached: Int
+        let unmatched: Int
+
+        init(attached: Int, unmatched: Int) { self.attached = attached; self.unmatched = unmatched }
+
+        /// `picked` = how many the person chose; any that could not even be read count as unmatched.
+        init(result: MediaRelinkPlanner.Result, picked: Int) {
+            let matchedPicks = result.verdicts.values.filter { if case .attached = $0 { true } else { false } }.count
+            self.init(attached: result.attachedRowCount, unmatched: max(0, picked - matchedPicks))
+        }
+
+        var message: String {
+            let found = attached == 1 ? "1 clip found" : "\(attached) clips found"
+            let missed = unmatched == 1 ? "1 pick didn’t match a missing clip"
+                                        : "\(unmatched) picks didn’t match a missing clip"
+            switch (attached > 0, unmatched > 0) {
+            case (true, true): return "\(found) · \(missed)"
+            case (true, false): return found
+            case (false, true): return unmatched == 1 ? "That pick didn’t match a missing clip" : "None of those matched a missing clip"
+            case (false, false): return "Nothing was picked"
+            }
+        }
+    }
+}
