@@ -262,9 +262,20 @@ struct RootShell: View {
                                                       sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
         running.fetchLimit = 1
         let start = (try? context.fetch(running))?.first?.startedAt
-        guard SessionReturn.shouldReopen(runningStart: start, now: .now, alreadyRouted: !router.path.isEmpty) else { return }
-        router.pendingWorkoutResume = true
-        router.open(module: WorkoutTrackerModule.id)
+        var board = FetchDescriptor<KilterSession>(predicate: #Predicate { $0.endedAt == nil },
+                                                   sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        board.fetchLimit = 1
+        let boardStart = (try? context.fetch(board))?.first?.startedAt
+        switch SessionReturn.destination(workoutStart: start, kilterStart: boardStart, now: .now,
+                                         alreadyRouted: !router.path.isEmpty) {
+        case .workout:
+            router.pendingWorkoutResume = true
+            router.open(module: WorkoutTrackerModule.id)
+        case .kilter:
+            router.open(module: "kilter")   // the session card is on the board (prompt 285)
+        case nil:
+            break
+        }
     }
 
     private func drainAppActions() {

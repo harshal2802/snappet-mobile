@@ -347,6 +347,22 @@ final class CloudBackupServiceTests: XCTestCase {
                        "a workout forgotten for hours stays on Home's Resume card")
     }
 
+    func testAFreshStartReturnsToTheSessionThePersonIsIn() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func to(workout: TimeInterval?, kilter: TimeInterval?, routed: Bool = false) -> SessionReturn.Destination? {
+            SessionReturn.destination(workoutStart: workout.map { now.addingTimeInterval(-$0) },
+                                      kilterStart: kilter.map { now.addingTimeInterval(-$0) }, now: now, alreadyRouted: routed)
+        }
+        XCTAssertEqual(to(workout: 600, kilter: nil), .workout)
+        XCTAssertEqual(to(workout: nil, kilter: 600), .kilter, "a board session is returned to as well (prompt 285)")
+        XCTAssertEqual(to(workout: 3000, kilter: 600), .kilter, "the one started last")
+        XCTAssertEqual(to(workout: 600, kilter: 3000), .workout)
+        XCTAssertEqual(to(workout: 600, kilter: 6 * 3600), .workout, "a forgotten board session does not win")
+        XCTAssertNil(to(workout: nil, kilter: 6 * 3600))
+        XCTAssertNil(to(workout: nil, kilter: 600, routed: true), "a link that started the app decides")
+        XCTAssertNil(to(workout: nil, kilter: nil))
+    }
+
     func testAnUnreadableBackupIsNamedNotReportedAsNoBackups() async throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data("not json".utf8).write(to: folder.appendingPathComponent(

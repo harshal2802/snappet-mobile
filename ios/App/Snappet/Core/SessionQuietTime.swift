@@ -32,4 +32,19 @@ enum SessionReturn {
         guard let start = runningStart, !alreadyRouted else { return false }
         return start <= now && now.timeIntervalSince(start) < reopenWithin
     }
+
+    enum Destination: Equatable, Sendable { case workout, kilter }
+
+    /// Which running session a fresh start returns to (prompt 285): the gym workout's player or the
+    /// Kilter board. With both unfinished, the one started last is the one the person is in.
+    static func destination(workoutStart: Date?, kilterStart: Date?, now: Date, alreadyRouted: Bool) -> Destination? {
+        let workout = shouldReopen(runningStart: workoutStart, now: now, alreadyRouted: alreadyRouted) ? workoutStart : nil
+        let kilter = shouldReopen(runningStart: kilterStart, now: now, alreadyRouted: alreadyRouted) ? kilterStart : nil
+        switch (workout, kilter) {
+        case (nil, nil): return nil
+        case (_?, nil): return .workout
+        case (nil, _?): return .kilter
+        case let (w?, k?): return k > w ? .kilter : .workout
+        }
+    }
 }
