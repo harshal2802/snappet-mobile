@@ -127,7 +127,13 @@ AREAS = {
         "classes": ["ProgressionUITests", "Buddy*Tests"],
     },
     "wardrobe": {"paths": [f"{APP}/Features/Wardrobe/*", f"{APP}/Services/Wardrobe*"], "classes": ["WardrobeUITests"]},
-    "backup": {"paths": [f"{APP}/Features/Backup/*"], "classes": ["BackupUITests"]},
+    "backup": {
+        "paths": [f"{APP}/Features/Backup/*"],
+        # The *Device* classes need a real phone, Photos and Google Drive: each test skips itself on
+        # the simulator. They are listed so every class has a home (the coverage check).
+        "classes": ["BackupUITests", "CloudBackupDeviceUITests", "GoogleDeviceUITests", "ClipCopiesDeviceUITests",
+                    "ClipCopyActionsDeviceUITests", "ClipRoundTripDeviceUITests", "MediaLinkDeviceUITests"],
+    },
     "camera": {
         "paths": [f"{APP}/Features/Camera/*", f"{APP}/Services/CameraController.swift"],
         "classes": ["SnappetCameraUITests"],
