@@ -52,6 +52,26 @@ final class CloudBackupTests: XCTestCase {
                        .skip(.tooSoon))
     }
 
+    func testOnlyUnmeteredWiFiOrCableCountsAsWiFi() {
+        func kind(_ connected: Bool, _ wifi: Bool, _ expensive: Bool) -> CloudBackupNetwork {
+            .classify(connected: connected, overWiFiOrCable: wifi, isExpensive: expensive)
+        }
+        XCTAssertEqual(kind(true, true, false), .wifi)
+        XCTAssertEqual(kind(true, false, true), .cellular, "ordinary mobile data")
+        XCTAssertEqual(kind(true, false, false), .cellular, "5G that iOS calls inexpensive is still mobile data (prompt 281)")
+        XCTAssertEqual(kind(true, true, true), .cellular, "a personal hotspot is someone's mobile data")
+        XCTAssertEqual(kind(false, true, false), .offline)
+        XCTAssertEqual(kind(false, false, false), .offline)
+    }
+
+    func testWhichFailuresMeanTheNetworkWent() {
+        for code in [URLError.Code.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed] {
+            XCTAssertTrue(CloudBackupNetwork.isNetworkLoss(URLError(code)), "\(code)")
+        }
+        XCTAssertFalse(CloudBackupNetwork.isNetworkLoss(URLError(.badServerResponse)))
+        XCTAssertFalse(CloudBackupNetwork.isNetworkLoss(GoogleAuthError.badResponse))
+    }
+
     func testCellularUploadsWhenWiFiOnlyIsOff() {
         XCTAssertEqual(CloudBackupPolicy.decide(input { $0.network = .cellular; $0.settings.wifiOnly = false }),
                        .upload)

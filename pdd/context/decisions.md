@@ -12521,3 +12521,11 @@ tested in `WorkoutBrokenLinksTests`; `WorkoutBrokenLinksUITests` drives F12, F13
 - **Open**: the backup upload holds the sealed file in memory (~200 MB on the user's phone); the Kilter Live Activity
   has no tap link. Not verified on a phone yet.
 
+## 2026-11-21 — "Wi-Fi only" asks for the Wi-Fi interface, not for "inexpensive" (prompt 281)
+
+`NWPath.isExpensive` is false on 5G for many plans, so "not expensive" let clip copies start on
+mobile data: no video left the phone (the upload is barred from cellular since 279), but each pass
+exported and hashed three originals before giving up, on every return to the app. Wi-Fi is now
+"over Wi-Fi or a cable, and not expensive" (`CloudBackupNetwork.classify`); a hotspot stays mobile
+data. A transfer the network refuses stops the pass (`isNetworkLoss`) rather than counting as a bad
+clip. Low Data Mode is not consulted.

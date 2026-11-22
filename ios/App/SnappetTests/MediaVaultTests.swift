@@ -1003,6 +1003,32 @@ final class MediaVaultServiceTests: XCTestCase {
         guard case .failed = vault.phase else { return XCTFail("the pass should say it failed: \(vault.phase)") }
     }
 
+    func testAnUploadRefusedByTheNetworkStopsThePassAtOnce() async throws {
+        for n in 0..<6 { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        google.uploadError = URLError(.notConnectedToInternet)   // what iOS answers when only mobile data is up
+        let vault = vaultOn()
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(library.exports, 1, "no second clip is exported once the network says no")
+        XCTAssertTrue(google.drivePaths.isEmpty)
+        XCTAssertEqual(vault.phase, .idle, "waiting, not failed")
+        XCTAssertEqual(vault.note, "Waiting for Wi-Fi.")
+
+        google.uploadError = nil
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(google.drivePaths.count, 6, "and it carries on when the Wi-Fi is back")
+    }
+
+    func testAnUploadThatLosesTheNetworkWithWiFiOnlyOffSaysOffline() async throws {
+        try addClip("L1", offset: 10, bytes: "one")
+        try addClip("L2", offset: 11, bytes: "two")
+        google.uploadError = URLError(.networkConnectionLost)
+        let vault = vaultOn()
+        vault.update { $0.wifiOnly = false }
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(library.exports, 1)
+        XCTAssertEqual(vault.note, "Waiting for a connection.")
+    }
+
     func testALayoutChangeOffersToRemoveTheFoldersItEmptiedAndOnlyThose() async throws {
         try addClip("L1", offset: 10, bytes: "one")
         let vault = vaultOn()

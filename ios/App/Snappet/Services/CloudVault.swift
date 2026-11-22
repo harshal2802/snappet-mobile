@@ -206,8 +206,10 @@ enum CloudBackupNetworkProbe {
                 // The handler can fire again before `cancel()` lands — resume exactly once.
                 guard answered.withLock({ done in defer { done = true }; return !done }) else { return }
                 monitor.cancel()
-                guard path.status == .satisfied else { return continuation.resume(returning: .offline) }
-                continuation.resume(returning: path.isExpensive ? .cellular : .wifi)
+                continuation.resume(returning: .classify(
+                    connected: path.status == .satisfied,
+                    overWiFiOrCable: path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet),
+                    isExpensive: path.isExpensive))
             }
             monitor.start(queue: DispatchQueue.global(qos: .utility))
         }

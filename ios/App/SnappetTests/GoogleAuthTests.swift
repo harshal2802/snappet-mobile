@@ -168,6 +168,8 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     private(set) var requests: [String] = []
     /// For every PUT (the bytes of an upload): was it barred from cellular and hotspots?
     private(set) var putsBarredFromCellular: [Bool] = []
+    /// Every upload of bytes fails this way (iOS refusing mobile data, a dropped connection).
+    var uploadError: URLError?
     var grantedScope = "openid email " + GoogleScope.driveAppData
     var refreshRevoked = false
     var pageSize = 1000
@@ -225,7 +227,8 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     func count(of prefix: String) -> Int { lock.withLock { requests.filter { $0.hasPrefix(prefix) }.count } }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        lock.withLock { handle(request) }
+        if request.httpMethod == "PUT", let uploadError { throw uploadError }
+        return lock.withLock { handle(request) }
     }
 
     private func reply(_ request: URLRequest, _ status: Int, _ body: String = "", headers: [String: String] = [:]) -> (Data, HTTPURLResponse) {
