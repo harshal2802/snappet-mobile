@@ -270,12 +270,20 @@ struct RootShell: View {
                                          alreadyRouted: !router.path.isEmpty) {
         case .workout:
             router.pendingWorkoutResume = true
-            router.open(module: WorkoutTrackerModule.id)
+            openWithoutAnimation(WorkoutTrackerModule.id)
         case .kilter:
             router.open(module: "kilter")   // the session card is on the board (prompt 285)
         case nil:
             break
         }
+    }
+
+    /// Open a module with no push animation: used when the destination is really the player on top of it
+    /// (prompt 290), so the Gym Tracker is not seen sliding in first.
+    private func openWithoutAnimation(_ id: String) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { router.open(module: id) }
     }
 
     private func drainAppActions() {
@@ -329,7 +337,9 @@ struct RootShell: View {
             break
         }
         if let compose = route.journalCompose { router.pendingJournalCompose = compose }
-        if let id = route.moduleID { router.open(module: id) }
+        if let id = route.moduleID {
+            if route.resumeWorkout { openWithoutAnimation(id) } else { router.open(module: id) }
+        }
     }
 
     /// A `snappet://` workout link (prompt 199): quick / finish go through the same one-shots as the App Intents; log /
