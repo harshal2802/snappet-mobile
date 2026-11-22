@@ -347,6 +347,16 @@ final class CloudBackupServiceTests: XCTestCase {
                        "a workout forgotten for hours stays on Home's Resume card")
     }
 
+    func testSealingLetsGoOfThePlaintextAndStillOpens() async throws {
+        let key = SymmetricKey(size: .bits256)
+        var prepared = CloudBackupPayload.Prepared(plaintext: Data("the records".utf8), contentHash: "h", recordCount: 1,
+                                                   sessionCount: 0, clipCount: 0, includesHeartRate: false)
+        let sealed = try await CloudBackupPayload.seal(&prepared, key: key)
+        XCTAssertTrue(prepared.plaintext.isEmpty, "only the sealed copy is held during the upload (prompt 286)")
+        XCTAssertEqual(prepared.contentHash, "h")
+        XCTAssertEqual(try CloudBackupCrypto.open(sealed, key: key), Data("the records".utf8))
+    }
+
     func testAFreshStartReturnsToTheSessionThePersonIsIn() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         func to(workout: TimeInterval?, kilter: TimeInterval?, routed: Bool = false) -> SessionReturn.Destination? {

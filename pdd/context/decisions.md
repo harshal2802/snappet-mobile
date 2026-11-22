@@ -12550,3 +12550,9 @@ decides, and a second reason there would name a switch that does not help.
 
 Same rule as the gym workout (within 4 hours, unless a link chose the destination). With a workout
 and a board session both unfinished, the one started last wins: it is the one the person is in.
+
+## 2026-11-22 — Backup memory: fewer copies, same format (prompt 286)
+
+The backup is still built and sealed in memory in one piece. Streaming it would need a chunked file
+format and a restore path for both formats; instead the hash encoding is released before the real
+one is made, and the plaintext is released before the upload. Not measured on a phone.

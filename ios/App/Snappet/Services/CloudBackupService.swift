@@ -135,7 +135,7 @@ final class CloudBackupService {
             try? context.save()
             let container = context.container
             let includeHeartRate = settings.includeHeartRate
-            let prepared = try await Task.detached(priority: .utility) {
+            var prepared = try await Task.detached(priority: .utility) {
                 let file = try SnappetBackup.snapshot(of: ModelContext(container))
                 return try CloudBackupPayload.prepare(file, includeHeartRate: includeHeartRate)
             }.value
@@ -158,9 +158,7 @@ final class CloudBackupService {
             let key = try keys.loadOrCreateKey()
             let createdAt = Date.now
             let name = CloudBackupNaming.payloadName(createdAt: createdAt, deviceID: deviceID)
-            let sealed = try await Task.detached(priority: .utility) {
-                try CloudBackupCrypto.seal(prepared.plaintext, key: key)
-            }.value
+            let sealed = try await CloudBackupPayload.seal(&prepared, key: key)
             let manifest = CloudBackupManifest(
                 fileName: name, createdAt: createdAt, deviceID: deviceID, deviceName: deviceName,
                 contentHash: prepared.contentHash, byteCount: sealed.count,
