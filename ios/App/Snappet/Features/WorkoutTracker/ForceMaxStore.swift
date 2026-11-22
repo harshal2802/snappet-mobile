@@ -30,6 +30,12 @@ final class ForceMaxStore {
         }
     }
 
+    /// The suite UI-test launches write to, emptied first so each launch starts with no max set.
+    static func emptyScratchDefaults(suiteName: String = "snappet.uitest.force") -> UserDefaults {
+        UserDefaults.standard.removePersistentDomain(forName: suiteName)
+        return UserDefaults(suiteName: suiteName) ?? .standard
+    }
+
     private static func read(_ d: UserDefaults, _ key: String) -> Double? {
         let v = d.double(forKey: key)
         return v > 0 ? v : nil
