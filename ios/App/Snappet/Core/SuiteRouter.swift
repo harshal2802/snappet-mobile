@@ -19,7 +19,12 @@ enum SuiteTab: Hashable { case home, clips, feed, apps }
 @Observable
 final class SuiteRouter {
     var tab: SuiteTab
-    var path = NavigationPath()
+    var path = NavigationPath() {
+        didSet { if path.isEmpty { rootModule = nil } }
+    }
+    /// The mini-app at the bottom of the Apps stack, nil at the App Library (prompt 282). Lets a link
+    /// tell "already in that app" from "somewhere else" without replacing the stack to find out.
+    private(set) var rootModule: String?
 
     /// One-shot deep-link intent (#71 review fix): Home's "Resume <routine>" card sets this before
     /// `open(module:)`, and `WorkoutHomeView` consumes it in `.task` — re-opening the full-screen
@@ -99,7 +104,11 @@ final class SuiteRouter {
         tab = initialTab
     }
 
-    func push<V: Hashable>(_ value: V) { path.append(value) }
+    func push<V: Hashable>(_ value: V) {
+        let entering = path.isEmpty ? (value as? ModuleRoute)?.id : nil
+        path.append(value)
+        if let entering { rootModule = entering }
+    }
     func popToRoot() { path = NavigationPath() }
 
     /// Deep-link entry, usable from anywhere in the shell: jump to the Apps tab and **replace**
@@ -109,6 +118,7 @@ final class SuiteRouter {
     func open(module id: String) {
         tab = .apps
         path = NavigationPath([ModuleRoute(id: id)])
+        rootModule = id
         workoutPlayerOpen = false
     }
 }

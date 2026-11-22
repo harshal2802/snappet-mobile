@@ -69,6 +69,9 @@ enum SnappetDeepLink: Equatable, Sendable {
     case householdJoin(HouseholdInvite)
     /// `snappet://quick|finish|log|attempt…` — start / log / finish a workout from another app or a tag (prompt 199).
     case workout(WorkoutLinkAction)
+    /// `snappet://kilter/session` — the Kilter Live Activity's tap (prompt 282): show the Kilter board, where the
+    /// running session's card is.
+    case kilterSession
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
@@ -80,7 +83,15 @@ enum SnappetDeepLink: Equatable, Sendable {
         if isStartFocus(url) { return .startFocus }
         if let id = exerciseID(url) { return .exercise(id: id) }
         if let action = WorkoutLinkAction(url: url) { return .workout(action) }
+        if isKilterSession(url) { return .kilterSession }
         return nil
+    }
+
+    /// Exactly `snappet://kilter/session` (case-insensitive). Pure.
+    private static func isKilterSession(_ url: URL) -> Bool {
+        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+        return c.scheme?.lowercased() == "snappet" && c.host?.lowercased() == "kilter"
+            && c.path.lowercased() == "/session"
     }
 
     /// `snappet://exercise/<id>` → the exercise id (scheme + host checked case-insensitively). Pure.
@@ -124,5 +135,20 @@ enum KilterDeepLinkRouting {
         guard climbInstalled else { return .explainMissing(uuid: link.uuid) }
         let adopt = link.angle.flatMap { availableAngles.contains($0) ? $0 : nil }
         return .openClimb(uuid: link.uuid, adoptAngle: adopt)
+    }
+}
+
+/// What a tap on the Kilter Live Activity does (prompt 282).
+enum KilterOpenLink {
+    enum Decision: Equatable, Sendable {
+        /// Kilter is already open in the Apps tab: show that tab and leave its screens alone. Opening the module
+        /// again would replace the stack and drop the climb or plan the person was on.
+        case show
+        /// Open the Kilter board.
+        case open
+    }
+
+    static func decide(rootModule: String?) -> Decision {
+        rootModule == "kilter" ? .show : .open
     }
 }
