@@ -860,6 +860,12 @@ final class MediaVaultService {
                     setIndex(next)
                     remember(tree)
                     failedInARow = 0
+                } catch where CloudBackupNetwork.isNetworkLoss(error) {
+                    // The network went, or iOS refused to send over mobile data: wait, do not
+                    // export the next clip only to have it refused too (prompt 281).
+                    phase = .idle
+                    note = MediaVaultText.skipped(settings.wifiOnly ? .waitingForWiFi : .offline)
+                    return
                 } catch {
                     // One clip that will not export or upload must not hold up the rest.
                     failed += 1

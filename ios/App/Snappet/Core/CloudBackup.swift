@@ -77,7 +77,26 @@ enum CloudBackupNaming {
     static func isManifest(_ name: String) -> Bool { name.hasSuffix(manifestSuffix) }
 }
 
-enum CloudBackupNetwork: Equatable, Sendable { case wifi, cellular, offline }
+enum CloudBackupNetwork: Equatable, Sendable {
+    case wifi, cellular, offline
+
+    /// What "Wi-Fi only" means (prompt 281): the connection runs over Wi-Fi or a cable AND is not
+    /// metered. "Not expensive" alone is not Wi-Fi: iOS reports 5G as inexpensive on many plans
+    /// ("Allow More Data on 5G"), which let copies start on mobile data. A personal hotspot is
+    /// Wi-Fi and expensive, so it still counts as mobile data.
+    static func classify(connected: Bool, overWiFiOrCable: Bool, isExpensive: Bool) -> CloudBackupNetwork {
+        guard connected else { return .offline }
+        return overWiFiOrCable && !isExpensive ? .wifi : .cellular
+    }
+
+    /// A failed transfer that means "the network went, or this network is not allowed" rather than
+    /// "this one file is bad". The pass stops and waits instead of trying the next file.
+    static func isNetworkLoss(_ error: Error) -> Bool {
+        guard let code = (error as? URLError)?.code else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
+                .internationalRoamingOff, .callIsActive].contains(code)
+    }
+}
 
 enum CloudBackupPolicy {
     /// Automatic uploads are spaced at least this far apart.
