@@ -111,8 +111,10 @@ final class AppModel {
         CommandLine.arguments.contains("-uiTestFakeForceSensor") ? FakeForceSensor() : TindeqProgressorSource()
     /// Measured (or typed) max per hand for "% of max" targets (prompt 145). UI-test launches write to a
     /// scratch suite, so a test run on a real phone can never overwrite the user's max (the prompt-133 rule).
-    let forceMax = ForceMaxStore(defaults: CommandLine.arguments.contains("-uiTestFreshStore")
-                                 ? (UserDefaults(suiteName: "snappet.uitest.force") ?? .standard) : .standard)
+    /// The scratch suite starts empty on every such launch (prompt 289): it used to keep what the last test run
+    /// typed, so a max left by an interrupted run was already in the field of the next one ("52" became "525").
+    let forceMax = ForceMaxStore(defaults: UITestStore.isFreshStore(CommandLine.arguments)
+                                 ? ForceMaxStore.emptyScratchDefaults() : .standard)
     /// Scheduled-routine reminders (prompt 136) — and the app's notification delegate, installed in
     /// `init` so a cold start from a tapped "Start now" / "Skip today" action is delivered.
     let routineReminders = RoutineReminders()

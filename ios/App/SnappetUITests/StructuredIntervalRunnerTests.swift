@@ -285,7 +285,10 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         let max = app.buttons["forceSensor.maxBoth"]
         for _ in 0..<3 where !max.isHittable { app.swipeUp() }
         max.tap()
-        app.textFields["forceSensor.maxBoth.field"].typeText("52")
+        let field = app.textFields["forceSensor.maxBoth.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 4))
+        XCTAssertEqual(field.value as? String, "0", "no max is set on a fresh test launch (the placeholder shows)")
+        field.typeText("52")
         app.buttons["forceSensor.maxBoth.done"].tap()
         XCTAssertEqual(app.buttons["forceSensor.maxBoth"].label, "52 kg")
         snap("force-settings")
