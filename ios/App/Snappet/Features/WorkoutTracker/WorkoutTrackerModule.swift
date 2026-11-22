@@ -495,7 +495,7 @@ struct WorkoutHomeView: View {
     private func consumePendingResume() {
         guard router.pendingWorkoutResume else { return }
         router.pendingWorkoutResume = false
-        if let s = activeSession { resume(s) }
+        if let s = activeSession { resume(s, animated: false) }
     }
 
     /// Insert a NEW local `Routine` from a confirmed import (E6). A fresh UUID — it NEVER overwrites an
@@ -742,7 +742,10 @@ struct WorkoutHomeView: View {
     /// re-tapping the same routine). After a cold relaunch the watch isn't recording, so
     /// (re)start live metrics — guarded so a warm resume (watch already running) doesn't
     /// double-start. Falls back to a default type if the routine was since deleted.
-    private func resume(_ session: WorkoutSession) {
+    /// `animated: false` for a return from outside the app (the session's banner, a fresh start): the player
+    /// appears at once instead of sliding up over the Gym Tracker, which looked like landing on the wrong
+    /// screen first (prompt 290).
+    private func resume(_ session: WorkoutSession, animated: Bool = true) {
         // Source-agnostic: restart metrics only when no session is driving a source (e.g. after a
         // cold relaunch). Using the watch-specific `connectionState` here would always restart a
         // BLE session — clearing its HR buffer — since a BLE source never sets `.workoutRunning`.
@@ -760,6 +763,12 @@ struct WorkoutHomeView: View {
             // (re)start the Live Activity if one isn't already showing — otherwise a warm resume
             // would needlessly end+recreate the activity already on the Lock Screen.
             startLiveActivity(for: session)
+        }
+        guard animated else {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { playing = session }
+            return
         }
         withAnimation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion)) { playing = session }
     }
