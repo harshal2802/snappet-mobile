@@ -133,6 +133,18 @@ enum WorkoutMath {
     }
 
     /// Number of sessions in which the exercise had at least one completed set.
+    /// `sessionCount` for every exercise at once, in one pass over the history (prompt 287).
+    static func sessionCounts(history: [WorkoutSession]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for session in history {
+            var seen = Set<String>()
+            for ex in session.exercises where ex.sets.contains(where: { $0.completedAt != nil }) {
+                if seen.insert(ex.exerciseId).inserted { counts[ex.exerciseId, default: 0] += 1 }
+            }
+        }
+        return counts
+    }
+
     static func sessionCount(history: [WorkoutSession], exerciseId: String) -> Int {
         history.filter { session in
             session.exercises.contains { $0.exerciseId == exerciseId && $0.sets.contains { $0.completedAt != nil } }

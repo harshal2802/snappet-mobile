@@ -34,7 +34,29 @@ struct WorkoutDashboardSection: View {
     @State private var chartDrawn = false
 
     private var isEmptyState: Bool { history.isEmpty && activeSession == nil }
-    private var stats: WorkoutDashboardStats { WorkoutDashboardStats.make(history: history) }
+    /// Figures worked out from `history`, each at most once for this value of the view (prompt 287). The parent
+    /// makes a new value (and so a new, empty `Figures`) whenever it redraws with new data, so nothing here can go
+    /// stale. Before, one redraw built the stats about eight times, the weekly volume three times, and walked the
+    /// whole history once more for each record row.
+    private final class Figures {
+        var stats: WorkoutDashboardStats?
+        var weeklyVolume: [WeeklyPoint]?
+        var sessionCounts: [String: Int]?
+    }
+    private let figures = Figures()
+
+    private var stats: WorkoutDashboardStats {
+        if let made = figures.stats { return made }
+        let made = WorkoutDashboardStats.make(history: history)
+        figures.stats = made
+        return made
+    }
+    private var sessionCounts: [String: Int] {
+        if let made = figures.sessionCounts { return made }
+        let made = WorkoutMath.sessionCounts(history: history)
+        figures.sessionCounts = made
+        return made
+    }
     private var recents: [RecentSessions.Row] { RecentSessions.rows(history: history, unit: unit, limit: 5) }
     /// The discipline that themes the hero + Start CTA (the user's recent go-to; ember default).
     private var heroDiscipline: WorkoutDiscipline { stats.dominantRecentDiscipline ?? .strength }
@@ -272,7 +294,7 @@ struct WorkoutDashboardSection: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(resolver.name(for: pr.exerciseId)).font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(SnappetColor.ink).lineLimit(1)
-                            Text("\(WorkoutMath.sessionCount(history: history, exerciseId: pr.exerciseId)) sessions")
+                            Text("\(sessionCounts[pr.exerciseId] ?? 0) sessions")
                                 .snappetDetail()
                         }
                         Spacer()
@@ -354,6 +376,13 @@ struct WorkoutDashboardSection: View {
     private struct PRItem { let exerciseId: String; let top: WorkoutMath.TopSet }
 
     private var weeklyVolume: [WeeklyPoint] {
+        if let made = figures.weeklyVolume { return made }
+        let made = Self.weeklyVolume(history: history)
+        figures.weeklyVolume = made
+        return made
+    }
+
+    private static func weeklyVolume(history: [WorkoutSession]) -> [WeeklyPoint] {
         guard !history.isEmpty else { return [] }
         let cal = Calendar.current
         var buckets: [Date: Double] = [:]
