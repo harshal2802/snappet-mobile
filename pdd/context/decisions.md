@@ -12556,3 +12556,9 @@ and a board session both unfinished, the one started last wins: it is the one th
 The backup is still built and sealed in memory in one piece. Streaming it would need a chunked file
 format and a restore path for both formats; instead the hash encoding is released before the real
 one is made, and the plaintext is released before the upload. Not measured on a phone.
+
+## 2026-11-22 — Dashboard figures live in a holder per view value, not in @State (prompt 287)
+
+`WorkoutDashboardSection` keeps its derived figures in a small class made with the view value. A
+new value arrives whenever the parent redraws with new data, so the figures cannot go stale the way
+an `@State` cache did in 279, and a redraw still pays for each figure once instead of several times.

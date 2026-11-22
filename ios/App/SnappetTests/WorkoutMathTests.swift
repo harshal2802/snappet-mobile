@@ -61,6 +61,19 @@ final class WorkoutMathTests: XCTestCase {
         XCTAssertEqual(all["pullup"]?.bestKg, 0, "bodyweight ranks, and reports no weight")
     }
 
+    /// Prompt 287: the one-pass `sessionCounts` answers exactly what `sessionCount` answers per exercise.
+    func testSessionCountsInOnePassMatchesSessionCountPerExercise() {
+        let history = [
+            session([exercise("bench", [set(10, 50)]), exercise("bench", [set(5, 120)]), exercise("ohp", [set(8, 40, done: false)])]),
+            session([exercise("bench", [set(6, 100)]), exercise("pullup", [set(12, nil)]), exercise("ohp", [set(8, 40)])]),
+        ]
+        let all = WorkoutMath.sessionCounts(history: history)
+        XCTAssertEqual(all, ["bench": 2, "ohp": 1, "pullup": 1], "twice in one session counts once; unfinished sets do not count")
+        for id in ["bench", "ohp", "pullup", "squat"] {
+            XCTAssertEqual(all[id] ?? 0, WorkoutMath.sessionCount(history: history, exerciseId: id), id)
+        }
+    }
+
     // MARK: - Baseline
 
     func testTotalVolumeAcrossSessions() {
