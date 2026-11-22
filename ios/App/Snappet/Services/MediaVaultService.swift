@@ -88,6 +88,7 @@ struct GoogleDriveMediaStore: Sendable {
         if wifiOnly {
             put.allowsExpensiveNetworkAccess = false
             put.allowsCellularAccess = false
+            put.allowsConstrainedNetworkAccess = false   // nor in Low Data Mode (prompt 284)
         }
         let (data, _) = try await google.upload(put, fromFile: file)
         guard let created = try? JSONDecoder().decode(GoogleDriveFile.self, from: data) else { throw GoogleAuthError.badResponse }

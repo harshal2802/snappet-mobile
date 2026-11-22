@@ -12538,3 +12538,10 @@ board), so the link opens the Kilter module. `SuiteRouter.open(module:)` replace
 would drop the climb or plan the person was on, so the router now remembers which mini-app is at
 the bottom of the Apps stack (`rootModule`) and the link only switches to the Apps tab when that is
 already Kilter (`KilterOpenLink.decide`).
+
+## 2026-11-22 — Low Data Mode pauses automatic cloud work; "Back up now" still runs (prompt 284)
+
+Low Data Mode is the person asking iOS to hold back background transfers on a network, so clip
+copies and automatic backups wait there ("Paused in Low Data Mode."). A backup the person starts by
+hand runs anyway. It is only reported for unmetered Wi-Fi: on mobile data the Wi-Fi rule already
+decides, and a second reason there would name a switch that does not help.

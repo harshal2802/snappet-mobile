@@ -209,7 +209,7 @@ enum CloudBackupNetworkProbe {
                 continuation.resume(returning: .classify(
                     connected: path.status == .satisfied,
                     overWiFiOrCable: path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet),
-                    isExpensive: path.isExpensive))
+                    isExpensive: path.isExpensive, isConstrained: path.isConstrained))
             }
             monitor.start(queue: DispatchQueue.global(qos: .utility))
         }

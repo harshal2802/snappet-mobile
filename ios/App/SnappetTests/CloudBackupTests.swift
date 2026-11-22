@@ -64,6 +64,24 @@ final class CloudBackupTests: XCTestCase {
         XCTAssertEqual(kind(false, false, false), .offline)
     }
 
+    func testLowDataModeOnWiFiPausesAutomaticWorkOnly() {
+        func kind(wifi: Bool, expensive: Bool = false) -> CloudBackupNetwork {
+            .classify(connected: true, overWiFiOrCable: wifi, isExpensive: expensive, isConstrained: true)
+        }
+        XCTAssertEqual(kind(wifi: true), .lowData)
+        XCTAssertEqual(kind(wifi: false, expensive: true), .cellular, "on mobile data the Wi-Fi rule decides")
+        XCTAssertEqual(kind(wifi: true, expensive: true), .cellular)
+
+        var on = CloudBackupSettings(); on.destination = .iCloud
+        XCTAssertEqual(CloudBackupPolicy.precheck(settings: on, storeHealthy: true, sessionRunning: false,
+                                                  network: .lowData, manual: false), .lowDataMode)
+        XCTAssertNil(CloudBackupPolicy.precheck(settings: on, storeHealthy: true, sessionRunning: false,
+                                                network: .lowData, manual: true), "Back up now is the person asking")
+        XCTAssertEqual(CloudBackupPolicy.decide(input { $0.network = .lowData }), .skip(.lowDataMode))
+        XCTAssertEqual(CloudBackupPolicy.decide(input { $0.network = .lowData; $0.manual = true }), .upload)
+        XCTAssertEqual(CloudBackupStatusText.skipped(.lowDataMode), "Paused in Low Data Mode.")
+    }
+
     func testWhichFailuresMeanTheNetworkWent() {
         for code in [URLError.Code.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed] {
             XCTAssertTrue(CloudBackupNetwork.isNetworkLoss(URLError(code)), "\(code)")
