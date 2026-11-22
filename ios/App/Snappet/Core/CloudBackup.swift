@@ -252,14 +252,33 @@ enum CloudBackupPayload {
     static func prepare(_ file: SnappetBackup.File, includeHeartRate: Bool) throws -> Prepared {
         let content = includeHeartRate ? file : file.strippingHeartRateSamples()
         // Hash with the export stamp pinned, so an unchanged store hashes the same every time.
-        var pinned = content
-        pinned.exportedAt = Date(timeIntervalSinceReferenceDate: 0)
+        // Hashed first and on its own line, so the pinned encoding is gone before the real one is
+        // made: the two are each the size of the whole backup (prompt 286).
+        let contentHash = try Self.hash(of: content)
         return Prepared(plaintext: try SnappetBackup.encode(content),
-                        contentHash: CloudBackupCrypto.sha256Hex(try SnappetBackup.encode(pinned)),
+                        contentHash: contentHash,
                         recordCount: content.recordCount,
                         sessionCount: content.workoutSessions.count + content.kilterSessions.count,
                         clipCount: content.sessionMedia.count,
                         includesHeartRate: includeHeartRate)
+    }
+}
+
+extension CloudBackupPayload {
+    fileprivate static func hash(of content: SnappetBackup.File) throws -> String {
+        var pinned = content
+        pinned.exportedAt = Date(timeIntervalSinceReferenceDate: 0)
+        return CloudBackupCrypto.sha256Hex(try SnappetBackup.encode(pinned))
+    }
+
+    /// Seal the payload and let go of the plaintext (prompt 286): during the upload, which is the
+    /// long part, only the sealed copy is held, not both.
+    static func seal(_ prepared: inout Prepared, key: SymmetricKey) async throws -> Data {
+        let plaintext = prepared.plaintext
+        prepared.plaintext = Data()
+        return try await Task.detached(priority: .utility) {
+            try CloudBackupCrypto.seal(plaintext, key: key)
+        }.value
     }
 }
 
