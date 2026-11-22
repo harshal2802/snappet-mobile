@@ -17,6 +17,7 @@ struct KilterLiveActivity: Widget {
                 .padding()
                 .activityBackgroundTint(Color.black.opacity(0.5))
                 .activitySystemActionForegroundColor(.white)
+                .widgetURL(KilterActivityAttributes.openURL)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -54,6 +55,7 @@ struct KilterLiveActivity: Widget {
                     .foregroundStyle(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
             }
             .keylineTint(context.state.paused ? WidgetPalette.warn : WidgetPalette.accentOnDark)
+            .widgetURL(KilterActivityAttributes.openURL)
         }
     }
 

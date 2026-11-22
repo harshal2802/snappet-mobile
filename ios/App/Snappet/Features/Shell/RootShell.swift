@@ -192,6 +192,12 @@ struct RootShell: View {
             router.push(exercise)
         case .workout(let action):
             handleWorkoutLink(action)
+        case .kilterSession:
+            // The Kilter Live Activity's tap (prompt 282). Already in Kilter: show it as it is.
+            switch KilterOpenLink.decide(rootModule: router.rootModule) {
+            case .show: router.tab = .apps
+            case .open: router.open(module: "kilter")
+            }
         case nil:
             break   // not ours — ignore
         }

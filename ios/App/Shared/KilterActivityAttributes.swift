@@ -38,6 +38,10 @@ struct KilterActivityAttributes: ActivityAttributes {
         var recoveryReady: Bool = false
     }
 
+    /// Where a tap on the Live Activity goes (prompt 282): the Kilter board, where the running
+    /// session's card is. Parsed by `SnappetDeepLink` (`.kilterSession`).
+    static let openURL = URL(string: "snappet://kilter/session")!
+
     /// The board being climbed — fixed for the activity's lifetime (e.g. "Kilter Board").
     var boardName: String
     /// The user's resolved max HR (Phase 2), so the widget tints the HR zone off the same

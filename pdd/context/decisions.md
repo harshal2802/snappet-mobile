@@ -12529,3 +12529,12 @@ exported and hashed three originals before giving up, on every return to the app
 "over Wi-Fi or a cable, and not expensive" (`CloudBackupNetwork.classify`); a hotspot stays mobile
 data. A transfer the network refuses stops the pass (`isNetworkLoss`) rather than counting as a bad
 clip. Low Data Mode is not consulted.
+
+## 2026-11-21 — The Kilter Live Activity opens the Kilter board, without replacing it (prompt 282)
+
+The Kilter Live Activity had no link, so a tap just opened the app wherever it was. It now carries
+`snappet://kilter/session`. A Kilter session has no screen of its own (the session card is on the
+board), so the link opens the Kilter module. `SuiteRouter.open(module:)` replaces the stack, which
+would drop the climb or plan the person was on, so the router now remembers which mini-app is at
+the bottom of the Apps stack (`rootModule`) and the link only switches to the Apps tab when that is
+already Kilter (`KilterOpenLink.decide`).

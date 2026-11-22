@@ -5,6 +5,39 @@ import XCTest
 /// half of QR sharing: the URL round-trips a `climb_uuid` (+ optional angle) so a scanned code opens
 /// the same climb on another phone, offline. The camera path stays device-pending.
 final class KilterDeepLinkTests: XCTestCase {
+
+    // MARK: - The Live Activity's tap (prompt 282)
+
+    func testTheLiveActivityLinkIsTheKilterSessionRoute() {
+        XCTAssertEqual(SnappetDeepLink.route(for: KilterActivityAttributes.openURL), .kilterSession)
+        XCTAssertEqual(SnappetDeepLink.route(for: URL(string: "SNAPPET://Kilter/Session")!), .kilterSession)
+        XCTAssertNil(SnappetDeepLink.route(for: URL(string: "snappet://kilter")!))
+        XCTAssertNil(SnappetDeepLink.route(for: URL(string: "snappet://kilter/session/1")!))
+        // A climb link is still a climb link.
+        guard case .kilterClimb = SnappetDeepLink.route(for: URL(string: "snappet://kilter/climb/abc?angle=40")!) else {
+            return XCTFail("a climb link must not become the session route")
+        }
+    }
+
+    func testTheTapNeverReplacesKilterScreensThatAreAlreadyOpen() {
+        XCTAssertEqual(KilterOpenLink.decide(rootModule: "kilter"), .show)
+        XCTAssertEqual(KilterOpenLink.decide(rootModule: nil), .open)
+        XCTAssertEqual(KilterOpenLink.decide(rootModule: "workout-log"), .open)
+    }
+
+    @MainActor func testTheRouterKnowsWhichAppIsOpen() {
+        let router = SuiteRouter()
+        XCTAssertNil(router.rootModule)
+        router.push(ModuleRoute(id: "kilter"))          // tapped in the App Library
+        router.push(KilterPlanRoute())                  // a screen inside it
+        XCTAssertEqual(router.rootModule, "kilter")
+        router.open(module: "workout-log")              // a link replaced the stack
+        XCTAssertEqual(router.rootModule, "workout-log")
+        router.path.removeLast()                        // back to the App Library
+        XCTAssertNil(router.rootModule)
+        router.push(KilterPlanRoute())                  // not a module at the bottom
+        XCTAssertNil(router.rootModule)
+    }
     func testRoundTripWithAngle() {
         let link = KilterClimbLink(uuid: "abc123", angle: 40)
         XCTAssertEqual(link.encoded, "snappet://kilter/climb/abc123?angle=40")
