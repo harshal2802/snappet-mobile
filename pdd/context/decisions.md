@@ -12545,3 +12545,8 @@ Low Data Mode is the person asking iOS to hold back background transfers on a ne
 copies and automatic backups wait there ("Paused in Low Data Mode."). A backup the person starts by
 hand runs anyway. It is only reported for unmetered Wi-Fi: on mobile data the Wi-Fi rule already
 decides, and a second reason there would name a switch that does not help.
+
+## 2026-11-22 — A fresh start returns to a running Kilter session too (prompt 285)
+
+Same rule as the gym workout (within 4 hours, unless a link chose the destination). With a workout
+and a board session both unfinished, the one started last wins: it is the one the person is in.
