@@ -78,15 +78,21 @@ enum CloudBackupNaming {
 }
 
 enum CloudBackupNetwork: Equatable, Sendable {
-    case wifi, cellular, offline
+    /// `lowData`: on unmetered Wi-Fi with iOS Low Data Mode on for that network (prompt 284).
+    case wifi, cellular, offline, lowData
 
     /// What "Wi-Fi only" means (prompt 281): the connection runs over Wi-Fi or a cable AND is not
     /// metered. "Not expensive" alone is not Wi-Fi: iOS reports 5G as inexpensive on many plans
     /// ("Allow More Data on 5G"), which let copies start on mobile data. A personal hotspot is
     /// Wi-Fi and expensive, so it still counts as mobile data.
-    static func classify(connected: Bool, overWiFiOrCable: Bool, isExpensive: Bool) -> CloudBackupNetwork {
+    /// Low Data Mode is the person telling iOS to hold back background transfers on this network,
+    /// so automatic copies and backups wait there (prompt 284). On mobile data the Wi-Fi rule
+    /// already decides, so it is only reported for Wi-Fi.
+    static func classify(connected: Bool, overWiFiOrCable: Bool, isExpensive: Bool,
+                         isConstrained: Bool = false) -> CloudBackupNetwork {
         guard connected else { return .offline }
-        return overWiFiOrCable && !isExpensive ? .wifi : .cellular
+        guard overWiFiOrCable && !isExpensive else { return .cellular }
+        return isConstrained ? .lowData : .wifi
     }
 
     /// A failed transfer that means "the network went, or this network is not allowed" rather than
@@ -105,7 +111,7 @@ enum CloudBackupPolicy {
     static let generationsKept = 3
 
     enum SkipReason: Equatable, Sendable {
-        case off, storeUnhealthy, noAccount, nothingToBackUp, unchanged, offline, waitingForWiFi, tooSoon, sessionRunning
+        case off, storeUnhealthy, noAccount, nothingToBackUp, unchanged, offline, waitingForWiFi, lowDataMode, tooSoon, sessionRunning
     }
     enum Decision: Equatable, Sendable { case upload, skip(SkipReason) }
 
@@ -135,6 +141,7 @@ enum CloudBackupPolicy {
         switch network {
         case .offline: return .offline
         case .cellular where settings.wifiOnly: return .waitingForWiFi
+        case .lowData where !manual: return .lowDataMode   // "Back up now" is the person asking
         default: return nil
         }
     }
@@ -156,6 +163,7 @@ enum CloudBackupPolicy {
         switch input.network {
         case .offline: return .skip(.offline)
         case .cellular where input.settings.wifiOnly: return .skip(.waitingForWiFi)
+        case .lowData where !input.manual: return .skip(.lowDataMode)
         default: break
         }
         if isTooSoon(lastUploadAt: input.lastUploadAt, now: input.now, manual: input.manual) {
@@ -286,6 +294,7 @@ enum CloudBackupStatusText {
         case .nothingToBackUp: "Nothing to back up yet."
         case .offline: "Waiting for a connection."
         case .waitingForWiFi: "Waiting for Wi-Fi."
+        case .lowDataMode: "Paused in Low Data Mode."
         case .sessionRunning: "Paused while a session is running."
         }
     }

@@ -31,6 +31,9 @@ final class MediaVaultTests: XCTestCase {
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .offline), .skip(.offline))
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .cellular), .skip(.waitingForWiFi))
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .wifi), .run)
+        XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .lowData),
+                       .skip(.lowDataMode), "copies wait in Low Data Mode (prompt 284)")
+        XCTAssertEqual(MediaVaultText.skipped(.lowDataMode), "Paused in Low Data Mode.")
         XCTAssertEqual(MediaVaultPolicy.decide(settings: on, signedIn: true, hasDrivePermission: true, network: .wifi,
                                                sessionRunning: true), .skip(.sessionRunning), "no copying mid-session (prompt 279)")
         XCTAssertEqual(MediaVaultPolicy.decide(settings: .init(keepCopies: true, started: true, wifiOnly: false), signedIn: true,

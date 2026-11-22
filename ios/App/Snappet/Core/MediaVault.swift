@@ -666,7 +666,7 @@ enum MediaVaultFetch {
 }
 
 enum MediaVaultPolicy {
-    enum SkipReason: Equatable, Sendable { case off, notStarted, signedOut, needsPermission, offline, waitingForWiFi, needsPhotos, sessionRunning }
+    enum SkipReason: Equatable, Sendable { case off, notStarted, signedOut, needsPermission, offline, waitingForWiFi, lowDataMode, needsPhotos, sessionRunning }
     enum Decision: Equatable, Sendable { case run, skip(SkipReason) }
 
     static func decide(settings: MediaVaultSettings, signedIn: Bool, hasDrivePermission: Bool,
@@ -680,6 +680,7 @@ enum MediaVaultPolicy {
         switch network {
         case .offline: return .skip(.offline)
         case .cellular where settings.wifiOnly: return .skip(.waitingForWiFi)
+        case .lowData: return .skip(.lowDataMode)
         default: return .run
         }
     }
@@ -817,6 +818,7 @@ enum MediaVaultText {
         case .needsPermission: "Allow Snappet to save to Google Drive to copy clips."
         case .offline: "Waiting for a connection."
         case .waitingForWiFi: "Waiting for Wi-Fi."
+        case .lowDataMode: "Paused in Low Data Mode."
         case .needsPhotos: "Allow full access to Photos to copy clips."
         case .sessionRunning: "Paused while a session is running."
         }
