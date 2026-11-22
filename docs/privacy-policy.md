@@ -1,7 +1,7 @@
 # SnappetAI — Privacy Policy
 
 **Effective date:** June 15, 2026
-**Last updated:** November 21, 2026
+**Last updated:** November 22, 2026
 
 SnappetAI ("the app", "we", "us") is built around a simple principle: **your data stays on your
 device, or in cloud storage that belongs to you.** This policy explains what the app accesses, why, and what we do — and do not — do with it.
@@ -41,8 +41,10 @@ device for the feature you invoked:
   (below).
 - **Camera** — used only if you scan a receipt in the expense tools. Images are processed on-device
   (text recognition) and are not uploaded.
-- **Bluetooth** — used only to connect to a heart-rate monitor/chest strap you choose to pair, so the
-  app can read live heart rate during a workout.
+- **Bluetooth** — used only to connect to accessories you choose: a heart-rate monitor or chest strap
+  for live heart rate, and a climbing board or training device you connect in the app.
+- **Local network** — used only if you share a household in the Household app, to find the other
+  phones in that household on the same Wi-Fi (see below).
 - **Notifications** — used only for workout/rest and focus-timer alerts you start.
 
 ## What leaves your device — only when you choose
@@ -100,6 +102,24 @@ be removed in Google Drive on the web, under Settings → Manage apps → this a
 SnappetAI's use and transfer of information received from Google APIs adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including the Limited Use requirements.
+
+## What the app connects to
+
+SnappetAI has no server of its own. Besides the optional backups above, the app makes these
+connections:
+
+- **Content files from our public website.** Festival lineups, exercise guide photos, the
+  climbing-board climb catalog, and the model used to generate climbs are plain files hosted on
+  GitHub Pages (the same site as this page). Downloading one sends nothing about you or your data.
+  As with any website, the host (GitHub) can see the request's IP address.
+- **A product page you ask about.** If you use the price check in Wardrobe, the app loads the product
+  link you entered directly from that shop's website, like opening it in a browser. The shop sees an
+  ordinary visit from your IP address; nothing else from the app is sent.
+- **Other phones in your household.** If you share a household in the Household app, the phones in it
+  exchange that household's chores and activity directly with each other over your local Wi-Fi.
+  Nothing goes through a server.
+- **Links you open.** Links in the app (for example to a training article) open in your browser,
+  under that site's own privacy policy.
 
 ## Improving the app
 
