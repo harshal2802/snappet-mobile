@@ -54,8 +54,10 @@ final class LiveSessionSafetyUITests: XCTestCase {
         el.tap()
     }
 
-    /// Gym Tracker → Quick Start resumes the running seeded session.
+    /// The running seeded session's player. Since prompt 279 a fresh start with a workout running opens it by
+    /// itself; the walk through Gym Tracker → Quick Start is kept for a launch that did not.
     private func openLivePlayer() {
+        if app.buttons["minimizeWorkout"].waitForExistence(timeout: 8) { return }
         XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 10))
         app.tabBars.buttons["Apps"].tap()
         XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 8))
