@@ -303,7 +303,18 @@ final class AppModel {
     /// Opt-in copies of clips in the person's Google Drive, and footage brought back from Google Photos.
     let mediaVault = MediaVaultService()
 
-    /// Learn what the vault holds, then copy a batch if the switch is on. Cheap when Google is unused.
+    private let sessionEndWatch = SessionEndWatch()
+
+    /// The backup and the clip copies were held for a running session: run them once it has ended
+    /// (prompt 292). Before this they stayed "paused" until the app next came to the front.
+    private func resumeCloudWorkWhenTheSessionEnds() {
+        sessionEndWatch.start(isRunning: { [weak self] in self?.sessionIsRunning() ?? false },
+                              onEnd: { [weak self] in
+                                  await self?.runCloudBackup()
+                                  await self?.runMediaVault()
+                              })
+    }
+
     func runMediaVault() async {
         guard google.isConfigured, google.isSignedIn, let context = modelContainer?.mainContext else { return }
         #if DEBUG
@@ -331,10 +342,12 @@ final class AppModel {
             if mediaVault.settings.keepCopies, mediaVault.settings.started {
                 mediaVault.sayPausedForSession()
             }
+            resumeCloudWorkWhenTheSessionEnds()
             return
         }
         if mediaVault.settings.keepCopies, mediaVault.settings.started {
             await mediaVault.runIfNeeded(context: context, sessionRunning: { [weak self] in self?.sessionIsRunning() ?? false })
+            if sessionIsRunning() { resumeCloudWorkWhenTheSessionEnds() }   // a session started mid-pass and stopped it
         } else {
             await mediaVault.refreshIndex()
         }
@@ -381,6 +394,7 @@ final class AppModel {
     /// Upload a backup if one is due. Called on launch, foreground and background; cheap when off.
     func runCloudBackup(manual: Bool = false) async {
         guard let context = modelContainer?.mainContext else { return }
+        if !manual, sessionIsRunning() { resumeCloudWorkWhenTheSessionEnds() }
         await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual,
                                       sessionRunning: sessionIsRunning())
     }
