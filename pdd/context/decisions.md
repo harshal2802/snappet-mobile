@@ -12562,3 +12562,12 @@ one is made, and the plaintext is released before the upload. Not measured on a 
 `WorkoutDashboardSection` keeps its derived figures in a small class made with the view value. A
 new value arrives whenever the parent redraws with new data, so the figures cannot go stale the way
 an `@State` cache did in 279, and a redraw still pays for each figure once instead of several times.
+
+## 2026-11-23 — Held cloud work resumes by asking, not by a session-ended event (prompt 292)
+
+After 279, copies paused for a session stayed paused until the app next came to the front. Sessions
+end in several places (gym finish, discard, Kilter end, with or without a Live Activity), so there is
+no single "ended" event to hang a resume on. `SessionEndWatch` asks `sessionIsRunning()` every 15
+seconds, only while something is held, and runs the backup and the copies once when the answer is no.
+A missed end-site cannot leave copies stuck, which an event per site could.
+

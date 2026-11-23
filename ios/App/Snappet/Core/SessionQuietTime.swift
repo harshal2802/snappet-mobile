@@ -17,6 +17,40 @@ enum SessionQuietTime {
     }
 }
 
+/// Cloud work that was held for a session starts again when the session ends (prompt 292). Nothing in the
+/// app announces "the session ended" in one place (gym and board end separately, with or without a Live
+/// Activity), so this asks every few seconds — only while something is actually being held.
+@MainActor
+final class SessionEndWatch {
+    private var task: Task<Void, Never>?
+
+    var isWatching: Bool { task != nil }
+
+    /// Start watching; a second call while one watch is on does nothing. `onEnd` runs once, the first
+    /// time `isRunning` says no.
+    func start(every interval: Duration = .seconds(15),
+               isRunning: @escaping @MainActor () -> Bool,
+               onEnd: @escaping @MainActor () async -> Void) {
+        guard task == nil else { return }
+        task = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                if Task.isCancelled { return }
+                if !isRunning() {
+                    self?.task = nil   // before `onEnd`: it may need to start a new watch
+                    await onEnd()
+                    return
+                }
+            }
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}
+
 /// A fresh start of the app while a workout is still running goes straight back to its screen
 /// (prompt 279). iOS can close the app behind a long session; the person left a workout, and that is
 /// where they expect to return — by the app icon as much as by the session's banner.

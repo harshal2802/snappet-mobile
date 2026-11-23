@@ -532,3 +532,56 @@ final class StoreConfigurationTests: XCTestCase {
         XCTAssertFalse(configuration.isStoredInMemoryOnly)
     }
 }
+
+/// `SessionEndWatch` (prompt 292): cloud work held for a session starts again when the session ends.
+@MainActor
+final class SessionEndWatchTests: XCTestCase {
+
+    func testItRunsOnceWhenTheSessionEnds() async throws {
+        let watch = SessionEndWatch()
+        var running = true
+        var resumed = 0
+        watch.start(every: .milliseconds(20), isRunning: { running }, onEnd: { resumed += 1 })
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(resumed, 0, "nothing resumes while the session is still on")
+        XCTAssertTrue(watch.isWatching)
+        running = false
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(resumed, 1)
+        XCTAssertFalse(watch.isWatching)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(resumed, 1, "it does not fire again by itself")
+    }
+
+    func testASecondStartWhileWatchingDoesNothing() async throws {
+        let watch = SessionEndWatch()
+        var running = true
+        var resumed = 0
+        watch.start(every: .milliseconds(20), isRunning: { running }, onEnd: { resumed += 1 })
+        watch.start(every: .milliseconds(20), isRunning: { running }, onEnd: { resumed += 10 })
+        running = false
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(resumed, 1)
+    }
+
+    func testCancelStopsIt() async throws {
+        let watch = SessionEndWatch()
+        var resumed = 0
+        watch.start(every: .milliseconds(20), isRunning: { false }, onEnd: { resumed += 1 })
+        watch.cancel()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(resumed, 0)
+        XCTAssertFalse(watch.isWatching)
+    }
+
+    func testOnEndCanStartANewWatch() async throws {
+        let watch = SessionEndWatch()
+        var resumed = 0
+        watch.start(every: .milliseconds(20), isRunning: { false }, onEnd: {
+            resumed += 1
+            watch.start(every: .milliseconds(20), isRunning: { false }, onEnd: { resumed += 1 })
+        })
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(resumed, 2)
+    }
+}
