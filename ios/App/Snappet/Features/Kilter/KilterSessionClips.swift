@@ -48,25 +48,17 @@ enum KilterClipTagging {
 enum KilterStudioProjects {
     /// Find or create the session's `StudioProject` (seeded from its video clips in capture order), reconciling
     /// videos discovered after it was created so every clip is editable. One project per session, shared by every
-    /// scope (moved from `KilterSessionDetailView` so the climb page opens the same editor).
-    @MainActor static func resolve(_ session: KilterSession, media: [SessionMedia], in context: ModelContext) -> StudioProject {
+    /// scope (moved from `KilterSessionDetailView` so the climb page opens the same editor). A clip the user
+    /// deleted from the timeline is not added back (prompt 296 — the rule is `StudioEntry.reconciled`);
+    /// `scope` is the media-id set the Studio is about to show (`nil` = the whole session).
+    @MainActor static func resolve(_ session: KilterSession, media: [SessionMedia], scope: Set<UUID>? = nil,
+                                   in context: ModelContext) -> StudioProject {
         let sid = session.id
         if let existing = try? context.fetch(
             FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
-            let present = Set(existing.clips.compactMap(\.sessionMediaID))
             // Posted reels are OUTPUT, not footage (highlights P5) — never reconciled into the timeline.
-            let missing = media.filter { $0.kind == .video && !$0.isReel && !present.contains($0.id) }
-                .sorted { $0.offsetSec < $1.offsetSec }
-            if !missing.isEmpty {
-                var order = (existing.clips.map(\.order).max() ?? -1) + 1
-                for m in missing {
-                    existing.clips.append(TimelineClip(
-                        sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                        isPhoto: false, order: order, trimEnd: m.durationSec))
-                    order += 1
-                }
-                try? context.save()
-            }
+            StudioEntry.reconcile(existing, footage: StudioEntry.footage(for: nil, media: media),
+                                  scope: scope, context: context)
             return existing
         }
         let clips = media.filter { $0.kind == .video && !$0.isReel }

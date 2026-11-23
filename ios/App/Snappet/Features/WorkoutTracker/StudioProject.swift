@@ -675,6 +675,11 @@ final class StudioProject {
     /// Frame the **main video** into a sub-rect of the canvas (collage). `nil` = fill the whole frame
     /// (legacy). Optional → migration-safe additive @Model property.
     var baseFrame: StudioFrameRect?
+    /// `SessionMedia.id`s the user deleted from the timeline (prompt 296), so opening the Studio
+    /// again does not add them back as "new footage" (`StudioEntry.reconciled`). Written by
+    /// `StudioProjectEditor.removeClip` when the last clip of a media item goes. `nil` = none.
+    /// Optional → migration-safe additive @Model property.
+    var removedMediaIDs: [UUID]?
     var createdAt: Date
     var updatedAt: Date
 
@@ -684,6 +689,7 @@ final class StudioProject {
          clips: [TimelineClip] = [], transitions: [StudioTransition] = [],
          overlays: [OverlayItem] = [], audioTracks: [AudioTrack] = [],
          hrOverlay: HROverlayConfig? = nil, baseFrame: StudioFrameRect? = nil,
+         removedMediaIDs: [UUID]? = nil,
          createdAt: Date = .now) {
         self.id = id
         self.sessionID = sessionID
@@ -696,6 +702,7 @@ final class StudioProject {
         self.audioTracks = audioTracks
         self.hrOverlay = hrOverlay
         self.baseFrame = baseFrame
+        self.removedMediaIDs = removedMediaIDs
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }

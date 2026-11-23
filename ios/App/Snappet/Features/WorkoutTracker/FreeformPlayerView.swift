@@ -2949,7 +2949,7 @@ struct FreeformPlayerView: View {
         let sid = session.id
         let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
             predicate: #Predicate { $0.sessionID == sid }))) ?? []
-        let project = StudioEntry.resolveProject(for: session, media: media, context: context)
+        let project = StudioEntry.resolveProject(for: session, media: media, scope: [clip.id], context: context)
         studioClip = FreeformStudioPresentation(
             project: project, visibleClipMediaIDs: [clip.id], focusClipMediaID: clip.id,
             climbCaption: freeformClimbCaption(for: clip),
@@ -2980,7 +2980,8 @@ struct FreeformPlayerView: View {
             predicate: #Predicate { $0.sessionID == sid }))) ?? []
         let clips = media.filter { $0.assignedExerciseID == exID && $0.kind == .video }
         guard let first = clips.first else { return }
-        let project = StudioEntry.resolveProject(for: session, media: media, context: context)
+        let project = StudioEntry.resolveProject(for: session, media: media, scope: Set(clips.map(\.id)),
+                                                 context: context)
         let parts = [ex.displayName, ex.climbGradeLabel].compactMap { $0?.isEmpty == false ? $0 : nil }
         studioClip = FreeformStudioPresentation(
             project: project, visibleClipMediaIDs: Set(clips.map(\.id)), focusClipMediaID: first.id,

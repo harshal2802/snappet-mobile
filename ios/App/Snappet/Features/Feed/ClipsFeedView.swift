@@ -474,7 +474,7 @@ struct ClipsFeedView: View {
                 let ids = post.clips.filter { $0.media.kind == "video" && !$0.media.isReel }.map(\.media.id)
                 guard !ids.isEmpty else { return nil }
                 let project = StudioEntry.resolveProject(forSessionID: post.sessionID, title: post.title,
-                                                         media: allMedia, context: context)
+                                                         media: allMedia, scope: Set(ids), context: context)
                 return (project, ids.first, Set(ids))
             })
     }

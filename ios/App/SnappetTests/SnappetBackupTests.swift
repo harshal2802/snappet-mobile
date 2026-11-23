@@ -135,6 +135,9 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(restoredProject.audioTracks, project.audioTracks)
         XCTAssertEqual(restoredProject.baseFrame, project.baseFrame)
         XCTAssertEqual(restoredProject.hrOverlay, project.hrOverlay)
+        XCTAssertEqual(restoredProject.removedMediaIDs, project.removedMediaIDs,
+                       "deleted clips stay deleted after a restore (prompt 296)")
+        XCTAssertEqual(restoredProject.removedMediaIDs?.count, 1)
         XCTAssertEqual(restoredProject.updatedAt, project.updatedAt,
                        "updatedAt restores verbatim (the init would pin it to createdAt)")
     }
@@ -738,6 +741,7 @@ final class SnappetBackupTests: XCTestCase {
                                                              fadeInSec: 1, fadeOutSec: 2)],
                                     hrOverlay: .default,
                                     baseFrame: .half,
+                                    removedMediaIDs: [UUID()],
                                     createdAt: Date(timeIntervalSince1970: 1_700_012_000))
         project.updatedAt = Date(timeIntervalSince1970: 1_700_012_600)
         return project

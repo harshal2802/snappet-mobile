@@ -229,6 +229,36 @@ final class ClipBakePlanTests: XCTestCase {
         XCTAssertEqual(ClipBakePlan.flattened(s, target: "A"), s)
     }
 
+    // MARK: A bake does not make a clip look deleted (prompt 296)
+
+    /// Merging split parts and re-pointing the asset keep the surviving clip's media id and leave
+    /// the record of deleted clips as it was — so the next open neither adds the baked clip a
+    /// second time nor brings the deleted one back.
+    func testFlattenKeepsTheDeletedClipRecordAndTheSurvivingMediaID() {
+        let mediaA = UUID(), deleted = UUID()
+        var a1 = tclip(local: "A", order: 0, trimEnd: 10)
+        var a2 = tclip(local: "A", order: 1, trimStart: 20)
+        a1.sessionMediaID = mediaA
+        a2.sessionMediaID = mediaA
+        let b = tclip(local: "B", order: 2)
+        var s = snap([a1, a2, b])
+        s.removedMediaIDs = [deleted]
+
+        let out = ClipBakePlan.flattened(s, target: "A", replacedBy: "NEW")
+        XCTAssertEqual(out.clips.map(\.sessionMediaID), [mediaA, b.sessionMediaID])
+        XCTAssertEqual(out.removedMediaIDs, [deleted])
+
+        let sid = UUID()
+        let footage = [(mediaA, "NEW", 0.0), (b.sessionMediaID!, "B", 30.0), (deleted, "D", 60.0)].map {
+            SessionMedia(id: $0.0, sessionID: sid, localIdentifier: $0.1, kind: .video, offsetSec: $0.2)
+        }
+        XCTAssertNil(StudioEntry.reconciled(clips: out.clips, removedMediaIDs: out.removedMediaIDs,
+                                            footage: footage, scope: nil),
+                     "the next open changes nothing")
+        XCTAssertNil(StudioEntry.reconciled(clips: out.clips, removedMediaIDs: out.removedMediaIDs,
+                                            footage: footage, scope: [mediaA]))
+    }
+
     // MARK: The project is locked while a bake renders (prompt 294)
 
     /// Every edit path refuses while a bake is in flight: the bake ends by replacing the project

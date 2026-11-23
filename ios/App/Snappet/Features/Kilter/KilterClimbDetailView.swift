@@ -1057,10 +1057,11 @@ struct KilterClimbDetailView: View {
         let sid = session.id
         let all = (try? modelContext.fetch(FetchDescriptor<SessionMedia>(
             predicate: #Predicate { $0.sessionID == sid }))) ?? []
-        let project = KilterStudioProjects.resolve(session, media: all, in: modelContext)
         let mineVideos = Set(sessionClips.filter { $0.assignedClimbUUID == currentUUID && $0.kind == .video }.map(\.id))
+        let visible: Set<UUID> = clip.map { [$0.id] } ?? mineVideos
+        let project = KilterStudioProjects.resolve(session, media: all, scope: visible, in: modelContext)
         clipStudio = ClimbClipStudio(project: project, sessionId: session.id,
-                                     visible: clip.map { [$0.id] } ?? mineVideos,
+                                     visible: visible,
                                      focus: clip?.id, single: clip)
     }
 

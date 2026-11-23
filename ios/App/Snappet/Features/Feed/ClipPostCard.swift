@@ -607,15 +607,19 @@ struct ClipPostCard: View {
         post.clips.filter { $0.media.kind == "video" && !$0.media.isReel }.map(\.media.id)
     }
 
-    private func project() -> StudioProject {
-        StudioEntry.resolveProject(forSessionID: post.sessionID, title: post.title, media: allMedia, context: context)
+    /// `scope` = the clips the Studio is about to show, so a clip deleted from the timeline comes
+    /// back only when the scope would otherwise be empty (prompt 296, `StudioEntry.reconciled`).
+    private func project(scope: Set<UUID>) -> StudioProject {
+        StudioEntry.resolveProject(forSessionID: post.sessionID, title: post.title, media: allMedia,
+                                   scope: scope, context: context)
     }
 
     private func editCurrentClip() {
         let clip = currentClip
         guard clip.media.kind == "video", !clip.media.isReel else { return }
         if mediaVault?.onlyInDrive.contains(clip.media.id) == true { bringBack = clip.media.id; return }
-        studio = StudioPresentation(project: project(), focus: clip.media.id, visible: [clip.media.id])
+        studio = StudioPresentation(project: project(scope: [clip.media.id]), focus: clip.media.id,
+                                    visible: [clip.media.id])
     }
 
     /// Which share actions the centred clip offers (prompt 160) — from the SAME payload its poster draws.
@@ -647,7 +651,7 @@ struct ClipPostCard: View {
     private func editAllClips() {
         let ids = editableClipIDs
         guard !ids.isEmpty else { return }
-        studio = StudioPresentation(project: project(), focus: ids.first, visible: Set(ids))
+        studio = StudioPresentation(project: project(scope: Set(ids)), focus: ids.first, visible: Set(ids))
     }
 
     private func goToSession() {

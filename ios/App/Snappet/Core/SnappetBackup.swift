@@ -791,6 +791,9 @@ extension SnappetBackup {
         var audioTracks: [AudioTrack]
         var hrOverlay: HROverlayConfig?
         var baseFrame: StudioFrameRect?
+        /// Clips the user deleted from the timeline (prompt 296). Optional, so backups written
+        /// before it (no such key) still decode.
+        var removedMediaIDs: [UUID]?
         var createdAt: Date
         var updatedAt: Date
 
@@ -800,6 +803,7 @@ extension SnappetBackup {
             clips = m.clips; transitions = m.transitions
             overlays = m.overlays; audioTracks = m.audioTracks
             hrOverlay = m.hrOverlay; baseFrame = m.baseFrame
+            removedMediaIDs = m.removedMediaIDs
             createdAt = m.createdAt; updatedAt = m.updatedAt
         }
         func make() -> StudioProject {
@@ -807,6 +811,7 @@ extension SnappetBackup {
                                   clips: clips, transitions: transitions,
                                   overlays: overlays, audioTracks: audioTracks,
                                   hrOverlay: hrOverlay, baseFrame: baseFrame,
+                                  removedMediaIDs: removedMediaIDs,
                                   createdAt: createdAt)
             p.aspectRaw = aspectRaw
             p.backgroundRaw = backgroundRaw

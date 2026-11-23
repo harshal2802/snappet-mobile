@@ -12674,3 +12674,31 @@ removed and added again after the bake is still not drawn over that clip until P
 `isBaked`. It replaces the undo stack, as a bake does, because an older step would bring the record
 back and hide items over pixels that no longer have them. It skips the whole clearing while a bake
 is running; the next open of the Studio does it.
+## 2026-11-23 — The project remembers which clips the user deleted (prompt 296)
+
+Opening the Studio appends session videos that are not on the timeline, for footage filmed after the
+project was made. A deleted clip looked the same as one that was never added, so it came back on the
+next open. `StudioProject.removedMediaIDs` (optional `[UUID]`, keyed by `SessionMedia.id`) now lists
+the deleted media, written by `StudioProjectEditor.removeClip` when the last clip of a media item
+goes. The alternative, a list of every media id the project has ever seen, was rejected: it needs a
+backfill for existing projects, and without one every clip filmed before the update would count as
+"seen and deleted". The field is in `StudioProjectSnapshot`, so undoing a delete forgets it, and in
+the backup row. It is keyed by media id, not clip id or Photos id, so split parts share one entry and
+"Replace original" (which changes the Photos id) does not affect it.
+
+## 2026-11-23 — The Studio does not open on an empty timeline (prompt 296)
+
+The rule is `StudioEntry.reconciled` (pure), shared by the gym and Kilter entries: deleted clips stay
+out, unless that leaves no clip in the scope being opened; then the deleted clips of that scope come
+back and are forgotten. So "Edit this clip" on a deleted clip shows the clip (opening it is treated
+as asking for it), and a project with every clip deleted starts over, because the Studio has no "add
+clip" action and the project would otherwise be unusable. A scope that still shows one clip brings
+nothing back; this is what keeps a delete in a post's or climb's "Edit all clips". Bringing back
+every deleted clip of any scoped open was rejected for that reason. A clip that comes back is a fresh
+clip: its old trims and tags are not kept anywhere.
+
+## 2026-11-23 — A stale deletion record never hides a clip (prompt 296)
+
+A media id that is both listed as deleted and present on the timeline is treated as present, and the
+entry is dropped on the next delete or open. Nothing has to keep the list in step when clips are
+added, merged by a bake, or re-pointed. `ClipBakePlan.flattened` was left unchanged for this reason.

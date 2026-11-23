@@ -621,15 +621,15 @@ struct KilterSessionDetailView: View {
         // Flush live HR onto the session before the clip editor reads it, so a clip opened DURING the
         // session shows heart rate (the editor loads the series once, on open). No-op once ended.
         sessions.syncLiveHR(in: modelContext)
-        let project = resolveStudioProject(session)
+        let project = resolveStudioProject(session, scope: visible)
         clipStudio = ClipStudioPresentation(project: project, visibleClipMediaIDs: visible,
                                             focusClipMediaID: focusing, climbUUID: climbUUID,
                                             singleClip: single)
     }
 
     /// The session's one shared `StudioProject` (also opened from the climb page, prompt 214).
-    private func resolveStudioProject(_ session: KilterSession) -> StudioProject {
-        KilterStudioProjects.resolve(session, media: media, in: modelContext)
+    private func resolveStudioProject(_ session: KilterSession, scope: Set<UUID>?) -> StudioProject {
+        KilterStudioProjects.resolve(session, media: media, scope: scope, in: modelContext)
     }
 
     // MARK: - Helpers

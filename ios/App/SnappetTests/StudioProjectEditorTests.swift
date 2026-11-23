@@ -391,4 +391,63 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(u.current, 1)           // can't go back past the trimmed history
         XCTAssertFalse(u.canUndo)
     }
+
+    // MARK: - removeClip remembers the deleted media (prompt 296)
+
+    private func media(_ order: Int, _ mediaID: UUID) -> TimelineClip {
+        TimelineClip(sessionMediaID: mediaID, localIdentifier: "m\(order)", isPhoto: false, order: order)
+    }
+
+    func testRemoveClipRemembersTheMediaItDeleted() {
+        let m1 = UUID(), m2 = UUID(), m3 = UUID()
+        let a = media(0, m1), b = media(1, m2), c = media(2, m3)
+        var s = empty(); s.clips = [a, b, c]
+        s = StudioProjectEditor.removeClip(s, id: b.id)
+        XCTAssertEqual(s.removedMediaIDs, [m2])
+        s = StudioProjectEditor.removeClip(s, id: a.id)
+        XCTAssertEqual(s.removedMediaIDs, [m2, m1])
+        // An unknown id and a clip with no media record nothing.
+        var t = empty(); t.clips = [video(0)]
+        t = StudioProjectEditor.removeClip(t, id: UUID())
+        t = StudioProjectEditor.removeClip(t, id: t.clips[0].id)
+        XCTAssertNil(t.removedMediaIDs)
+    }
+
+    /// Split parts share one media id. Deleting one part leaves the media on the timeline, so
+    /// nothing is remembered until the last part goes.
+    func testRemoveClipRemembersASplitClipOnlyWhenItsLastPartGoes() {
+        let m = UUID()
+        var s = empty(); s.clips = [media(0, m), media(1, UUID())]
+        s = StudioProjectEditor.splitClip(s, id: s.clips[0].id, atOutputOffset: 3, sourceDuration: 10)
+        let parts = s.clips.filter { $0.sessionMediaID == m }
+        XCTAssertEqual(parts.count, 2)
+        s = StudioProjectEditor.removeClip(s, id: parts[0].id)
+        XCTAssertNil(s.removedMediaIDs, "the other part is still on the timeline")
+        s = StudioProjectEditor.removeClip(s, id: parts[1].id)
+        XCTAssertEqual(s.removedMediaIDs, [m])
+    }
+
+    /// Undo keeps the prior snapshot, so undoing a delete also forgets the deletion.
+    func testUndoOfADeleteForgetsTheDeletion() {
+        let m = UUID()
+        var s = empty(); s.clips = [media(0, m), media(1, UUID())]
+        var u = UndoStack(s)
+        u.commit(StudioProjectEditor.removeClip(s, id: s.clips[0].id))
+        XCTAssertEqual(u.current.removedMediaIDs, [m])
+        u.undo()
+        XCTAssertNil(u.current.removedMediaIDs)
+        u.redo()
+        XCTAssertEqual(u.current.removedMediaIDs, [m])
+    }
+
+    /// Stored projects and undo snapshots written before prompt 296 have no such key.
+    func testSnapshotWithoutTheNewKeyStillDecodes() throws {
+        var s = empty(); s.clips = [video(0)]
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(s)) as? [String: Any])
+        json.removeValue(forKey: "removedMediaIDs")
+        let old = try JSONDecoder().decode(StudioProjectSnapshot.self,
+                                           from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(old.removedMediaIDs)
+        XCTAssertEqual(old.clips.count, 1)
+    }
 }

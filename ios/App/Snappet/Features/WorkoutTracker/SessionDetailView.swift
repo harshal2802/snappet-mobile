@@ -1159,7 +1159,7 @@ private struct SessionMediaSection: View {
         guard item.kind == .video, !item.isReel else { return }
         if app.mediaVault.onlyInDrive.contains(item.id) { bringBack = item.id; return }
         onOpenStudio(StudioPresentation(
-            project: StudioEntry.resolveProject(for: session, media: media, context: context),
+            project: StudioEntry.resolveProject(for: session, media: media, scope: [item.id], context: context),
             visibleClipMediaIDs: [item.id], focusClipMediaID: item.id))
     }
 }
