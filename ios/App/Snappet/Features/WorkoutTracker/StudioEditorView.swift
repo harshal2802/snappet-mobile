@@ -239,7 +239,7 @@ struct StudioEditorView: View {
             // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
             // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
             // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
-            if let tile = vm.hrTile {
+            if let tile = vm.canvasHRTile {   // nil over a baked clip (prompt 295)
                 let preview = vm.previewTile
                 HRTileEditorView(tile: tile, values: preview.values,
                                  fraction: preview.fraction, ratio: vm.previewRatio,

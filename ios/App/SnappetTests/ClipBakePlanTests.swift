@@ -263,6 +263,250 @@ final class ClipBakePlanTests: XCTestCase {
         XCTAssertEqual(vm.title, "After")
     }
 
+    // MARK: Studio stand-down for baked clips (prompt 295)
+
+    private var tileConfig: HROverlayConfig {
+        var cfg = HROverlayConfig.default
+        cfg.tile = HRTile.make(template: .hero)
+        return cfg
+    }
+
+    private struct Shared {
+        var s: StudioProjectSnapshot
+        var a: TimelineClip, b: TimelineClip
+        var tagB: OverlayItem, text: OverlayItem, pip: OverlayItem
+        var music: AudioTrack
+    }
+
+    /// A project with two clips, one of every project-wide item, and one tag bound to each clip.
+    private func sharedProject() -> Shared {
+        let a = tclip(local: "A", order: 0, trimEnd: 5)
+        let b = tclip(local: "B", order: 1, trimEnd: 5)
+        var s = snap([a, b])
+        let tagB = OverlayItem(kind: .climbName, content: "Slab", clipID: b.id)
+        let text = OverlayItem(kind: .text, content: "Tuesday")
+        let pip = OverlayItem(kind: .video, content: "B")
+        let music = AudioTrack(kind: .music, sourceRef: "m.m4a")
+        s.overlays = [OverlayItem(kind: .climbName, content: "Cave Roof", clipID: a.id), tagB, text, pip]
+        s.hrOverlay = tileConfig
+        s.baseFrame = StudioFrameRect(centerX: 0.5, centerY: 0.3, width: 0.8, height: 0.5)
+        s.audioTracks = [music]
+        return Shared(s: s, a: a, b: b, tagB: tagB, text: text, pip: pip, music: music)
+    }
+
+    /// A bake of one clip in a session with others records, on that clip, the project-wide items
+    /// it kept in the project although they are now in the clip's pixels. The other clip has no
+    /// record. A whole-project bake removed those items, so it records nothing.
+    func testFlattenRecordsTheKeptItemsThatAreInThePixels() {
+        let p = sharedProject()
+        let out = ClipBakePlan.flattened(p.s, target: "A")
+        XCTAssertEqual(out.clips[0].baked,
+                       BakedItems(overlayIDs: BakedItems.sorted([p.text.id, p.pip.id]),
+                                  audioTrackIDs: [p.music.id], hrTile: true, baseFrame: true))
+        XCTAssertNil(out.clips[1].baked)
+
+        // The render had no heart-rate data to draw: the tile is not claimed.
+        let noHR = ClipBakePlan.flattened(p.s, target: "A", hrTileDrawn: false)
+        XCTAssertEqual(noHR.clips[0].baked?.hrTile, false)
+        XCTAssertEqual(noHR.clips[0].baked?.baseFrame, true)
+
+        // Music the transition path did not mix is not in the pixels.
+        var dissolve = p.s
+        dissolve.overlays.removeAll { $0.kind == .video }
+        dissolve.transitions = [StudioTransition(afterClipID: p.a.id, kind: .dissolve)]
+        XCTAssertEqual(ClipBakePlan.flattened(dissolve, target: "A").clips[0].baked?.audioTrackIDs, [])
+
+        // Whole project, and a project with nothing project-wide: no record.
+        var one = p.s
+        one.clips = [p.a]
+        XCTAssertNil(ClipBakePlan.flattened(one, target: "A").clips[0].baked)
+        XCTAssertNil(ClipBakePlan.flattened(snap([p.a, p.b]), target: "A").clips[0].baked)
+    }
+
+    /// "Edit this clip" on the baked clip: exactly the recorded items are left out of the snapshot
+    /// to render. A text, a tag and a music track added after the bake are drawn.
+    func testStandDownHidesOnlyWhatTheBakeRecorded() {
+        let p = sharedProject()
+        var after = ClipBakePlan.flattened(p.s, target: "A")
+        let bakedA = after.clips[0]
+        let newText = OverlayItem(kind: .text, content: "Sent!")
+        let newTag = OverlayItem(kind: .climbName, content: "Cave Roof", clipID: bakedA.id)
+        let newMusic = AudioTrack(kind: .music, sourceRef: "n.m4a")
+        after.overlays += [newText, newTag]
+        after.audioTracks.append(newMusic)
+
+        var scoped = after
+        scoped.clips = [bakedA]
+        scoped.overlays.removeAll { $0.id == p.tagB.id }        // what the scope filter leaves
+        let out = ClipBakePlan.standingDown(scoped, visible: [bakedA])
+        XCTAssertEqual(out.overlays.map(\.id), [newText.id, newTag.id])
+        XCTAssertEqual(out.audioTracks.map(\.id), [newMusic.id])
+        XCTAssertNil(out.hrOverlay)
+        XCTAssertNil(out.baseFrame)
+        XCTAssertEqual(out.clips, [bakedA])
+        // Nothing is removed from the project the other clips use.
+        XCTAssertEqual(scoped.overlays.count, 4)
+        XCTAssertNotNil(scoped.hrOverlay)
+
+        // The other clip's scope, an empty timeline, and a clip with no record: unchanged.
+        XCTAssertEqual(ClipBakePlan.standingDown(after, visible: [p.b]), after)
+        XCTAssertEqual(ClipBakePlan.standingDown(after, visible: []), after)
+        XCTAssertEqual(ClipBakePlan.standingDown(p.s, visible: [p.a]), p.s)
+    }
+
+    /// After a whole-project bake nothing is recorded, so everything added afterwards is drawn —
+    /// including a new HR tile and a new base frame.
+    func testNothingIsHiddenAfterAWholeProjectBake() {
+        var one = sharedProject().s
+        one.clips = [one.clips[0]]
+        var after = ClipBakePlan.flattened(one, target: "A")
+        after.overlays = [OverlayItem(kind: .text, content: "Sent!")]
+        after.hrOverlay = tileConfig
+        after.baseFrame = .half
+        after.audioTracks = [AudioTrack(kind: .music, sourceRef: "n.m4a")]
+        XCTAssertEqual(ClipBakePlan.standingDown(after, visible: after.clips), after)
+        XCTAssertFalse(ClipBakePlan.hidesHRTile(over: after.clips[0]))
+        XCTAssertTrue(ClipBakePlan.allowsSessionWideTile(visible: after.clips))
+    }
+
+    /// A timeline with a baked and an unbaked clip keeps the project-wide items (they span the
+    /// whole output). The HR tile is held back over the clip that has one in its pixels, and the
+    /// session-wide tile is refused. Two baked clips hide only what both recorded.
+    func testMixedTimelineHoldsBackOnlyTheHRTilePerClip() {
+        let p = sharedProject()
+        let after = ClipBakePlan.flattened(p.s, target: "A")
+        let bakedA = after.clips[0]
+        XCTAssertEqual(ClipBakePlan.standingDown(after, visible: after.clips), after)
+        XCTAssertTrue(ClipBakePlan.hidesHRTile(over: bakedA))
+        XCTAssertFalse(ClipBakePlan.hidesHRTile(over: p.b))
+        XCTAssertFalse(ClipBakePlan.hidesHRTile(over: nil))
+        XCTAssertFalse(ClipBakePlan.allowsSessionWideTile(visible: after.clips))
+        XCTAssertTrue(ClipBakePlan.allowsSessionWideTile(visible: [p.b]))
+        let photo = tclip(local: "P", photo: true, order: 2)
+        XCTAssertTrue(ClipBakePlan.bakedInEveryClip([bakedA, photo]).isEmpty)
+
+        // B is baked later, after a second text was added: A's pixels do not have that text.
+        var later = after
+        let second = OverlayItem(kind: .text, content: "Sent!")
+        later.overlays.append(second)
+        let both = ClipBakePlan.flattened(later, target: "B")
+        XCTAssertEqual(both.clips[1].baked?.overlayIDs.contains(second.id), true)
+        let out = ClipBakePlan.standingDown(both, visible: both.clips)
+        XCTAssertEqual(out.overlays.map(\.id), [second.id])
+        XCTAssertNil(out.hrOverlay)
+        XCTAssertTrue(out.audioTracks.isEmpty)
+    }
+
+    /// A second bake of the same clip adds to its record, split parts carry it into the merged
+    /// clip, and an item that left the project leaves the record.
+    func testASecondBakeAddsToTheRecord() {
+        let p = sharedProject()
+        var after = ClipBakePlan.flattened(p.s, target: "A")
+        let first = after.clips[0].baked
+        XCTAssertEqual(ClipBakePlan.neutralizedClips(after.clips, localIdentifier: "A")[0].baked, first)
+
+        // Split the baked clip (both parts carry the record), add a text, remove the HR tile.
+        var part2 = after.clips[0]
+        part2.id = UUID()
+        part2.order = 1
+        after.clips[1].order = 2
+        after.clips.insert(part2, at: 1)
+        let newText = OverlayItem(kind: .text, content: "Sent!")
+        after.overlays.append(newText)
+        after.hrOverlay = nil
+
+        let again = ClipBakePlan.flattened(after, target: "A", replacedBy: "NEW")
+        XCTAssertEqual(again.clips.map(\.localIdentifier), ["NEW", "B"])
+        let record = again.clips[0].baked
+        XCTAssertEqual(record?.overlayIDs, BakedItems.sorted([p.text.id, p.pip.id, newText.id]))
+        XCTAssertEqual(record?.audioTrackIDs, [p.music.id])
+        XCTAssertEqual(record?.hrTile, false)       // no tile in the project any more
+        XCTAssertEqual(record?.baseFrame, true)
+    }
+
+    /// Photos reverted the asset: its clips lose the record, by media row or by asset identifier.
+    func testAPhotosRevertClearsTheRecord() {
+        let p = sharedProject()
+        let after = ClipBakePlan.flattened(ClipBakePlan.flattened(p.s, target: "A"), target: "B")
+        XCTAssertNotNil(after.clips[0].baked)
+        XCTAssertNotNil(after.clips[1].baked)
+        let byRow = ClipBakePlan.clearingBakeRecords(after, mediaIDs: [p.a.sessionMediaID!],
+                                                     localIdentifiers: [])
+        XCTAssertNil(byRow.clips[0].baked)
+        XCTAssertNotNil(byRow.clips[1].baked)
+        let byAsset = ClipBakePlan.clearingBakeRecords(after, mediaIDs: [], localIdentifiers: ["B"])
+        XCTAssertNotNil(byAsset.clips[0].baked)
+        XCTAssertNil(byAsset.clips[1].baked)
+        XCTAssertEqual(ClipBakePlan.clearingBakeRecords(after, mediaIDs: [], localIdentifiers: []), after)
+        XCTAssertEqual(ClipBakePlan.standingDown(byRow, visible: [byRow.clips[0]]), byRow)
+    }
+
+    /// The record is an optional field: a clip stored before it existed has no key and decodes.
+    func testAClipStoredBeforeTheRecordStillDecodes() throws {
+        let old = tclip(local: "A")
+        let json = try JSONEncoder().encode(old)
+        XCTAssertFalse(String(decoding: json, as: UTF8.self).contains("\"baked\""))
+        XCTAssertNil(try JSONDecoder().decode(TimelineClip.self, from: json).baked)
+
+        var baked = old
+        baked.baked = BakedItems(overlayIDs: [UUID()], audioTrackIDs: [UUID()], hrTile: true)
+        let back = try JSONDecoder().decode(TimelineClip.self, from: JSONEncoder().encode(baked))
+        XCTAssertEqual(back, baked)
+    }
+
+    /// The view model applies the rule to what the canvas and the overlay lane show, per scope.
+    /// The stored project keeps every item, and a text added after the bake is shown.
+    @MainActor
+    func testTheEditorHidesOnlyTheBakedItemsInTheBakedClipsScope() throws {
+        let container = try ModelContainer(
+            for: Schema(SnappetSchema.models),
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = container.mainContext
+        let a = tclip(local: "A", order: 0, trimEnd: 5)
+        let b = tclip(local: "B", order: 1, trimEnd: 5)
+        let project = StudioProject(sessionID: UUID(), title: "Session")
+        project.clips = [a, b]
+        context.insert(project)
+
+        // The whole session: add one of each item the canvas draws, then bake clip A.
+        let before = StudioEditorViewModel(project: project, context: context)
+        before.addText("Tuesday")
+        before.toggleHROverlay()
+        before.toggleBaseFrame()
+        XCTAssertNotNil(before.canvasHRTile)
+        ClipBakePlan.flattened(StudioProjectSnapshot(project), target: "A").apply(to: project)
+
+        let all = StudioEditorViewModel(project: project, context: context)
+        XCTAssertEqual(all.canvasOverlays.map(\.content), ["Tuesday"])
+        XCTAssertNotNil(all.baseFrame)          // a mixed timeline keeps the project-wide items
+
+        // "Edit this clip" on the other clip: everything is drawn.
+        let otherScope = StudioEditorViewModel(project: project, context: context,
+                                               visibleClipMediaIDs: [b.sessionMediaID!])
+        XCTAssertEqual(otherScope.canvasOverlays.map(\.content), ["Tuesday"])
+        XCTAssertNotNil(otherScope.baseFrame)
+        XCTAssertNotNil(otherScope.canvasHRTile)
+
+        // "Edit this clip" on the baked clip: what the bake rendered is not drawn again.
+        let bakedScope = StudioEditorViewModel(project: project, context: context,
+                                               visibleClipMediaIDs: [a.sessionMediaID!])
+        XCTAssertTrue(bakedScope.canvasOverlays.isEmpty)
+        XCTAssertTrue(bakedScope.timelineOverlays.isEmpty)
+        XCTAssertNil(bakedScope.baseFrame)
+        XCTAssertNil(bakedScope.canvasHRTile)
+        XCTAssertNotNil(bakedScope.hrTile)      // the builder still shows the stored tile
+        XCTAssertTrue(bakedScope.baseFramed)
+        // A text added after the bake is drawn.
+        bakedScope.addText("Sent!")
+        XCTAssertEqual(bakedScope.canvasOverlays.map(\.content), ["Sent!"])
+        XCTAssertEqual(bakedScope.timelineOverlays.map(\.content), ["Sent!"])
+
+        // Nothing was removed from the stored project.
+        XCTAssertEqual(project.overlays.map(\.content), ["Tuesday", "Sent!"])
+        XCTAssertNotNil(project.hrOverlay)
+        XCTAssertNotNil(project.baseFrame)
+    }
+
     // MARK: Feed stand-down (the isBaked contract)
 
     /// A baked clip draws NO live HR overlay (the tile is in the pixels) and never live-reflects an

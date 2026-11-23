@@ -12634,3 +12634,43 @@ The composer's transition path does not mix added music, so a bake through that 
 the tracks must stay. The plan repeats the path condition from `StudioComposer.assemble` instead of
 calling into the composer, which was out of scope. It tests clips and overlays as stored, not as
 resolved from Photos. Remove it when the composer has one path.
+
+## 2026-11-23 — A baked clip records which project-wide items are in its pixels (prompt 295)
+
+After a bake of one clip the shared project keeps the HR tile, unbound overlays, music and base
+frame for the other clips. Hiding all of them in the Studio whenever the clip's `SessionMedia` is
+baked was rejected: an item the user adds after the bake cannot be told apart and would be stored
+but never drawn, also in a one-clip session where the bake had removed everything. Instead
+`ClipBakePlan.flattened` writes `TimelineClip.baked` (`BakedItems`: overlay ids, music track ids,
+`hrTile`, `baseFrame`) for what it rendered and kept, and `ClipBakePlan.standingDown` leaves out
+only those. The Studio does not read `SessionMedia.isBaked` for this; the feed still does.
+
+## 2026-11-23 — A project-wide item is hidden only when every visible clip has it baked (prompt 295)
+
+Unbound overlays, music and the base frame span the whole output and the composer cannot gate them
+per clip. `standingDown` drops one only if it is in the record of every visible clip. On a mixed
+timeline they stay and the baked clip gets them twice. The HR tile is the exception, because it is
+placed per clip: a clip with `baked.hrTile` gets no per-clip tile, and the session-wide fallback
+tile is not rendered when any visible clip has it. Cost of the second part: on such a timeline an
+unbaked clip without a media link has no HR tile.
+
+## 2026-11-23 — No fallback for clips baked before the record existed (prompt 295)
+
+A clip with `SessionMedia.isBaked` and no record hides nothing. Treating it as "has a tile in its
+pixels" would need a second mechanism in the view model and would be wrong for a clip baked
+without a tile. Bakes from before prompt 294 deleted the tile and the text from the whole project,
+so such a clip behaves exactly as it did before this prompt.
+
+## 2026-11-23 — `BakedItems` stores arrays, and the tile and base frame as flags (prompt 295)
+
+The ids are sorted arrays, not sets, to match every other nested collection in the project's
+stored Codable composites and to keep snapshot equality stable. The field is optional so stored
+clips decode. The HR tile and the base frame have no id, so the record holds a flag: a tile
+removed and added again after the bake is still not drawn over that clip until Photos reverts it.
+
+## 2026-11-23 — A Photos revert clears the record and the undo history (prompt 295)
+
+`reconcileBakedFlags` clears `TimelineClip.baked` for the reverted asset's clips when it clears
+`isBaked`. It replaces the undo stack, as a bake does, because an older step would bring the record
+back and hide items over pixels that no longer have them. It skips the whole clearing while a bake
+is running; the next open of the Studio does it.

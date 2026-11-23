@@ -49,6 +49,43 @@ struct ClipAdjust: Codable, Hashable, Sendable {
     var isNeutral: Bool { brightness == 0 && contrast == 1 && saturation == 1 }
 }
 
+/// What a bake of one clip left in the shared project although it is in that clip's pixels
+/// (prompt 295). A session shares one project, so a bake of one clip keeps the project-wide items
+/// for the other clips; this record on the baked clip tells the Studio which of them it must not
+/// draw over that clip again. Items added after the bake are not in it and draw normally.
+/// Written by `ClipBakePlan.flattened`, read by `ClipBakePlan.standingDown`, cleared when Photos
+/// reverts the asset. Arrays, kept sorted, like every other nested collection in the project's
+/// stored composites.
+struct BakedItems: Codable, Hashable, Sendable {
+    /// Overlays with no `clipID` that the bake rendered (text, stickers, climb tags,
+    /// picture-in-picture).
+    var overlayIDs: [UUID] = []
+    /// Added music tracks the bake mixed in.
+    var audioTrackIDs: [UUID] = []
+    /// The HR tile was drawn into the pixels.
+    var hrTile: Bool = false
+    /// The base frame was applied to the pixels.
+    var baseFrame: Bool = false
+
+    var isEmpty: Bool { overlayIDs.isEmpty && audioTrackIDs.isEmpty && !hrTile && !baseFrame }
+
+    /// Everything either record holds (a second bake of the same clip, or merged split parts).
+    func union(_ other: BakedItems) -> BakedItems {
+        BakedItems(overlayIDs: Self.sorted(Set(overlayIDs).union(other.overlayIDs)),
+                   audioTrackIDs: Self.sorted(Set(audioTrackIDs).union(other.audioTrackIDs)),
+                   hrTile: hrTile || other.hrTile, baseFrame: baseFrame || other.baseFrame)
+    }
+
+    /// Only what BOTH records hold: what is in the pixels of every clip on a timeline.
+    func intersection(_ other: BakedItems) -> BakedItems {
+        BakedItems(overlayIDs: Self.sorted(Set(overlayIDs).intersection(other.overlayIDs)),
+                   audioTrackIDs: Self.sorted(Set(audioTrackIDs).intersection(other.audioTrackIDs)),
+                   hrTile: hrTile && other.hrTile, baseFrame: baseFrame && other.baseFrame)
+    }
+
+    static func sorted(_ ids: Set<UUID>) -> [UUID] { ids.sorted { $0.uuidString < $1.uuidString } }
+}
+
 /// One clip on the **main video track**: a source (video or photo) with trim, speed, crop, a
 /// colour filter, and optional Ken-Burns scale keyframes (photos). Non-destructive and
 /// resolution-independent (seconds / normalized 0…1). `order` sequences the track; **split** = two
@@ -93,6 +130,11 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     var hrLeadSec: Double?
     var hrTailSec: Double?
     var hrMetricsScopeRaw: String?
+
+    /// Project-wide items a bake left in the project but that are in this clip's pixels (prompt
+    /// 295). `nil` = none. Optional → migration-safe Codable change (old persisted clips decode
+    /// `nil`).
+    var baked: BakedItems?
 
     init(id: UUID = UUID(), sessionMediaID: UUID?, localIdentifier: String, isPhoto: Bool,
          order: Int, trimStart: Double = 0, trimEnd: Double? = nil, speed: Double = 1,
