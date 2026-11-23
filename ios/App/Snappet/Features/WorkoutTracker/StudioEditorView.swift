@@ -75,9 +75,13 @@ struct StudioEditorView: View {
         .onChange(of: vm.exportState) { _, state in
             if case .exported = state { showingShare = true }
         }
-        .sheet(isPresented: $showingShare) {
+        // Closing the share sheet deletes the exported temp file (prompt 298).
+        .sheet(isPresented: $showingShare, onDismiss: { vm.shareSheetDismissed() }) {
             if case let .exported(url) = vm.exportState { ShareSheet(items: [url]) }
         }
+        // Leaving the Studio stops a running export and deletes its files (prompt 298). A sheet
+        // shown over the Studio does not fire this.
+        .onDisappear { vm.studioClosed() }
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
                 .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
@@ -135,6 +139,18 @@ struct StudioEditorView: View {
         } message: {
             if case .failed(let msg) = vm.bakeState { Text(msg) }
         }
+        // An alert, not text in the action bar: that bar is replaced while an overlay is selected,
+        // which hid the message (prompt 298).
+        .alert("Couldn't export", isPresented: exportFailedBinding) {
+            Button("OK") { vm.acknowledgeExportFailure() }
+        } message: {
+            if case .failed(let msg) = vm.exportState { Text(msg) }
+        }
+    }
+
+    private var exportFailedBinding: Binding<Bool> {
+        Binding(get: { if case .failed = vm.exportState { return true } else { return false } },
+                set: { if !$0 { vm.acknowledgeExportFailure() } })
     }
 
     /// Alert bindings over the bake state machine (SwiftUI alerts need Bool bindings).
@@ -179,7 +195,7 @@ struct StudioEditorView: View {
             // the storage truth inline: revertible KEEPS the original (never frees space); only
             // Replace reclaims it, behind an explicit confirm.
             Menu {
-                Button { Task { await vm.export() } } label: {
+                Button { vm.startExport() } label: {
                     Label("Export as new video", systemImage: "square.and.arrow.up")
                 }
                 .accessibilityIdentifier("studioExportNew")
@@ -254,9 +270,23 @@ struct StudioEditorView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .accessibilityIdentifier("studioPreviewError")
             }
-            if case .exporting = vm.exportState {
-                ProgressView("Exporting…").padding()
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            if case .exporting(let progress) = vm.exportState {
+                VStack(spacing: 12) {
+                    ProgressView(value: progress) {
+                        Text("Exporting…").font(.subheadline.weight(.semibold))
+                    } currentValueLabel: {
+                        Text(vm.exportState.exportPercentLabel ?? "").monospacedDigit()
+                    }
+                    .tint(SnappetColor.workout)
+                    .accessibilityIdentifier("studioExportProgress")
+                    Button("Cancel", role: .cancel) { vm.cancelExport() }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("studioExportCancel")
+                        .accessibilityLabel("Cancel export")
+                }
+                .frame(width: 220)
+                .padding()
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
             if case .baking = vm.bakeState {
                 ProgressView("Saving to original…").padding()
@@ -354,9 +384,6 @@ struct StudioEditorView: View {
                 Text("Tap a clip to edit it").font(.caption2).foregroundStyle(.secondary)
                     .padding(.top, 2)
             }
-        }
-        if case let .failed(msg) = vm.exportState {
-            Text(msg).font(.footnote).foregroundStyle(.red).padding(6)
         }
     }
 

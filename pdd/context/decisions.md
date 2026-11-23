@@ -12735,3 +12735,28 @@ its alignment with the clips. `total` is used as the end of the timeline: the pa
 it is dimmed, a move keeps at least 0.2 s of the bar inside it, and the end handle cannot be
 dragged past it. A tag that is bound to a clip gets no limit, because its window comes from the
 clip's slot at render and not from its stored times.
+## 2026-11-23 — The export state decides which temp file is deleted (prompt 298)
+
+A Studio export left its rendered file in the temp directory for good. The view model now changes
+`exportState` in one place, and deletes the file the old state held and the new one does not
+(`ExportShareState.fileToDelete(movingTo:)`, pure and tested). That covers a closed share sheet, a
+new export and a closed Studio with one rule. The partial file of a failed or cancelled render is
+never in the state; `StudioComposer.export` deletes it before it throws. Cost: the file is deleted
+when the share sheet closes, so a share target that reads it after that would find nothing. iOS
+closes the sheet after the chosen action ends; this is on the device list of prompt 298.
+
+## 2026-11-23 — A cancelled export is idle at once, but blocks a new render until it stops (prompt 298)
+
+Cancel sets the state to idle right away so the indicator goes when the button is tapped. The
+session may need a moment to stop, and building the composition (Photos, iCloud) does not stop on
+a cancel at all. `isRendering` therefore also stays true while the view model still holds the
+export Task, so a second export or a bake cannot start beside the one that is stopping. The
+alternative, keeping the indicator until the session has stopped, makes Cancel look ignored.
+
+## 2026-11-23 — A bake has no progress bar and no cancel (prompt 298)
+
+The bake lane uses the same render, so it could show the same bar. It does not: its state
+(`BakeState.baking`) is compared with `==` in the project lock from prompt 294, and a progress
+value would change that code. A bake must not be cancellable either, because the Photos write
+after the render cannot be undone half way. `renderComposition` takes the progress callback as an
+optional argument and the bake passes none.

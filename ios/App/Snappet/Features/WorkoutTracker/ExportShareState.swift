@@ -13,8 +13,9 @@ import Foundation
 enum ExportShareState: Equatable {
     /// Nothing exported yet.
     case idle
-    /// An `AVAssetExportSession` is running.
-    case exporting
+    /// An `AVAssetExportSession` is running. `progress` is the fraction done, 0…1 (prompt 298);
+    /// it stays 0 while the composition is being built, before the session reports anything.
+    case exporting(progress: Double)
     /// The video rendered to `url`; share + "Save to Photos" act on it.
     case exported(URL)
     /// A save to Photos is in flight for `url` (export already succeeded).
@@ -43,7 +44,22 @@ enum ExportShareState: Equatable {
     // MARK: - Transitions (pure)
 
     /// Begin an export. Always valid (re-exporting from any state is allowed).
-    func beginningExport() -> ExportShareState { .exporting }
+    func beginningExport() -> ExportShareState { .exporting(progress: 0) }
+
+    /// The running export reported `fraction` done. Only an export in flight takes it (a late report
+    /// after a cancel, a failure or a finish changes nothing). The value is held to 0…1 and never
+    /// moves backwards, so the bar cannot jump back.
+    func exportProgressed(_ fraction: Double) -> ExportShareState {
+        guard case .exporting(let current) = self, fraction.isFinite else { return self }
+        return .exporting(progress: max(current, min(max(fraction, 0), 1)))
+    }
+
+    /// The user cancelled the running export: back to idle, with no message. Any other state is
+    /// unchanged (a cancel that arrives after the export ended must not drop its result).
+    func exportCancelled() -> ExportShareState {
+        guard case .exporting = self else { return self }
+        return .idle
+    }
 
     /// Export finished with a rendered file.
     func exportSucceeded(_ url: URL) -> ExportShareState { .exported(url) }
@@ -62,4 +78,41 @@ enum ExportShareState: Equatable {
 
     /// Export or save failed.
     func failed(_ message: String) -> ExportShareState { .failed(message) }
+
+    /// The share sheet for the rendered file was closed: the file has been handed over, so the flow
+    /// is over. A save in flight still needs the file and is left alone.
+    func shareDismissed() -> ExportShareState {
+        switch self {
+        case .exported, .saved: return .idle
+        case .idle, .exporting, .saving, .failed: return self
+        }
+    }
+
+    /// The user closed the failure message.
+    func failureAcknowledged() -> ExportShareState {
+        guard case .failed = self else { return self }
+        return .idle
+    }
+
+    // MARK: - Progress and temp-file ownership (pure, prompt 298)
+
+    /// The fraction done while an export runs, else `nil`.
+    var exportProgress: Double? {
+        guard case .exporting(let progress) = self else { return nil }
+        return progress
+    }
+
+    /// The whole percent shown next to the bar ("42%"), rounded down so 100 appears only when the
+    /// session reports it is done.
+    var exportPercentLabel: String? {
+        exportProgress.map { "\(Int(($0 * 100).rounded(.down)))%" }
+    }
+
+    /// The rendered temp file this state holds and `next` no longer does: the caller deletes it on
+    /// that transition. A new export, a closed share sheet, a failure and a closed Studio all drop
+    /// the file; moving between exported / saving / saved keeps it.
+    func fileToDelete(movingTo next: ExportShareState) -> URL? {
+        guard let url = exportedURL, next.exportedURL != url else { return nil }
+        return url
+    }
 }
