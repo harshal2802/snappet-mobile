@@ -104,7 +104,10 @@ struct CloudBackupSection: View {
         Binding(get: { backup.settings.includeHeartRate }, set: { new in backup.update { $0.includeHeartRate = new } })
     }
     private var wifiOnly: Binding<Bool> {
-        Binding(get: { backup.settings.wifiOnly }, set: { new in backup.update { $0.wifiOnly = new } })
+        Binding(get: { backup.settings.wifiOnly }, set: { new in
+            backup.update { $0.wifiOnly = new }
+            Task { await app.runCloudBackup() }   // look again under the new rule (prompt 293)
+        })
     }
 }
 
@@ -291,7 +294,10 @@ struct ClipVaultSection: View {
         })
     }
     private var wifiOnly: Binding<Bool> {
-        Binding(get: { vault.settings.wifiOnly }, set: { new in vault.update { $0.wifiOnly = new } })
+        Binding(get: { vault.settings.wifiOnly }, set: { new in
+            vault.update { $0.wifiOnly = new }   // on: stops a clip being sent over mobile data (prompt 293)
+            Task { await app.runMediaVault() }   // off: mobile data is allowed now, so start; on: say it is waiting
+        })
     }
     private var layout: Binding<MediaVaultLayout> {
         Binding(get: { vault.settings.layout }, set: { new in

@@ -62,6 +62,7 @@ struct RootShell: View {
                             app.recomputeFeedbackTuning()
                         }
                         if Self.cloudBackupRuns {
+                            if !Self.isUITestLaunch { app.startNetworkWatch() }   // prompt 293
                             Task(priority: .utility) {
                                 await app.checkCloudRestoreOffer()   // fresh install + a backup exists (prompt 267)
                                 await app.runCloudBackup()
@@ -80,6 +81,7 @@ struct RootShell: View {
         // the background (prompt 279): a backup cannot finish there, and starting one got the app
         // closed while a session was on.
         .onChange(of: scenePhase) { _, phase in
+            app.appIsActive = phase != .background   // Control Centre over the app is not "away"
             guard phase == .active, Self.cloudBackupRuns else { return }
             Task(priority: .utility) {
                 await app.runCloudBackup()

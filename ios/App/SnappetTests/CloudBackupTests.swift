@@ -1,6 +1,7 @@
 import CryptoKit
 import SwiftData
 import XCTest
+import os
 @testable import Snappet
 
 /// Automatic cloud backup (cloud-connect P2, prompt 267) — the pure core: when to upload, what to
@@ -251,6 +252,105 @@ final class CloudBackupServiceTests: XCTestCase {
         return CloudBackupService(defaults: other ?? defaults, vaultFor: { _ in FolderVault(directory: folder) },
                                   keys: FixedBackupKeyStore(key: key ?? self.key),
                                   network: { network }, deviceName: "Test iPhone")
+    }
+
+    // MARK: A rule that changes while the backup is being sent stops it (prompt 293)
+
+    /// A vault whose payload takes a while to send, as a real one of hundreds of MB does.
+    struct SlowVault: CloudVault {
+        let inner: FolderVault
+        let payloadDelay: Duration
+        let sawWiFiOnly: OSAllocatedUnfairLock<[Bool]>
+        func isAvailable() async -> Bool { await inner.isAvailable() }
+        func names() async throws -> [String] { try await inner.names() }
+        func read(_ name: String) async throws -> Data { try await inner.read(name) }
+        func write(_ data: Data, name: String) async throws { try await write(data, name: name, wifiOnly: false) }
+        func write(_ data: Data, name: String, wifiOnly: Bool) async throws {
+            sawWiFiOnly.withLock { $0.append(wifiOnly) }
+            try await Task.sleep(for: payloadDelay)   // stops when cancelled, as URLSession does
+            try await inner.write(data, name: name)
+        }
+        func remove(_ name: String) async throws { try await inner.remove(name) }
+    }
+
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: CloudBackupNetwork
+        init(_ value: CloudBackupNetwork) { stored = value }
+        var value: CloudBackupNetwork { get { lock.withLock { stored } } set { lock.withLock { stored = newValue } } }
+    }
+
+    private func slowService(network: Flag, delay: Duration = .seconds(5),
+                             saw: OSAllocatedUnfairLock<[Bool]> = .init(initialState: [])) -> CloudBackupService {
+        let folder = folder!
+        let backup = CloudBackupService(
+            defaults: defaults,
+            vaultFor: { _ in SlowVault(inner: FolderVault(directory: folder), payloadDelay: delay, sawWiFiOnly: saw) },
+            keys: FixedBackupKeyStore(key: key), network: { network.value }, deviceName: "Test iPhone")
+        backup.ruleCheckEvery = .seconds(60)
+        return backup
+    }
+
+    func testTurningWiFiOnlyOnStopsABackupBeingSentOverMobileData() async throws {
+        try seed()
+        let network = Flag(.cellular)
+        let backup = slowService(network: network)
+        backup.update { $0.destination = .iCloud; $0.wifiOnly = false }
+        let context = container.mainContext
+        let run = Task { await backup.runIfNeeded(context: context, storeHealthy: true, manual: true) }
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(backup.phase, .working)
+        let began = ContinuousClock.now
+        backup.update { $0.wifiOnly = true }
+        await run.value
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(3), "the backup being sent was not stopped")
+        XCTAssertEqual(try vaultNames(), [], "nothing half-sent is left in the cloud")
+        XCTAssertEqual(backup.phase, .idle, "waiting, not failed")
+        XCTAssertNotNil(backup.note)
+
+        // Back on Wi-Fi it is sent whole, payload and manifest.
+        network.value = .wifi
+        let again = slowService(network: network, delay: .zero)
+        await again.runIfNeeded(context: context, storeHealthy: true, manual: true)
+        XCTAssertEqual(try vaultNames().count, 2)
+    }
+
+    func testLosingWiFiOrASessionStartingStopsABackupBeingSent() async throws {
+        try seed()
+        let network = Flag(.wifi)
+        let backup = slowService(network: network)
+        backup.update { $0.destination = .iCloud }
+        let context = container.mainContext
+        var run = Task { await backup.runIfNeeded(context: context, storeHealthy: true) }
+        try await Task.sleep(for: .milliseconds(600))
+        network.value = .cellular
+        await backup.stopIfNoLongerAllowed()   // what the network watch calls
+        await run.value
+        XCTAssertEqual(try vaultNames(), [])
+        XCTAssertEqual(backup.phase, .idle)
+
+        network.value = .wifi
+        let session = Flag(.wifi)   // `.cellular` here means "a session is on"
+        backup.ruleCheckEvery = .milliseconds(100)
+        let began = ContinuousClock.now
+        run = Task { await backup.runIfNeeded(context: context, storeHealthy: true,
+                                              stillInSession: { session.value == .cellular }) }
+        try await Task.sleep(for: .milliseconds(600))
+        session.value = .cellular
+        await run.value
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(3))
+        XCTAssertEqual(try vaultNames(), [])
+    }
+
+    func testABackupStillAllowedIsSentAndCarriesTheWiFiOnlyRule() async throws {
+        try seed()
+        let saw = OSAllocatedUnfairLock<[Bool]>(initialState: [])
+        let backup = slowService(network: Flag(.wifi), delay: .milliseconds(300), saw: saw)
+        backup.ruleCheckEvery = .milliseconds(50)
+        backup.update { $0.destination = .iCloud }
+        await backup.runIfNeeded(context: container.mainContext, storeHealthy: true)
+        XCTAssertEqual(try vaultNames().count, 2, "payload + manifest")
+        XCTAssertEqual(saw.withLock { $0.first }, true, "the payload is sent under the Wi-Fi only rule")
     }
 
     private func seed(_ title: String = "first") throws {
@@ -585,3 +685,59 @@ final class SessionEndWatchTests: XCTestCase {
         XCTAssertEqual(resumed, 2)
     }
 }
+
+/// A network change while the app is open (prompt 293).
+@MainActor
+final class CloudBackupNetworkWatchTests: XCTestCase {
+
+    func testWhichChangesAreWorthAnotherLook() {
+        XCTAssertFalse(CloudBackupNetwork.shouldRecheck(from: nil, to: .wifi), "the first reading is not a change")
+        XCTAssertTrue(CloudBackupNetwork.shouldRecheck(from: .cellular, to: .wifi))
+        XCTAssertTrue(CloudBackupNetwork.shouldRecheck(from: .lowData, to: .wifi))
+        XCTAssertTrue(CloudBackupNetwork.shouldRecheck(from: .offline, to: .wifi))
+        XCTAssertTrue(CloudBackupNetwork.shouldRecheck(from: .offline, to: .cellular))
+        XCTAssertTrue(CloudBackupNetwork.shouldRecheck(from: .wifi, to: .cellular), "the status line should say it is waiting")
+        XCTAssertFalse(CloudBackupNetwork.shouldRecheck(from: .wifi, to: .wifi))
+        XCTAssertFalse(CloudBackupNetwork.shouldRecheck(from: .wifi, to: .offline))
+    }
+
+    /// Device, 2026-11-23: Wi-Fi on, but iOS kept 5G as the route in use.
+    func testWiFiThatCanCarryTheUploadCountsEvenWhenIOSPrefersMobileData() {
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .cellular, withoutMobileData: .wifi), .wifi)
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .cellular, withoutMobileData: .lowData), .lowData)
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .wifi, withoutMobileData: .wifi), .wifi)
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .cellular, withoutMobileData: .offline), .cellular,
+                       "mobile data alone is still mobile data")
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .cellular, withoutMobileData: .cellular), .cellular,
+                       "a hotspot is Wi-Fi and metered: mobile data either way")
+        XCTAssertEqual(CloudBackupNetwork.combine(usual: .offline, withoutMobileData: .offline), .offline)
+    }
+
+    func testAChangeLooksAgainOnceAfterItSettles() async throws {
+        let watch = CloudBackupNetworkWatch()
+        var looks = 0
+        let look: @MainActor () async -> Void = { looks += 1 }
+        watch.saw(.cellular, settle: .milliseconds(40), onChange: look)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(looks, 0, "the first reading starts nothing")
+        watch.saw(.lowData, settle: .milliseconds(40), onChange: look)
+        watch.saw(.wifi, settle: .milliseconds(40), onChange: look)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(looks, 1, "two changes in a row are one look")
+        watch.saw(.wifi, settle: .milliseconds(40), onChange: look)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(looks, 1, "the same network again is not a change")
+    }
+
+    func testGoingOfflineBeforeItSettlesStartsNothing() async throws {
+        let watch = CloudBackupNetworkWatch()
+        var looks = 0
+        let look: @MainActor () async -> Void = { looks += 1 }
+        watch.saw(.cellular, settle: .milliseconds(40), onChange: look)
+        watch.saw(.wifi, settle: .milliseconds(40), onChange: look)
+        watch.saw(.offline, settle: .milliseconds(40), onChange: look)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(looks, 0)
+    }
+}
+

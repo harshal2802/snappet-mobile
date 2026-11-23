@@ -302,6 +302,14 @@ final class MediaVaultService {
     @ObservationIgnored var streamAbove = MediaVaultFetch.streamAbove
     @ObservationIgnored private var folderID: String?
     @ObservationIgnored private var running = false
+    /// The pass in progress, so a rule that stops applying can stop the clip being sent (prompt 293).
+    @ObservationIgnored private var passTask: Task<Void, Never>?
+    @ObservationIgnored private var passSessionRunning: (@MainActor () -> Bool)?
+    @ObservationIgnored private var stopReason: MediaVaultPolicy.SkipReason?
+    @ObservationIgnored private var rerunWanted = false
+    /// How often a running pass asks whether it may still run. The rules are also asked at once when a
+    /// setting or the network changes; this catches what has no event, such as a session starting.
+    @ObservationIgnored var ruleCheckEvery: Duration = .seconds(5)
     @ObservationIgnored private var fetching: [UUID: Task<URL, Error>] = [:]
     /// A pass copies every clip that has no copy yet and keeps going while the app is open
     /// (user, 2026-11-20). This many failures in a row means the trouble is not one clip
@@ -639,6 +647,55 @@ final class MediaVaultService {
         defaults.set(try? JSONEncoder().encode(next), forKey: Key.settings)
         note = nil
         if case .failed = phase { phase = .idle }
+        if passTask != nil { Task { await stopIfNoLongerAllowed() } }   // "Wi-Fi only" on, copies off: now, not after this clip
+    }
+
+    /// A pass is running and the rules may have changed under it — the network, a setting, a session
+    /// starting (prompt 293). If it would not be allowed to start now, stop the clip being sent. Before
+    /// this the rules were only asked between clips, so one long video could finish on mobile data.
+    func stopIfNoLongerAllowed() async {
+        guard let passTask, stopReason == nil else { return }
+        let decision = MediaVaultPolicy.decide(
+            settings: settings, signedIn: account.isSignedIn(),
+            hasDrivePermission: account.grants(GoogleScope.driveFile), network: await network(),
+            sessionRunning: passSessionRunning?() ?? false)
+        guard case let .skip(reason) = decision, self.passTask != nil else { return }
+        stopReason = reason
+        passTask.cancel()
+        // Say so now. The upload stops at once, but a read from Photos in progress cannot be
+        // interrupted and can take many seconds; the status must not wait for it (device, 2026-11-23).
+        endStoppedPass()
+    }
+
+    /// Read a clip's original for a copy, but stop WAITING for it when the pass is stopped (prompt 293).
+    /// Photos cannot be interrupted mid-read, and for a long video (or one it first fetches from
+    /// iCloud) the read takes long enough that the stopped pass was still in the way when Wi-Fi came
+    /// back — the status stayed "Waiting for Wi-Fi." (device, 2026-11-23). The read is left to end by
+    /// itself and its file is thrown away.
+    private func exportStoppable(_ localIdentifier: String) async throws -> (url: URL, fileExtension: String) {
+        let exporter = exporter
+        let exit = EarlyExit<(url: URL, fileExtension: String)>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                exit.install(continuation)
+                Task.detached(priority: .utility) {
+                    do {
+                        let exported = try await exporter.export(localIdentifier: localIdentifier)
+                        if !exit.finish(.success(exported)) { try? FileManager.default.removeItem(at: exported.url) }
+                    } catch {
+                        _ = exit.finish(.failure(error))
+                    }
+                }
+            }
+        } onCancel: {
+            exit.cancel()
+        }
+    }
+
+    /// The pass was stopped by `stopIfNoLongerAllowed`: say why and wait.
+    private func endStoppedPass() {
+        phase = .idle
+        note = stopReason.flatMap(MediaVaultText.skipped)
     }
 
     func contains(_ rowID: UUID) -> Bool { index.contains(rowID) }
@@ -805,7 +862,37 @@ final class MediaVaultService {
     }
 
     /// `sessionRunning` is asked before the pass and again before every clip (prompt 279).
-    func runIfNeeded(context: ModelContext, sessionRunning: () -> Bool = { false }) async {
+    func runIfNeeded(context: ModelContext, sessionRunning: @escaping @MainActor () -> Bool = { false }) async {
+        guard passTask == nil else {   // one pass at a time, decided before anything is awaited
+            // A stopped pass can still be finishing its read from Photos, which cannot be interrupted.
+            // The rules may have changed back since: look again when it is out of the way.
+            if stopReason != nil { rerunWanted = true }
+            return
+        }
+        repeat {
+            rerunWanted = false
+            stopReason = nil
+            passSessionRunning = sessionRunning
+            let pass = Task {
+                await self.pass(context: context, sessionRunning: sessionRunning)
+                self.passTask = nil   // cleared by the pass itself, so whoever waits on it finds it gone
+                self.passSessionRunning = nil
+            }
+            passTask = pass
+            let every = ruleCheckEvery
+            let rules = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: every)
+                    if Task.isCancelled { return }
+                    await self?.stopIfNoLongerAllowed()
+                }
+            }
+            await pass.value
+            rules.cancel()
+        } while rerunWanted
+    }
+
+    private func pass(context: ModelContext, sessionRunning: @MainActor () -> Bool) async {
         guard settings.keepCopies, settings.started, !running else { return }
         let decision = MediaVaultPolicy.decide(settings: settings, signedIn: account.isSignedIn(),
                                                hasDrivePermission: account.grants(GoogleScope.driveFile),
@@ -840,6 +927,7 @@ final class MediaVaultService {
             var failed = 0, failedInARow = 0
             for (done, clip) in batch.enumerated() {
                 guard settings.keepCopies else { break }   // switched off mid-pass: pause here
+                if Task.isCancelled { endStoppedPass(); return }
                 // A long pass can outlive the Wi-Fi it started on, and a session can start during it.
                 if done > 0, case let .skip(reason) = MediaVaultPolicy.decide(
                     settings: settings, signedIn: account.isSignedIn(),
@@ -850,7 +938,7 @@ final class MediaVaultService {
                     return
                 }
                 do {
-                    let exported = try await exporter.export(localIdentifier: clip.localIdentifier)
+                    let exported = try await exportStoppable(clip.localIdentifier)
                     defer { try? FileManager.default.removeItem(at: exported.url) }
                     let bytes = (try? FileManager.default.attributesOfItem(atPath: exported.url.path)[.size] as? NSNumber)?.int64Value ?? 0
                     let entry = try await put(exported.url, fileExtension: exported.fileExtension, rowID: clip.rowID,
@@ -861,6 +949,9 @@ final class MediaVaultService {
                     setIndex(next)
                     remember(tree)
                     failedInARow = 0
+                } catch where Task.isCancelled {
+                    endStoppedPass()   // a rule stopped this clip mid-transfer (prompt 293)
+                    return
                 } catch where CloudBackupNetwork.isNetworkLoss(error) {
                     // The network went, or iOS refused to send over mobile data: wait, do not
                     // export the next clip only to have it refused too (prompt 281).
@@ -880,6 +971,8 @@ final class MediaVaultService {
             noteEmptyFolders(tree, placements: placements)
             phase = .idle
             note = MediaVaultText.couldNotCopy(failed)
+        } catch where Task.isCancelled {
+            endStoppedPass()
         } catch {
             mediaVaultLog.error("vault copy failed: \(error.localizedDescription, privacy: .public)")
             phase = .failed(error.localizedDescription)
@@ -1372,3 +1465,41 @@ extension EnvironmentValues {
     /// The clip vault, for surfaces that play clips (set once at the app shell).
     @Entry var mediaVault: MediaVaultService? = nil
 }
+
+/// Lets a caller stop waiting for work that cannot itself be interrupted: whichever comes first, the
+/// work's result or a cancel, answers the continuation; the other is told it came second.
+final class EarlyExit<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var cancelled = false
+
+    func install(_ continuation: CheckedContinuation<Value, Error>) {
+        let alreadyCancelled: Bool = lock.withLock {
+            if cancelled { return true }
+            self.continuation = continuation
+            return false
+        }
+        if alreadyCancelled { continuation.resume(throwing: CancellationError()) }
+    }
+
+    /// False when a cancel got there first: the result is the caller's to clean up.
+    func finish(_ result: Result<Value, Error>) -> Bool {
+        let waiting = lock.withLock { () -> CheckedContinuation<Value, Error>? in
+            defer { continuation = nil }
+            return continuation
+        }
+        guard let waiting else { return false }
+        waiting.resume(with: result)
+        return true
+    }
+
+    func cancel() {
+        let waiting = lock.withLock { () -> CheckedContinuation<Value, Error>? in
+            cancelled = true
+            defer { continuation = nil }
+            return continuation
+        }
+        waiting?.resume(throwing: CancellationError())
+    }
+}
+

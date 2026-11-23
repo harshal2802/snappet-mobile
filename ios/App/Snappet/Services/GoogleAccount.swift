@@ -264,13 +264,21 @@ struct GoogleDriveVault: CloudVault {
         return try await send(GoogleDriveAPI.download(id: file.id)).0
     }
 
-    func write(_ data: Data, name: String) async throws {
+    func write(_ data: Data, name: String) async throws { try await write(data, name: name, wifiOnly: false) }
+
+    func write(_ data: Data, name: String, wifiOnly: Bool) async throws {
         let existing = try await files().first { $0.name == name }
         let (_, response) = try await send(GoogleDriveAPI.startUpload(name: name, byteCount: data.count, existingID: existing?.id))
         guard let location = response.value(forHTTPHeaderField: "Location"), let session = URL(string: location) else {
             throw GoogleAuthError.badResponse
         }
-        _ = try await send(GoogleDriveAPI.finishUpload(session: session, data: data))
+        var put = GoogleDriveAPI.finishUpload(session: session, data: data)
+        if wifiOnly {   // a backup that began on Wi-Fi does not finish on mobile data (prompt 293)
+            put.allowsExpensiveNetworkAccess = false
+            put.allowsCellularAccess = false
+            put.allowsConstrainedNetworkAccess = false
+        }
+        _ = try await send(put)
     }
 
     func remove(_ name: String) async throws {

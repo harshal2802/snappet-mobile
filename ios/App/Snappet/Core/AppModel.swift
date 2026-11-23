@@ -303,6 +303,25 @@ final class AppModel {
     /// Opt-in copies of clips in the person's Google Drive, and footage brought back from Google Photos.
     let mediaVault = MediaVaultService()
 
+    private let networkWatch = CloudBackupNetworkWatch()
+
+    /// Set by the shell from the scene phase. A network change in the background starts nothing: a
+    /// backup cannot finish there (prompt 279).
+    @ObservationIgnored var appIsActive = true
+
+    /// The connection became a different kind while the app is open: look again (prompt 293). The
+    /// passes keep their own rules — Wi-Fi only, Low Data Mode, a running session.
+    func startNetworkWatch() {
+        networkWatch.start { [weak self] in
+            guard let self else { return }
+            await self.mediaVault.stopIfNoLongerAllowed()   // the clip being sent, if this network is not allowed
+            await self.cloudBackup.stopIfNoLongerAllowed()   // and the backup
+            guard self.appIsActive else { return }
+            await self.runCloudBackup()
+            await self.runMediaVault()
+        }
+    }
+
     private let sessionEndWatch = SessionEndWatch()
 
     /// The backup and the clip copies were held for a running session: run them once it has ended
@@ -396,7 +415,8 @@ final class AppModel {
         guard let context = modelContainer?.mainContext else { return }
         if !manual, sessionIsRunning() { resumeCloudWorkWhenTheSessionEnds() }
         await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual,
-                                      sessionRunning: sessionIsRunning())
+                                      sessionRunning: sessionIsRunning(),
+                                      stillInSession: { [weak self] in self?.sessionIsRunning() ?? false })
     }
 
     /// On launch: if this install holds no records yet and a backup exists, offer it.

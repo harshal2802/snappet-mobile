@@ -16,7 +16,14 @@ protocol CloudVault: Sendable {
     func names() async throws -> [String]
     func read(_ name: String) async throws -> Data
     func write(_ data: Data, name: String) async throws
+    /// `wifiOnly`: the bytes may not travel over mobile data, a hotspot or in Low Data Mode (prompt 293).
+    /// A vault that sends nothing itself (a folder; iCloud, where iOS does the sending) ignores it.
+    func write(_ data: Data, name: String, wifiOnly: Bool) async throws
     func remove(_ name: String) async throws
+}
+
+extension CloudVault {
+    func write(_ data: Data, name: String, wifiOnly: Bool) async throws { try await write(data, name: name) }
 }
 
 enum CloudVaultError: LocalizedError, Equatable {
@@ -196,22 +203,77 @@ struct FixedBackupKeyStore: CloudBackupKeyStore {
 
 // MARK: - Network kind
 
-/// One-shot read of the current path: Wi-Fi-like, metered, or offline.
+/// One-shot read of the connection: Wi-Fi-like, mobile data, or offline.
+///
+/// Two readings (prompt 293). The usual one says what iOS would use by default. The second asks what
+/// is there WITHOUT mobile data, because that is how the uploads are sent under "Wi-Fi only"
+/// (`allowsCellularAccess = false`). On the phone (2026-11-23), with Wi-Fi switched on, iOS went on
+/// naming 5G as the route in use and listed Wi-Fi only as available — it prefers 5G to a Wi-Fi it
+/// judges slow — so the usual reading alone left the status at "Waiting for Wi-Fi." with Wi-Fi up.
 enum CloudBackupNetworkProbe {
     static func current() async -> CloudBackupNetwork {
+        async let usual = read(NWPathMonitor())
+        async let withoutMobileData = read(NWPathMonitor(prohibitedInterfaceTypes: [.cellular]))
+        return await CloudBackupNetwork.combine(usual: usual, withoutMobileData: withoutMobileData)
+    }
+
+    static func kind(of path: NWPath) -> CloudBackupNetwork {
+        .classify(connected: path.status == .satisfied,
+                  overWiFiOrCable: path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet),
+                  isExpensive: path.isExpensive, isConstrained: path.isConstrained)
+    }
+
+    private static func read(_ monitor: NWPathMonitor) async -> CloudBackupNetwork {
         await withCheckedContinuation { continuation in
-            let monitor = NWPathMonitor()
             let answered = OSAllocatedUnfairLock(initialState: false)
             monitor.pathUpdateHandler = { path in
                 // The handler can fire again before `cancel()` lands — resume exactly once.
                 guard answered.withLock({ done in defer { done = true }; return !done }) else { return }
                 monitor.cancel()
-                continuation.resume(returning: .classify(
-                    connected: path.status == .satisfied,
-                    overWiFiOrCable: path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet),
-                    isExpensive: path.isExpensive, isConstrained: path.isConstrained))
+                continuation.resume(returning: kind(of: path))
             }
             monitor.start(queue: DispatchQueue.global(qos: .utility))
+        }
+    }
+}
+
+/// Watches the connection while the app is open (prompt 293) and says when it became a different kind:
+/// Wi-Fi joined, Low Data Mode turned off, back from offline. Before this, copies waiting for Wi-Fi only
+/// started again when the app next came to the front.
+@MainActor
+final class CloudBackupNetworkWatch {
+    private var monitors: [NWPathMonitor] = []
+    private var last: CloudBackupNetwork?
+    private var pending: Task<Void, Never>?
+
+    /// `settle`: joining a network reports several changes in a row; act on where it lands.
+    func start(settle: Duration = .seconds(2), onChange: @escaping @MainActor () async -> Void) {
+        guard monitors.isEmpty else { return }
+        // Both views of the connection (see `CloudBackupNetworkProbe`): either changing is a reason to
+        // read it again.
+        monitors = [NWPathMonitor(), NWPathMonitor(prohibitedInterfaceTypes: [.cellular])]
+        for monitor in monitors {
+            monitor.pathUpdateHandler = { [weak self] _ in
+                Task { @MainActor in
+                    let kind = await CloudBackupNetworkProbe.current()
+                    self?.saw(kind, settle: settle, onChange: onChange)
+                }
+            }
+            monitor.start(queue: DispatchQueue.global(qos: .utility))
+        }
+    }
+
+    /// One reading of the connection. Separate from the monitor so it can be driven in tests.
+    func saw(_ kind: CloudBackupNetwork, settle: Duration, onChange: @escaping @MainActor () async -> Void) {
+        let recheck = CloudBackupNetwork.shouldRecheck(from: last, to: kind)
+        last = kind
+        pending?.cancel()   // a newer reading replaces a look that has not started yet
+        pending = nil
+        guard recheck else { return }
+        pending = Task {
+            try? await Task.sleep(for: settle)
+            if Task.isCancelled { return }
+            await onChange()
         }
     }
 }
