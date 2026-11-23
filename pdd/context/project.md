@@ -351,7 +351,10 @@ can't clip a sub-rect, so it spilled). Fixed: drop the Y-flip, aspect-**fit** (`
 source-aspect default frame. **Resize**: corner-drag now **aspect-locks** to the footage (box hugs the
 video) and is **flicker-free** — the live-resize had been a SwiftUI drag-feedback loop (a `@State` driven
 from the handle's own gesture re-positioned the handle); rewritten to the canonical `@GestureState`
-pattern with the gesture-hosting handles anchored at the committed size. **Resizable base video**: an
+pattern with the gesture-hosting handles anchored at the committed size. **Deleted clips stay deleted**
+(prompt 296): the optional `StudioProject.removedMediaIDs` lists the media the user deleted from the
+timeline, so the next open does not add them back as new footage (`StudioEntry.reconciled`; they return
+only when the scope being opened would otherwise be empty). **Resizable base video**: an
 optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
 a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
 export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a

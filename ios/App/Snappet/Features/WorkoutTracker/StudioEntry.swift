@@ -57,7 +57,7 @@ enum StudioEntry {
     /// and so are posted reels (highlights P5) — editing a rendered reel is odd, and its burned
     /// scorebug would double-render under the Studio's live overlay.
     static func seedClips(for sessionID: UUID, media: [SessionMedia]) -> [TimelineClip] {
-        media.filter { $0.sessionID == sessionID && $0.kind == .video && !$0.isReel }
+        footage(for: sessionID, media: media)
             .sorted { $0.offsetSec < $1.offsetSec }
             .enumerated()
             .map { i, m in
@@ -89,14 +89,91 @@ enum StudioEntry {
         return project
     }
 
+    // MARK: - Late-clip reconcile (prompt 296)
+
+    /// The outcome of `reconciled`: the timeline with the added clips, and the deletions still remembered.
+    struct Reconciled: Equatable {
+        var clips: [TimelineClip]
+        var removedMediaIDs: [UUID]?
+    }
+
+    /// A session's editable footage: its videos, minus posted reels (a reel is rendered OUTPUT —
+    /// highlights P5). `sessionID == nil` takes `media` as already session-scoped (the Kilter side).
+    static func footage(for sessionID: UUID?, media: [SessionMedia]) -> [SessionMedia] {
+        media.filter { (sessionID == nil || $0.sessionID == sessionID) && $0.kind == .video && !$0.isReel }
+    }
+
+    /// **Pure** decision behind "open the Studio on an existing project": which session videos join
+    /// the timeline. Returns `nil` when nothing changes.
+    ///
+    /// 1. A video that is on the timeline is left alone.
+    /// 2. A video that was never on the timeline (filmed or imported after the project was made) is
+    ///    appended, in capture order.
+    /// 3. A video the user deleted from the timeline (`removedMediaIDs`) is NOT appended — it stays
+    ///    deleted.
+    /// 4. Exception — the Studio never opens on an empty timeline: when rules 1–3 leave no clip in
+    ///    `scope` (`nil` = the whole project), the deleted videos in that scope come back and are
+    ///    forgotten from `removedMediaIDs`. So "Edit this clip" on a deleted clip brings that clip
+    ///    back (as a fresh, unedited clip), and a project whose every clip was deleted starts over.
+    ///    A scope that still shows at least one clip brings nothing back.
+    ///
+    /// An id listed in `removedMediaIDs` whose media is on the timeline is ignored and dropped (the
+    /// timeline wins), so a stale record can never hide or remove a clip.
+    static func reconciled(clips: [TimelineClip], removedMediaIDs: [UUID]?,
+                           footage: [SessionMedia], scope: Set<UUID>?) -> Reconciled? {
+        let present = Set(clips.compactMap(\.sessionMediaID))
+        var removed = (removedMediaIDs ?? []).filter { !present.contains($0) }
+        let absent = footage.filter { !present.contains($0.id) }
+        var add = absent.filter { !removed.contains($0.id) }
+
+        func inScope(_ id: UUID?) -> Bool {
+            guard let scope else { return true }
+            return id.map(scope.contains) ?? false
+        }
+        let showsAClip = clips.contains { inScope($0.sessionMediaID) } || add.contains { inScope($0.id) }
+        if !showsAClip {
+            let back = absent.filter { removed.contains($0.id) && inScope($0.id) }
+            add += back
+            let backIDs = Set(back.map(\.id))
+            removed.removeAll { backIDs.contains($0) }
+        }
+
+        let remembered: [UUID]? = removed.isEmpty ? nil : removed
+        guard !add.isEmpty || remembered != removedMediaIDs else { return nil }
+        var out = clips
+        var order = (clips.map(\.order).max() ?? -1) + 1
+        for m in add.sorted(by: { $0.offsetSec < $1.offsetSec }) {
+            out.append(TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
+                                    isPhoto: false, order: order, trimEnd: m.durationSec))
+            order += 1
+        }
+        return Reconciled(clips: out, removedMediaIDs: remembered)
+    }
+
+    /// Apply `reconciled` to a stored project and save — the thin SwiftData edge shared by the gym
+    /// and Kilter entries.
+    @MainActor
+    static func reconcile(_ project: StudioProject, footage: [SessionMedia], scope: Set<UUID>?,
+                          context: ModelContext) {
+        guard let r = reconciled(clips: project.clips, removedMediaIDs: project.removedMediaIDs,
+                                 footage: footage, scope: scope) else { return }
+        project.clips = r.clips
+        project.removedMediaIDs = r.removedMediaIDs
+        try? context.save()
+    }
+
     /// Find-or-create the session's project **then** append any video clips discovered after it was
     /// created, so opening the studio *scoped to one clip* (tap a clip → `visibleClipMediaIDs:[id]`)
-    /// can't land on a clip the project doesn't know about and show an empty timeline. Mirrors the
-    /// Kilter side's inline reconcile (`KilterSessionDetailView.resolveStudioProject`).
+    /// can't land on a clip the project doesn't know about and show an empty timeline. A clip the
+    /// user deleted from the timeline is not appended again (prompt 296 — the rule is `reconciled`).
+    /// `scope` is the set of media ids the Studio is about to show (`nil` = the whole project); pass
+    /// the same value as `visibleClipMediaIDs`. The Kilter side shares the rule
+    /// (`KilterStudioProjects.resolve`).
     @MainActor
     static func resolveProject(for session: WorkoutSession, media: [SessionMedia],
-                               context: ModelContext) -> StudioProject {
-        resolveProject(forSessionID: session.id, title: session.routineName, media: media, context: context)
+                               scope: Set<UUID>? = nil, context: ModelContext) -> StudioProject {
+        resolveProject(forSessionID: session.id, title: session.routineName, media: media,
+                       scope: scope, context: context)
     }
 
     /// `sessionID`-keyed `resolveProject` (prompt 82): the same find-or-create + late-clip reconcile for
@@ -104,22 +181,9 @@ enum StudioEntry {
     /// shared session project scoped to a clip without landing on an empty timeline.
     @MainActor
     static func resolveProject(forSessionID sid: UUID, title: String, media: [SessionMedia],
-                               context: ModelContext) -> StudioProject {
+                               scope: Set<UUID>? = nil, context: ModelContext) -> StudioProject {
         let project = findOrCreateProject(forSessionID: sid, title: title, media: media, context: context)
-        let present = Set(project.clips.compactMap(\.sessionMediaID))
-        // Same reel exclusion as `seedClips` — a reel posted after the project was created must
-        // not be "reconciled" into the timeline as if it were late-discovered footage.
-        let missing = media.filter { $0.sessionID == sid && $0.kind == .video && !$0.isReel
-                                     && !present.contains($0.id) }
-            .sorted { $0.offsetSec < $1.offsetSec }
-        guard !missing.isEmpty else { return project }
-        var order = (project.clips.map(\.order).max() ?? -1) + 1
-        for m in missing {
-            project.clips.append(TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                                              isPhoto: false, order: order, trimEnd: m.durationSec))
-            order += 1
-        }
-        try? context.save()
+        reconcile(project, footage: footage(for: sid, media: media), scope: scope, context: context)
         return project
     }
 }

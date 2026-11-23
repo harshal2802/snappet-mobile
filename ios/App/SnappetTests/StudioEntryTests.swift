@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import Snappet
 
 /// Unit tests for the **pure** `StudioEntry` selection/seeding behind the module-level Video
@@ -118,6 +119,127 @@ final class StudioEntryTests: XCTestCase {
         XCTAssertEqual(out.map(\.sessionID), [s.id],
                        "a reel-only session offers no Studio candidate")
         XCTAssertEqual(out.first?.videoCount, 1)
+    }
+
+    // MARK: - Late-clip reconcile: a deleted clip stays deleted (prompt 296)
+
+    private func reconciled(_ clips: [TimelineClip], removed: [UUID]? = nil,
+                            _ footage: [SessionMedia], scope: Set<UUID>? = nil) -> StudioEntry.Reconciled? {
+        StudioEntry.reconciled(clips: clips, removedMediaIDs: removed, footage: footage, scope: scope)
+    }
+
+    /// Media that was never on the timeline (filmed after the project was made) is still added,
+    /// after the existing clips, in capture order.
+    func testReconcileAddsMediaThatWasNeverOnTheTimeline() {
+        let sid = UUID()
+        let a = video(sid, offset: 10), late2 = video(sid, offset: 90), late1 = video(sid, offset: 40)
+        let clips = StudioEntry.seedClips(for: sid, media: [a])
+        let out = reconciled(clips, [a, late2, late1])
+        XCTAssertEqual(out?.clips.map(\.sessionMediaID), [a.id, late1.id, late2.id])
+        XCTAssertEqual(out?.clips.map(\.order), [0, 1, 2])
+        XCTAssertEqual(out?.clips.last?.localIdentifier, late2.localIdentifier)
+        XCTAssertNil(out?.removedMediaIDs)
+        XCTAssertNil(reconciled(out?.clips ?? [], [a, late2, late1]), "a second open changes nothing")
+    }
+
+    /// The finding: a clip the user deleted is not "new footage" on the next open.
+    func testReconcileDoesNotAddBackADeletedClip() {
+        let sid = UUID()
+        let a = video(sid, offset: 10), b = video(sid, offset: 40)
+        let clips = StudioEntry.seedClips(for: sid, media: [a])          // b was deleted
+        XCTAssertNil(reconciled(clips, removed: [b.id], [a, b]),
+                     "the whole-project studio leaves the deleted clip out")
+        // …while media filmed later is still added next to it.
+        let late = video(sid, offset: 70)
+        let out = reconciled(clips, removed: [b.id], [a, b, late])
+        XCTAssertEqual(out?.clips.map(\.sessionMediaID), [a.id, late.id])
+        XCTAssertEqual(out?.removedMediaIDs, [b.id])
+    }
+
+    /// A scope that still shows a clip brings nothing back (the feed's "Edit all clips" of a post).
+    func testReconcileKeepsADeletionInAScopeThatStillShowsAClip() {
+        let sid = UUID()
+        let a = video(sid, offset: 10), b = video(sid, offset: 40)
+        let clips = StudioEntry.seedClips(for: sid, media: [a])
+        XCTAssertNil(reconciled(clips, removed: [b.id], [a, b], scope: [a.id, b.id]))
+    }
+
+    /// "Edit this clip" on a deleted clip: the scope would be empty, so the clip comes back and
+    /// the deletion is forgotten. A deleted clip outside the scope stays deleted.
+    func testReconcileBringsBackADeletedClipWhenItsScopeWouldBeEmpty() {
+        let sid = UUID()
+        let a = video(sid, offset: 10), b = video(sid, offset: 40), c = video(sid, offset: 70)
+        let clips = StudioEntry.seedClips(for: sid, media: [a])          // b and c were deleted
+        let out = reconciled(clips, removed: [b.id, c.id], [a, b, c], scope: [b.id])
+        XCTAssertEqual(out?.clips.map(\.sessionMediaID), [a.id, b.id])
+        XCTAssertEqual(out?.removedMediaIDs, [c.id], "only the opened clip is forgotten")
+        XCTAssertEqual(out?.clips.last?.trimEnd, b.durationSec, "it comes back as a fresh clip")
+    }
+
+    /// The Studio has no "add clip", so a project with every clip deleted would be a dead end.
+    /// The whole-project studio starts over instead.
+    func testReconcileStartsOverWhenEveryClipWasDeleted() {
+        let sid = UUID()
+        let a = video(sid, offset: 40), b = video(sid, offset: 10)
+        let out = reconciled([], removed: [a.id, b.id], [a, b])
+        XCTAssertEqual(out?.clips.map(\.sessionMediaID), [b.id, a.id])
+        XCTAssertNil(out?.removedMediaIDs)
+    }
+
+    /// A stale record can never hide a clip that is on the timeline: the timeline wins and the
+    /// record is dropped.
+    func testReconcileDropsARecordForMediaThatIsOnTheTimeline() {
+        let sid = UUID()
+        let a = video(sid, offset: 10)
+        let clips = StudioEntry.seedClips(for: sid, media: [a])
+        let out = reconciled(clips, removed: [a.id], [a])
+        XCTAssertEqual(out?.clips, clips)
+        XCTAssertNil(out?.removedMediaIDs)
+    }
+
+    func testFootageIsSessionVideosWithoutReels() {
+        let sid = UUID(), other = UUID()
+        let a = video(sid, offset: 1)
+        let media = [a, photo(sid, offset: 2), reel(sid), video(other, offset: 3)]
+        XCTAssertEqual(StudioEntry.footage(for: sid, media: media).map(\.id), [a.id])
+        XCTAssertEqual(StudioEntry.footage(for: nil, media: media).count, 2,
+                       "nil = media is already session-scoped (Kilter)")
+    }
+
+    /// The whole path on a stored project: delete in the editor → reopen (whole project) keeps
+    /// it deleted → "Edit this clip" brings it back; and undoing the delete forgets the deletion.
+    @MainActor
+    func testDeletedClipStaysDeletedAcrossReopenAndUndoForgetsIt() throws {
+        let container = try ModelContainer(
+            for: Schema(SnappetSchema.models),
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = container.mainContext
+        let sid = UUID()
+        let a = video(sid, offset: 10), b = video(sid, offset: 40)
+        let project = StudioEntry.resolveProject(forSessionID: sid, title: "S", media: [a, b], context: context)
+        let clipB = try XCTUnwrap(project.clips.first { $0.sessionMediaID == b.id })
+
+        let vm = StudioEditorViewModel(project: project, context: context)
+        vm.select(clipB.id)
+        vm.deleteSelected()
+        XCTAssertEqual(project.removedMediaIDs, [b.id])
+
+        let reopened = StudioEntry.resolveProject(forSessionID: sid, title: "S", media: [a, b], context: context)
+        XCTAssertEqual(reopened.clips.map(\.sessionMediaID), [a.id], "it does not come back")
+        let editAll = StudioEntry.resolveProject(forSessionID: sid, title: "S", media: [a, b],
+                                                 scope: [a.id, b.id], context: context)
+        XCTAssertEqual(editAll.clips.map(\.sessionMediaID), [a.id])
+
+        vm.undoEdit()
+        XCTAssertNil(project.removedMediaIDs, "undoing the delete forgets the deletion")
+        XCTAssertEqual(project.clips.count, 2)
+        vm.redoEdit()
+        XCTAssertEqual(project.removedMediaIDs, [b.id])
+
+        let scoped = StudioEntry.resolveProject(forSessionID: sid, title: "S", media: [a, b],
+                                                scope: [b.id], context: context)
+        XCTAssertEqual(scoped.clips.map(\.sessionMediaID), [a.id, b.id], "opening the clip brings it back")
+        XCTAssertNil(scoped.removedMediaIDs)
     }
 
     // MARK: - Fitness-card disambiguation (#74)

@@ -16,6 +16,9 @@ struct StudioProjectSnapshot: Codable, Hashable, Sendable {
     var audioTracks: [AudioTrack]
     var hrOverlay: HROverlayConfig? = nil
     var baseFrame: StudioFrameRect? = nil
+    /// Media the user deleted from the timeline (prompt 296) — see `StudioProject.removedMediaIDs`.
+    /// Part of the snapshot so undoing a delete also forgets the deletion.
+    var removedMediaIDs: [UUID]? = nil
 
     var aspect: ClipEditGeometry.OutputAspect {
         get { ClipEditGeometry.OutputAspect(rawValue: aspectRaw) ?? .portrait9x16 }
@@ -31,6 +34,7 @@ extension StudioProjectSnapshot {
         clips = p.clips; transitions = p.transitions; overlays = p.overlays; audioTracks = p.audioTracks
         hrOverlay = p.hrOverlay
         baseFrame = p.baseFrame
+        removedMediaIDs = p.removedMediaIDs
     }
     /// Write this snapshot back onto a `@Model` (used by undo/redo and after each edit).
     func apply(to p: StudioProject) {
@@ -38,6 +42,7 @@ extension StudioProjectSnapshot {
         p.clips = clips; p.transitions = transitions; p.overlays = overlays; p.audioTracks = audioTracks
         p.hrOverlay = hrOverlay
         p.baseFrame = baseFrame
+        p.removedMediaIDs = removedMediaIDs
         p.updatedAt = .now
     }
 }
@@ -59,9 +64,22 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Remove a clip. When that was the LAST clip of its media item (no other split part of the same
+    /// `sessionMediaID` is left), the media id is remembered in `removedMediaIDs` (prompt 296) so the
+    /// next open of the Studio does not add the clip back (`StudioEntry.reconciled`). Deleting one
+    /// split part while another survives records nothing: the media is still on the timeline.
     static func removeClip(_ s: StudioProjectSnapshot, id: UUID) -> StudioProjectSnapshot {
         var s = s
+        let removedMedia = s.clips.first { $0.id == id }?.sessionMediaID
         s.clips = reindexed(StudioGeometry.ordered(s.clips).filter { $0.id != id })
+        if let removedMedia {
+            // Rebuilt against the clips that are left, so an id never stays listed while a clip of
+            // that media is on the timeline.
+            let present = Set(s.clips.compactMap(\.sessionMediaID))
+            var removed = (s.removedMediaIDs ?? []).filter { !present.contains($0) }
+            if !present.contains(removedMedia), !removed.contains(removedMedia) { removed.append(removedMedia) }
+            s.removedMediaIDs = removed.isEmpty ? nil : removed
+        }
         // Drop a transition that pointed at (after) the removed clip — it no longer has a successor.
         s.transitions = s.transitions.filter { $0.afterClipID != id }
         // Prompt 12 STEP 7a: garbage-collect any overlay bound to the removed clip (its per-clip climb
