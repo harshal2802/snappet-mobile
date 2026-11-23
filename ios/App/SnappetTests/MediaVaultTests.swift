@@ -628,7 +628,10 @@ final class MediaVaultServiceTests: XCTestCase {
         func add(_ id: String, _ data: Data) { lock.withLock { assets[id] = data } }
         func remove(_ id: String) { lock.withLock { assets[id] = nil } }
         func present(_ ids: [String]) async -> Set<String> { lock.withLock { Set(ids.filter { assets[$0] != nil }) } }
+        /// Reading an original takes this long and cannot be interrupted, as with Photos.
+        var exportDelay: Duration?
         func export(localIdentifier: String) async throws -> (url: URL, fileExtension: String) {
+            if let exportDelay { await Task.detached { try? await Task.sleep(for: exportDelay) }.value }
             let data: Data? = lock.withLock { exports += 1; return failing.contains(localIdentifier) ? nil : assets[localIdentifier] }
             guard let data else { throw CloudVaultError.notFound(localIdentifier) }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("fake-\(UUID().uuidString).mov")
@@ -1019,6 +1022,181 @@ final class MediaVaultServiceTests: XCTestCase {
         google.uploadError = nil
         await vault.runIfNeeded(context: container.mainContext)
         XCTAssertEqual(google.drivePaths.count, 6, "and it carries on when the Wi-Fi is back")
+    }
+
+    // MARK: A rule that changes under a running pass stops the clip being sent (prompt 293)
+
+    /// A pass over slow uploads, with the rules asked rarely unless the test says otherwise.
+    private func slowPass(clips: Int = 3, ruleCheckEvery: Duration = .seconds(60),
+                          sessionRunning: @escaping @MainActor () -> Bool = { false }) throws -> (MediaVaultService, Task<Void, Never>) {
+        for n in 0..<clips { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        google.uploadDelay = .seconds(5)
+        let vault = vaultOn()
+        vault.ruleCheckEvery = ruleCheckEvery
+        let context = container.mainContext
+        let pass = Task { await vault.runIfNeeded(context: context, sessionRunning: sessionRunning) }
+        return (vault, pass)
+    }
+
+    /// The pass must end well inside one slow upload, with nothing in Drive.
+    private func assertStopped(_ vault: MediaVaultService, _ pass: Task<Void, Never>, note: String?,
+                               file: StaticString = #filePath, line: UInt = #line) async {
+        let began = ContinuousClock.now
+        await pass.value
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(3), "the clip being sent was not stopped", file: file, line: line)
+        XCTAssertTrue(google.drivePaths.isEmpty, file: file, line: line)
+        XCTAssertEqual(vault.phase, .idle, file: file, line: line)
+        XCTAssertEqual(vault.note, note, file: file, line: line)
+    }
+
+    func testTurningWiFiOnlyOnStopsAClipBeingSentOverMobileData() async throws {
+        net.value = .cellular
+        for n in 0..<3 { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        google.uploadDelay = .seconds(5)
+        let vault = vaultOn()
+        vault.ruleCheckEvery = .seconds(60)
+        vault.update { $0.wifiOnly = false }   // mobile data allowed: the pass starts
+        let context = container.mainContext
+        let pass = Task { await vault.runIfNeeded(context: context) }
+        try await Task.sleep(for: .milliseconds(400))
+        guard case .working = vault.phase else { return XCTFail("the pass should be sending: \(vault.phase)") }
+        vault.update { $0.wifiOnly = true }
+        await assertStopped(vault, pass, note: "Waiting for Wi-Fi.")
+
+        google.uploadDelay = nil
+        net.value = .wifi
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(google.drivePaths.count, 3, "and it carries on from the clip it stopped at")
+    }
+
+    func testLosingWiFiStopsAClipBeingSentWhenTheNetworkChangeIsReported() async throws {
+        let (vault, pass) = try slowPass()
+        try await Task.sleep(for: .milliseconds(400))
+        net.value = .cellular
+        await vault.stopIfNoLongerAllowed()   // what the network watch calls
+        await assertStopped(vault, pass, note: "Waiting for Wi-Fi.")
+    }
+
+    func testAPassAskedForRightAfterAStopRunsAndSaysWhyItWaits() async throws {
+        let (vault, pass) = try slowPass()
+        try await Task.sleep(for: .milliseconds(400))
+        net.value = .cellular
+        await vault.stopIfNoLongerAllowed()
+        // What the network watch does next, in the same breath: the stopped pass must be out of the way.
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(vault.note, "Waiting for Wi-Fi.")
+        XCTAssertEqual(vault.phase, .idle)
+        await pass.value
+        net.value = .wifi
+        google.uploadDelay = nil
+        await vault.runIfNeeded(context: container.mainContext)
+        XCTAssertEqual(google.drivePaths.count, 3, "and a pass on Wi-Fi is not blocked by the stopped one")
+    }
+
+    /// Device, 2026-11-23: the status took more than ten seconds to change, because the read from
+    /// Photos in progress could not be interrupted.
+    func testTheStatusChangesAtOnceEvenWhileAClipIsBeingReadFromPhotos() async throws {
+        net.value = .cellular
+        for n in 0..<2 { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        library.exportDelay = .seconds(2)
+        let vault = vaultOn()
+        vault.ruleCheckEvery = .seconds(60)
+        vault.update { $0.wifiOnly = false }
+        let context = container.mainContext
+        let pass = Task { await vault.runIfNeeded(context: context) }
+        try await Task.sleep(for: .milliseconds(500))
+        guard case .working = vault.phase else { return XCTFail("the pass should be reading a clip: \(vault.phase)") }
+
+        vault.update { $0.wifiOnly = true }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(vault.phase, .idle, "the status does not wait for the read to end")
+        XCTAssertEqual(vault.note, "Waiting for Wi-Fi.")
+
+        // Turned off again before the read has ended: the copy starts again by itself.
+        library.exportDelay = nil
+        vault.update { $0.wifiOnly = false }
+        await vault.runIfNeeded(context: context)   // what the switch does
+        await pass.value
+        XCTAssertEqual(google.drivePaths.count, 2)
+        XCTAssertNil(vault.note)
+    }
+
+    /// Device, 2026-11-23: stopped on mobile data, then Wi-Fi came back, and the status stayed
+    /// "Waiting for Wi-Fi." — the stopped pass was still waiting on its read from Photos.
+    func testWiFiComingBackDoesNotWaitForAStoppedPassStillReadingFromPhotos() async throws {
+        net.value = .cellular
+        for n in 0..<2 { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        library.exportDelay = .seconds(4)
+        let vault = vaultOn()
+        vault.ruleCheckEvery = .seconds(60)
+        vault.update { $0.wifiOnly = false }
+        let context = container.mainContext
+        let stopped = Task { await vault.runIfNeeded(context: context) }
+        try await Task.sleep(for: .milliseconds(500))
+        vault.update { $0.wifiOnly = true }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(vault.note, "Waiting for Wi-Fi.")
+
+        library.exportDelay = nil
+        net.value = .wifi
+        let began = ContinuousClock.now
+        await vault.runIfNeeded(context: context)   // what the network watch does
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(2), "it waited for the old read")
+        XCTAssertEqual(google.drivePaths.count, 2)
+        XCTAssertNil(vault.note)
+        await stopped.value
+        try await Task.sleep(for: .seconds(4))   // the abandoned read ends; it must change nothing
+        XCTAssertEqual(google.drivePaths.count, 2, "no second copy from the abandoned read")
+        XCTAssertNil(vault.note)
+        XCTAssertEqual(vault.phase, .idle)
+    }
+
+    func testLowDataModeComingOnStopsAClipBeingSent() async throws {
+        let (vault, pass) = try slowPass()
+        try await Task.sleep(for: .milliseconds(400))
+        net.value = .lowData
+        await vault.stopIfNoLongerAllowed()
+        await assertStopped(vault, pass, note: "Paused in Low Data Mode.")
+    }
+
+    func testSwitchingCopiesOffStopsAClipBeingSent() async throws {
+        let (vault, pass) = try slowPass()
+        try await Task.sleep(for: .milliseconds(400))
+        vault.update { $0.keepCopies = false }
+        await assertStopped(vault, pass, note: nil)
+    }
+
+    func testASessionStartingStopsAClipBeingSentWithoutAnyEvent() async throws {
+        let session = Net()   // reused as a thread-safe flag: `.cellular` means a session is on
+        let (vault, pass) = try slowPass(ruleCheckEvery: .milliseconds(100), sessionRunning: { session.value == .cellular })
+        try await Task.sleep(for: .milliseconds(400))
+        session.value = .cellular
+        await assertStopped(vault, pass, note: "Paused while a session is running.")
+    }
+
+    func testAPassThatIsStillAllowedIsLeftAlone() async throws {
+        try addClip("L1", offset: 10, bytes: "one")
+        google.uploadDelay = .milliseconds(300)
+        let vault = vaultOn()
+        vault.ruleCheckEvery = .milliseconds(50)
+        let context = container.mainContext
+        let pass = Task { await vault.runIfNeeded(context: context) }
+        try await Task.sleep(for: .milliseconds(100))
+        await vault.stopIfNoLongerAllowed()
+        await pass.value
+        XCTAssertEqual(google.drivePaths.count, 1)
+    }
+
+    func testTwoPassesStartedTogetherAreOne() async throws {
+        for n in 0..<3 { try addClip("L\(n)", offset: Double(10 + n), bytes: "clip \(n)") }
+        let vault = vaultOn()
+        let context = container.mainContext
+        let first = Task { await vault.runIfNeeded(context: context) }
+        let second = Task { await vault.runIfNeeded(context: context) }
+        await first.value
+        await second.value
+        XCTAssertEqual(library.exports, 3, "each clip is read once")
+        XCTAssertEqual(google.drivePaths.count, 3)
     }
 
     func testAnUploadThatLosesTheNetworkWithWiFiOnlyOffSaysOffline() async throws {

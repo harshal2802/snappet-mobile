@@ -95,6 +95,26 @@ enum CloudBackupNetwork: Equatable, Sendable {
         return isConstrained ? .lowData : .wifi
     }
 
+    /// Two readings into one (prompt 293). `withoutMobileData` is the connection as it is when mobile
+    /// data may not be used, which is how uploads travel under "Wi-Fi only": if Wi-Fi (or a cable) can
+    /// carry them, that is the answer, whatever iOS would rather use by default. Otherwise the usual
+    /// reading stands — a hotspot reads as mobile data in both.
+    static func combine(usual: CloudBackupNetwork, withoutMobileData: CloudBackupNetwork) -> CloudBackupNetwork {
+        switch withoutMobileData {
+        case .wifi, .lowData: withoutMobileData
+        case .cellular, .offline: usual
+        }
+    }
+
+    /// The network changed while the app is open (prompt 293): take another look when it is a different
+    /// kind of connection and there is one. The pass that follows applies the Wi-Fi and Low Data Mode
+    /// rules itself, so a change for the worse only updates the status line. The first reading is not a
+    /// change: launch already ran a pass.
+    static func shouldRecheck(from old: CloudBackupNetwork?, to new: CloudBackupNetwork) -> Bool {
+        guard let old else { return false }
+        return old != new && new != .offline
+    }
+
     /// A failed transfer that means "the network went, or this network is not allowed" rather than
     /// "this one file is bad". The pass stops and waits instead of trying the next file.
     static func isNetworkLoss(_ error: Error) -> Bool {

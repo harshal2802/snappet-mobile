@@ -170,6 +170,8 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
     private(set) var putsBarredFromCellular: [Bool] = []
     /// Every upload of bytes fails this way (iOS refusing mobile data, a dropped connection).
     var uploadError: URLError?
+    /// Every upload of bytes takes this long, and stops when its task is cancelled (as URLSession does).
+    var uploadDelay: Duration?
     var grantedScope = "openid email " + GoogleScope.driveAppData
     var refreshRevoked = false
     var pageSize = 1000
@@ -228,6 +230,7 @@ final class FakeGoogle: GoogleHTTP, @unchecked Sendable {
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         if request.httpMethod == "PUT", let uploadError { throw uploadError }
+        if request.httpMethod == "PUT", let uploadDelay { try await Task.sleep(for: uploadDelay) }
         return lock.withLock { handle(request) }
     }
 

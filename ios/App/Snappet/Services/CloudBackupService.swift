@@ -36,6 +36,13 @@ final class CloudBackupService {
     @ObservationIgnored private let keys: any CloudBackupKeyStore
     @ObservationIgnored private let network: @Sendable () async -> CloudBackupNetwork
     @ObservationIgnored private var running = false
+    /// The run in progress and the rules it runs under, so a rule that stops applying can stop the
+    /// payload being sent (prompt 293): the records backup is hundreds of MB on a real store.
+    @ObservationIgnored private var passTask: Task<Void, Never>?
+    @ObservationIgnored private var passRules: (storeHealthy: Bool, manual: Bool, inSession: @MainActor () -> Bool)?
+    @ObservationIgnored private var sendingPayload = false
+    @ObservationIgnored private var stopReason: CloudBackupPolicy.SkipReason?
+    @ObservationIgnored var ruleCheckEvery: Duration = .seconds(5)
     let deviceID: String
     let deviceName: String
 
@@ -87,6 +94,24 @@ final class CloudBackupService {
         defaults.set(try? JSONEncoder().encode(next), forKey: Key.settings)
         note = nil
         if case .failed = phase { phase = .idle }
+        if passTask != nil { Task { await stopIfNoLongerAllowed() } }
+    }
+
+    /// A backup is being sent and the rules may have changed under it — "Wi-Fi only" turned on, the
+    /// network, Low Data Mode, a session starting, the destination switched off (prompt 293). If it
+    /// could not start now, stop sending. Only while the payload travels: once it is in the cloud its
+    /// small manifest always follows, so no payload is left without one.
+    func stopIfNoLongerAllowed() async {
+        guard let passTask, let rules = passRules, sendingPayload, stopReason == nil else { return }
+        let reason = CloudBackupPolicy.precheck(settings: settings, storeHealthy: rules.storeHealthy,
+                                                sessionRunning: rules.inSession(), network: await network(),
+                                                manual: rules.manual)
+        guard let reason, sendingPayload, self.passTask != nil else { return }
+        stopReason = reason
+        passTask.cancel()
+        phase = .idle   // say so now, as the clip copies do
+        note = CloudBackupStatusText.skipped(reason, destination: settings.destination)
+        await passTask.value   // sending stops at once; the caller may start a new run next
     }
 
     /// The vault backups are read from: the chosen destination, else iCloud (so a fresh install,
@@ -100,8 +125,33 @@ final class CloudBackupService {
     // MARK: - Back up
 
     /// Upload a backup if the policy says so. Safe to call often (launch, foreground, background).
+    /// `stillInSession` is asked again while the payload is being sent (prompt 293).
     func runIfNeeded(context: ModelContext, storeHealthy: Bool, manual: Bool = false,
-                     sessionRunning: Bool = false) async {
+                     sessionRunning: Bool = false,
+                     stillInSession: @escaping @MainActor () -> Bool = { false }) async {
+        guard passTask == nil else { return }   // one run at a time, decided before anything is awaited
+        stopReason = nil
+        passRules = (storeHealthy, manual, stillInSession)
+        let pass = Task {
+            await self.pass(context: context, storeHealthy: storeHealthy, manual: manual, sessionRunning: sessionRunning)
+            self.passTask = nil   // cleared by the run itself, so whoever waits on it finds it gone
+            self.passRules = nil
+            self.sendingPayload = false
+        }
+        passTask = pass
+        let every = ruleCheckEvery
+        let rules = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: every)
+                if Task.isCancelled { return }
+                await self?.stopIfNoLongerAllowed()
+            }
+        }
+        await pass.value
+        rules.cancel()
+    }
+
+    private func pass(context: ModelContext, storeHealthy: Bool, manual: Bool, sessionRunning: Bool) async {
         guard settings.destination != .off, !running, let vault = vaultFor(settings.destination) else { return }
         running = true
         defer { running = false }
@@ -166,9 +216,19 @@ final class CloudBackupService {
                 clipCount: prepared.clipCount, backupFormatVersion: SnappetBackup.formatVersion,
                 includesHeartRate: prepared.includesHeartRate)
             // Payload first, manifest last: a manifest in the vault always has its payload.
-            try await vault.write(sealed, name: name)
-            try await vault.write(try Self.encoder.encode(manifest),
-                                  name: CloudBackupNaming.manifestName(forPayload: name))
+            sendingPayload = true
+            do {
+                try await vault.write(sealed, name: name, wifiOnly: settings.wifiOnly)
+                sendingPayload = false
+            } catch {
+                sendingPayload = false
+                throw error
+            }
+            // Not stoppable: with the payload in the cloud, its manifest must follow.
+            let manifestData = try Self.encoder.encode(manifest)
+            try await Task {
+                try await vault.write(manifestData, name: CloudBackupNaming.manifestName(forPayload: name))
+            }.value
             lastManifest = manifest
             defaults.set(try? JSONEncoder().encode(manifest), forKey: Key.lastManifest)
             cloudBackupLog.info("cloud backup uploaded: \(prepared.recordCount) records, \(sealed.count) bytes")
@@ -181,6 +241,9 @@ final class CloudBackupService {
             }
             remote = ((try? await Self.manifests(in: vault)) ?? [manifest])
             phase = .idle
+        } catch where stopReason != nil && Task.isCancelled {
+            phase = .idle   // a rule stopped it mid-send (prompt 293): waiting, not failed
+            note = stopReason.flatMap { CloudBackupStatusText.skipped($0, destination: settings.destination) }
         } catch {
             cloudBackupLog.error("cloud backup failed: \(error.localizedDescription, privacy: .public)")
             phase = .failed(error.localizedDescription)

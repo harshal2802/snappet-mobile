@@ -12571,3 +12571,35 @@ no single "ended" event to hang a resume on. `SessionEndWatch` asks `sessionIsRu
 seconds, only while something is held, and runs the backup and the copies once when the answer is no.
 A missed end-site cannot leave copies stuck, which an event per site could.
 
+## 2026-11-23 — A network change looks again; it does not decide (prompt 293)
+
+`CloudBackupNetworkWatch` only says "the connection became a different kind". It then runs the same
+backup and copy passes a return to the front runs, and those apply the Wi-Fi, Low Data Mode and
+session rules. Keeping the rules in one place means the watch cannot start a copy the pass would
+have refused. It looks again on a change for the worse too, so the status line is true without
+waiting for the next transfer to fail. In the background it starts nothing (279).
+
+## 2026-11-23 — A copy pass is stopped mid-clip by asking the same policy again (prompt 293)
+
+A rule that changes during a pass (Wi-Fi only on, copies off, Low Data Mode, a session starting) now
+cancels the clip being sent instead of waiting for the next clip. The check is `MediaVaultPolicy.decide`
+itself, asked on a setting change, on a network change and every 5 seconds while a pass runs. The
+timer is there because several causes have no event to hang on; the events only make the common ones
+immediate. The stopped clip starts over on the next pass: Drive uploads here are single requests, so
+there is nothing to resume.
+
+## 2026-11-23 — "On Wi-Fi" is read with mobile data ruled out (prompt 293)
+
+Refines 281. `NWPath.usesInterfaceType(.wifi)` on the default path answers "is Wi-Fi the route iOS
+prefers", and on 5G iOS can prefer mobile data with Wi-Fi up. Uploads under "Wi-Fi only" are sent with
+mobile data prohibited, so the question that matters is "is there Wi-Fi without mobile data": a second
+`NWPathMonitor(prohibitedInterfaceTypes: [.cellular])` answers it, and wins when it says Wi-Fi. A
+metered hotspot still reads as mobile data. A cable to a Mac still counts as Wi-Fi-like (281).
+
+## 2026-11-23 — A stopped pass stops waiting for Photos; the export itself is not rewritten (prompt 293)
+
+`PHAssetResourceManager.writeData` cannot be cancelled. Rather than replace it with a cancellable
+chunked read (the code that produces every copy, untestable without a real library), the pass stops
+waiting for it and discards the file when it arrives. Cost: one read, and possibly one iCloud fetch,
+runs to its end after a stop.
+
