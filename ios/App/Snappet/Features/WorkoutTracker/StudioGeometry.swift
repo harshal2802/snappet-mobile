@@ -106,6 +106,79 @@ enum StudioGeometry {
             .map(\.endSec).max() ?? 0
     }
 
+    // MARK: - Overlay windows against the end of the timeline (prompt 297)
+
+    /// The shortest on-screen window an overlay can have (seconds) — the lane bar can't collapse
+    /// below it, and a dragged bar keeps at least this much inside the timeline.
+    static let minOverlayWindowSec = 0.2
+
+    /// An overlay window `[start, end]` cut to the timeline `[0, total]`. Returns `nil` when the
+    /// window starts at or after the end, so nothing of it would play. `total` of `nil` or `≤ 0`
+    /// means the length is not known (no clips, or durations not loaded yet): the window is
+    /// returned unchanged, so an overlay is never dropped on a guess.
+    static func clampedWindow(start: Double, end: Double, total: Double?) -> (start: Double, end: Double)? {
+        guard let total, total > 0 else { return (start, end) }
+        let lo = max(0, start)
+        guard lo < total else { return nil }
+        return (lo, max(lo, min(end, total)))
+    }
+
+    /// Overlays as they are RENDERED on a timeline of length `total`: each window is cut to the
+    /// timeline, and an overlay that starts at or after the end is left out. A trim, a speed change,
+    /// a delete or a split can shorten the timeline under an overlay whose times are absolute
+    /// (text, stickers, picture-in-picture); without this a picture-in-picture past the end makes
+    /// the composition longer than its clips. The STORED overlays are not changed — this is a
+    /// derived view, so undoing the edit or lengthening the timeline brings the full window back.
+    static func clampedToTimeline(_ overlays: [OverlayItem], total: Double?) -> [OverlayItem] {
+        overlays.compactMap { overlay in
+            guard let w = clampedWindow(start: overlay.startSec, end: overlay.endSec, total: total)
+            else { return nil }
+            var ov = overlay
+            ov.startSec = w.start
+            ov.endSec = w.end
+            return ov
+        }
+    }
+
+    /// The share (`0…1`) of an overlay's stored window that plays on a timeline of length `total` —
+    /// what the lane bar draws at full strength. `1` when the whole window is inside the timeline or
+    /// the length is not known; `0` when the window starts at or after the end.
+    static func playedFraction(start: Double, end: Double, total: Double?) -> Double {
+        let length = end - start
+        guard length > 0 else { return 1 }
+        guard let w = clampedWindow(start: start, end: end, total: total) else { return 0 }
+        return min(1, max(0, (w.end - w.start) / length))
+    }
+
+    /// Which part of an overlay's lane bar a drag moved.
+    enum OverlayWindowDrag: Sendable { case move, leadingEdge, trailingEdge }
+
+    /// The window an overlay bar drag asks for, given the stored window and the timeline length.
+    /// - `.move` keeps the length, and keeps at least `minOverlayWindowSec` of the bar inside the
+    ///   timeline (the bar cannot be left where none of it plays).
+    /// - `.leadingEdge` moves the start, with the same limit.
+    /// - `.trailingEdge` moves the end; dragging it later stops at the end of the timeline. An end
+    ///   that is already past it is not pulled back by a drag that does not move it earlier.
+    /// With `total` of `nil` or `≤ 0` (length not known) only the `start ≥ 0` limit applies.
+    /// `StudioProjectEditor.setOverlayTimeRange` still applies the minimum length.
+    static func overlayWindow(dragging part: OverlayWindowDrag, bySeconds delta: Double,
+                              start: Double, end: Double, total: Double?) -> (start: Double, end: Double) {
+        let known = total.flatMap { $0 > 0 ? $0 : nil }
+        let latestStart = known.map { max(0, $0 - minOverlayWindowSec) } ?? .infinity
+        switch part {
+        case .move:
+            let length = max(minOverlayWindowSec, end - start)
+            let s = min(max(0, start + delta), latestStart)
+            return (s, s + length)
+        case .leadingEdge:
+            return (min(max(0, start + delta), latestStart), end)
+        case .trailingEdge:
+            let asked = end + delta
+            guard let known, delta > 0 else { return (start, asked) }
+            return (start, max(end, min(asked, known)))
+        }
+    }
+
     // MARK: - Keyframes
 
     /// Eased progress `0…1` for a normalized input `t` (clamped). Pure; matches the `StudioEasing`

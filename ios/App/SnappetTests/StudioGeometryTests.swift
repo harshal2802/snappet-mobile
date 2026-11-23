@@ -222,4 +222,102 @@ final class StudioGeometryTests: XCTestCase {
         // …but it survives the unscoped view.
         XCTAssertEqual(StudioGeometry.filterOverlays([orphan], clips: [clipA], to: nil).count, 1)
     }
+
+    // MARK: - overlay windows against the end of the timeline (prompt 297)
+
+    /// A transition on the LAST clip has no next clip: the layout ignores it.
+    func testTransitionOnTheLastClipDoesNotChangeTheLayout() {
+        let a = video(0, trimEnd: 4), b = video(1, trimEnd: 6)
+        let t = [StudioTransition(afterClipID: b.id, kind: .dissolve, durationSec: 1)]
+        let placed = StudioGeometry.timeline(clips: [a, b], sourceDurations: [:], transitions: t)
+        XCTAssertEqual(placed.map(\.startSec), [0, 4])
+        XCTAssertEqual(StudioGeometry.totalDuration(clips: [a, b], sourceDurations: [:], transitions: t), 10)
+    }
+
+    func testClampedWindowCutsToTheTimeline() throws {
+        // Inside → unchanged.
+        var w = try XCTUnwrap(StudioGeometry.clampedWindow(start: 1, end: 3, total: 10))
+        XCTAssertEqual(w.start, 1); XCTAssertEqual(w.end, 3)
+        // Runs past the end → cut at the end.
+        w = try XCTUnwrap(StudioGeometry.clampedWindow(start: 6, end: 14, total: 10))
+        XCTAssertEqual(w.start, 6); XCTAssertEqual(w.end, 10)
+        // Starts before zero → starts at zero.
+        w = try XCTUnwrap(StudioGeometry.clampedWindow(start: -2, end: 3, total: 10))
+        XCTAssertEqual(w.start, 0); XCTAssertEqual(w.end, 3)
+    }
+
+    func testClampedWindowDropsAWindowThatStartsAtOrAfterTheEnd() {
+        XCTAssertNil(StudioGeometry.clampedWindow(start: 10, end: 12, total: 10))
+        XCTAssertNil(StudioGeometry.clampedWindow(start: 11, end: 12, total: 10))
+    }
+
+    /// No clips, or durations not loaded: the length is not known, so nothing is cut or dropped.
+    func testClampedWindowLeavesTheWindowAloneWhenTheLengthIsNotKnown() throws {
+        for total in [nil, 0, -1] as [Double?] {
+            let w = try XCTUnwrap(StudioGeometry.clampedWindow(start: 5, end: 9, total: total))
+            XCTAssertEqual(w.start, 5); XCTAssertEqual(w.end, 9)
+        }
+    }
+
+    func testClampedToTimelineCutsAndDropsOverlaysButKeepsTheRest() {
+        let inside = OverlayItem(kind: .text, content: "in", startSec: 0, endSec: 3)
+        let over = OverlayItem(kind: .video, content: "pip", startSec: 2, endSec: 30, opacity: 0.5)
+        let after = OverlayItem(kind: .sticker, content: "star", startSec: 8, endSec: 9)
+        let out = StudioGeometry.clampedToTimeline([inside, over, after], total: 5)
+        XCTAssertEqual(out.map(\.id), [inside.id, over.id])          // the one after the end is left out
+        XCTAssertEqual(out[0], inside)                               // untouched
+        XCTAssertEqual(out[1].startSec, 2); XCTAssertEqual(out[1].endSec, 5)
+        var expected = over; expected.endSec = 5
+        XCTAssertEqual(out[1], expected)                             // only the end changed
+        // A longer timeline gives the whole window back: the input was never changed.
+        XCTAssertEqual(StudioGeometry.clampedToTimeline([inside, over, after], total: 60),
+                       [inside, over, after])
+    }
+
+    func testPlayedFraction() {
+        XCTAssertEqual(StudioGeometry.playedFraction(start: 0, end: 4, total: 10), 1)
+        XCTAssertEqual(StudioGeometry.playedFraction(start: 8, end: 12, total: 10), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(StudioGeometry.playedFraction(start: 10, end: 12, total: 10), 0)
+        XCTAssertEqual(StudioGeometry.playedFraction(start: 8, end: 12, total: nil), 1)   // timed by its clip
+        XCTAssertEqual(StudioGeometry.playedFraction(start: 8, end: 12, total: 0), 1)     // length not known
+    }
+
+    func testOverlayMoveKeepsLengthAndStaysOnTheTimeline() {
+        // A plain move.
+        var w = StudioGeometry.overlayWindow(dragging: .move, bySeconds: 2, start: 1, end: 4, total: 10)
+        XCTAssertEqual(w.start, 3); XCTAssertEqual(w.end, 6)
+        // Before zero → starts at zero, same length.
+        w = StudioGeometry.overlayWindow(dragging: .move, bySeconds: -5, start: 1, end: 4, total: 10)
+        XCTAssertEqual(w.start, 0); XCTAssertEqual(w.end, 3)
+        // Far past the end → the minimum stays inside; the length is kept (the rest is cut at render).
+        w = StudioGeometry.overlayWindow(dragging: .move, bySeconds: 50, start: 1, end: 4, total: 10)
+        XCTAssertEqual(w.start, 10 - StudioGeometry.minOverlayWindowSec, accuracy: 1e-9)
+        XCTAssertEqual(w.end - w.start, 3, accuracy: 1e-9)
+        // Length not known → only the zero limit.
+        w = StudioGeometry.overlayWindow(dragging: .move, bySeconds: 50, start: 1, end: 4, total: nil)
+        XCTAssertEqual(w.start, 51); XCTAssertEqual(w.end, 54)
+    }
+
+    func testOverlayTrailingEdgeStopsAtTheEndOfTheTimeline() {
+        // Dragged later, past the end → stops at the end.
+        var w = StudioGeometry.overlayWindow(dragging: .trailingEdge, bySeconds: 9, start: 2, end: 6, total: 10)
+        XCTAssertEqual(w.start, 2); XCTAssertEqual(w.end, 10)
+        // Already past the end (the timeline was shortened): a drag later does not pull it back…
+        w = StudioGeometry.overlayWindow(dragging: .trailingEdge, bySeconds: 1, start: 2, end: 14, total: 10)
+        XCTAssertEqual(w.end, 14)
+        // …and a drag earlier moves it by what was dragged.
+        w = StudioGeometry.overlayWindow(dragging: .trailingEdge, bySeconds: -6, start: 2, end: 14, total: 10)
+        XCTAssertEqual(w.end, 8)
+        // Length not known → no limit.
+        w = StudioGeometry.overlayWindow(dragging: .trailingEdge, bySeconds: 9, start: 2, end: 6, total: nil)
+        XCTAssertEqual(w.end, 15)
+    }
+
+    func testOverlayLeadingEdgeStaysOnTheTimeline() {
+        var w = StudioGeometry.overlayWindow(dragging: .leadingEdge, bySeconds: -5, start: 2, end: 6, total: 10)
+        XCTAssertEqual(w.start, 0); XCTAssertEqual(w.end, 6)
+        w = StudioGeometry.overlayWindow(dragging: .leadingEdge, bySeconds: 1, start: 12, end: 14, total: 10)
+        XCTAssertEqual(w.start, 10 - StudioGeometry.minOverlayWindowSec, accuracy: 1e-9)
+        XCTAssertEqual(w.end, 14)
+    }
 }

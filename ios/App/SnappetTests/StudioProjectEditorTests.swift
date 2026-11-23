@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import SwiftData
 @testable import Snappet
 
 /// Unit tests for the **pure** studio editor operations (no device, no SwiftData): structural edits
@@ -356,6 +357,102 @@ final class StudioProjectEditorTests: XCTestCase {
         let p = TimelineClip(sessionMediaID: nil, localIdentifier: "p", isPhoto: true, order: 0, photoDurationSec: 5)
         var s = empty(); s.clips = [p]
         XCTAssertEqual(StudioProjectEditor.splitClip(s, id: p.id, atOutputOffset: 2, sourceDuration: nil).clips.count, 1)
+    }
+
+    // MARK: - split carries the transition (prompt 297)
+
+    /// A transition means "between this clip and the next". After a split the one that led out of
+    /// the clip leads out of the SECOND half; the halves join with a cut.
+    func testSplitMovesTheOutgoingTransitionToTheSecondHalf() {
+        let a = video(0, trimEnd: 10), b = video(1, trimEnd: 6)
+        var s = empty(); s.clips = [a, b]
+        s.transitions = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 0.8)]
+        let original = s.transitions[0]
+        s = StudioProjectEditor.splitClip(s, id: a.id, atOutputOffset: 4, sourceDuration: 10)
+        let seq = StudioGeometry.ordered(s.clips)
+        XCTAssertEqual(seq.count, 3)
+        XCTAssertEqual(seq[0].id, a.id)
+        XCTAssertEqual(s.transitions.count, 1)
+        XCTAssertEqual(s.transitions[0].afterClipID, seq[1].id)       // out of the second half
+        XCTAssertEqual(s.transitions[0].id, original.id)              // the same transition, re-keyed
+        XCTAssertEqual(s.transitions[0].kind, .dissolve)
+        XCTAssertEqual(s.transitions[0].durationSec, 0.8)
+        // On the timeline: the halves touch (a cut), and the last clip is pulled in by the dissolve.
+        let placed = StudioGeometry.timeline(clips: s.clips, sourceDurations: [:], transitions: s.transitions)
+        XCTAssertEqual(placed[1].startSec, placed[0].endSec, accuracy: 1e-9)
+        XCTAssertEqual(placed[2].startSec, placed[1].endSec - 0.8, accuracy: 1e-9)
+        // The length of the timeline is what it was before the split.
+        XCTAssertEqual(placed[2].endSec, 10 + 6 - 0.8, accuracy: 1e-9)
+    }
+
+    /// The transition INTO the split clip is keyed to the clip before it and stays there.
+    func testSplitLeavesTheIncomingTransitionAlone() {
+        let a = video(0, trimEnd: 6), b = video(1, trimEnd: 10)
+        var s = empty(); s.clips = [a, b]
+        s.transitions = [StudioTransition(afterClipID: a.id, kind: .dissolve)]
+        let before = s.transitions
+        s = StudioProjectEditor.splitClip(s, id: b.id, atOutputOffset: 4, sourceDuration: 10)
+        XCTAssertEqual(StudioGeometry.ordered(s.clips).count, 3)
+        XCTAssertEqual(s.transitions, before)
+    }
+
+    /// A split that does nothing changes no transition.
+    func testDegenerateSplitKeepsTheTransition() {
+        let a = video(0, trimEnd: 10), b = video(1, trimEnd: 6)
+        var s = empty(); s.clips = [a, b]
+        s.transitions = [StudioTransition(afterClipID: a.id, kind: .dissolve)]
+        XCTAssertEqual(StudioProjectEditor.splitClip(s, id: a.id, atOutputOffset: 0, sourceDuration: 10), s)
+    }
+
+    /// A reorder does not re-key: a transition is the way a clip is LEFT, so it travels with its clip.
+    func testMoveClipCarriesItsTransitionWithIt() {
+        let a = video(0, trimEnd: 4), b = video(1, trimEnd: 4), c = video(2, trimEnd: 4)
+        var s = empty(); s.clips = [a, b, c]
+        s.transitions = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1)]
+        s = StudioProjectEditor.moveClip(s, id: a.id, toIndex: 1)     // b, a, c
+        XCTAssertEqual(s.transitions.map(\.afterClipID), [a.id])
+        var placed = StudioGeometry.timeline(clips: s.clips, sourceDurations: [:], transitions: s.transitions)
+        XCTAssertEqual(placed.map(\.startSec), [0, 4, 7])             // b→a is a cut, a→c dissolves
+        s = StudioProjectEditor.moveClip(s, id: a.id, toIndex: 2)     // b, c, a — a is last
+        placed = StudioGeometry.timeline(clips: s.clips, sourceDurations: [:], transitions: s.transitions)
+        XCTAssertEqual(placed.map(\.startSec), [0, 4, 8])             // nothing after a: no overlap
+        XCTAssertEqual(s.transitions.count, 1)                        // kept for when a is moved back
+    }
+
+    // MARK: - overlays against a shortened timeline (prompt 297)
+
+    /// The view model cuts overlay windows to the timeline for the canvas and the composer, and the
+    /// stored overlay keeps its times, so lengthening the clip again restores the window.
+    @MainActor
+    func testRenderedOverlaysAreCutToTheTimelineAndStoredTimesAreKept() throws {
+        let container = try ModelContainer(
+            for: Schema(SnappetSchema.models),
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let project = StudioProject(sessionID: UUID(), title: "T")
+        let clip = video(0, trimEnd: 10)
+        let text = OverlayItem(kind: .text, content: "Send", startSec: 2, endSec: 9)
+        let pip = OverlayItem(kind: .video, content: "pip", startSec: 6, endSec: 10)
+        let tag = OverlayItem(kind: .climbName, content: "Climb", startSec: 0, endSec: 10, clipID: clip.id)
+        project.clips = [clip]
+        project.overlays = [text, pip, tag]
+        container.mainContext.insert(project)
+        let vm = StudioEditorViewModel(project: project, context: container.mainContext)
+        XCTAssertEqual(vm.totalDuration, 10)
+        XCTAssertEqual(vm.canvasOverlays.map(\.endSec), [9, 10, 10])
+
+        vm.select(clip.id)
+        vm.trimSelected(startSeconds: nil, endSeconds: 5)             // the timeline is now 5 s
+        XCTAssertEqual(vm.totalDuration, 5)
+        let rendered = vm.canvasOverlays
+        XCTAssertEqual(rendered.map(\.id), [text.id, tag.id])         // the PiP starts after the end
+        XCTAssertEqual(rendered[0].startSec, 2); XCTAssertEqual(rendered[0].endSec, 5)
+        XCTAssertEqual(rendered[1].startSec, 0); XCTAssertEqual(rendered[1].endSec, 5)   // its clip's slot
+        // Stored times are untouched, in the view model and in the project.
+        XCTAssertEqual(vm.overlays.map(\.endSec), [9, 10, 10])
+        XCTAssertEqual(project.overlays.map(\.startSec), [2, 6, 0])
+
+        vm.undoEdit()                                                 // 10 s again
+        XCTAssertEqual(vm.canvasOverlays.map(\.endSec), [9, 10, 10])
     }
 
     // MARK: - transitions

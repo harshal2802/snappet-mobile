@@ -250,8 +250,13 @@ final class StudioEditorViewModel {
     /// preview and export read the identical, up-to-date strings/windows. Empty-content tags are dropped
     /// (matching the export filter), so a tag with no caption never shows an invisible chip. The
     /// PERSISTED model is untouched — this is a derived view only.
+    ///
+    /// Every window is then cut to the timeline (`StudioGeometry.clampedToTimeline`, prompt 297): text,
+    /// stickers and picture-in-picture carry absolute times, so a trim / speed change / delete / split
+    /// can leave them past the end. One that starts at or after the end is left out; the stored times
+    /// stay, so undoing the edit brings the window back.
     func renderedOverlays(_ overlays: [OverlayItem]) -> [OverlayItem] {
-        overlays.compactMap { overlay in
+        let resolved: [OverlayItem] = overlays.compactMap { overlay in
             guard overlay.kind == .climbName else { return overlay }
             var ov = overlay
             ov.content = renderedContent(for: overlay)
@@ -260,6 +265,7 @@ final class StudioEditorViewModel {
             ov.endSec = w.end
             return ov.content.isEmpty ? nil : ov
         }
+        return StudioGeometry.clampedToTimeline(resolved, total: totalDuration)
     }
 
     // MARK: Lifecycle
