@@ -363,6 +363,7 @@ final class StudioEditorViewModel {
     // MARK: Edits (all via the pure StudioProjectEditor → undo → persist → rebuild)
 
     private func edit(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
+        guard !isBaking else { return }   // the project is locked while a bake renders (prompt 294)
         undo.commit(transform(undo.current))
         persist()
         Task { await rebuildPreview() }
@@ -371,11 +372,18 @@ final class StudioEditorViewModel {
     /// the WYSIWYG SwiftUI layer on top of the preview), so skip the player rebuild to avoid a flicker
     /// / playback restart on every drag. Still commits to undo + persists.
     private func editOverlaysOnly(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
+        guard !isBaking else { return }
         undo.commit(transform(undo.current))
         persist()
     }
-    func undoEdit() { undo.undo(); persist(); Task { await rebuildPreview() } }
-    func redoEdit() { undo.redo(); persist(); Task { await rebuildPreview() } }
+    func undoEdit() {
+        guard !isBaking else { return }
+        undo.undo(); persist(); Task { await rebuildPreview() }
+    }
+    func redoEdit() {
+        guard !isBaking else { return }
+        undo.redo(); persist(); Task { await rebuildPreview() }
+    }
     private func persist() { undo.current.apply(to: project); try? context.save() }
 
     func select(_ id: UUID?) {
@@ -1164,6 +1172,12 @@ final class StudioEditorViewModel {
         return false
     }
 
+    /// A bake is in flight. The project is LOCKED for its whole length (prompt 294): every edit path
+    /// (`edit`, `editOverlaysOnly`, undo, redo) refuses, and the view disables the editor. A bake
+    /// ends by replacing the project with a flattened copy of the snapshot it rendered, so an edit
+    /// made in between would either be thrown away or be reset as if it were in the pixels.
+    var isBaking: Bool { bakeState == .baking }
+
     /// The ONE render both lanes share — `export()` (share as new) and `bake()` (write into the
     /// asset) must produce the identical file for the identical project.
     private func renderComposition() async throws -> URL {
@@ -1185,6 +1199,11 @@ final class StudioEditorViewModel {
         guard !isRendering,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
+        // Read ONCE, before the first await: the snapshot the render is made from is also the one
+        // the flatten and the offset shift are computed from (prompt 294). `isBaking` keeps it
+        // current; holding it here means the result never depends on that.
+        let base = undo.current
+        let bakedClips = visibleSnapshotClips
         bakeState = .baking
         do {
             let url = try await renderComposition()
@@ -1192,12 +1211,12 @@ final class StudioEditorViewModel {
             let sid = project.sessionID
             let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
                 predicate: #Predicate { $0.sessionID == sid && $0.localIdentifier == target }))) ?? []
-            var flattened = undo.current
+            let flattened: StudioProjectSnapshot
             if replaceOriginal {
                 // Re-point ONLY after the service confirms deletion — a cancelled iOS dialog throws
                 // `deletionCancelled` and the app's records stay on the (surviving) original.
                 let newID = try await service.replaceOriginal(renderedURL: url, oldLocalIdentifier: target)
-                let trimStart = ClipBakePlan.earliestTrimStart(clips: visibleSnapshotClips,
+                let trimStart = ClipBakePlan.earliestTrimStart(clips: bakedClips,
                                                                localIdentifier: target)
                 let renderedDur = (try? await AVURLAsset(url: url).load(.duration))?.seconds
                 for m in rows {
@@ -1210,7 +1229,7 @@ final class StudioEditorViewModel {
                     m.aspectRatio = nil        // the render canvas can differ — lazily re-resolved
                     m.isBaked = true
                 }
-                flattened.clips = ClipBakePlan.repointedClips(flattened.clips, from: target, to: newID)
+                flattened = ClipBakePlan.flattened(base, target: target, replacedBy: newID)
                 // The offset caches key by media id AND localIdentifier — both changed; reload lazily.
                 mediaOffsets = [:]
                 mediaOffsetsByLocalID = [:]
@@ -1219,14 +1238,14 @@ final class StudioEditorViewModel {
                 try await service.saveToOriginal(renderedURL: url, localIdentifier: target,
                                                  projectID: project.id)
                 for m in rows { m.isBaked = true }
-                flattened.clips = ClipBakePlan.neutralizedClips(flattened.clips, localIdentifier: target)
+                flattened = ClipBakePlan.flattened(base, target: target)
             }
-            // Flatten the burned overlays + HR tile out of the project (single-asset gate ⇒ every
-            // visible overlay was baked), reset undo (barrier), persist. The updatedAt bump also
-            // feeds the Clips feed's rebuild key (a revertible bake changes only SessionMedia rows).
-            flattened.overlays.removeAll { $0.kind != .video }
-            flattened.hrOverlay = nil
+            // `ClipBakePlan.flattened` removed what is now in the pixels and kept what belongs to
+            // other clips. Reset undo (barrier), persist. The updatedAt bump also feeds the Clips
+            // feed's rebuild key (a revertible bake changes only SessionMedia rows).
             undo = UndoStack(flattened)
+            if let id = selectedClipID, !flattened.clips.contains(where: { $0.id == id }) { selectedClipID = nil }
+            if let id = selectedOverlayID, !flattened.overlays.contains(where: { $0.id == id }) { selectedOverlayID = nil }
             persist()
             Task { await rebuildPreview() }
             bakeState = .saved(replaced: replaceOriginal)

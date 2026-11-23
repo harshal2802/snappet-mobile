@@ -12603,3 +12603,34 @@ chunked read (the code that produces every copy, untestable without a real libra
 waiting for it and discards the file when it arrives. Cost: one read, and possibly one iCloud fetch,
 runs to its end after a stop.
 
+
+## 2026-11-23 — A bake removes from the project only what it rendered (prompt 294)
+
+One Studio project is shared by a session, and a bake is usually run from the "Edit this clip"
+scope. The flatten after a bake used to clear every non-video overlay and the HR tile in the whole
+project. `ClipBakePlan.flattened` now removes what is bound to the baked asset's parts, and removes
+project-wide items (unbound overlays, picture-in-picture, HR tile, base frame, music) only when the
+bake covers the whole project. Cost: in a session with other clips the project-wide items stay and
+the Studio renders them over the baked clip again, until the Studio stands down for baked clips as
+the feed does. Losing other clips' work was judged worse than a doubled tile on one clip.
+
+## 2026-11-23 — Split parts become one clip after a bake (prompt 294)
+
+The baked asset is the whole rendered composition. Parts reset to "play the whole asset" would each
+play all of it, so the parts merge into one clip in the first part's place. A transition between
+parts is in the pixels and is removed; the transition out of the last part moves to the merged clip.
+
+## 2026-11-23 — The project is locked while a bake renders (prompt 294)
+
+A bake ends by replacing the project with a flattened copy of the snapshot it rendered. Merging
+edits made in the meantime was rejected: an edit to the baked clip cannot be told apart from one
+that is in the pixels. The view model refuses every edit path while `isBaking`, the view disables
+the editor and its dismissal, and `bake()` reads the snapshot once before its first await. An
+export does not lock: it writes nothing back.
+
+## 2026-11-23 — `ClipBakePlan.rendersMusic` copies a composer rule (prompt 294)
+
+The composer's transition path does not mix added music, so a bake through that path has none and
+the tracks must stay. The plan repeats the path condition from `StudioComposer.assemble` instead of
+calling into the composer, which was out of scope. It tests clips and overlays as stored, not as
+resolved from Photos. Remove it when the composer has one path.
