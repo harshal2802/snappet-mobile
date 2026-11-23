@@ -29,6 +29,7 @@ enum ClipBakePlan {
     /// ON TOP of the baked pixels (double speed, double filter, re-trimmed rendition) — the composer
     /// resolves the asset's CURRENT (baked) version. Both bake variants use it: after a bake, "the
     /// asset IS the edit" (flattening semantics; a Photos revert restores pixels, not project edits).
+    /// The clip's `baked` record is not edit state and is left alone.
     static func neutralizedClips(_ clips: [TimelineClip], localIdentifier: String) -> [TimelineClip] {
         clips.map { clip in
             guard !clip.isPhoto, clip.localIdentifier == localIdentifier else { return clip }
@@ -100,14 +101,27 @@ enum ClipBakePlan {
     ///   and the music (only if it was mixed — `rendersMusic`).
     /// - When other clips exist, project-wide items are KEPT, because the other clips still use
     ///   them. A picture-in-picture that showed the replaced asset is re-pointed at the new one.
+    ///   The merged clip gets a `baked` record of the kept items that are in its pixels (prompt
+    ///   295), so the Studio does not draw them over it again. It is added to the record the parts
+    ///   already had, and items no longer in the project are dropped from it.
+    ///
+    /// `hrTileDrawn` is false when the render had no HR tile to draw although the project has one
+    /// (no heart-rate data for the clip); the record then does not claim the tile.
     static func flattened(_ s: StudioProjectSnapshot, target: String,
-                          replacedBy newID: String? = nil) -> StudioProjectSnapshot {
+                          replacedBy newID: String? = nil,
+                          hrTileDrawn: Bool = true) -> StudioProjectSnapshot {
         let ordered = StudioGeometry.ordered(s.clips)
         let parts = ordered.filter { !$0.isPhoto && $0.localIdentifier == target }
         guard let first = parts.first, let last = parts.last else { return s }
         let whole = coversWholeProject(s, target: target)
-        let musicWasMixed = rendersMusic(s)
         let partIDs = Set(parts.map(\.id))
+        // What the bake rendered: the parts, their overlays and the unbound ones, minus what an
+        // earlier bake already put in the pixels.
+        var scope = s
+        scope.clips = parts
+        scope.overlays = s.overlays.filter { $0.clipID.map(partIDs.contains) ?? true }
+        let rendered = standingDown(scope, visible: parts)
+        let musicWasMixed = rendersMusic(rendered)
         var out = s
 
         // Clips: one neutral clip in the first part's place.
@@ -138,6 +152,80 @@ enum ClipBakePlan {
                 var ov = ov
                 ov.content = newID
                 return ov
+            }
+        }
+
+        // The record (prompt 295). After a whole-project bake nothing project-wide is left, so
+        // every part of it is pruned and it ends up `nil`.
+        var record = parts.compactMap(\.baked).reduce(BakedItems()) { $0.union($1) }
+        var overlayIDs = Set(record.overlayIDs)
+        overlayIDs.formUnion(rendered.overlays
+            .filter { $0.clipID == nil && ($0.kind == .video || !$0.content.isEmpty) }.map(\.id))
+        var trackIDs = Set(record.audioTrackIDs)
+        if musicWasMixed {
+            trackIDs.formUnion(rendered.audioTracks.filter { $0.kind != .original }.map(\.id))
+        }
+        record.overlayIDs = BakedItems.sorted(overlayIDs.intersection(out.overlays.map(\.id)))
+        record.audioTrackIDs = BakedItems.sorted(trackIDs.intersection(out.audioTracks.map(\.id)))
+        record.hrTile = (record.hrTile || (hrTileDrawn && rendered.hrOverlay?.tile != nil))
+            && out.hrOverlay != nil
+        record.baseFrame = (record.baseFrame || rendered.baseFrame != nil) && out.baseFrame != nil
+        if let i = out.clips.firstIndex(where: { $0.id == first.id }) {
+            out.clips[i].baked = record.isEmpty ? nil : record
+        }
+        return out
+    }
+
+    // MARK: Stand-down (prompt 295 — what the Studio must not draw over a baked clip)
+
+    /// The items that are in the pixels of EVERY visible clip. Empty when the timeline is empty or
+    /// any visible clip has no record (never baked, baked before prompt 295, or a photo).
+    static func bakedInEveryClip(_ visible: [TimelineClip]) -> BakedItems {
+        guard let first = visible.first else { return BakedItems() }
+        return visible.dropFirst().reduce(first.baked ?? BakedItems()) {
+            $0.intersection($1.baked ?? BakedItems())
+        }
+    }
+
+    /// The snapshot the Studio previews and renders. Nothing is stored: the project keeps every
+    /// item for the clips that do not have it in their pixels.
+    ///
+    /// Project-wide items (overlays with no clip, added music, the HR tile, the base frame) span
+    /// the whole output, so one is dropped only when every visible clip's `baked` record holds it.
+    /// That is the "Edit this clip" scope of a baked clip. An item added after the bake is in no
+    /// record and is kept. On a mixed timeline nothing is dropped here (the composer has no
+    /// per-clip gate for these items); the HR tile is held back per clip by `hidesHRTile`.
+    static func standingDown(_ s: StudioProjectSnapshot, visible: [TimelineClip]) -> StudioProjectSnapshot {
+        let baked = bakedInEveryClip(visible)
+        guard !baked.isEmpty else { return s }
+        var out = s
+        let overlayIDs = Set(baked.overlayIDs), trackIDs = Set(baked.audioTrackIDs)
+        out.overlays.removeAll { $0.clipID == nil && overlayIDs.contains($0.id) }
+        out.audioTracks.removeAll { $0.kind != .original && trackIDs.contains($0.id) }
+        if baked.hrTile { out.hrOverlay = nil }
+        if baked.baseFrame { out.baseFrame = nil }
+        return out
+    }
+
+    /// True when the HR tile must not draw over this clip: its pixels have one.
+    static func hidesHRTile(over clip: TimelineClip?) -> Bool { clip?.baked?.hrTile ?? false }
+
+    /// The session-wide HR tile (the fallback for clips with no capture offset) is one layer over
+    /// the whole output, so it cannot skip a clip. It is allowed only when no visible clip has a
+    /// tile in its pixels.
+    static func allowsSessionWideTile(visible: [TimelineClip]) -> Bool {
+        !visible.contains { hidesHRTile(over: $0) }
+    }
+
+    /// The project after Photos reverted these assets to their originals: the pixels no longer
+    /// carry anything, so the clips' records go and the project's items draw again.
+    static func clearingBakeRecords(_ s: StudioProjectSnapshot, mediaIDs: Set<UUID>,
+                                    localIdentifiers: Set<String>) -> StudioProjectSnapshot {
+        var out = s
+        for i in out.clips.indices where out.clips[i].baked != nil {
+            let c = out.clips[i]
+            if (c.sessionMediaID.map(mediaIDs.contains) ?? false) || localIdentifiers.contains(c.localIdentifier) {
+                out.clips[i].baked = nil
             }
         }
         return out

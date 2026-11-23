@@ -147,17 +147,29 @@ final class StudioEditorViewModel {
     /// per-clip climb tags, since `visibleClipMediaIDs` scoped only the clips (prompt 13). Resolves
     /// `clipID → owning clip → sessionMediaID` against the FULL `snapshot.clips`; whole-project overlays
     /// (`clipID == nil`) always pass; unscoped (`visibleClipMediaIDs == nil`) returns all.
-    private var scopedOverlays: [OverlayItem] {
-        StudioGeometry.filterOverlays(snapshot.overlays, clips: snapshot.clips, to: visibleClipMediaIDs)
+    ///
+    /// Read from `standDownSnapshot`, so the canvas, the overlay lane and the render also agree on
+    /// what a baked clip hides (prompt 295).
+    private var scopedOverlays: [OverlayItem] { standDownSnapshot.overlays }
+
+    /// The snapshot scoped to the visible clips and their overlays, minus the project-wide items a
+    /// baked clip already has in its pixels (its `baked` record, prompt 295). The ONE source for the preview and the render; the
+    /// stored project (`snapshot`) keeps every item, and the tool sheets still read it.
+    private var standDownSnapshot: StudioProjectSnapshot {
+        var s = snapshot
+        let visible = visibleSnapshotClips
+        if visibleClipMediaIDs != nil { s.clips = visible }
+        s.overlays = StudioGeometry.filterOverlays(snapshot.overlays, clips: snapshot.clips,
+                                                   to: visibleClipMediaIDs)
+        return ClipBakePlan.standingDown(s, visible: visible)
     }
     /// The snapshot handed to the composer for preview/export — scoped to the visible clips, with every
     /// `.climbName` tag RENDER-RESOLVED (composed string + per-clip window) so the exported file matches
     /// the editor (prompt 12). Unscoped (`visibleClipMediaIDs == nil`) keeps all clips; either way the
     /// overlays are resolved, so a per-clip climb tag exports only over its clip's segment.
     private var scopedSnapshot: StudioProjectSnapshot {
-        var s = snapshot
-        if visibleClipMediaIDs != nil { s.clips = visibleSnapshotClips }
-        s.overlays = renderedOverlays(scopedOverlays)   // scope overlays too (prompt 13), then resolve
+        var s = standDownSnapshot   // scoped clips + overlays (prompt 13), baked stand-down (295)
+        s.overlays = renderedOverlays(s.overlays)
         return s
     }
     var clips: [TimelineClip] { StudioGeometry.ordered(visibleSnapshotClips) }
@@ -708,8 +720,10 @@ final class StudioEditorViewModel {
 
     // MARK: - Base-video frame (collage — the main video as a resizable cell; in the composition)
 
-    /// The main video's collage frame, or `nil` when it fills the whole canvas (legacy).
-    var baseFrame: StudioFrameRect? { snapshot.baseFrame }
+    /// The main video's collage frame AS DRAWN, or `nil` when it fills the whole canvas (legacy).
+    /// Also `nil` over a clip that was baked with it (prompt 295): the frame is in its pixels. `baseFramed` reads
+    /// the stored value.
+    var baseFrame: StudioFrameRect? { standDownSnapshot.baseFrame }
     /// The base (main) video's oriented source aspect — locks the base frame's resize to its footage.
     var baseSourceAspect: CGFloat? { clips.first.flatMap { sourceAspects[$0.localIdentifier] } }
     /// Whether the main video is currently framed into a sub-rect (drives the canvas handle + toggle).
@@ -752,6 +766,11 @@ final class StudioEditorViewModel {
 
     /// The current tile, or `nil` when the overlay is off / a (pre-migration) legacy element overlay.
     var hrTile: HRTile? { snapshot.hrOverlay?.tile }
+    /// The tile the CANVAS draws: `hrTile`, or `nil` while the clip under the playhead was baked
+    /// with a tile (prompt 295) — it is in the pixels. The builder sheet keeps reading `hrTile`.
+    var canvasHRTile: HRTile? {
+        ClipBakePlan.hidesHRTile(over: placedClipUnderPlayhead()?.clip) ? nil : hrTile
+    }
     /// The per-metric toggle rows for the builder UI (ordered).
     var tileEntries: [HRTileMetricEntry] { hrTile?.entries ?? [] }
 
@@ -950,8 +969,12 @@ final class StudioEditorViewModel {
     /// The session-wide resolved HR stat **tile** (the overlay redesign), or `nil` when no tile is set.
     /// The composer uses it as the fallback for clips with no media link; per-clip tiles (each clip's own
     /// capture window) come from `clipHRContent()`.
+    ///
+    /// `nil` when any visible clip was baked with a tile (prompt 295): this tile is one layer over
+    /// the whole output and would draw over that clip's own tile.
     private func resolvedSessionTile() -> ResolvedHRTile? {
-        guard let tile = snapshot.hrOverlay?.tile else { return nil }
+        guard ClipBakePlan.allowsSessionWideTile(visible: visibleSnapshotClips),
+              let tile = snapshot.hrOverlay?.tile else { return nil }
         return overlayValues.resolveTile(tile)
     }
 
@@ -963,7 +986,8 @@ final class StudioEditorViewModel {
     /// offsets, or no tile. The composer places each entry at the clip's output slot.
     private func clipHRContent() -> [UUID: StudioClipHRContent] {
         guard !hrSeries.isEmpty else { return [:] }
-        let videoClips = visibleSnapshotClips.filter { !$0.isPhoto }
+        // A clip baked with a tile gets no entry (prompt 295): the tile is in its pixels.
+        let videoClips = visibleSnapshotClips.filter { !$0.isPhoto && !ClipBakePlan.hidesHRTile(over: $0) }
         let offsets = Dictionary(uniqueKeysWithValues: videoClips.compactMap { c in
             captureOffset(of: c).map { (c.id, $0) }
         })
@@ -1204,6 +1228,11 @@ final class StudioEditorViewModel {
         // current; holding it here means the result never depends on that.
         let base = undo.current
         let bakedClips = visibleSnapshotClips
+        // Whether this render draws an HR tile, for the clip's `baked` record (prompt 295). The
+        // same two inputs `renderComposition` hands the composer, read before the first await.
+        let clipHR = clipHRContent()
+        let hrTileDrawn = clipHR.isEmpty ? resolvedSessionTile() != nil
+                                         : clipHR.values.contains { $0.tile != nil }
         bakeState = .baking
         do {
             let url = try await renderComposition()
@@ -1229,7 +1258,8 @@ final class StudioEditorViewModel {
                     m.aspectRatio = nil        // the render canvas can differ — lazily re-resolved
                     m.isBaked = true
                 }
-                flattened = ClipBakePlan.flattened(base, target: target, replacedBy: newID)
+                flattened = ClipBakePlan.flattened(base, target: target, replacedBy: newID,
+                                                   hrTileDrawn: hrTileDrawn)
                 // The offset caches key by media id AND localIdentifier — both changed; reload lazily.
                 mediaOffsets = [:]
                 mediaOffsetsByLocalID = [:]
@@ -1238,7 +1268,7 @@ final class StudioEditorViewModel {
                 try await service.saveToOriginal(renderedURL: url, localIdentifier: target,
                                                  projectID: project.id)
                 for m in rows { m.isBaked = true }
-                flattened = ClipBakePlan.flattened(base, target: target)
+                flattened = ClipBakePlan.flattened(base, target: target, hrTileDrawn: hrTileDrawn)
             }
             // `ClipBakePlan.flattened` removed what is now in the pixels and kept what belongs to
             // other clips. Reset undo (barrier), persist. The updatedAt bump also feeds the Clips
@@ -1273,10 +1303,25 @@ final class StudioEditorViewModel {
                         ? probe.id : nil
                 }
             }.value
-            guard let self, !reverted.isEmpty else { return }
-            for m in rows where reverted.contains(m.id) { m.isBaked = false }
+            // A bake in flight replaces the project when it ends; leave everything for the next
+            // open rather than have the clearing below overwritten.
+            guard let self, !reverted.isEmpty, !self.isBaking else { return }
+            let revertedRows = rows.filter { reverted.contains($0.id) }
+            for m in revertedRows { m.isBaked = false }
+            // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
+            // go and the project's items draw over it again (prompt 295). Like a bake, this is
+            // an undo barrier: an older step would bring the record back.
+            let cleared = ClipBakePlan.clearingBakeRecords(
+                self.undo.current, mediaIDs: Set(revertedRows.map(\.id)),
+                localIdentifiers: Set(revertedRows.map(\.localIdentifier)))
+            let recordsCleared = cleared != self.undo.current
+            if recordsCleared {
+                self.undo = UndoStack(cleared)
+                cleared.apply(to: self.project)
+            }
             self.project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
             try? self.context.save()
+            if recordsCleared { await self.rebuildPreview() }
         }
     }
 
