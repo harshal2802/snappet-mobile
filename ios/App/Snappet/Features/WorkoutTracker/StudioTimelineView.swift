@@ -78,8 +78,12 @@ struct StudioTimelineView: View {
                     .offset(x: CGFloat(p.startSec) * pps, y: rulerHeight + 4)
             }
             ForEach(vm.timelineOverlays) { ov in
+                // A tag bound to a clip on the timeline is timed by that clip's slot at render, not by
+                // its stored window, so the end of the timeline does not cut it (prompt 297).
+                let timedByClip = ov.clipID.map { id in placed.contains { $0.clip.id == id } } ?? false
                 OverlayBar(overlay: ov, pps: pps, height: overlayLaneHeight,
-                           selected: ov.id == vm.selectedOverlayID, total: vm.totalDuration,
+                           selected: ov.id == vm.selectedOverlayID,
+                           total: timedByClip ? nil : vm.totalDuration,
                            onSelect: { vm.selectOverlay(ov.id) },
                            onCommit: { start, end in vm.setOverlayTimeRange(ov.id, start: start, end: end) })
                     .offset(x: CGFloat(ov.startSec) * pps, y: rulerHeight + trackHeight + 12)
@@ -171,12 +175,18 @@ struct StudioTimelineView: View {
 /// One overlay's on-screen window as a draggable bar in the timeline lane: drag the body to move the
 /// whole window (keeping its length), or the leading/trailing edges to change start / end. Times are
 /// committed **once on drag-end** (live feedback is view-local) — one undo entry per gesture.
+///
+/// `total` is the length of the timeline (prompt 297; `nil` when the overlay is timed by its clip).
+/// The bar is drawn over the overlay's whole STORED window, but only the part inside the timeline is
+/// drawn at full strength — the part past the end is dimmed, because the render leaves it out
+/// (`StudioGeometry.clampedToTimeline`). Drags are limited by it too: the bar can't be moved to where
+/// none of it plays, and its end can't be dragged past the end of the timeline.
 private struct OverlayBar: View {
     let overlay: OverlayItem
     let pps: CGFloat
     let height: CGFloat
     let selected: Bool
-    let total: Double
+    let total: Double?
     let onSelect: () -> Void
     let onCommit: (_ start: Double, _ end: Double) -> Void
 
@@ -186,9 +196,18 @@ private struct OverlayBar: View {
 
     var body: some View {
         let width = max(10, CGFloat(length) * pps)
+        // Follows the live move, so the dimmed part grows/shrinks as the bar is dragged over the end.
+        let liveStart = max(0, overlay.startSec + Double(moveBy / pps))
+        let played = CGFloat(StudioGeometry.playedFraction(
+            start: liveStart, end: liveStart + length, total: total))
         ZStack(alignment: .leading) {
+            if played < 1 {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(barColor.opacity(selected ? 0.35 : 0.22))
+            }
             RoundedRectangle(cornerRadius: 5)
                 .fill(barColor.opacity(selected ? 0.9 : 0.6))
+                .frame(width: width * played)
             HStack(spacing: 3) {
                 Image(systemName: icon).font(.caption)
                 Text(label).font(.caption.weight(.medium)).lineLimit(1)
@@ -204,9 +223,7 @@ private struct OverlayBar: View {
                 .updating($moveBy) { v, s, _ in s = v.translation.width }
                 .onChanged { _ in if !selected { onSelect() } }
                 .onEnded { v in
-                    let delta = Double(v.translation.width / pps)
-                    let start = max(0, overlay.startSec + delta)
-                    onCommit(start, start + length)
+                    commit(.move, bySeconds: Double(v.translation.width / pps))
                 }
         )
         .overlay(alignment: .leading) { if selected { edge(.leading, width: width) } }
@@ -216,12 +233,14 @@ private struct OverlayBar: View {
 
     private func edge(_ side: HorizontalEdge, width: CGFloat) -> some View {
         OverlayEdgeHandle(height: height) { deltaPoints in
-            let deltaSec = Double(deltaPoints / pps)
-            switch side {
-            case .leading:  onCommit(overlay.startSec + deltaSec, overlay.endSec)
-            case .trailing: onCommit(overlay.startSec, overlay.endSec + deltaSec)
-            }
+            commit(side == .leading ? .leadingEdge : .trailingEdge, bySeconds: Double(deltaPoints / pps))
         }
+    }
+
+    private func commit(_ part: StudioGeometry.OverlayWindowDrag, bySeconds delta: Double) {
+        let w = StudioGeometry.overlayWindow(dragging: part, bySeconds: delta, start: overlay.startSec,
+                                             end: overlay.endSec, total: total)
+        onCommit(w.start, w.end)
     }
 
     private var barColor: Color { overlay.kind == .video ? .blue : SnappetColor.workout }

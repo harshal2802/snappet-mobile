@@ -191,6 +191,11 @@ enum StudioProjectEditor {
     /// Split a video clip at an **output** offset into two adjacent clips (the `ClipEditGeometry.split`
     /// idea, on the timeline). The offset is converted to source seconds via the clip's speed; a
     /// degenerate split (≤0 or ≥ the trimmed span) is a no-op. Photos aren't split.
+    ///
+    /// A transition is keyed `afterClipID` and means "between this clip and the next". The first
+    /// half keeps the original id, so the transition that led OUT of the original clip is re-keyed
+    /// to the second half (prompt 297); left alone it would play between the two halves. The halves
+    /// join with a cut.
     static func splitClip(_ s: StudioProjectSnapshot, id: UUID, atOutputOffset offset: Double,
                           sourceDuration: Double?) -> StudioProjectSnapshot {
         guard let clip = s.clips.first(where: { $0.id == id }), !clip.isPhoto else { return s }
@@ -210,6 +215,10 @@ enum StudioProjectEditor {
         seq.insert(second, at: idx + 1)
         var s = s
         s.clips = reindexed(seq)
+        s.transitions = s.transitions.map { t in
+            guard t.afterClipID == id else { return t }
+            var t = t; t.afterClipID = second.id; return t
+        }
         return s
     }
 
@@ -320,7 +329,7 @@ enum StudioProjectEditor {
                                     start: Double, end: Double) -> StudioProjectSnapshot {
         var s = s
         guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
-        let minLen = 0.2
+        let minLen = StudioGeometry.minOverlayWindowSec
         let lo = max(0, min(start, end))
         let hi = max(lo + minLen, max(start, end))
         s.overlays[i].startSec = lo

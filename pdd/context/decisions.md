@@ -12702,3 +12702,36 @@ clip: its old trims and tags are not kept anywhere.
 A media id that is both listed as deleted and present on the timeline is treated as present, and the
 entry is dropped on the next delete or open. Nothing has to keep the list in step when clips are
 added, merged by a bake, or re-pointed. `ClipBakePlan.flattened` was left unchanged for this reason.
+## 2026-11-23 — A split moves the outgoing transition to the second half (prompt 297)
+
+A transition is keyed `afterClipID` and means "between this clip and the next". A split keeps the
+original id on the first half, so the transition that led out of the clip ended up between the two
+halves. `StudioProjectEditor.splitClip` now re-keys it to the second half, and the halves join with
+a cut. A reorder does not re-key anything: a transition is the way a clip is left, so it travels
+with its clip, and on the last clip it waits unused (`StudioGeometry.timeline` ignores it). Moving
+transitions to "the pair of neighbours" on a reorder was rejected: a single move breaks two pairs,
+and there is no good answer for which one keeps the transition.
+
+## 2026-11-23 — Overlay windows are cut to the timeline at render, not in the stored project (prompt 297)
+
+Text, stickers and picture-in-picture store absolute times. A trim, a speed change, a delete or a
+split can shorten the timeline under them. A picture-in-picture past the end made the composition
+longer than its clips, because the composer inserts its track at the stored time. The view model's
+`renderedOverlays` now passes every overlay through the pure `StudioGeometry.clampedToTimeline`:
+the window is cut to `[0, total]`, and an overlay that starts at or after the end is left out.
+The stored times are not rewritten, for three reasons. Undo already restores them, but a trim that
+is dragged back out by hand is a new edit, and a rewritten window would stay short. The same
+project is opened in a one-clip scope with a shorter timeline, and a rewrite there would damage the
+window for the whole session. And every edit that changes the length (trim, speed, delete, split,
+transition, move) would have to remember to do it. Cost: the stored window can be longer than what
+plays. The overlay lane shows that (the part past the end is dimmed). When the length is not known
+(no clips, durations not loaded) nothing is cut.
+
+## 2026-11-23 — The overlay bar's `total` limits the bar; it does not scale it (prompt 297)
+
+`OverlayBar` took `total` since the lane was added and never read it. The lane is laid out in
+points per second, the same as the clip strips, so a width "as a fraction of the total" would break
+its alignment with the clips. `total` is used as the end of the timeline: the part of the bar past
+it is dimmed, a move keeps at least 0.2 s of the bar inside it, and the end handle cannot be
+dragged past it. A tag that is bound to a clip gets no limit, because its window comes from the
+clip's slot at render and not from its stored times.
