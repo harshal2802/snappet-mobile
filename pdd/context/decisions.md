@@ -12760,3 +12760,35 @@ The bake lane uses the same render, so it could show the same bar. It does not: 
 value would change that code. A bake must not be cancellable either, because the Photos write
 after the render cannot be undone half way. `renderComposition` takes the progress callback as an
 optional argument and the bake passes none.
+## 2026-11-23 — A slider drag in the Studio is one undo step and one save (prompt 299)
+
+The overlay Size and Opacity sliders and the HR tile Opacity slider added an undo step and saved
+the store on every tick. `UndoStack` now has a transaction (`beginTransaction`, `replaceCurrent`,
+`endTransactionIfChanged`): the value is replaced live and the drag ends as one step holding the
+value from before it, or as nothing if the value did not change. The redo branch is cleared when
+the step is recorded, not when the finger goes down, so touching a slider without moving it costs
+nothing. Rejected: keeping the drag in view state and committing at the end, as the HR window
+sliders do — the canvas reads the overlay from the snapshot, so it would stop following the finger.
+Rejected: merging steps by time — two quick taps on different controls would merge.
+
+## 2026-11-23 — Only the slider setters join an open gesture (prompt 299)
+
+`editOverlaysOnly(live: true)` is the one path that replaces without a step, and only
+`setOverlayScale`, `setOverlayOpacity` and `setTileOpacity` use it. Every other edit, Undo and Redo
+call `endGesture()` first. So a different edit made during a drag is its own step and is saved, and
+a gesture whose end never arrived cannot swallow later edits unsaved. The sliders also call
+`endGesture()` on disappear. With no gesture open the three setters commit and save per call, as
+before (VoiceOver adjust, canvas pinch).
+
+## 2026-11-23 — `endGesture` is allowed while a bake renders (prompt 299)
+
+`beginGesture` and the live ticks refuse while `isBaking`, like every edit. `endGesture` does not:
+a transaction left open would outlive a failed bake and swallow the next edits. It is safe because
+no tick is accepted during the bake, so the snapshot it saves is the one the bake read at its
+start. The stored project lags the snapshot only for the length of one drag; export and bake read
+the snapshot, not the store.
+
+## 2026-11-23 — `UndoStack` stays in `StudioProjectEditor.swift` (prompt 299)
+
+The transaction needs the stack's private history, so it was added to the type where it is defined
+instead of in a new file. Only the `UndoStack` type at the end of that file was edited.

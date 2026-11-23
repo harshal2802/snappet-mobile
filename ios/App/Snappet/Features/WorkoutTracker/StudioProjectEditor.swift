@@ -384,6 +384,9 @@ struct UndoStack<State> {
     private var past: [State] = []
     private var future: [State] = []
     private let limit: Int
+    /// The open gesture, if any: the value before it began, and whether it replaced the value yet
+    /// (prompt 299).
+    private var transaction: (base: State, replaced: Bool)?
 
     init(_ initial: State, limit: Int = 50) { current = initial; self.limit = limit }
 
@@ -392,21 +395,69 @@ struct UndoStack<State> {
 
     /// Record a new state as the current one; clears the redo branch.
     mutating func commit(_ next: State) {
-        past.append(current)
-        if past.count > limit { past.removeFirst(past.count - limit) }
+        endTransaction()
+        push(current)
         current = next
-        future.removeAll()
     }
 
     mutating func undo() {
+        endTransaction()
         guard let prev = past.popLast() else { return }
         future.append(current)
         current = prev
     }
 
     mutating func redo() {
+        endTransaction()
         guard let next = future.popLast() else { return }
         past.append(current)
         current = next
     }
+
+    /// Add one undo step holding `state`, drop the oldest beyond the limit, clear the redo branch.
+    private mutating func push(_ state: State) {
+        past.append(state)
+        if past.count > limit { past.removeFirst(past.count - limit) }
+        future.removeAll()
+    }
+
+    // MARK: One step per gesture (prompt 299)
+
+    /// True between `beginTransaction()` and the call that ends it.
+    var isInTransaction: Bool { transaction != nil }
+
+    /// Open a transaction: a continuous gesture (a slider drag) whose many values are one edit.
+    /// Nothing changes yet — not the history, not the redo branch. Opening one that is already open
+    /// does nothing.
+    mutating func beginTransaction() {
+        if transaction == nil { transaction = (current, false) }
+    }
+
+    /// Set the current value WITHOUT adding an undo step, any number of times, while a transaction
+    /// is open. With no transaction open this is a plain `commit`.
+    mutating func replaceCurrent(_ next: State) {
+        guard transaction != nil else { commit(next); return }
+        transaction?.replaced = true
+        current = next
+    }
+
+    /// Close the transaction. If the value was replaced — and `changed(before, after)` agrees it is
+    /// different — this adds exactly ONE undo step holding the value from before the gesture and
+    /// clears the redo branch once. Otherwise the stack is exactly as it was before the gesture.
+    /// Returns whether a step was added. Does nothing (false) when no transaction is open.
+    /// `commit`, `undo` and `redo` close an open transaction first.
+    @discardableResult
+    mutating func endTransaction(where changed: (_ before: State, _ after: State) -> Bool = { _, _ in true }) -> Bool {
+        guard let open = transaction else { return false }
+        transaction = nil
+        guard open.replaced, changed(open.base, current) else { return false }
+        push(open.base)
+        return true
+    }
+}
+
+extension UndoStack where State: Equatable {
+    /// `endTransaction` that adds no step when the gesture ended on the value it started from.
+    @discardableResult
+    mutating func endTransactionIfChanged() -> Bool { endTransaction(where: !=) }
 }

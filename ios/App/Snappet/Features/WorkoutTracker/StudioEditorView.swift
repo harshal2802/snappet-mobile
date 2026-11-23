@@ -434,7 +434,9 @@ struct StudioEditorView: View {
                     HStack {
                         Image(systemName: "textformat.size").font(.caption)
                         Slider(value: Binding(get: { ov.scale },
-                                              set: { vm.setOverlayScale(ov.id, $0) }), in: 0.5...3)
+                                              set: { vm.setOverlayScale(ov.id, $0) }), in: 0.5...3,
+                               onEditingChanged: { $0 ? vm.beginGesture() : vm.endGesture() })
+                            .onDisappear { vm.endGesture() }   // the panel can close mid-drag
                             .accessibilityIdentifier("overlaySize")
                         Text("\(Int(ov.scale * 100))%").font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary).frame(width: 40)
@@ -443,7 +445,9 @@ struct StudioEditorView: View {
                 HStack {
                     Image(systemName: "circle.lefthalf.filled").font(.caption)
                     Slider(value: Binding(get: { ov.opacity },
-                                          set: { vm.setOverlayOpacity(ov.id, $0) }), in: 0...1)
+                                          set: { vm.setOverlayOpacity(ov.id, $0) }), in: 0...1,
+                           onEditingChanged: { $0 ? vm.beginGesture() : vm.endGesture() })
+                        .onDisappear { vm.endGesture() }
                         .accessibilityIdentifier("overlayOpacity")
                     Button { vm.addOverlayKeyframeAtPlayhead() } label: {
                         Label("Keyframe", systemImage: "diamond").font(.caption2)
@@ -638,7 +642,9 @@ private struct HRTileBuilder: View {
                 Image(systemName: "circle.lefthalf.filled").font(.caption)
                 Text("Opacity").font(.caption).frame(width: 64, alignment: .leading)
                 Slider(value: Binding(get: { vm.hrTile?.opacity ?? 1 }, set: { vm.setTileOpacity($0) }),
-                       in: HRTile.minOpacity...1)
+                       in: HRTile.minOpacity...1,
+                       onEditingChanged: { $0 ? vm.beginGesture() : vm.endGesture() })
+                    .onDisappear { vm.endGesture() }
                     .accessibilityIdentifier("hrTileOpacity")
                 Text("\(Int((vm.hrTile?.opacity ?? 1) * 100))%")
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
