@@ -382,6 +382,7 @@ final class StudioEditorViewModel {
 
     private func edit(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
         guard !isBaking else { return }   // the project is locked while a bake renders (prompt 294)
+        endGesture()                      // a separate edit is its own undo step (prompt 299)
         undo.commit(transform(undo.current))
         persist()
         Task { await rebuildPreview() }
@@ -389,17 +390,47 @@ final class StudioEditorViewModel {
     /// An edit that only touches **overlays** — they're not in the playback composition (overlays are
     /// the WYSIWYG SwiftUI layer on top of the preview), so skip the player rebuild to avoid a flicker
     /// / playback restart on every drag. Still commits to undo + persists.
-    private func editOverlaysOnly(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
+    ///
+    /// `live` marks a value that arrives many times during one continuous gesture (a slider tick).
+    /// While a gesture is open (`beginGesture`) a live edit only replaces the current snapshot — the
+    /// canvas follows the finger, but there is no undo step and no save until `endGesture`
+    /// (prompt 299). With no gesture open, or for any other edit, it is a plain commit as before.
+    private func editOverlaysOnly(live: Bool = false,
+                                  _ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
         guard !isBaking else { return }
+        if live, undo.isInTransaction {
+            undo.replaceCurrent(transform(undo.current))
+            return
+        }
+        endGesture()
         undo.commit(transform(undo.current))
         persist()
     }
+
+    /// A slider drag begins (`Slider(onEditingChanged:)` → true). Until `endGesture`, the slider's
+    /// values update the snapshot live without growing undo or saving. Refused while a bake renders.
+    func beginGesture() {
+        guard !isBaking else { return }
+        undo.beginTransaction()
+    }
+    /// The drag ended: exactly one undo step holding the value from before the drag, and one save —
+    /// or neither, if the value ended where it started. Safe to call with no gesture open.
+    ///
+    /// Not guarded by `isBaking` on purpose: a gesture left open would swallow later edits, and
+    /// closing it changes nothing a bake depends on — live edits are refused while it renders, so
+    /// this saves exactly the snapshot the bake read when it started.
+    func endGesture() {
+        guard undo.isInTransaction else { return }
+        if undo.endTransactionIfChanged() { persist() }
+    }
     func undoEdit() {
         guard !isBaking else { return }
+        endGesture()                      // the open drag becomes a step first, then Undo removes it
         undo.undo(); persist(); Task { await rebuildPreview() }
     }
     func redoEdit() {
         guard !isBaking else { return }
+        endGesture()
         undo.redo(); persist(); Task { await rebuildPreview() }
     }
     private func persist() { undo.current.apply(to: project); try? context.save() }
@@ -689,7 +720,8 @@ final class StudioEditorViewModel {
         let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
             StudioProjectEditor.setOverlayScale($0, id: id, scale: scale)
         }
-        isVideo ? edit(t) : editOverlaysOnly(t)
+        // The Size slider is shown for non-video overlays only, so its ticks take the live path.
+        isVideo ? edit(t) : editOverlaysOnly(live: true, t)
     }
 
     // MARK: - Overlay timeline (how long an overlay stays on screen — the timeline lane)
@@ -833,8 +865,12 @@ final class StudioEditorViewModel {
         }
     }
     /// Set the whole-tile opacity (transparency control), clamped to the legible floor.
+    /// Called per slider tick, so it takes the live path (one undo step per drag, prompt 299).
     func setTileOpacity(_ value: Double) {
-        mutateTile { $0.opacity = min(1, max(HRTile.minOpacity, value)) }
+        guard var cfg = snapshot.hrOverlay, var tile = cfg.tile else { return }
+        tile.opacity = min(1, max(HRTile.minOpacity, value))
+        cfg.tile = tile
+        editOverlaysOnly(live: true) { var s = $0; s.hrOverlay = cfg; return s }
     }
 
     /// Show/hide the moving chart line as a tile register. Enabling it **nudges the tile height up** to
@@ -1144,7 +1180,7 @@ final class StudioEditorViewModel {
         if selectedOverlayID == id { selectedOverlayID = nil }
     }
     func setOverlayOpacity(_ id: UUID, _ opacity: Double) {
-        editOverlaysOnly { StudioProjectEditor.setOverlayOpacity($0, id: id, opacity: opacity) }
+        editOverlaysOnly(live: true) { StudioProjectEditor.setOverlayOpacity($0, id: id, opacity: opacity) }
     }
     /// Capture the selected overlay's current opacity as a keyframe at the playhead (the marker
     /// button). Two keyframes of differing opacity → the overlay fades over output time.
