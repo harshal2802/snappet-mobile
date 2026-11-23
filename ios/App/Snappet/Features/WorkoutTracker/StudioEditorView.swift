@@ -51,6 +51,10 @@ struct StudioEditorView: View {
             Divider().overlay(Color.white.opacity(0.1))
             if vm.selectedOverlay != nil { overlayBar } else { actionBar }
         }
+        // A bake replaces the project with a flattened copy of what it rendered, so the whole editor
+        // (and closing it) is off until it ends (prompt 294). The view model refuses edits as well.
+        .disabled(vm.isBaking)
+        .interactiveDismissDisabled(vm.isBaking)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)
