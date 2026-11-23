@@ -1199,7 +1199,8 @@ final class StudioEditorViewModel {
     var isRendering: Bool {
         if case .exporting = exportState { return true }
         if case .baking = bakeState { return true }
-        return false
+        // A cancelled export is idle at once, but its session may still be stopping (prompt 298).
+        return exportTask != nil
     }
 
     /// A bake is in flight. The project is LOCKED for its whole length (prompt 294): every edit path
@@ -1210,12 +1211,16 @@ final class StudioEditorViewModel {
 
     /// The ONE render both lanes share — `export()` (share as new) and `bake()` (write into the
     /// asset) must produce the identical file for the identical project.
-    private func renderComposition() async throws -> URL {
+    /// `progress` is used by the export lane only (prompt 298); a bake passes none.
+    private func renderComposition(
+        progress: (@MainActor @Sendable (Double) -> Void)? = nil
+    ) async throws -> URL {
         try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                   hrSamples: hrSeries,
                                   hrTile: resolvedSessionTile(),
                                   clipHRByID: clipHRContent(),
-                                  quality: exportQuality)
+                                  quality: exportQuality,
+                                  progress: progress)
     }
 
     /// Render the composition (same pipeline as `export()`) and write it INTO the Photos asset —
@@ -1333,16 +1338,69 @@ final class StudioEditorViewModel {
 
     // MARK: Export (device-only render)
 
-    func export() async {
+    /// The running export. The view model owns it so it can be cancelled (prompt 298); it is `nil`
+    /// again only when the render has really stopped, which is what `isRendering` reads.
+    private var exportTask: Task<Void, Never>?
+
+    /// The one place `exportState` changes in the export lane: the temp file the old state held and
+    /// the new one does not (`ExportShareState.fileToDelete`) is deleted here.
+    private func setExportState(_ next: ExportShareState) {
+        if let stale = exportState.fileToDelete(movingTo: next) {
+            try? FileManager.default.removeItem(at: stale)
+        }
+        if exportState != next { exportState = next }
+    }
+
+    /// Start "Export as new video". Refused while either lane renders.
+    func startExport() {
         guard !isRendering else { return }
-        exportState = .exporting
+        setExportState(exportState.beginningExport())   // also deletes the last export's file
+        exportTask = Task { [weak self] in await self?.runExport() }
+    }
+
+    private func runExport() async {
+        defer { exportTask = nil }
         do {
             // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples in the
             // composer; the session-wide tile stays as the fallback for clips with no media link.
-            let url = try await renderComposition()
-            exportState = .exported(url)
+            let url = try await renderComposition { [weak self] fraction in
+                guard let self else { return }
+                self.setExportState(self.exportState.exportProgressed(fraction))
+            }
+            // Cancelled in the moment the render finished: nobody will share this file.
+            guard !Task.isCancelled, case .exporting = exportState else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            setExportState(exportState.exportSucceeded(url))
         } catch {
-            exportState = .failed((error as? LocalizedError)?.errorDescription ?? "Export failed.")
+            // The composer deleted the partial file. A cancel shows no message.
+            if error is CancellationError || Task.isCancelled {
+                setExportState(exportState.exportCancelled())
+            } else {
+                setExportState(exportState.failed(
+                    (error as? LocalizedError)?.errorDescription ?? "Export failed."))
+            }
         }
+    }
+
+    /// The Cancel button: the indicator goes at once; the session stops and deletes its partial
+    /// file in the background (`isRendering` stays true until it has).
+    func cancelExport() {
+        exportTask?.cancel()
+        setExportState(exportState.exportCancelled())
+    }
+
+    /// The share sheet closed: the rendered file has been handed over, delete it.
+    func shareSheetDismissed() { setExportState(exportState.shareDismissed()) }
+
+    /// The failure alert closed.
+    func acknowledgeExportFailure() { setExportState(exportState.failureAcknowledged()) }
+
+    /// The Studio closed: stop a running export and delete the exported file. A bake is not
+    /// touched (it cannot be cancelled, and it deletes its own temp file).
+    func studioClosed() {
+        exportTask?.cancel()
+        setExportState(.idle)
     }
 }

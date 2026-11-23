@@ -520,14 +520,22 @@ final class StudioComposer: Sendable {
     /// Export the composed timeline to a temp `.mp4` via an async `AVAssetExportSession`.
     /// `quality` picks the `AVAssetExportSession` preset; an unsupported preset for this composition
     /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
+    ///
+    /// `progress` (prompt 298) receives the session's fraction done, 0…1, on the main actor about
+    /// five times a second. Cancelling the calling Task cancels the session (`export(to:as:)` does
+    /// that itself) and this function then throws `CancellationError`. On any throw the partial
+    /// output file is deleted; on success the caller owns the returned file and deletes it.
     func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],
                 hrSamples: [HRPoint] = [],
                 hrTile: ResolvedHRTile? = nil,
                 clipHRByID: [UUID: StudioClipHRContent] = [:],
-                quality: StudioExportQuality = .highest) async throws -> URL {
+                quality: StudioExportQuality = .highest,
+                progress: (@MainActor @Sendable (Double) -> Void)? = nil) async throws -> URL {
         let (composition, videoComposition, audioMix) = try await makeComposition(
             for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSamples,
             hrTile: hrTile, clipHRByID: clipHRByID)
+        // Building the composition does not stop on a cancel; do not start a render nobody wants.
+        try Task.checkCancellation()
         let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
             ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
         guard let session else {
@@ -537,7 +545,24 @@ final class StudioComposer: Sendable {
         session.audioMix = audioMix
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("snappet-studio-\(UUID().uuidString).mp4")
-        try await session.export(to: out, as: .mp4)
+        // The sequence is Sendable, the session is not: take it here and read it in the watcher.
+        let states = session.states(updateInterval: 0.2)
+        let watcher = progress.map { report in
+            Task { @MainActor in
+                for await state in states {
+                    if Task.isCancelled { break }
+                    if case .exporting(let p) = state { report(p.fractionCompleted) }
+                }
+            }
+        }
+        defer { watcher?.cancel() }
+        do {
+            try await session.export(to: out, as: .mp4)
+        } catch {
+            try? FileManager.default.removeItem(at: out)
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            throw error
+        }
         return out
     }
 
