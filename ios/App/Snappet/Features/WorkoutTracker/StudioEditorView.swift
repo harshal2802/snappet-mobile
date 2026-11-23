@@ -13,20 +13,15 @@ struct StudioEditorView: View {
     @State private var vm: StudioEditorViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
-    @State private var showingShare = false
-    @State private var addingText = false
+    /// The ONE sheet / dialog open over the editor (prompt 301) — a tool sheet, the text-style
+    /// sheet, a text alert, the music importer, the PiP chooser, the destructive-bake confirm
+    /// (prompt 117) or the share sheet. They exclude each other, so they are one value, not a Bool
+    /// each. The result alerts (bake saved / failed, export failed) read the view model's state.
+    @State private var presented: StudioEditorSheet?
     @State private var textDraft = ""
-    @State private var renaming = false
     @State private var titleDraft = ""
-    @State private var activeTool: StudioTool?
-    @State private var importingMusic = false
-    @State private var choosingPiP = false
-    /// The destructive-bake confirm (prompt 117) — shown before the iOS deletion dialog.
-    @State private var confirmingReplace = false
-    @State private var editingOverlay = false
     @State private var overlayTextDraft = ""
     @State private var overlayTextTarget: UUID?
-    @State private var stylingOverlay = false
 
     /// `SessionMedia.id` of a clip to pre-select when the studio opens (e.g. tapping one clip in a
     /// gallery jumps straight to editing it). `nil` keeps the default (no/first selection).
@@ -46,15 +41,24 @@ struct StudioEditorView: View {
         VStack(spacing: 0) {
             topBar
             preview
-            transportBar
-            timeline
+            // While a render runs (an export or a bake) editing is locked (prompts 294, 301): the
+            // controls are dimmed and off, and one line says why. The view model refuses edits as
+            // well. The export's progress and Cancel in the preview stay usable.
+            Group {
+                transportBar
+                timeline
+            }
+            .studioLocked(!vm.canEdit)
+            if let reason = vm.state.lockReason { lockedNotice(reason) }
             Divider().overlay(Color.white.opacity(0.1))
-            if vm.selectedOverlay != nil { overlayBar } else { actionBar }
+            Group {
+                if vm.selectedOverlay != nil { overlayBar } else { actionBar }
+            }
+            .studioLocked(!vm.canEdit)
         }
-        // A bake replaces the project with a flattened copy of what it rendered, so the whole editor
-        // (and closing it) is off until it ends (prompt 294). The view model refuses edits as well.
-        .disabled(vm.isBaking)
-        .interactiveDismissDisabled(vm.isBaking)
+        // A bake cannot be cancelled, so it also blocks closing. An export can be closed, which
+        // cancels it (prompt 298).
+        .interactiveDismissDisabled(!vm.state.canClose)
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)
@@ -73,51 +77,52 @@ struct StudioEditorView: View {
             }
         }
         .onChange(of: vm.exportState) { _, state in
-            if case .exported = state { showingShare = true }
+            if case .exported = state { presented = .share }
         }
         // Closing the share sheet deletes the exported temp file (prompt 298).
-        .sheet(isPresented: $showingShare, onDismiss: { vm.shareSheetDismissed() }) {
+        .sheet(isPresented: isPresented(.share), onDismiss: { vm.shareSheetDismissed() }) {
             if case let .exported(url) = vm.exportState { ShareSheet(items: [url]) }
         }
         // Leaving the Studio stops a running export and deletes its files (prompt 298). A sheet
         // shown over the Studio does not fire this.
         .onDisappear { vm.studioClosed() }
-        .sheet(item: $activeTool) { tool in
+        .sheet(item: toolBinding) { tool in
             StudioToolSheet(tool: tool, vm: vm)
                 .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $stylingOverlay) {
+        .sheet(isPresented: isPresented(.textStyle)) {
             StudioTextStyleControls(vm: vm)
                 .presentationDetents([.height(420)])
                 .presentationDragIndicator(.visible)
         }
-        .alert("Add text", isPresented: $addingText) {
+        .alert("Add text", isPresented: isPresented(.addText)) {
             TextField("Text", text: $textDraft)
             Button("Add") { if !textDraft.isEmpty { vm.addText(textDraft) }; textDraft = "" }
             Button("Cancel", role: .cancel) { textDraft = "" }
         }
-        .alert("Rename", isPresented: $renaming) {
+        .alert("Rename", isPresented: isPresented(.rename)) {
             TextField("Title", text: $titleDraft)
             Button("Save") { vm.rename(titleDraft) }
             Button("Cancel", role: .cancel) {}
         }
-        .alert("Edit text", isPresented: $editingOverlay) {
+        .alert("Edit text", isPresented: isPresented(.editOverlayText)) {
             TextField("Text", text: $overlayTextDraft)
             Button("Save") { if let id = overlayTextTarget { vm.editOverlayText(id, overlayTextDraft) } }
             Button("Cancel", role: .cancel) {}
         }
-        .fileImporter(isPresented: $importingMusic, allowedContentTypes: [.audio]) { result in
+        .fileImporter(isPresented: isPresented(.musicImporter), allowedContentTypes: [.audio]) { result in
             if case let .success(url) = result { vm.addMusic(from: url) }
         }
-        .confirmationDialog("Add picture-in-picture", isPresented: $choosingPiP, titleVisibility: .visible) {
+        .confirmationDialog("Add picture-in-picture", isPresented: isPresented(.pipChooser),
+                            titleVisibility: .visible) {
             ForEach(vm.pipSources, id: \.id) { src in
                 Button(src.label) { vm.addPiP(localIdentifier: src.localIdentifier) }
             }
         } message: { Text("Pick a clip to overlay on top of the video.") }
         // Destructive-bake confirm (prompt 117): the honest storage/undo story BEFORE committing.
         // iOS shows its own deletion dialog after this one.
-        .alert("Replace the original video?", isPresented: $confirmingReplace) {
+        .alert("Replace the original video?", isPresented: isPresented(.confirmReplace)) {
             Button("Replace & delete original", role: .destructive) {
                 Task { await vm.bake(replaceOriginal: true) }
             }
@@ -126,7 +131,7 @@ struct StudioEditorView: View {
             Text("The edited version is saved as the video and the original is deleted — this can't be undone. iOS will ask you to confirm; the original stays in Recently Deleted for 30 days before space is freed. Your session, feed, and this project follow the new video automatically.")
         }
         .alert("Saved to original", isPresented: bakeSavedBinding) {
-            Button("OK") { vm.bakeState = .idle }
+            Button("OK") { vm.acknowledgeBake() }
         } message: {
             if case .saved(let replaced) = vm.bakeState {
                 Text(replaced
@@ -135,7 +140,7 @@ struct StudioEditorView: View {
             }
         }
         .alert("Couldn't save to original", isPresented: bakeFailedBinding) {
-            Button("OK") { vm.bakeState = .idle }
+            Button("OK") { vm.acknowledgeBake() }
         } message: {
             if case .failed(let msg) = vm.bakeState { Text(msg) }
         }
@@ -148,6 +153,32 @@ struct StudioEditorView: View {
         }
     }
 
+    /// A Bool binding for one case of `presented`. Closing only clears the case it is bound to,
+    /// so a sheet that is going away cannot close the one that replaced it.
+    private func isPresented(_ presentation: StudioEditorSheet) -> Binding<Bool> {
+        Binding(get: { presented == presentation },
+                set: { if !$0, presented == presentation { presented = nil } })
+    }
+
+    /// The tool sheet's item binding over `presented`.
+    private var toolBinding: Binding<StudioTool?> {
+        Binding(get: { presented?.tool },
+                set: { tool in
+                    if let tool { presented = .tool(tool) } else if presented?.tool != nil { presented = nil }
+                })
+    }
+
+    /// The one line shown while editing is locked ("Editing is locked while exporting").
+    private func lockedNotice(_ reason: String) -> some View {
+        Label(reason, systemImage: "lock.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Color(white: 0.12))
+            .accessibilityIdentifier("studioLockedNotice")
+    }
+
     private var exportFailedBinding: Binding<Bool> {
         Binding(get: { if case .failed = vm.exportState { return true } else { return false } },
                 set: { if !$0 { vm.acknowledgeExportFailure() } })
@@ -156,11 +187,11 @@ struct StudioEditorView: View {
     /// Alert bindings over the bake state machine (SwiftUI alerts need Bool bindings).
     private var bakeSavedBinding: Binding<Bool> {
         Binding(get: { if case .saved = vm.bakeState { return true } else { return false } },
-                set: { if !$0 { vm.bakeState = .idle } })
+                set: { if !$0 { vm.acknowledgeBake() } })
     }
     private var bakeFailedBinding: Binding<Bool> {
         Binding(get: { if case .failed = vm.bakeState { return true } else { return false } },
-                set: { if !$0 { vm.bakeState = .idle } })
+                set: { if !$0 { vm.acknowledgeBake() } })
     }
 
     // MARK: Top bar
@@ -170,7 +201,8 @@ struct StudioEditorView: View {
             Button { dismiss() } label: { Image(systemName: "xmark").font(.headline) }
                 .accessibilityIdentifier("studioClose")
                 .accessibilityLabel("Close studio")
-            Button { titleDraft = vm.title; renaming = true } label: {
+                .disabled(!vm.state.canClose)
+            Button { titleDraft = vm.title; presented = .rename } label: {
                 HStack(spacing: 4) {
                     Text(vm.title).lineLimit(1).font(.subheadline.weight(.semibold))
                     Image(systemName: "chevron.down").font(.caption2)
@@ -179,6 +211,7 @@ struct StudioEditorView: View {
             .foregroundStyle(.white)
             .accessibilityLabel("Project name, \(vm.title)")
             .accessibilityHint("Rename the project")
+            .studioLocked(!vm.canEdit)
             Spacer()
             Menu {
                 Picker("Quality", selection: Binding(get: { vm.exportQuality }, set: { vm.exportQuality = $0 })) {
@@ -190,6 +223,7 @@ struct StudioEditorView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.3)))
             }
             .accessibilityIdentifier("studioQuality")
+            .studioLocked(!vm.canEdit)
             // Three destinations (prompt 117 — the bake lane): today's export-as-new, plus the two
             // bake variants when the composition renders into ONE tracked source asset. Copy states
             // the storage truth inline: revertible KEEPS the original (never frees space); only
@@ -204,7 +238,7 @@ struct StudioEditorView: View {
                         Label("Save to original · revertible", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .accessibilityIdentifier("studioBakeRevertible")
-                    Button(role: .destructive) { confirmingReplace = true } label: {
+                    Button(role: .destructive) { presented = .confirmReplace } label: {
                         Label("Replace original · frees space", systemImage: "trash.slash")
                     }
                     .accessibilityIdentifier("studioBakeReplace")
@@ -217,8 +251,9 @@ struct StudioEditorView: View {
             }
             .accessibilityIdentifier("studioExport")
             // Also disabled while EITHER lane renders — two concurrent full AVFoundation exports
-            // (a bake + an export) would contend for the AssetCache and stack progress overlays.
-            .disabled(vm.clips.isEmpty || vm.isRendering)
+            // (a bake + an export) would contend for the AssetCache and stack progress overlays —
+            // and until the first preview has loaded.
+            .disabled(vm.clips.isEmpty || !vm.state.canExport)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
@@ -252,6 +287,7 @@ struct StudioEditorView: View {
                                 onScale: { vm.setOverlayScale($0, $1) },
                                 onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
                                 onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
+                .allowsHitTesting(vm.canEdit)   // nothing on the canvas moves while a render runs
             // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
             // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
             // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
@@ -260,6 +296,7 @@ struct StudioEditorView: View {
                 HRTileEditorView(tile: tile, values: preview.values,
                                  fraction: preview.fraction, ratio: vm.previewRatio,
                                  onFrame: { vm.setTileFrame(center: $0, size: $1) })
+                    .allowsHitTesting(vm.canEdit)
             }
             if let err = vm.previewError {
                 Text(err)
@@ -279,6 +316,9 @@ struct StudioEditorView: View {
                     }
                     .tint(SnappetColor.workout)
                     .accessibilityIdentifier("studioExportProgress")
+                    Text("Keep Snappet open until this finishes.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                     Button("Cancel", role: .cancel) { vm.cancelExport() }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("studioExportCancel")
@@ -306,7 +346,7 @@ struct StudioEditorView: View {
             }
             .accessibilityIdentifier("studioPlayPause")
             .accessibilityLabel(vm.isPlaying ? "Pause" : "Play")
-            .disabled(vm.previewPlayer == nil)
+            .disabled(!vm.state.canPlay)
             Button { vm.addOverlayKeyframeAtPlayhead() } label: { Image(systemName: "diamond.fill").font(.caption) }
                 .accessibilityIdentifier("studioKeyframe")
                 // diamond.fill carries no default label — without this VoiceOver reads nothing (#79).
@@ -352,26 +392,26 @@ struct StudioEditorView: View {
                     vm.splitAtPlayhead()
                 }
                 .accessibilityIdentifier("studioSplit")
-                barButton("Speed", "speedometer", enabled: hasClip) { activeTool = .speed }
-                barButton("Volume", "speaker.wave.2", enabled: hasClip) { activeTool = .volume }
-                barButton("Filter", "camera.filters", enabled: hasClip) { activeTool = .filter }
-                barButton("Adjust", "slider.horizontal.3", enabled: hasClip) { activeTool = .adjust }
-                barButton("Transition", "arrow.left.arrow.right", enabled: hasClip) { activeTool = .transition }
-                barButton("Text", "textformat") { addingText = true }
+                barButton("Speed", "speedometer", enabled: hasClip) { presented = .tool(.speed) }
+                barButton("Volume", "speaker.wave.2", enabled: hasClip) { presented = .tool(.volume) }
+                barButton("Filter", "camera.filters", enabled: hasClip) { presented = .tool(.filter) }
+                barButton("Adjust", "slider.horizontal.3", enabled: hasClip) { presented = .tool(.adjust) }
+                barButton("Transition", "arrow.left.arrow.right", enabled: hasClip) { presented = .tool(.transition) }
+                barButton("Text", "textformat") { presented = .addText }
                     .accessibilityIdentifier("studioAddText")
-                barButton(vm.musicTracks.isEmpty ? "Music" : "Music ✓", "music.note", action: { importingMusic = true })
+                barButton(vm.musicTracks.isEmpty ? "Music" : "Music ✓", "music.note", action: { presented = .musicImporter })
                     .accessibilityIdentifier("studioAddMusic")
-                barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { choosingPiP = true }
+                barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { presented = .pipChooser }
                     .accessibilityIdentifier("studioAddPiP")
-                barButton("Grid", "square.grid.2x2") { activeTool = .grid }
+                barButton("Grid", "square.grid.2x2") { presented = .tool(.grid) }
                     .accessibilityIdentifier("studioGridTool")
                 barButton(vm.hasClimbOverlay ? "Climb ✓" : "Climb", "signpost.right",
                           enabled: vm.hasClimbInfo) { vm.addClimbNameOverlay() }
                     .accessibilityIdentifier("studioAddClimbName")
                 barButton(vm.hrOverlay == nil ? "HR" : "HR ✓", "waveform.path.ecg",
-                          enabled: vm.hasHRData) { activeTool = .hr }
+                          enabled: vm.hasHRData) { presented = .tool(.hr) }
                     .accessibilityIdentifier("studioHRTool")
-                barButton("Canvas", "aspectratio") { activeTool = .aspect }
+                barButton("Canvas", "aspectratio") { presented = .tool(.aspect) }
                 barButton("Delete", "trash", enabled: hasClip, role: .destructive) { vm.deleteSelected() }
                     .accessibilityIdentifier("studioDelete")
             }
@@ -402,10 +442,11 @@ struct StudioEditorView: View {
                     }
                     if ov.kind == .text || ov.kind == .climbName {
                         Button {
-                            overlayTextTarget = ov.id; overlayTextDraft = ov.content; editingOverlay = true
+                            overlayTextTarget = ov.id; overlayTextDraft = ov.content
+                            presented = .editOverlayText
                         } label: { Image(systemName: "pencil") }
                             .accessibilityIdentifier("studioEditOverlayText")
-                        Button { stylingOverlay = true } label: { Image(systemName: "paintbrush") }
+                        Button { presented = .textStyle } label: { Image(systemName: "paintbrush") }
                             .accessibilityIdentifier("studioStyleOverlay")
                     }
                     Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: { Image(systemName: "trash") }
@@ -486,9 +527,12 @@ struct StudioEditorView: View {
     }
 }
 
-/// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
-/// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
-enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect, hr, grid; var id: String { rawValue } }
+private extension View {
+    /// The locked look while a render runs: dimmed and not tappable.
+    func studioLocked(_ locked: Bool) -> some View {
+        disabled(locked).opacity(locked ? 0.35 : 1)
+    }
+}
 
 private struct StudioToolSheet: View {
     let tool: StudioTool
