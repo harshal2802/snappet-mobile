@@ -8,7 +8,5 @@ prompts in the web repo (`pdd/prompts/features/native-mobile/`):
   NEEDS-REAL-DATA verdict.
 - `media-hr-timesync/` — how accurately can media be aligned to the HR curve by timestamps alone?
   (prompt `42-native-00b`) → `RESULTS.md` with a recommended alignment strategy + padding window.
-- `wifi-sensing/` — side research, not the app: can the home Wi-Fi link's RSSI detect someone moving?
-  Background in `reports/WiFi sensing home security.md`.
 
 Each spike is self-contained and disposable. Do not build app UI or integrations here.
