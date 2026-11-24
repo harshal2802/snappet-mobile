@@ -116,17 +116,18 @@ state from prompt 302, with a remove action).
 | # | Prompt | What | Visible? |
 |---|---|---|---|
 | P0 | — | Verify and merge #483–#491: affected UI suites, the phone checks each prompt lists, a review of #489–#491 | — |
-| P1 | 303 | **Golden frames + device self-check.** A small fixture video and HR series in the repo; unit tests render frames and compare them with stored images. A debug screen renders the same fixture on the phone and reports pass / fail and export time | Debug only |
-| P2 | 304 | **Text, stickers and climb tags drawn by the compositor.** The render plan lists them per moment; the canvas keeps only the handles and draws the item being dragged. The Core Animation tool is no longer used for them | Preview matches export |
-| P3 | 305 | **HR tile drawn by the compositor**, with its values per moment in the render plan. Golden frames cover the tile across a transition | Preview matches export |
-| P4 | 306 | **One heart-rate resolver** for the feed overlay, "Share with heart rate", the Studio and reels, and a test that one clip gives the same numbers on all of them | A number may change |
-| P5 | 307 | **The model and the migration**, behind the existing screens. Session style, clip edit, reel, clip use; `StudioProject` rows migrated (clip-bound items → the clip; unbound text, music, picture-in-picture, transitions → a reel; HR tile → session style); backup round-trip | No |
-| P6 | 308 | **Clip editor on clip edits.** "Edit this clip" everywhere (feed tabs, session detail, Quick Session, Kilter); feed, share and bake read the clip edit; the bake becomes one flag; scope filters, the baked record and the stand-down are removed | Yes |
-| P7 | 309 | **Reel editor.** Clip uses, per-reel trim / speed / volume, "From this clip" switches, the music rule, the reel list. Split parts become clip uses | Yes |
-| P8 | 310 | **Session style controls**: apply to all clips, override on one clip, reset | Yes |
-| P9 | 311 | **Progress reels as reels.** The Exercises rule (PRs only / one per month / all) creates a reel; the date and set captions are reel text; listed under the activity it was made from | Yes |
-| P10 | 312 | **Highlight reels as reels.** The engine's picks become clip uses with reel-only trims; the quick reel builder stays as the front door, with "Open in editor"; `ReelExporter` is retired; posted reels (`isReel`) keep working | Yes |
-| P11 | 313+ | The review's remaining items on the new base: controls for photos, stickers, background; photo clips, picture-in-picture sound and music fades in the render; timeline polish (thumbnails, waveform, drag-reorder, snapping, transition length); the "Save to original" sheet | Yes |
+| — | 303 | Review fixes for prompts 300–302 (`303-ios-studio-review-fixes-300-302.md`). Done before P1; the prompt numbers below are provisional and moved up by one for it | Small fixes |
+| P1 | 304 | **Golden frames + device self-check.** A small fixture video and HR series in the repo; unit tests render frames and compare them with stored images. A debug screen renders the same fixture on the phone and reports pass / fail and export time | Debug only |
+| P2 | 305 | **Text, stickers and climb tags drawn by the compositor.** The render plan lists them per moment; the canvas keeps only the handles and draws the item being dragged. The Core Animation tool is no longer used for them | Preview matches export |
+| P3 | 306 | **HR tile drawn by the compositor**, with its values per moment in the render plan. Golden frames cover the tile across a transition | Preview matches export |
+| P4 | 307 | **One heart-rate resolver** for the feed overlay, "Share with heart rate", the Studio and reels, and a test that one clip gives the same numbers on all of them | A number may change |
+| P5 | 308 | **The model and the migration**, behind the existing screens. Session style, clip edit, reel, clip use; `StudioProject` rows migrated (clip-bound items → the clip; unbound text, music, picture-in-picture, transitions → a reel; HR tile → session style); backup round-trip | No |
+| P6 | 309 | **Clip editor on clip edits.** "Edit this clip" everywhere (feed tabs, session detail, Quick Session, Kilter); feed, share and bake read the clip edit; the bake becomes one flag; scope filters, the baked record and the stand-down are removed | Yes |
+| P7 | 310 | **Reel editor.** Clip uses, per-reel trim / speed / volume, "From this clip" switches, the music rule, the reel list. Split parts become clip uses | Yes |
+| P8 | 311 | **Session style controls**: apply to all clips, override on one clip, reset | Yes |
+| P9 | 312 | **Progress reels as reels.** The Exercises rule (PRs only / one per month / all) creates a reel; the date and set captions are reel text; listed under the activity it was made from | Yes |
+| P10 | 313 | **Highlight reels as reels.** The engine's picks become clip uses with reel-only trims; the quick reel builder stays as the front door, with "Open in editor"; `ReelExporter` is retired; posted reels (`isReel`) keep working | Yes |
+| P11 | 314+ | The review's remaining items on the new base: controls for photos, stickers, background; photo clips, picture-in-picture sound and music fades in the render; timeline polish (thumbnails, waveform, drag-reorder, snapping, transition length); the "Save to original" sheet | Yes |
 
 P1–P5 change nothing the user has to learn. The visible change arrives at P6–P7, on a base the
 golden frames already cover.

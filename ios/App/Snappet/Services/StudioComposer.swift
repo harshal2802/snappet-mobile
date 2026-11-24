@@ -32,8 +32,17 @@ final class StudioComposer: Sendable {
         private var store: [String: Box<AVAsset>] = [:]
         func get(_ id: String) -> Box<AVAsset>? { store[id] }
         func set(_ id: String, _ box: Box<AVAsset>) { store[id] = box }
+        func remove(_ ids: Set<String>) { for id in ids { store[id] = nil } }
     }
     private let assetCache = AssetCache()
+
+    /// Forget the opened assets for these Photos identifiers, so the next preview or export opens
+    /// them again. A "Save to original" bake changes an asset's video under the SAME identifier;
+    /// without this the Studio kept showing the video from before the bake until it was reopened
+    /// (prompt 303).
+    func forget(localIdentifiers: Set<String>) async {
+        await assetCache.remove(localIdentifiers)
+    }
 
     enum ComposerError: LocalizedError {
         case noRenderableClips, exportFailed(String)
@@ -259,8 +268,13 @@ final class StudioComposer: Sendable {
         if !forPlayback {
             let placedHR: [PlacedClipHR] = plan.clips.compactMap { placed in
                 guard let content = clipHRByID[placed.clip.id] else { return nil }
+                // The tile's values run over the clip's whole slot; it is SHOWN over the stretch
+                // the clip owns, so two clips' tiles are never drawn on top of each other during
+                // a transition (the plan's rule, prompt 303).
                 return PlacedClipHR(startSec: placed.startSec, durationSec: placed.durationSec,
-                                    samples: content.samples, tile: content.tile)
+                                    samples: content.samples, tile: content.tile,
+                                    visibleStartSec: placed.ownedStartSec,
+                                    visibleEndSec: placed.ownedEndSec)
             }
             videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,

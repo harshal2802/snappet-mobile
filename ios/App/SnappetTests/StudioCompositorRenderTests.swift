@@ -270,6 +270,115 @@ final class StudioCompositorRenderTests: XCTestCase {
         XCTAssertNil(none)
     }
 
+    /// A clip at 2× with sound: the sound is on the output at the new length, not at the
+    /// source's, and it is still there.
+    func testASpedUpClipKeepsItsSoundAtTheNewLength() async throws {
+        let tone = try toneFile(seconds: 2)
+        let red = try await withSound(try video(.red), tone)
+        var a = clip(0)
+        a.speed = 2
+        let (comp, vc, mix) = try await StudioComposer().assemble(
+            resolved: [(a, red)], aspect: .portrait9x16, forPlayback: true)
+        XCTAssertEqual(comp.duration.seconds, 1, accuracy: 0.02)          // 2 s at 2×
+        let audio = comp.tracks.filter { $0.mediaType == .audio }
+        XCTAssertEqual(audio.count, 1, "the clip's own sound")
+        let segments = audio[0].segments.filter { !$0.isEmpty }
+        XCTAssertEqual(segments.count, 1)
+        let mapping = try XCTUnwrap(segments.first).timeMapping
+        XCTAssertEqual(mapping.source.duration.seconds, 2, accuracy: 0.02)   // the whole source…
+        XCTAssertEqual(mapping.target.duration.seconds, 1, accuracy: 0.02)   // …in half the time
+        XCTAssertEqual(mapping.target.start.seconds, 0, accuracy: 0.001)
+        let video = try XCTUnwrap(comp.tracks.first { $0.mediaType == .video })
+        let videoRange = try await video.load(.timeRange)
+        XCTAssertEqual(videoRange.duration.seconds, 1, accuracy: 0.02)
+        XCTAssertNil(mix, "full volume and no transition need no mix")
+        assertColour(pixel(try await frame(comp, vc, at: 0.9), 0.5, 0.5), .red, "the sped-up clip")
+
+        // Half speed and half volume: twice as long, and the level is in the mix.
+        var slow = clip(0)
+        slow.speed = 0.5
+        slow.volume = 0.5
+        let (slowComp, _, slowMix) = try await StudioComposer().assemble(
+            resolved: [(slow, red)], aspect: .portrait9x16, forPlayback: true)
+        XCTAssertEqual(slowComp.duration.seconds, 4, accuracy: 0.02)
+        let slowAudio = try XCTUnwrap(slowComp.tracks.first { $0.mediaType == .audio })
+        let slowRange = try await slowAudio.load(.timeRange)
+        XCTAssertEqual(slowRange.duration.seconds, 4, accuracy: 0.02)
+        let params = try XCTUnwrap(slowMix?.inputParameters.first)
+        var s: Float = -1, e: Float = -1
+        var range = CMTimeRange.zero
+        XCTAssertTrue(params.getVolumeRamp(for: CMTime(seconds: 2, preferredTimescale: 600),
+                                           startVolume: &s, endVolume: &e, timeRange: &range))
+        XCTAssertEqual(s, 0.5, accuracy: 0.001)
+        XCTAssertEqual(e, 0.5, accuracy: 0.001)
+    }
+
+    /// Three clips with two transitions: the third clip goes back on the first clip's tracks.
+    /// The reused audio track carries both clips, each with its own level and fades.
+    func testThreeClipsReuseAnAudioTrack() async throws {
+        let tone = try toneFile(seconds: 2)
+        let red = try await withSound(try video(.red), tone)
+        let blue = try await withSound(try video(.blue), tone)
+        let green = try await withSound(try video(.green), tone)
+        var a = clip(0), b = clip(1), c = clip(2)
+        a.volume = 0.8
+        b.volume = 0.4
+        c.volume = 0.6
+        // A 0–2, B 1–3, C 2–4
+        let (comp, _, mix) = try await StudioComposer().assemble(
+            resolved: [(a, red), (b, blue), (c, green)], aspect: .portrait9x16,
+            transitions: [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1),
+                          StudioTransition(afterClipID: b.id, kind: .dissolve, durationSec: 1)],
+            forPlayback: true)
+        XCTAssertEqual(comp.duration.seconds, 4, accuracy: 0.02)
+        let audio = comp.tracks.filter { $0.mediaType == .audio }
+        XCTAssertEqual(audio.count, 2, "two audio tracks for three clips")
+        XCTAssertEqual(comp.tracks.filter { $0.mediaType == .video }.count, 2)
+        let reused = try XCTUnwrap(audio.first { $0.segments.filter { !$0.isEmpty }.count == 2 },
+                                   "one track carries the first and the third clip")
+        let single = try XCTUnwrap(audio.first { $0.segments.filter { !$0.isEmpty }.count == 1 })
+        let reusedRange = try await reused.load(.timeRange), singleRange = try await single.load(.timeRange)
+        XCTAssertEqual(reusedRange.start.seconds, 0, accuracy: 0.01)
+        XCTAssertEqual(reusedRange.duration.seconds, 4, accuracy: 0.02)
+        XCTAssertEqual(singleRange.end.seconds, 3, accuracy: 0.02)
+        let starts = reused.segments.filter { !$0.isEmpty }.map { $0.timeMapping.target.start.seconds }
+        XCTAssertEqual(starts[0], 0, accuracy: 0.01)
+        XCTAssertEqual(starts[1], 2, accuracy: 0.01)
+
+        let params = try XCTUnwrap(mix?.inputParameters)
+        XCTAssertEqual(params.count, 2)
+        func ramp(_ track: AVCompositionTrack, at seconds: Double) throws -> (start: Float, end: Float, range: CMTimeRange) {
+            let p = try XCTUnwrap(params.first { $0.trackID == track.trackID })
+            var s: Float = -1, e: Float = -1
+            var range = CMTimeRange.zero
+            XCTAssertTrue(p.getVolumeRamp(for: CMTime(seconds: seconds, preferredTimescale: 600),
+                                          startVolume: &s, endVolume: &e, timeRange: &range))
+            return (s, e, range)
+        }
+        // The reused track: A falls over 1…2, then C rises over 2…3 to ITS level and holds it.
+        let aOut = try ramp(reused, at: 1.5)
+        XCTAssertEqual(aOut.start, 0.8, accuracy: 0.001)
+        XCTAssertEqual(aOut.end, 0, accuracy: 0.001)
+        XCTAssertEqual(aOut.range.start.seconds, 1, accuracy: 0.01)
+        XCTAssertEqual(aOut.range.end.seconds, 2, accuracy: 0.01)
+        let cIn = try ramp(reused, at: 2.5)
+        XCTAssertEqual(cIn.start, 0, accuracy: 0.001)
+        XCTAssertEqual(cIn.end, 0.6, accuracy: 0.001)
+        XCTAssertEqual(cIn.range.start.seconds, 2, accuracy: 0.01)
+        XCTAssertEqual(cIn.range.end.seconds, 3, accuracy: 0.01)
+        let aStart = try ramp(reused, at: 0.5)
+        XCTAssertEqual(aStart.start, 0.8, accuracy: 0.001)
+        XCTAssertEqual(aStart.end, 0.8, accuracy: 0.001)
+        // The middle clip on the other track: up over 1…2, down over 2…3.
+        let bIn = try ramp(single, at: 1.5)
+        XCTAssertEqual(bIn.start, 0, accuracy: 0.001)
+        XCTAssertEqual(bIn.end, 0.4, accuracy: 0.001)
+        let bOut = try ramp(single, at: 2.5)
+        XCTAssertEqual(bOut.start, 0.4, accuracy: 0.001)
+        XCTAssertEqual(bOut.end, 0, accuracy: 0.001)
+        XCTAssertEqual(bOut.range.end.seconds, 3, accuracy: 0.01)
+    }
+
     // MARK: Export (a real file)
 
     /// A transition + a filter + a picture-in-picture + music + a text overlay, exported. The file
@@ -345,74 +454,54 @@ final class StudioCompositorRenderTests: XCTestCase {
                                       order: 0, trimStart: 0, trimEnd: nil)]
         container.mainContext.insert(project)
         let vm = StudioEditorViewModel(project: project, context: container.mainContext)
+        // Builds are counted by the view model itself (`previewBuildCount`) and waited for by
+        // awaiting its rebuild tasks (`previewBuildsFinished`): no observation hops, no sleeps.
+        // The Studio's opening comes first — no preview is built before it (prompt 303).
+        await vm.onAppear()
         vm.addPiP(localIdentifier: "B")
         vm.addText("Hello")
         let pipID = try XCTUnwrap(vm.overlays.first { $0.kind == .video }?.id)
         let textID = try XCTUnwrap(vm.overlays.first { $0.kind == .text }?.id)
-        let counter = RebuildCounter()
-        counter.watch(vm)
-        try await settle(vm)
-        let base = counter.count
+        await vm.previewBuildsFinished()
+        let base = vm.previewBuildCount
+        XCTAssertEqual(base, 2, "the opening's build and the one for the new picture-in-picture")
 
         // A drag: the value follows every tick, the preview is not rebuilt until the finger lifts.
         vm.beginGesture()
         for tick in 1...20 { vm.setOverlayOpacity(pipID, 1 - Double(tick) * 0.02) }
-        try await settle(vm)
+        await vm.previewBuildsFinished()
         XCTAssertEqual(try XCTUnwrap(vm.overlays.first { $0.id == pipID }).opacity, 0.6, accuracy: 1e-9)
-        XCTAssertEqual(counter.count, base, "no rebuild per tick")
+        XCTAssertEqual(vm.previewBuildCount, base, "no rebuild per tick")
         vm.endGesture()
-        try await settle(vm)
-        XCTAssertEqual(counter.count, base + 1, "one rebuild when the drag ends")
+        await vm.previewBuildsFinished()
+        XCTAssertEqual(vm.previewBuildCount, base + 1, "one rebuild when the drag ends")
         vm.undoEdit()                                             // one step (and Undo's own rebuild)
-        try await settle(vm)
+        await vm.previewBuildsFinished()
         XCTAssertEqual(vm.overlays.first { $0.id == pipID }?.opacity, 1)
-        let afterUndo = counter.count
+        let afterUndo = vm.previewBuildCount
+        XCTAssertEqual(afterUndo, base + 2)
 
         // A drag that ends where it began: nothing to rebuild.
         vm.beginGesture()
         vm.setOverlayOpacity(pipID, 0.5)
         vm.setOverlayOpacity(pipID, 1)
         vm.endGesture()
-        try await settle(vm)
-        XCTAssertEqual(counter.count, afterUndo)
+        await vm.previewBuildsFinished()
+        XCTAssertEqual(vm.previewBuildCount, afterUndo)
 
         // Outside a drag (VoiceOver adjust) it is a plain edit, which rebuilds.
         vm.setOverlayOpacity(pipID, 0.7)
-        try await settle(vm)
-        XCTAssertEqual(counter.count, afterUndo + 1)
+        await vm.previewBuildsFinished()
+        XCTAssertEqual(vm.previewBuildCount, afterUndo + 1)
 
         // A text overlay is drawn by the canvas: no rebuild, in a drag or outside one.
         vm.beginGesture()
         for tick in 1...5 { vm.setOverlayOpacity(textID, 1 - Double(tick) * 0.1) }
         vm.endGesture()
         vm.setOverlayOpacity(textID, 0.9)
-        try await settle(vm)
-        XCTAssertEqual(counter.count, afterUndo + 1)
+        await vm.previewBuildsFinished()
+        XCTAssertEqual(vm.previewBuildCount, afterUndo + 1)
         withExtendedLifetime(container) {}
-    }
-
-    /// Counts preview rebuilds: `isBuildingPreview` is set at the start of each one.
-    @MainActor
-    private final class RebuildCounter {
-        var count = 0
-        func watch(_ vm: StudioEditorViewModel) {
-            withObservationTracking { _ = vm.isBuildingPreview } onChange: { [weak self] in
-                Task { @MainActor in
-                    if vm.isBuildingPreview { self?.count += 1 }
-                    self?.watch(vm)
-                }
-            }
-        }
-    }
-
-    /// Wait until no preview rebuild is running or about to start.
-    @MainActor
-    private func settle(_ vm: StudioEditorViewModel) async throws {
-        var quiet = 0
-        for _ in 0 ..< 200 where quiet < 4 {
-            try await Task.sleep(for: .milliseconds(25))
-            quiet = vm.isBuildingPreview ? 0 : quiet + 1
-        }
     }
 
     // MARK: - Helpers: project pieces

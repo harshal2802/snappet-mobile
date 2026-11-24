@@ -21,6 +21,12 @@ final class StudioEditorViewModel {
     private let availability: any StudioMediaAvailabilityChecking
     /// Writes the store. A property so a test can make the save fail; nothing else replaces it.
     @ObservationIgnored var saver: (ModelContext) throws -> Void = { try $0.save() }
+    /// Reads a video's real length. `nil` (always, in the app) asks the composer; a test sets it,
+    /// because the simulator has no Photos videos to read.
+    @ObservationIgnored var sourceDurationLoader: (@MainActor (String) async -> Double?)?
+    /// Makes the rendered file for a bake or an export. `nil` (always, in the app) renders with
+    /// the composer; a test sets it, because the composer needs real Photos videos.
+    @ObservationIgnored var renderOverride: (@MainActor () async throws -> URL)?
     private var undo: UndoStack<StudioProjectSnapshot>
 
     /// When set, the studio is **scoped** to the clips backed by these `SessionMedia.id`s (per-clip or
@@ -66,7 +72,14 @@ final class StudioEditorViewModel {
         get { state.selection.overlayID }
         set { send(.select(state.selection.settingOverlay(newValue))) }
     }
+    /// Each video clip's REAL source length, read from the asset. Only clips that are on this
+    /// phone have one. This is what the composer is handed.
     private(set) var sourceDurations: [UUID: Double] = [:]
+    /// The length Snappet recorded when each video was added (`SessionMedia.durationSec`), by
+    /// media id and by Photos identifier. The timeline's fallback for a clip that is not on this
+    /// phone (prompt 303): its real length cannot be read, and without one it is 0 s long.
+    private var recordedDurations: [UUID: Double] = [:]
+    private var recordedDurationsByLocalID: [String: Double] = [:]
     /// Resolved oriented aspect ratio (w/h) per source `localIdentifier` — sizes a new PiP / base cell
     /// to its footage so the editor outline matches the aspect-fit video. Empty on the simulator.
     private(set) var sourceAspects: [String: CGFloat] = [:]
@@ -102,6 +115,8 @@ final class StudioEditorViewModel {
     private var playerObservations: [NSKeyValueObservation] = []
     /// The player the observers above are attached to (they must be removed from the same one).
     private var observedPlayer: AVPlayer?
+    /// Which clock ticks may move the playhead: none while a seek is still in flight (prompt 303).
+    @ObservationIgnored private var seekGate = StudioSeekGate()
     /// Bumped whenever the observers are attached or removed, so a callback from an item that has
     /// been replaced is ignored.
     private var transportGeneration = 0
@@ -153,9 +168,15 @@ final class StudioEditorViewModel {
     func seek(to seconds: Double) {
         let clamped = max(0, min(seconds, totalDuration))
         currentTime = clamped
-        previewPlayer?.seek(to: CMTime(seconds: playerGaps.playerTime(forTimelineTime: clamped),
-                                       preferredTimescale: 600),
-                            toleranceBefore: .zero, toleranceAfter: .zero)
+        guard let player = previewPlayer else { return }
+        // Until the player has finished this seek its clock still reports the old position; the
+        // gate keeps those ticks from moving the playhead back (prompt 303).
+        let generation = seekGate.begin()
+        player.seek(to: CMTime(seconds: playerGaps.playerTime(forTimelineTime: clamped),
+                               preferredTimescale: 600),
+                    toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.seekGate.finish(generation) }
+        }
     }
 
     /// The parts of the timeline the current preview leaves out ("Preview without it", prompt
@@ -187,7 +208,8 @@ final class StudioEditorViewModel {
             MainActor.assumeIsolated {
                 // don't fight an active scrub/seek: the clock is followed only while it really plays
                 guard let self, self.transportGeneration == generation,
-                      StudioTransport.followsPlayerClock(self.state.player) else { return }
+                      StudioTransport.followsPlayerClock(self.state.player),
+                      self.seekGate.acceptsTick else { return }
                 self.currentTime = self.playerGaps.timelineTime(forPlayerTime: t.seconds)
             }
         }
@@ -243,6 +265,7 @@ final class StudioEditorViewModel {
         previewPlayer?.pause()
         previewPlayer?.replaceCurrentItem(with: nil)
         previewPlayer = nil
+        seekGate.reset()
         playerGaps = StudioPreviewGaps()
         currentTime = StudioTransport.resumePosition(positionNow: currentTime, total: totalDuration)
     }
@@ -308,24 +331,48 @@ final class StudioEditorViewModel {
     /// ratio (it follows the source) — fall back to the studio's 9:16 default for the editing rect.
     var previewRatio: CGFloat { aspect.ratio ?? (9.0 / 16.0) }
     var totalDuration: Double {
-        StudioGeometry.totalDuration(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
+        StudioGeometry.totalDuration(clips: visibleSnapshotClips, sourceDurations: timelineDurations,
                                      transitions: snapshot.transitions)
     }
+    /// The source lengths the timeline is laid out with: the real length where it has been read,
+    /// and the recorded one for a clip that is not on this phone (prompt 303). The composer is
+    /// handed `sourceDurations`, never this.
+    private var timelineDurations: [UUID: Double] {
+        StudioGeometry.timelineSourceDurations(clips: snapshot.clips, resolved: sourceDurations) {
+            recordedDuration(of: $0)
+        }
+    }
+    /// The recorded length of a clip whose video is not on this phone; `nil` for one that is
+    /// (its real length is read instead) and when nothing was recorded.
+    private func recordedDuration(of clip: TimelineClip) -> Double? {
+        guard mediaStatus(of: clip) != .available else { return nil }
+        return clip.sessionMediaID.flatMap { recordedDurations[$0] }
+            ?? recordedDurationsByLocalID[clip.localIdentifier]
+    }
+    /// The length a trim of this clip is measured against, or `nil` when it is not known yet.
+    private func trimSourceLength(of clip: TimelineClip) -> Double? {
+        StudioGeometry.trimSourceLength(clip, resolved: sourceDurations[clip.id],
+                                        recorded: recordedDuration(of: clip))
+    }
+    /// A clip can be trimmed once its source length is known (prompt 303). The timeline shows the
+    /// trim handles only then.
+    func canTrim(_ clip: TimelineClip) -> Bool { trimSourceLength(of: clip) != nil }
     func transitionKind(afterClipID: UUID) -> StudioTransitionKind {
         snapshot.transitions.first { $0.afterClipID == afterClipID }?.kind ?? .none
     }
     func outputDuration(of clip: TimelineClip) -> Double {
-        StudioGeometry.clipOutputDuration(clip, sourceDuration: sourceDurations[clip.id])
+        StudioGeometry.clipOutputDuration(clip, sourceDuration: timelineDurations[clip.id])
     }
     /// Clips placed on the output timeline (start/duration in seconds) — the layout the scrubbable
     /// timeline strip and the playhead share with the composition.
     var placedClips: [StudioGeometry.PlacedClip] {
-        StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
+        StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: timelineDurations,
                                 transitions: snapshot.transitions)
     }
-    /// The resolved source length for a clip (asset duration), or its trimmed end as a fallback.
+    /// The resolved source length for a clip (asset duration; the recorded length while the video
+    /// is not on this phone), or its trimmed end as a fallback.
     func sourceDuration(of clip: TimelineClip) -> Double {
-        sourceDurations[clip.id] ?? clip.trimEnd ?? outputDuration(of: clip)
+        timelineDurations[clip.id] ?? clip.trimEnd ?? outputDuration(of: clip)
     }
 
     // MARK: - Overlay render resolution (per-clip window + composed string — prompt 12)
@@ -402,10 +449,13 @@ final class StudioEditorViewModel {
     }
 
     /// Resolve the length and shape of every clip that is on this phone and not resolved yet.
-    private func loadSourceInfo() async {
-        for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil
+    /// Called when the Studio opens, after a download (the clip's recorded length gives way to
+    /// its real one), and after a bake with `refreshing` = the baked clip (its video changed).
+    private func loadSourceInfo(refreshing: Set<UUID> = []) async {
+        for clip in clips where !clip.isPhoto
+            && (sourceDurations[clip.id] == nil || refreshing.contains(clip.id))
             && state.media.status(of: clip.localIdentifier) == .available {
-            if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
+            if let d = await readSourceDuration(clip.localIdentifier) {
                 sourceDurations[clip.id] = d
             }
             if sourceAspects[clip.localIdentifier] == nil,
@@ -413,28 +463,37 @@ final class StudioEditorViewModel {
                 sourceAspects[clip.localIdentifier] = a
             }
         }
+        // The timeline's length may have changed, and with it which picture-in-picture windows
+        // are inside it.
+        send(.mediaSourcesChanged(mediaSources))
+    }
+
+    private func readSourceDuration(_ localIdentifier: String) async -> Double? {
+        if let sourceDurationLoader { return await sourceDurationLoader(localIdentifier) }
+        return await composer.sourceDuration(localIdentifier: localIdentifier)
     }
 
     // MARK: Media availability (prompt 302)
 
-    /// The Photos videos the render needs: the visible video clips in timeline order (numbered as
-    /// the PiP chooser numbers them), then the picture-in-picture sources.
+    /// The Photos videos the render needs (`StudioMediaPlan.sources`): the visible video clips in
+    /// timeline order, then the sources of the picture-in-picture windows that are inside the
+    /// timeline. One wholly past the end is not drawn, so it does not block the export.
     private var mediaSources: [StudioMediaPlan.Source] {
-        var out: [StudioMediaPlan.Source] = clips.enumerated().compactMap { index, clip in
-            clip.isPhoto ? nil : StudioMediaPlan.Source(role: .clip(id: clip.id, number: index + 1),
-                                                        localIdentifier: clip.localIdentifier)
-        }
-        out += scopedOverlays.filter { $0.kind == .video }.map {
-            StudioMediaPlan.Source(role: .pip(overlayID: $0.id), localIdentifier: $0.content)
-        }
-        return out
+        StudioMediaPlan.sources(clips: clips, overlays: scopedOverlays, total: totalDuration)
     }
 
     /// Ask the service where every source is. Called when the Studio opens, before any preview.
+    /// Every picture-in-picture source is asked about, also one that is past the end of the
+    /// timeline now: an Undo can bring it back inside, and it must not be unknown then.
     func checkMediaAvailability() async {
-        let sources = mediaSources
-        let statuses = await availability.statuses(for: sources.map(\.localIdentifier))
+        loadMediaOffsets()      // the recorded lengths, for clips that turn out not to be here
+        let identifiers = clips.filter { !$0.isPhoto }.map(\.localIdentifier)
+            + scopedOverlays.filter { $0.kind == .video }.map(\.content)
+        let statuses = await availability.statuses(for: identifiers)
         send(.mediaChecked(sources: mediaSources, statuses: statuses))
+        // The sources depend on the timeline's length, which the statuses just changed (a clip
+        // that is not here now has its recorded length).
+        send(.mediaSourcesChanged(mediaSources))
     }
 
     /// Where a clip's video is — the timeline marks a clip that is not on this phone.
@@ -450,16 +509,21 @@ final class StudioEditorViewModel {
         guard downloadTask == nil, let problem = state.media.blocking, problem.status == .inCloud
         else { return }
         let id = problem.source.localIdentifier
-        send(.downloadBegan(id))
-        guard state.media.download != nil else { return }
-        downloadTask = Task { [weak self] in await self?.runDownload(id) }
+        downloadRequests += 1
+        let request = downloadRequests
+        send(.downloadBegan(id, request: request))
+        guard state.media.download?.request == request else { return }
+        downloadTask = Task { [weak self] in await self?.runDownload(id, request: request) }
     }
+    /// Numbers each download, so a progress report that arrives late (the service reports through
+    /// tasks of its own) cannot move the next download's bar (prompt 303).
+    @ObservationIgnored private var downloadRequests = 0
 
-    private func runDownload(_ localIdentifier: String) async {
+    private func runDownload(_ localIdentifier: String, request: Int) async {
         defer { downloadTask = nil }
         do {
             try await availability.download(localIdentifier: localIdentifier) { [weak self] fraction in
-                self?.send(.downloadProgressed(fraction))
+                self?.send(.downloadProgressed(fraction, request: request))
             }
             guard !Task.isCancelled else { send(.downloadCancelled); return }
             send(.downloadFinished(localIdentifier))
@@ -484,13 +548,13 @@ final class StudioEditorViewModel {
     /// "Preview without it": play what is on this phone. Export stays off.
     func previewWithoutMissingClips() {
         send(.previewWithoutMissing)
-        Task { await rebuildPreview() }
+        scheduleRebuild()
     }
 
     /// Back from "Preview without it" to the panel.
     func showMissingClipOptions() {
         send(.showMissingOptions)
-        Task { await rebuildPreview() }
+        scheduleRebuild()
     }
 
     /// "Remove clip from video": the normal delete, so Undo brings the clip back and the
@@ -532,6 +596,9 @@ final class StudioEditorViewModel {
         mediaOffsets = Dictionary(media.map { ($0.id, $0.offsetSec) }, uniquingKeysWith: { a, _ in a })
         mediaOffsetsByLocalID = Dictionary(media.map { ($0.localIdentifier, $0.offsetSec) },
                                            uniquingKeysWith: { a, _ in a })
+        let lengths = media.compactMap { m in m.durationSec.map { (m.id, m.localIdentifier, $0) } }
+        recordedDurations = Dictionary(lengths.map { ($0.0, $0.2) }, uniquingKeysWith: { a, _ in a })
+        recordedDurationsByLocalID = Dictionary(lengths.map { ($0.1, $0.2) }, uniquingKeysWith: { a, _ in a })
     }
 
     /// A clip's capture offset (seconds from session start) via its backing `SessionMedia`, falling
@@ -549,9 +616,37 @@ final class StudioEditorViewModel {
     /// clobber the newer player once its async composition finally returns.
     private var rebuildGeneration = 0
 
+    /// Rebuild the preview in a task of its own (an edit does not wait for it). `first` runs
+    /// before the build, in the same task. The tasks are kept until they end so a test can wait
+    /// for them (`previewBuildsFinished`) instead of sleeping.
+    private func scheduleRebuild(after first: (@MainActor () async -> Void)? = nil) {
+        rebuildTaskCount += 1
+        let number = rebuildTaskCount
+        rebuildTasks[number] = Task {
+            await first?()
+            await rebuildPreview()
+            rebuildTasks[number] = nil
+        }
+    }
+    @ObservationIgnored private var rebuildTasks: [Int: Task<Void, Never>] = [:]
+    @ObservationIgnored private var rebuildTaskCount = 0
+    /// How many preview builds have begun. Read by tests.
+    @ObservationIgnored private(set) var previewBuildCount = 0
+
+    /// Returns when no scheduled preview rebuild is left running. For tests.
+    func previewBuildsFinished() async {
+        while let task = rebuildTasks.values.first { await task.value }
+    }
+
     private func rebuildPreview() async {
+        // Nothing is known yet about where the videos are (prompt 303): an edit made in the
+        // opening window must not start a build, because the composer downloads an iCloud clip
+        // without a word. `onAppear` builds the preview as soon as the first result is in, from
+        // the project as it is then, so the edit is in it.
+        guard state.canBuildPreview else { return }
         rebuildGeneration += 1
         let generation = rebuildGeneration
+        previewBuildCount += 1
         send(.previewBuildBegan)
         // A clip is not on this phone and the user has not decided what to do (prompt 302): no
         // preview, and the composer is not asked (it would download or skip the clip silently).
@@ -561,16 +656,13 @@ final class StudioEditorViewModel {
             return
         }
         // "Preview without it": the composer gets only what is on this phone, and the playhead is
-        // mapped across the slots that were left out.
-        var playable = scopedSnapshot
+        // mapped across the slots that were left out. Everything else that carries a timeline
+        // time (picture-in-picture windows and keyframes, music) is mapped the same way.
         let unavailable = state.media.unavailableIdentifiers
         let gaps = StudioPreviewGaps(slots: placedClips
             .filter { !$0.clip.isPhoto && unavailable.contains($0.clip.localIdentifier) }
             .map { (start: $0.startSec, end: $0.endSec) })
-        if !unavailable.isEmpty {
-            playable.clips.removeAll { !$0.isPhoto && unavailable.contains($0.localIdentifier) }
-            playable.overlays.removeAll { $0.kind == .video && unavailable.contains($0.content) }
-        }
+        let playable = gaps.playable(scopedSnapshot, unavailable: unavailable)
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
@@ -631,7 +723,7 @@ final class StudioEditorViewModel {
         endGesture()                      // a separate edit is its own undo step (prompt 299)
         undo.commit(transform(undo.current))
         persist()
-        Task { await rebuildPreview() }
+        scheduleRebuild()
     }
     /// An edit that only touches **overlays** — they're not in the playback composition (overlays are
     /// the WYSIWYG SwiftUI layer on top of the preview), so skip the player rebuild to avoid a flicker
@@ -674,7 +766,7 @@ final class StudioEditorViewModel {
         gestureChangedComposition = false
         if undo.endTransactionIfChanged() {
             persist()
-            if rebuild { Task { await rebuildPreview() } }
+            if rebuild { scheduleRebuild() }
         }
     }
     /// Set by a live tick that changed something the compositor draws (prompt 300).
@@ -682,12 +774,12 @@ final class StudioEditorViewModel {
     func undoEdit() {
         guard canEdit else { return }
         endGesture()                      // the open drag becomes a step first, then Undo removes it
-        undo.undo(); persist(); Task { await rebuildPreview() }
+        undo.undo(); persist(); scheduleRebuild()
     }
     func redoEdit() {
         guard canEdit else { return }
         endGesture()
-        undo.redo(); persist(); Task { await rebuildPreview() }
+        undo.redo(); persist(); scheduleRebuild()
     }
     /// The ONE place a snapshot is written to the project and the store (prompt 302). A failed
     /// save is reported through the state (a message the user can close); the edit stays in
@@ -742,20 +834,22 @@ final class StudioEditorViewModel {
     func splitSelected() {
         guard let clip = selectedClip, !clip.isPhoto else { return }
         let mid = outputDuration(of: clip) / 2
+        let source = timelineDurations[clip.id]
         edit { StudioProjectEditor.splitClip($0, id: clip.id, atOutputOffset: mid,
-                                             sourceDuration: sourceDurations[clip.id]) }
+                                             sourceDuration: source) }
     }
     /// Split at the **playhead**: find the clip under `currentTime` and cut it there (the edits-style
     /// split). Falls back to splitting the selected clip at its midpoint if the playhead isn't over a
     /// video clip (e.g. before playback has moved it).
     func splitAtPlayhead() {
-        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
+        let durations = timelineDurations
+        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: durations,
                                              transitions: snapshot.transitions)
         guard let p = placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }),
               !p.clip.isPhoto else { splitSelected(); return }
         selectedClipID = p.clip.id
         edit { StudioProjectEditor.splitClip($0, id: p.clip.id, atOutputOffset: currentTime - p.startSec,
-                                             sourceDuration: sourceDurations[p.clip.id]) }
+                                             sourceDuration: durations[p.clip.id]) }
     }
     func setSelectedSpeed(_ speed: Double) {
         guard let id = selectedClipID else { return }
@@ -765,8 +859,10 @@ final class StudioEditorViewModel {
     /// keeps a minimum length. The timeline view drives this **once on drag-end** (the live handle
     /// feedback is view-local), so there's one undo entry + one preview rebuild per trim.
     func trimSelected(startSeconds: Double?, endSeconds: Double?) {
-        guard let clip = selectedClip, !clip.isPhoto else { return }
-        let src = sourceDuration(of: clip)
+        // Refused while the source length is not known (prompt 303): a never-trimmed clip whose
+        // video is not on this phone and has no recorded length. Clamping to "0 s" stored
+        // `trimEnd = 0`, and that stayed after the video was downloaded.
+        guard let clip = selectedClip, !clip.isPhoto, let src = trimSourceLength(of: clip) else { return }
         let minLen = 0.1
         var start = startSeconds ?? clip.trimStart
         var end = endSeconds ?? clip.trimEnd ?? src
@@ -1206,7 +1302,7 @@ final class StudioEditorViewModel {
         guard let clip = placedClipUnderPlayhead()?.clip, let offset = captureOffset(of: clip) else { return nil }
         let ext = StudioHRPlacement.extendedWindow(offset: offset, trimStart: clip.trimStart,
                                                    trimEnd: clip.trimEnd,
-                                                   sourceDuration: sourceDurations[clip.id],
+                                                   sourceDuration: timelineDurations[clip.id],
                                                    leadSec: clip.hrWindowLeadSec,
                                                    tailSec: clip.hrWindowTailSec)
         let coverageEnd = hrSeries.last?.t ?? 0
@@ -1381,15 +1477,17 @@ final class StudioEditorViewModel {
         var scope: HRMetricsScope
     }
 
-    /// The video clip whose output slot contains the playhead (last clip when the playhead is at the
-    /// very end) — the ONE "clip under the playhead" rule shared by the preview tile (`previewHR`)
-    /// and the HR-window controls (`hrWindowInfo`), so the sliders can't target a different clip than
-    /// the tile renders.
+    /// The video clip that OWNS the playhead's moment (last clip when the playhead is at the very
+    /// end) — the ONE "clip under the playhead" rule shared by the preview tile (`previewHR`) and
+    /// the HR-window controls (`hrWindowInfo`), so the sliders can't target a different clip than
+    /// the tile renders. During a transition the outgoing clip owns the first half and the
+    /// incoming clip the second (`StudioGeometry.ownedWindows`, prompt 303) — the same rule the
+    /// export gates each clip's tile with, so the preview's tile changes where the file's does.
     private func placedClipUnderPlayhead() -> StudioGeometry.PlacedClip? {
         let placed = StudioGeometry.timeline(clips: visibleSnapshotClips.filter { !$0.isPhoto },
-                                             sourceDurations: sourceDurations,
+                                             sourceDurations: timelineDurations,
                                              transitions: snapshot.transitions)
-        return placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }) ?? placed.last
+        return StudioGeometry.ownerIndex(at: currentTime, in: placed).map { placed[$0] } ?? placed.last
     }
 
     /// Per-clip HR for the **preview** chart (WYSIWYG with export): the clip under the playhead sliced
@@ -1402,7 +1500,7 @@ final class StudioEditorViewModel {
         }
         let ext = StudioHRPlacement.extendedWindow(offset: offset, trimStart: p.clip.trimStart,
                                                    trimEnd: p.clip.trimEnd,
-                                                   sourceDuration: sourceDurations[p.clip.id],
+                                                   sourceDuration: timelineDurations[p.clip.id],
                                                    leadSec: p.clip.hrWindowLeadSec,
                                                    tailSec: p.clip.hrWindowTailSec)
         let samples = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
@@ -1566,7 +1664,8 @@ final class StudioEditorViewModel {
     private func renderComposition(
         progress: (@MainActor @Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
-        try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
+        if let renderOverride { return try await renderOverride() }
+        return try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                   hrSamples: hrSeries,
                                   hrTile: resolvedSessionTile(),
                                   clipHRByID: clipHRContent(),
@@ -1581,7 +1680,11 @@ final class StudioEditorViewModel {
     /// otherwise reopening would re-apply everything on top of the baked rendition. The flatten is an
     /// undo BARRIER (history resets): a post-bake Undo could otherwise rewind the timeline to a
     /// deleted asset / re-arm the double-apply.
-    func bake(replaceOriginal: Bool, service: ClipBakeService = ClipBakeService()) async {
+    ///
+    /// The video's `SessionMedia` rows are read BEFORE anything is rendered or written (prompt
+    /// 303). If they cannot be read the bake is refused with a message: it would re-point the
+    /// project at the baked video and leave the rows on the old one.
+    func bake(replaceOriginal: Bool, service: any ClipBaking = ClipBakeService()) async {
         guard state.canExport,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
@@ -1597,12 +1700,25 @@ final class StudioEditorViewModel {
                                          : clipHR.values.contains { $0.tile != nil }
         pause()                 // the preview does not play under a render
         send(.bakeBegan)
+        let sid = project.sessionID
+        let rows: [SessionMedia]
+        do {
+            rows = try context.fetch(FetchDescriptor<SessionMedia>(
+                predicate: #Predicate { $0.sessionID == sid && $0.localIdentifier == target }))
+        } catch {
+            Self.log.error("bake: media rows unreadable: \(error.localizedDescription, privacy: .public)")
+            rows = []
+        }
+        guard !rows.isEmpty else {
+            send(.bakeFailed(StudioBakeState.recordsUnreadableMessage))
+            return
+        }
         do {
             let url = try await renderComposition()
             defer { try? FileManager.default.removeItem(at: url) }   // no share sheet needs the temp file
-            let sid = project.sessionID
-            let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
-                predicate: #Predicate { $0.sessionID == sid && $0.localIdentifier == target }))) ?? []
+            // The baked video's length: it is the new length of the one clip the bake leaves.
+            let renderedDur = (try? await AVURLAsset(url: url).load(.duration))?.seconds
+            var changedAssets: Set<String> = [target]
             let flattened: StudioProjectSnapshot
             if replaceOriginal {
                 // Re-point ONLY after the service confirms deletion — a cancelled iOS dialog throws
@@ -1610,7 +1726,7 @@ final class StudioEditorViewModel {
                 let newID = try await service.replaceOriginal(renderedURL: url, oldLocalIdentifier: target)
                 let trimStart = ClipBakePlan.earliestTrimStart(clips: bakedClips,
                                                                localIdentifier: target)
-                let renderedDur = (try? await AVURLAsset(url: url).load(.duration))?.seconds
+                changedAssets.insert(newID)
                 for m in rows {
                     let update = ClipBakePlan.mediaUpdate(oldOffsetSec: m.offsetSec,
                                                           earliestTrimStart: trimStart,
@@ -1642,7 +1758,22 @@ final class StudioEditorViewModel {
             // Photos has the video now. If the project cannot be saved, that is NOT a success
             // (prompt 302): the message says the video was saved and the project was not.
             let projectSaved = persist()
-            Task { await rebuildPreview() }
+            // The baked asset's video changed under its identifier (a revertible bake), or the
+            // clip points at a new one: the length read before the bake and the composer's
+            // opened asset are both stale (prompt 303). Until the real length is read again the
+            // clip has the rendered file's.
+            let staleAssets = changedAssets
+            let bakedClipIDs = Set((base.clips + flattened.clips)
+                .filter { staleAssets.contains($0.localIdentifier) }.map(\.id))
+            let bakedLength = renderedDur.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+            for id in bakedClipIDs {
+                sourceDurations[id] = flattened.clips.contains { $0.id == id } ? bakedLength : nil
+            }
+            for asset in staleAssets { sourceAspects[asset] = nil }
+            scheduleRebuild { [self] in
+                await composer.forget(localIdentifiers: staleAssets)
+                await loadSourceInfo(refreshing: bakedClipIDs)
+            }
             switch StudioBakeState.afterPhotosWrite(replaced: replaceOriginal, projectSaved: projectSaved) {
             case .savedProjectNotUpdated(let replaced): send(.bakeSavedProjectNotUpdated(replaced: replaced))
             default: send(.bakeSaved(replaced: replaceOriginal))

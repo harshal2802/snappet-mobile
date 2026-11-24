@@ -145,14 +145,15 @@ struct StudioTimelineView: View {
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(SnappetColor.workout, lineWidth: selected ? 2.5 : 0))
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .leading) { if selected && !p.clip.isPhoto { handle(p, edge: .leading) } }
-        .overlay(alignment: .trailing) { if selected && !p.clip.isPhoto { handle(p, edge: .trailing) } }
+        // No trim handles while the clip's source length is not known (prompt 303).
+        .overlay(alignment: .leading) { if selected && vm.canTrim(p.clip) { handle(p, edge: .leading) } }
+        .overlay(alignment: .trailing) { if selected && vm.canTrim(p.clip) { handle(p, edge: .trailing) } }
         .accessibilityIdentifier("timelineClip")
         // Meaningful label + (when selected & trimmable) trim actions in the rotor, so a VoiceOver
         // user who can't drag the handles can still trim (#79).
         .accessibilityLabel("\(p.clip.isPhoto ? "Photo" : "Video") clip, \(String(format: "%.1f", p.durationSec)) seconds\(StudioMediaPlan.accessibilityNote(for: media).map { ", \($0)" } ?? "")\(selected ? ", selected" : "")")
         .accessibilityHint(selected ? "" : "Double-tap to select")
-        .modifier(ClipTrimActions(enabled: selected && !p.clip.isPhoto, clip: p, vm: vm))
+        .modifier(ClipTrimActions(enabled: selected && vm.canTrim(p.clip), clip: p, vm: vm))
     }
 
     private enum Edge { case leading, trailing }

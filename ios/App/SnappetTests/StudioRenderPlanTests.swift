@@ -140,8 +140,9 @@ final class StudioRenderPlanTests: XCTestCase {
     }
 
     /// A short middle clip whose two transitions would meet: every moment still has a clip, no
-    /// clip shares a track with one it overlaps, and its audio fades do not overlap.
-    func testAShortMiddleClipKeepsTracksAndFadesApart() {
+    /// clip shares a track with one it overlaps, and its audio rises and then falls to silence —
+    /// the shared stretch is split in the middle (it used to end at full volume, prompt 303).
+    func testAShortMiddleClipKeepsTracksAndFadesApart() throws {
         let a = clip(0), b = clip(1, seconds: 1), c = clip(2)
         let t = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1),
                  StudioTransition(afterClipID: b.id, kind: .dissolve, durationSec: 1)]
@@ -153,10 +154,129 @@ final class StudioRenderPlanTests: XCTestCase {
                 XCTAssertTrue(x.endSec <= y.startSec + 1e-9 || y.endSec <= x.startSec + 1e-9)
             }
         }
+        // B is 1 s long at 3…4, under both 1 s transitions: up over 3…3.5, down over 3.5…4.
         let mid = p.clips[1]
-        if let fadeIn = mid.audioFadeIn, let fadeOut = mid.audioFadeOut {
-            XCTAssertLessThanOrEqual(fadeIn.upperBound, fadeOut.lowerBound)
+        XCTAssertEqual(mid.startSec, 3, accuracy: 1e-9)
+        XCTAssertEqual(mid.endSec, 4, accuracy: 1e-9)
+        let fadeIn = try XCTUnwrap(mid.audioFadeIn), fadeOut = try XCTUnwrap(mid.audioFadeOut)
+        XCTAssertEqual(fadeIn.lowerBound, 3, accuracy: 1e-9)
+        XCTAssertEqual(fadeIn.upperBound, 3.5, accuracy: 1e-9)
+        XCTAssertEqual(fadeOut.lowerBound, 3.5, accuracy: 1e-9)
+        XCTAssertEqual(fadeOut.upperBound, 4, accuracy: 1e-9)        // silent when the clip ends
+        // The neighbours keep their whole transition.
+        XCTAssertEqual(p.clips[0].audioFadeOut, 3 ... 4)
+        XCTAssertEqual(p.clips[2].audioFadeIn, 3 ... 4)
+    }
+
+    /// The fade rule by itself: untouched when the two transitions do not meet, split in the
+    /// middle of the shared stretch when they do.
+    func testAudioFadesSplitTheSharedStretch() throws {
+        typealias Phase = StudioRenderPlan.TransitionPhase
+        let apart = StudioRenderPlan.audioFades(entering: Phase(kind: .dissolve, startSec: 3, endSec: 4),
+                                                leaving: Phase(kind: .dissolve, startSec: 6, endSec: 7))
+        XCTAssertEqual(apart.fadeIn, 3 ... 4)
+        XCTAssertEqual(apart.fadeOut, 6 ... 7)
+        let touching = StudioRenderPlan.audioFades(entering: Phase(kind: .dissolve, startSec: 3, endSec: 4),
+                                                   leaving: Phase(kind: .dissolve, startSec: 4, endSec: 5))
+        XCTAssertEqual(touching.fadeIn, 3 ... 4)
+        XCTAssertEqual(touching.fadeOut, 4 ... 5)
+        // 1.5 s clip at 3…4.5 under two 1 s transitions: they share 3.5…4, split at 3.75
+        let meeting = StudioRenderPlan.audioFades(entering: Phase(kind: .dissolve, startSec: 3, endSec: 4),
+                                                  leaving: Phase(kind: .slideLeft, startSec: 3.5, endSec: 4.5))
+        XCTAssertEqual(try XCTUnwrap(meeting.fadeIn), 3 ... 3.75)
+        XCTAssertEqual(try XCTUnwrap(meeting.fadeOut), 3.75 ... 4.5)
+        let only = StudioRenderPlan.audioFades(entering: nil, leaving: Phase(kind: .dissolve, startSec: 1, endSec: 2))
+        XCTAssertNil(only.fadeIn)
+        XCTAssertEqual(only.fadeOut, 1 ... 2)
+    }
+
+    // MARK: Which clip a moment belongs to (prompt 303)
+
+    /// The heart-rate tile's rule: during a transition the outgoing clip's tile holds until the
+    /// middle, then the incoming clip's takes over. No moment has two tiles, none has no tile.
+    func testEachClipOwnsItsSlotWithTransitionsSplitInTheMiddle() {
+        let a = clip(0), b = clip(1), c = clip(2)
+        let t = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1)]   // A→B; B→C is a cut
+        let p = plan([a, b, c], transitions: t)                   // A 0–4, B 3–7, C 7–11
+        XCTAssertEqual(p.clips.map(\.ownedStartSec), [0, 3.5, 7])
+        XCTAssertEqual(p.clips.map(\.ownedEndSec), [3.5, 7, 11])
+        // back to back from zero to the end
+        XCTAssertEqual(p.clips.first?.ownedStartSec, 0)
+        XCTAssertEqual(p.clips.last?.ownedEndSec, p.totalDuration)
+        for (x, y) in zip(p.clips, p.clips.dropFirst()) {
+            XCTAssertEqual(x.ownedEndSec, y.ownedStartSec, accuracy: 1e-9)
         }
+        // each window is inside the clip's own slot
+        for m in p.clips {
+            XCTAssertGreaterThanOrEqual(m.ownedStartSec, m.startSec)
+            XCTAssertLessThanOrEqual(m.ownedEndSec, m.endSec)
+        }
+
+        // The short middle clip (1 s under two 1 s transitions): still no overlap and no gap.
+        let short = clip(1, seconds: 1)
+        let both = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1),
+                    StudioTransition(afterClipID: short.id, kind: .dissolve, durationSec: 1)]
+        let q = plan([a, short, c], transitions: both)
+        for (x, y) in zip(q.clips, q.clips.dropFirst()) {
+            XCTAssertEqual(x.ownedEndSec, y.ownedStartSec, accuracy: 1e-9)
+            XCTAssertLessThanOrEqual(x.ownedStartSec, x.ownedEndSec)
+        }
+        XCTAssertEqual(q.clips.first?.ownedStartSec, 0)
+        XCTAssertEqual(q.clips.last?.ownedEndSec ?? -1, q.totalDuration, accuracy: 1e-9)
+
+        // The editor asks the same rule which clip is under the playhead.
+        let durations = [a.id: 60.0, b.id: 60.0, c.id: 60.0]
+        let placed = StudioGeometry.timeline(clips: [a, b, c], sourceDurations: durations, transitions: t)
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 3.2, in: placed), 0)     // first half of the dissolve
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 3.5, in: placed), 1)     // the middle: B takes over
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 3.9, in: placed), 1)
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 7, in: placed), 2)       // a cut
+        XCTAssertNil(StudioGeometry.ownerIndex(at: 11, in: placed))           // the very end
+        XCTAssertNil(StudioGeometry.ownerIndex(at: 0, in: []))
+
+        // The export shows a tile over the owned stretch, never outside the clip's slot.
+        let gate = StudioOverlays.tileGate(slotStartSec: 3, slotDurationSec: 4,
+                                           visibleStartSec: 3.5, visibleEndSec: 7)
+        XCTAssertEqual(gate.start, 3.5)
+        XCTAssertEqual(gate.end, 7)
+        let whole = StudioOverlays.tileGate(slotStartSec: 3, slotDurationSec: 4,
+                                            visibleStartSec: nil, visibleEndSec: nil)
+        XCTAssertEqual(whole.start, 3)
+        XCTAssertEqual(whole.end, 7)
+        let clamped = StudioOverlays.tileGate(slotStartSec: 3, slotDurationSec: 4,
+                                              visibleStartSec: 1, visibleEndSec: 9)
+        XCTAssertEqual(clamped.start, 3)
+        XCTAssertEqual(clamped.end, 7)
+    }
+
+    // MARK: Source lengths (prompt 303)
+
+    /// The timeline's lengths: the real one where it has been read, the recorded one for a clip
+    /// the caller says may fall back, nothing otherwise. A trim needs a known length.
+    func testTimelineLengthsFallBackToTheRecordedLength() {
+        let here = clip(0, seconds: 4), cloud = TimelineClip(sessionMediaID: nil, localIdentifier: "C",
+                                                             isPhoto: false, order: 1)
+        let unknown = TimelineClip(sessionMediaID: nil, localIdentifier: "U", isPhoto: false, order: 2)
+        let photo = TimelineClip(sessionMediaID: nil, localIdentifier: "P", isPhoto: true, order: 3)
+        let lengths = StudioGeometry.timelineSourceDurations(
+            clips: [here, cloud, unknown, photo], resolved: [here.id: 10]) { clip in
+                clip.id == here.id ? 99 : clip.id == cloud.id ? 6 : clip.id == photo.id ? 5 : nil
+            }
+        XCTAssertEqual(lengths, [here.id: 10, cloud.id: 6])       // resolved wins; a photo has none
+        // never trimmed and not resolved: 0 s without the fallback, its recorded length with it
+        XCTAssertEqual(StudioGeometry.clipOutputDuration(cloud, sourceDuration: nil), 0)
+        XCTAssertEqual(StudioGeometry.clipOutputDuration(cloud, sourceDuration: lengths[cloud.id]), 6)
+        XCTAssertEqual(StudioGeometry.totalDuration(clips: [here, cloud], sourceDurations: lengths,
+                                                    transitions: []), 10)
+        let bad = StudioGeometry.timelineSourceDurations(clips: [cloud], resolved: [:]) { _ in .nan }
+        XCTAssertTrue(bad.isEmpty)
+
+        XCTAssertEqual(StudioGeometry.trimSourceLength(cloud, resolved: 7, recorded: 6), 7)
+        XCTAssertEqual(StudioGeometry.trimSourceLength(cloud, resolved: nil, recorded: 6), 6)
+        XCTAssertEqual(StudioGeometry.trimSourceLength(here, resolved: nil, recorded: nil), 4)   // its trimmed end
+        XCTAssertNil(StudioGeometry.trimSourceLength(unknown, resolved: nil, recorded: nil))
+        XCTAssertNil(StudioGeometry.trimSourceLength(unknown, resolved: 0, recorded: 0))
+        XCTAssertNil(StudioGeometry.trimSourceLength(photo, resolved: 5, recorded: 5))
     }
 
     // MARK: Transitions that do not apply

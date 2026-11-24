@@ -17,8 +17,16 @@ import Photos
 //
 // Device-only (Photos + a real asset); the Studio's export render itself comes from `StudioComposer`.
 
+/// The two Photos writes of a bake. A protocol only so the view model's bake can be tested with a
+/// stand-in (prompt 303): the real writes need a device and a real asset.
 @MainActor
-final class ClipBakeService {
+protocol ClipBaking {
+    func saveToOriginal(renderedURL: URL, localIdentifier: String, projectID: UUID) async throws
+    func replaceOriginal(renderedURL: URL, oldLocalIdentifier: String) async throws -> String
+}
+
+@MainActor
+final class ClipBakeService: ClipBaking {
 
     enum BakeError: LocalizedError {
         case notAuthorized

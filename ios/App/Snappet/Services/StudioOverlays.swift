@@ -24,6 +24,12 @@ struct PlacedClipHR: Sendable, Equatable {
     var samples: [HRPoint]
     /// The resolved HR stat **tile** for this clip — one composite tile drawn at the clip's slot.
     var tile: ResolvedHRTile? = nil
+    /// When the tile is shown, if that is not the whole slot (prompt 303): during a transition two
+    /// slots overlap, and each clip's tile is shown only over the stretch the clip owns
+    /// (`StudioRenderPlan.PlacedMain.ownedStartSec`). `nil` = the slot's own start / end. The
+    /// tile's values and its chart keep running over the whole slot either way.
+    var visibleStartSec: Double? = nil
+    var visibleEndSec: Double? = nil
 }
 
 enum StudioOverlays {
@@ -68,7 +74,9 @@ enum StudioOverlays {
                 if let tile = clip.tile,
                    let layer = hrTileLayer(tile, samples: clip.samples, canvas: canvas,
                                            totalDuration: totalDuration,
-                                           slotStartSec: clip.startSec, slotDurationSec: clip.durationSec) {
+                                           slotStartSec: clip.startSec, slotDurationSec: clip.durationSec,
+                                           visibleStartSec: clip.visibleStartSec,
+                                           visibleEndSec: clip.visibleEndSec) {
                     overlayLayer.addSublayer(layer)
                 }
             }
@@ -114,7 +122,9 @@ enum StudioOverlays {
     /// per-clip tile only shows during that clip); defaulted to the whole timeline for a session-wide tile.
     static func hrTileLayer(_ tile: ResolvedHRTile, samples: [HRPoint], canvas: CGSize,
                             totalDuration: Double, slotStartSec: Double = 0,
-                            slotDurationSec: Double? = nil) -> CALayer? {
+                            slotDurationSec: Double? = nil,
+                            visibleStartSec: Double? = nil,
+                            visibleEndSec: Double? = nil) -> CALayer? {
         guard canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
         let w = max(1, canvas.width * tile.width)
         let h = max(1, canvas.height * tile.height)
@@ -197,15 +207,29 @@ enum StudioOverlays {
         // Whole-tile opacity the user dialed (clamped to the legible floor) — composed with the per-clip
         // gate so a gated tile shows at `opacityF` during its slot and a whole-timeline tile holds it.
         let opacityF = Float(min(1, max(HRTile.minOpacity, tile.opacity)))
-        if let slotDurationSec,
-           !(slotStartSec <= 0.0001 && slotStartSec + slotDurationSec >= totalDuration - 0.0001) {
-            gateSegmentOpacity(container, start: slotStartSec / totalDuration,
-                               end: (slotStartSec + slotDurationSec) / totalDuration,
+        // Shown over the slot, or over the narrower stretch the caller gives (prompt 303).
+        let gate = slotDurationSec.map {
+            tileGate(slotStartSec: slotStartSec, slotDurationSec: $0,
+                     visibleStartSec: visibleStartSec, visibleEndSec: visibleEndSec)
+        }
+        if let gate, !(gate.start <= 0.0001 && gate.end >= totalDuration - 0.0001) {
+            gateSegmentOpacity(container, start: gate.start / totalDuration,
+                               end: gate.end / totalDuration,
                                totalDuration: totalDuration, level: opacityF)
         } else {
             container.opacity = opacityF
         }
         return container
+    }
+
+    /// When a clip's tile is shown, in output seconds: its slot, narrowed to the given stretch.
+    /// The stretch cannot reach outside the slot.
+    static func tileGate(slotStartSec: Double, slotDurationSec: Double,
+                         visibleStartSec: Double?, visibleEndSec: Double?) -> (start: Double, end: Double) {
+        let slotEnd = slotStartSec + max(0, slotDurationSec)
+        let start = min(slotEnd, max(slotStartSec, visibleStartSec ?? slotStartSec))
+        let end = max(start, min(slotEnd, visibleEndSec ?? slotEnd))
+        return (start, end)
     }
 
     /// Value text for a hero / field / chip slot (issue #163), the export twin of `HRTileView`'s

@@ -287,7 +287,9 @@ struct StudioEditorView: View {
             } else if missingPanel == nil {
                 VStack(spacing: 8) {
                     Image(systemName: "film.stack").font(.largeTitle).foregroundStyle(.white.opacity(0.7))
-                    Text(vm.isBuildingPreview ? "Building preview…" : Self.noPreviewText)
+                    // Keyed on the phase: while the Studio opens, nothing has been built yet and
+                    // that is not a failure (prompt 303).
+                    Text(vm.state.showsBuildingPreview ? "Building preview…" : Self.noPreviewText)
                         .font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
             }

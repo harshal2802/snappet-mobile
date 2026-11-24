@@ -12964,3 +12964,82 @@ does not. `setOverlayOpacity` on a `.video` overlay marks the open gesture and `
 rebuilds once if the value changed; outside a gesture it goes through `edit`. Rebuilding per tick
 was rejected: a rebuild replaces the player item. Only those two functions (and one flag beside
 them) were touched in the view model.
+
+## 2026-11-24 — One clip owns each moment: a transition is split at its middle (prompt 303)
+
+Each clip's HR tile was shown over the clip's whole slot, and two slots overlap for the length of
+a transition, so two tiles were drawn on top of each other there. The rule is now in the pure
+layer: `StudioGeometry.ownedWindows` gives each clip its slot with every overlap split at the
+middle — the outgoing clip owns the first half, the incoming clip the second. No overlap, no gap.
+The render plan carries it per clip (`ownedStartSec` / `ownedEndSec`), the composer hands it to
+the overlay tool as the stretch the tile is SHOWN over, and the editor's "clip under the
+playhead" (preview tile, HR-window sliders) asks `ownerIndex`, so the preview changes clip where
+the file does. The tile's values and chart still run over the clip's whole slot; shrinking the
+slot instead would have squeezed the clip's heart rate into less time. Rejected: cross-fading the
+two tiles (two sets of numbers on screen at once is what the finding was about), and holding the
+outgoing tile to the end of the transition (the incoming clip is most of the picture by then). A
+clip that lies wholly under both of its transitions owns nothing and shows no tile of its own.
+
+## 2026-11-24 — A clip that is not on the phone uses its recorded length; a trim needs a known length (prompt 303)
+
+The real length of a video is read from the asset, which is only possible when it is on the
+phone. For a clip that is not, the timeline falls back to `SessionMedia.durationSec`
+(`StudioGeometry.timelineSourceDurations`). The fallback is used ONLY for a clip whose status is
+not "available", so nothing changes for clips that can be read (or on the simulator, where every
+clip is reported available). The composer is never handed a recorded length. A trim is measured
+against the real length, else the recorded one, else the clip's own trim end; with none of them
+the trim is refused and the handles are hidden. Clamping to an unknown length had stored
+`trimEnd = 0`. After a download `loadSourceInfo` reads the real length, which then wins.
+
+## 2026-11-24 — No preview is built before the first availability result (prompt 303)
+
+`rebuildPreview` returns at once until `StudioMediaPlan.isChecked`. An edit made while the Studio
+opens used to start a build with every status unknown (unknown is treated as available), and the
+composer downloaded an iCloud clip silently. The edit is not lost and nothing is queued: the
+opening builds the preview right after the result, from the project as it is then. The empty
+preview's text is keyed on the `loading` phase (`showsBuildingPreview`), so this window says
+"Building preview…".
+
+## 2026-11-24 — A clock tick counts only when the latest seek has finished (prompt 303)
+
+A seek is not instant, and the periodic time observer keeps reporting the old position until it
+is done: the end of the video after "play to the end" seeks to 0, or 0 from a rebuilt preview's
+new item before it has sought back. `StudioSeekGate` numbers the seeks; `seek` closes the number
+in the player's completion handler, and a tick moves the playhead only when the latest seek has
+finished. The numbers are never reset (a late completion from an earlier player cannot open a
+later seek's gate); when the player is torn down the gate is opened, because no completion may
+come. This relies on `AVPlayer` always calling the completion handler, also for a seek that was
+replaced — a device check.
+
+## 2026-11-24 — A bake reads the media rows first, and makes the Studio forget the baked asset (prompt 303)
+
+`bake()` fetched the `SessionMedia` rows with `try?` after the Photos write, so a failed or empty
+fetch ended as "Saved" with the project re-pointed and the rows not. The rows are now read before
+anything is rendered; with none, the bake ends as `failed` with
+`StudioBakeState.recordsUnreadableMessage` and nothing is written. After a bake the asset's video
+has changed under the same identifier ("Save to original") or the clip points at a new asset, so
+the view model drops the clip's stored length and aspect, `StudioComposer.forget` drops the
+opened asset, and the length is read again before the preview is rebuilt. A bake whose project
+save failed shows its own alert only: the reducer clears the save banner on
+`bakeSavedProjectNotUpdated`.
+
+## 2026-11-24 — Small rules for missing media (prompt 303)
+
+- A download's error is stored with the clip's Photos identifier and shown only on that clip's
+  panel. It goes when the clip is no longer a problem, so an Undo does not bring it back.
+- A download has a request number and its progress reports carry it. The service reports through
+  tasks of its own, so a report can arrive after the next download has begun.
+- A picture-in-picture that starts at or after the end of the timeline is not drawn, so it is not
+  a media source and does not block export. Its status is still asked for when the Studio opens.
+- In "Preview without it" the composer gets `StudioPreviewGaps.playable`: every timeline time is
+  moved with the playhead's mapping. Music that began before a left-out clip is not shortened.
+- A clip shorter than its two transitions has its audio fades split in the middle of the stretch
+  they share (`StudioRenderPlan.audioFades`); it used to end at full volume.
+
+## 2026-11-24 — Three test seams in the Studio view model (prompt 303)
+
+`sourceDurationLoader`, `renderOverride` and the `ClipBaking` protocol exist only so the bake and
+the length handling can be tested on the simulator, which has no Photos videos. All three are
+`nil` / the real service in the app, like `saver` (prompt 302). Preview rebuilds go through one
+`scheduleRebuild()` that keeps its tasks; a test waits with `previewBuildsFinished()` and counts
+with `previewBuildCount` instead of watching observation callbacks and sleeping.

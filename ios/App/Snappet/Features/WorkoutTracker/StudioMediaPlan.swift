@@ -43,6 +43,17 @@ struct StudioMediaPlan: Equatable {
         var localIdentifier: String
         /// 0…1, never moving back.
         var progress: Double
+        /// Which request this is. Progress is reported through tasks that can arrive late, so a
+        /// report carries its request's number and one from an earlier download is ignored
+        /// (prompt 303).
+        var request: Int = 0
+    }
+
+    /// Why the last download of one clip stopped. Tied to the clip, so the panel for another
+    /// clip does not open already showing it (prompt 303).
+    struct DownloadFailure: Equatable, Sendable {
+        var localIdentifier: String
+        var message: String
     }
 
     /// What the panel in the preview area shows for the first problem.
@@ -70,7 +81,31 @@ struct StudioMediaPlan: Equatable {
     /// unavailable clips out, and export stays off.
     private(set) var previewingWithout = false
     private(set) var download: Download?
-    private(set) var downloadError: String?
+    private(set) var downloadFailure: DownloadFailure?
+    /// The service has reported at least once. Until then nothing is known about where the
+    /// videos are, and no preview is built: the composer would download an iCloud clip without a
+    /// word (prompt 303).
+    private(set) var isChecked = false
+
+    /// The failed download's message, whichever clip it was for.
+    var downloadError: String? { downloadFailure?.message }
+
+    /// The videos the render needs, from the timeline: the video clips in timeline order
+    /// (numbered as the picture-in-picture chooser numbers them), then the picture-in-picture
+    /// sources. A picture-in-picture whose window starts at or after the end of the timeline is
+    /// not drawn (`StudioGeometry.clampedWindow`), so it is not a source and cannot block the
+    /// export (prompt 303). `total` of `nil` or `≤ 0` = length not known: every one counts.
+    static func sources(clips: [TimelineClip], overlays: [OverlayItem], total: Double?) -> [Source] {
+        var out: [Source] = clips.enumerated().compactMap { index, clip in
+            clip.isPhoto ? nil : Source(role: .clip(id: clip.id, number: index + 1),
+                                        localIdentifier: clip.localIdentifier)
+        }
+        out += overlays.filter { overlay in
+            overlay.kind == .video && StudioGeometry.clampedWindow(
+                start: overlay.startSec, end: overlay.endSec, total: total) != nil
+        }.map { Source(role: .pip(overlayID: $0.id), localIdentifier: $0.content) }
+        return out
+    }
 
     // MARK: Derived
 
@@ -123,7 +158,8 @@ struct StudioMediaPlan: Equatable {
                      canPreviewWithout: canPreviewWithout,
                      removeLabel: Self.removeLabel(for: problem),
                      downloadProgress: downloading ? download?.progress : nil,
-                     error: downloadError)
+                     error: downloadFailure?.localIdentifier == problem.source.localIdentifier
+                        ? downloadFailure?.message : nil)
     }
 
     /// The one line shown over the preview while it is made without some clips.
@@ -151,6 +187,7 @@ struct StudioMediaPlan: Equatable {
         var p = self
         p.sources = sources
         p.statuses.merge(statuses) { _, new in new }
+        p.isChecked = true
         return p.normalized()
     }
 
@@ -170,19 +207,22 @@ struct StudioMediaPlan: Equatable {
     }
 
     /// "Download clip". Only a clip in iCloud can be downloaded, and one at a time.
-    func downloadBegan(_ localIdentifier: String) -> StudioMediaPlan {
+    /// `request` numbers this download; its progress reports carry the same number.
+    func downloadBegan(_ localIdentifier: String, request: Int = 0) -> StudioMediaPlan {
         guard download == nil, status(of: localIdentifier) == .inCloud else { return self }
         var p = self
-        p.download = Download(localIdentifier: localIdentifier, progress: 0)
-        p.downloadError = nil
+        p.download = Download(localIdentifier: localIdentifier, progress: 0, request: request)
+        if p.downloadFailure?.localIdentifier == localIdentifier { p.downloadFailure = nil }
         return p
     }
 
-    func downloadProgressed(_ fraction: Double) -> StudioMediaPlan {
-        guard let current = download, fraction.isFinite else { return self }
+    /// A progress report from download number `request`. One from another download is ignored.
+    func downloadProgressed(_ fraction: Double, request: Int = 0) -> StudioMediaPlan {
+        guard let current = download, current.request == request, fraction.isFinite else { return self }
         var p = self
         p.download = Download(localIdentifier: current.localIdentifier,
-                              progress: max(current.progress, min(max(fraction, 0), 1)))
+                              progress: max(current.progress, min(max(fraction, 0), 1)),
+                              request: current.request)
         return p
     }
 
@@ -191,17 +231,17 @@ struct StudioMediaPlan: Equatable {
         guard download?.localIdentifier == localIdentifier else { return self }
         var p = self
         p.download = nil
-        p.downloadError = nil
+        if p.downloadFailure?.localIdentifier == localIdentifier { p.downloadFailure = nil }
         p.statuses[localIdentifier] = .available
         return p.normalized()
     }
 
     /// The download failed (no network, no space). The clip stays in iCloud and can be tried again.
     func downloadFailed(_ message: String) -> StudioMediaPlan {
-        guard download != nil else { return self }
+        guard let current = download else { return self }
         var p = self
         p.download = nil
-        p.downloadError = message
+        p.downloadFailure = DownloadFailure(localIdentifier: current.localIdentifier, message: message)
         return p
     }
 
@@ -213,12 +253,17 @@ struct StudioMediaPlan: Equatable {
         return p
     }
 
-    /// With no problem left there is nothing to preview "without", and no error to show.
+    /// With no problem left there is nothing to preview "without". A download's error goes with
+    /// its clip: once that clip is no longer a problem (downloaded, or removed from the video)
+    /// there is nothing to show it on.
     private func normalized() -> StudioMediaPlan {
-        guard problems.isEmpty else { return self }
         var p = self
-        p.previewingWithout = false
-        p.downloadError = nil
+        let problems = p.problems
+        if problems.isEmpty { p.previewingWithout = false }
+        if let failed = p.downloadFailure?.localIdentifier,
+           !problems.contains(where: { $0.source.localIdentifier == failed }) {
+            p.downloadFailure = nil
+        }
         return p
     }
 
@@ -320,6 +365,55 @@ struct StudioPreviewGaps: Equatable, Sendable {
             if timelineTime >= gap.end { t -= gap.length } else if timelineTime > gap.start { t -= timelineTime - gap.start }
         }
         return max(0, t)
+    }
+
+    /// A window given in timeline time, in the player's time. `nil` when none of it is played
+    /// (it lies inside a left-out clip).
+    func playerWindow(start: Double, end: Double) -> (start: Double, end: Double)? {
+        let s = playerTime(forTimelineTime: start), e = playerTime(forTimelineTime: end)
+        return e > s ? (s, e) : nil
+    }
+
+    /// The project as the composer is handed it for a "preview without it" (prompt 303): the
+    /// clips and picture-in-picture sources that are not on this phone are left out, and
+    /// everything that carries a time on the timeline is moved to the shorter preview's time
+    /// with the SAME mapping the playhead uses — overlay windows, picture-in-picture opacity
+    /// keyframes, and where added music starts. Without this a picture-in-picture after the
+    /// left-out clip showed late by that clip's length. A picture-in-picture that would only
+    /// play inside a left-out clip is left out. Transitions are keyed by clip, not by time.
+    /// Not exact: music that started before a left-out clip does not skip the same length.
+    func playable(_ snapshot: StudioProjectSnapshot, unavailable: Set<String>) -> StudioProjectSnapshot {
+        guard !unavailable.isEmpty || !isEmpty else { return snapshot }
+        var s = snapshot
+        s.clips.removeAll { !$0.isPhoto && unavailable.contains($0.localIdentifier) }
+        s.overlays = snapshot.overlays.compactMap { overlay in
+            if overlay.kind == .video, unavailable.contains(overlay.content) { return nil }
+            guard !isEmpty else { return overlay }
+            var ov = overlay
+            if let window = playerWindow(start: overlay.startSec, end: overlay.endSec) {
+                ov.startSec = window.start
+                ov.endSec = window.end
+            } else if overlay.kind == .video, overlay.endSec > overlay.startSec {
+                return nil
+            } else {
+                ov.startSec = playerTime(forTimelineTime: overlay.startSec)
+                ov.endSec = ov.startSec
+            }
+            ov.opacityKeyframes = overlay.opacityKeyframes.map { key in
+                var key = key
+                key.timeSec = playerTime(forTimelineTime: key.timeSec)
+                return key
+            }
+            return ov
+        }
+        if !isEmpty {
+            s.audioTracks = snapshot.audioTracks.map { track in
+                var track = track
+                track.startSec = playerTime(forTimelineTime: track.startSec)
+                return track
+            }
+        }
+        return s
     }
 }
 
