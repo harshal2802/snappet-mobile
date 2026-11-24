@@ -201,25 +201,26 @@ final class ClipBakePlanTests: XCTestCase {
         XCTAssertEqual(ClipBakePlan.flattened(s, target: "A").overlays, s.overlays)
     }
 
-    /// The composer's transition path does not mix the music, so the file has none and the track
-    /// must not be removed from the project.
-    func testFlattenKeepsMusicTheRenderDidNotMix() {
+    /// The composer mixes the added music into every render (prompt 300), so a whole-project bake
+    /// removes it whatever else the project has: a transition, a cut, a filter, a
+    /// picture-in-picture.
+    func testFlattenRemovesMusicWithAnyCombination() {
         let a1 = tclip(local: "A", order: 0, trimEnd: 10)
         let a2 = tclip(local: "A", order: 1, trimStart: 20)
         var s = snap([a1, a2])
         s.audioTracks = [AudioTrack(kind: .music, sourceRef: "m.m4a")]
         s.transitions = [StudioTransition(afterClipID: a1.id, kind: .dissolve)]
-        XCTAssertFalse(ClipBakePlan.rendersMusic(s))
-        XCTAssertEqual(ClipBakePlan.flattened(s, target: "A").audioTracks.count, 1)
-        // A "cut" is not a transition; a filter or a picture-in-picture forces the single-track
-        // path, which does mix the music.
+        XCTAssertTrue(ClipBakePlan.flattened(s, target: "A").audioTracks.isEmpty)
         var cut = s
         cut.transitions = [StudioTransition(afterClipID: a1.id, kind: .none)]
-        XCTAssertTrue(ClipBakePlan.rendersMusic(cut))
+        XCTAssertTrue(ClipBakePlan.flattened(cut, target: "A").audioTracks.isEmpty)
         var pip = s
         pip.overlays = [OverlayItem(kind: .video, content: "A")]
-        XCTAssertTrue(ClipBakePlan.rendersMusic(pip))
         XCTAssertTrue(ClipBakePlan.flattened(pip, target: "A").audioTracks.isEmpty)
+        // The clip's own audio entry is not added music and stays.
+        var original = s
+        original.audioTracks.append(AudioTrack(kind: .original, sourceRef: "A"))
+        XCTAssertEqual(ClipBakePlan.flattened(original, target: "A").audioTracks.map(\.kind), [.original])
     }
 
     /// A target that is not in the project changes nothing.
@@ -340,11 +341,12 @@ final class ClipBakePlanTests: XCTestCase {
         XCTAssertEqual(noHR.clips[0].baked?.hrTile, false)
         XCTAssertEqual(noHR.clips[0].baked?.baseFrame, true)
 
-        // Music the transition path did not mix is not in the pixels.
+        // With a transition and no picture-in-picture the music is in the pixels too (prompt 300:
+        // one compositor, the music is always mixed).
         var dissolve = p.s
         dissolve.overlays.removeAll { $0.kind == .video }
         dissolve.transitions = [StudioTransition(afterClipID: p.a.id, kind: .dissolve)]
-        XCTAssertEqual(ClipBakePlan.flattened(dissolve, target: "A").clips[0].baked?.audioTrackIDs, [])
+        XCTAssertEqual(ClipBakePlan.flattened(dissolve, target: "A").clips[0].baked?.audioTrackIDs, [p.music.id])
 
         // Whole project, and a project with nothing project-wide: no record.
         var one = p.s
