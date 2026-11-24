@@ -36,8 +36,31 @@ final class StudioEditorViewModel {
     /// non-attempt clip / the combined "Edit all clips" view spanning many attempts).
     let suggestedAttemptNumber: Int?
 
-    var selectedClipID: UUID?
-    var selectedOverlayID: UUID?
+    /// The editor's ONE state (prompt 301): selection, both render lanes, the preview's load state
+    /// and the player's status. It changes only through `send(_:)`; the phase and what is allowed
+    /// in it (`canEdit`, `canPlay`, `canExport`, `canClose`) are derived from it.
+    private(set) var state = StudioEditorState()
+
+    /// The one place the state changes. It also deletes the exported temp file the old state held
+    /// and the new one does not (`ExportShareState.fileToDelete`, prompt 298).
+    private func send(_ event: StudioEditorState.Event) {
+        let next = state.reducing(event)
+        if let stale = state.export.fileToDelete(movingTo: next.export) {
+            try? FileManager.default.removeItem(at: stale)
+        }
+        if next != state { state = next }
+    }
+
+    /// The selection is one value (`StudioSelection`): a clip, an overlay, or nothing. These two
+    /// read and write it by id, so callers that think in ids did not have to change.
+    var selectedClipID: UUID? {
+        get { state.selection.clipID }
+        set { send(.select(state.selection.settingClip(newValue))) }
+    }
+    var selectedOverlayID: UUID? {
+        get { state.selection.overlayID }
+        set { send(.select(state.selection.settingOverlay(newValue))) }
+    }
     private(set) var sourceDurations: [UUID: Double] = [:]
     /// Resolved oriented aspect ratio (w/h) per source `localIdentifier` — sizes a new PiP / base cell
     /// to its footage so the editor outline matches the aspect-fit video. Empty on the simulator.
@@ -52,20 +75,31 @@ final class StudioEditorViewModel {
     /// The user's HR profile (set by the view via `loadOverlayContext`) — needed to resolve per-clip
     /// calorie/HRV badges over each clip's own window.
     private var hrProfile: UserHRProfile?
-    var previewPlayer: AVPlayer?
-    var isBuildingPreview = false
-    /// Set when the player rejects the composition (see `rebuildPreview`) — the studio stays open
-    /// (no crash) and the canvas shows this instead of a silent black frame; export still works.
-    var previewError: String?
-    var exportState: ExportShareState = .idle
+    /// The preview's player. Set and cleared only by `rebuildPreview` / `teardownPlayer`, together
+    /// with `state.hasPlayer`.
+    private(set) var previewPlayer: AVPlayer?
+    var isBuildingPreview: Bool { state.isBuildingPreview }
+    /// Set when the player rejects the composition (see `rebuildPreview`) or its item fails — the
+    /// studio stays open (no crash) and the canvas shows this instead of a silent black frame;
+    /// export still works.
+    var previewError: String? { state.previewMessage }
+    var exportState: ExportShareState { state.export }
 
     // Transport (custom play/pause + live timecode + a scrub playhead, driving the edits-style UI).
-    var isPlaying = false
+    /// What the play/pause button shows. READ from the real player's status (prompt 301), so an
+    /// interruption, a stall or a failed item cannot leave it wrong.
+    var isPlaying: Bool { state.showsPause }
     /// The playhead position in **output** seconds, updated by a periodic observer while playing and
     /// by scrubbing the timeline. Drives the timecode label and the timeline's centre playhead.
-    var currentTime: Double = 0
+    private(set) var currentTime: Double = 0
     private var timeObserver: Any?
-    private var endObserver: NSObjectProtocol?
+    private var endObservers: [NSObjectProtocol] = []
+    private var playerObservations: [NSKeyValueObservation] = []
+    /// The player the observers above are attached to (they must be removed from the same one).
+    private var observedPlayer: AVPlayer?
+    /// Bumped whenever the observers are attached or removed, so a callback from an item that has
+    /// been replaced is ignored.
+    private var transportGeneration = 0
 
     /// Output-quality preset for export, shown in the top bar and passed to `composer.export`.
     var exportQuality: StudioExportQuality = .hd1080
@@ -95,11 +129,16 @@ final class StudioEditorViewModel {
 
     func togglePlay() { isPlaying ? pause() : play() }
     func play() {
-        guard previewPlayer != nil else { return }
-        if currentTime >= totalDuration - 0.05 { seek(to: 0) }   // restart from the top if at the end
-        previewPlayer?.play(); isPlaying = true
+        guard state.canPlay, let player = previewPlayer else { return }
+        // restart from the top if at the end
+        if StudioTransport.restartsFromTop(position: currentTime, duration: totalDuration) { seek(to: 0) }
+        player.play()
+        syncTransport()
     }
-    func pause() { previewPlayer?.pause(); isPlaying = false }
+    func pause() {
+        previewPlayer?.pause()
+        syncTransport()
+    }
 
     /// Move the playhead (and the player) to `seconds` (clamped to the timeline).
     func seek(to seconds: Double) {
@@ -109,28 +148,95 @@ final class StudioEditorViewModel {
                             toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    /// Copy the real player's status into the state. Called from the player's own observers and
+    /// right after `play()` / `pause()`; it always reads the player, never a remembered intent.
+    private func syncTransport() {
+        let status: StudioPlayerStatus
+        switch previewPlayer?.timeControlStatus {
+        case .playing: status = .playing
+        case .waitingToPlayAtSpecifiedRate: status = .waiting
+        case .paused, .none: status = .paused
+        @unknown default: status = .paused
+        }
+        send(.playerStatusChanged(status))
+    }
+
+    /// The thin device edge of the transport: observe the player's clock, its play/pause status,
+    /// and its item's end and failure. Everything decided from them is in `StudioTransport` /
+    /// `StudioEditorState`.
     private func attachTransport(to player: AVPlayer) {
         detachTransport()
+        observedPlayer = player
+        let generation = transportGeneration
         let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
-                guard let self, self.isPlaying else { return }   // don't fight an active scrub/seek
+                // don't fight an active scrub/seek: the clock is followed only while it really plays
+                guard let self, self.transportGeneration == generation,
+                      StudioTransport.followsPlayerClock(self.state.player) else { return }
                 self.currentTime = t.seconds
             }
         }
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.isPlaying = false
-                self?.seek(to: 0)
+        // Play/pause as the PLAYER reports it: an audio interruption, a stall, the end of the item.
+        playerObservations.append(player.observe(\.timeControlStatus) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.transportGeneration == generation else { return }
+                self.syncTransport()
             }
-        }
+        })
+        guard let item = player.currentItem else { return }
+        playerObservations.append(item.observe(\.status) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let reason = item.error?.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let self, self.transportGeneration == generation else { return }
+                self.previewItemFailed(reason)
+            }
+        })
+        endObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.transportGeneration == generation else { return }
+                self.seek(to: 0)
+                self.syncTransport()
+            }
+        })
+        endObservers.append(NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] note in
+            let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError)?
+                .localizedDescription
+            MainActor.assumeIsolated {
+                guard let self, self.transportGeneration == generation else { return }
+                self.previewItemFailed(reason)
+            }
+        })
     }
     private func detachTransport() {
-        if let timeObserver { previewPlayer?.removeTimeObserver(timeObserver) }
+        transportGeneration += 1
+        if let timeObserver { observedPlayer?.removeTimeObserver(timeObserver) }
         timeObserver = nil
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        endObserver = nil
+        playerObservations.forEach { $0.invalidate() }
+        playerObservations = []
+        endObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        endObservers = []
+        observedPlayer = nil
+    }
+
+    /// Remove the player and everything attached to it: the observers, the playing status, and a
+    /// playhead past the end. Used when a preview cannot be made and when its item fails.
+    private func teardownPlayer() {
+        detachTransport()
+        previewPlayer?.pause()
+        previewPlayer?.replaceCurrentItem(with: nil)
+        previewPlayer = nil
+        currentTime = StudioTransport.resumePosition(positionNow: currentTime, total: totalDuration)
+    }
+
+    /// The item being played failed. The player goes; the next edit builds a new preview.
+    private func previewItemFailed(_ reason: String?) {
+        Self.log.error("preview item failed: \(reason ?? "unknown", privacy: .public)")
+        teardownPlayer()
+        send(.previewUnavailable(message: "Preview unavailable: \(reason ?? "the video could not be played")"))
     }
 
     // MARK: Derived
@@ -328,13 +434,7 @@ final class StudioEditorViewModel {
     private func rebuildPreview() async {
         rebuildGeneration += 1
         let generation = rebuildGeneration
-        isBuildingPreview = true
-        defer { if generation == rebuildGeneration { isBuildingPreview = false } }
-        previewError = nil
-        // Preserve the playhead across the rebuild — an edit (split/trim/filter/…) shouldn't snap it
-        // back to the start. Restored (clamped to the new total) on the player below.
-        let resumeAt = currentTime
-        let wasPlaying = isPlaying
+        send(.previewBuildBegan)
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
@@ -349,18 +449,23 @@ final class StudioEditorViewModel {
             // `do/catch` above can't catch, so it would abort the whole app on opening the studio.
             // Guard it via the ObjC bridge: on rejection, keep the studio open with an unstyled
             // preview (export, which tolerates the same composition, still works) and report why.
+            var warning: String?
             if let vc, let ex = ObjCException.catching({ item.videoComposition = vc }) {
                 let reason = ex.reason ?? ex.name.rawValue
                 Self.log.error("AVPlayerItem rejected videoComposition: \(reason, privacy: .public)")
-                previewError = "Preview unavailable: \(reason)"
+                warning = "Preview unavailable: \(reason)"
                 item.videoComposition = nil   // play the raw stitch rather than nothing
             }
+            // Read the playhead and the play status NOW, not before the await (prompt 301): an edit
+            // (split/trim/filter/…) shouldn't snap the playhead back to the start, and a scrub or a
+            // pause made while this rebuild ran must be kept.
+            let resumeAt = StudioTransport.resumePosition(positionNow: currentTime, total: totalDuration)
+            let resumePlaying = StudioTransport.resumesPlaying(state.player)
             // REUSE the existing AVPlayer (swap only its item) rather than building a new one. A fresh
             // AVPlayer makes the player layer detach/reattach → a black flash on every edit (the PiP
             // "flicker"). `replaceCurrentItem` keeps the same render surface; paired with the asset
             // cache the swap is quick and seamless.
             detachTransport()
-            isPlaying = false
             if let player = previewPlayer {
                 player.replaceCurrentItem(with: item)
                 attachTransport(to: player)
@@ -369,19 +474,23 @@ final class StudioEditorViewModel {
                 previewPlayer = player
                 attachTransport(to: player)
             }
-            // Restore the playhead (clamped to the possibly-changed total) instead of resetting to 0.
+            send(.previewBuilt(warning: warning))
             seek(to: resumeAt)
-            if wasPlaying { play() }   // keep playing across a live edit instead of pausing.
+            // keep playing across a live edit instead of pausing; either way end on the real status.
+            if resumePlaying, state.canPlay { play() } else { pause() }
         } catch {
             guard generation == rebuildGeneration else { return }
-            previewPlayer = nil   // device-only: no resolvable assets on the simulator
+            // device-only: no resolvable assets on the simulator. Nothing of the old player is left
+            // behind: its observers, its playing status and a playhead past the end all go.
+            teardownPlayer()
+            send(.previewUnavailable(message: nil))
         }
     }
 
     // MARK: Edits (all via the pure StudioProjectEditor → undo → persist → rebuild)
 
     private func edit(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
-        guard !isBaking else { return }   // the project is locked while a bake renders (prompt 294)
+        guard canEdit else { return }     // locked while a bake (294) or an export (301) renders
         endGesture()                      // a separate edit is its own undo step (prompt 299)
         undo.commit(transform(undo.current))
         persist()
@@ -397,7 +506,7 @@ final class StudioEditorViewModel {
     /// (prompt 299). With no gesture open, or for any other edit, it is a plain commit as before.
     private func editOverlaysOnly(live: Bool = false,
                                   _ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
-        guard !isBaking else { return }
+        guard canEdit else { return }
         if live, undo.isInTransaction {
             undo.replaceCurrent(transform(undo.current))
             return
@@ -408,9 +517,9 @@ final class StudioEditorViewModel {
     }
 
     /// A slider drag begins (`Slider(onEditingChanged:)` → true). Until `endGesture`, the slider's
-    /// values update the snapshot live without growing undo or saving. Refused while a bake renders.
+    /// values update the snapshot live without growing undo or saving. Refused while a render runs.
     func beginGesture() {
-        guard !isBaking else { return }
+        guard canEdit else { return }
         undo.beginTransaction()
     }
     /// The drag ended: exactly one undo step holding the value from before the drag, and one save —
@@ -424,25 +533,25 @@ final class StudioEditorViewModel {
         if undo.endTransactionIfChanged() { persist() }
     }
     func undoEdit() {
-        guard !isBaking else { return }
+        guard canEdit else { return }
         endGesture()                      // the open drag becomes a step first, then Undo removes it
         undo.undo(); persist(); Task { await rebuildPreview() }
     }
     func redoEdit() {
-        guard !isBaking else { return }
+        guard canEdit else { return }
         endGesture()
         undo.redo(); persist(); Task { await rebuildPreview() }
     }
     private func persist() { undo.current.apply(to: project); try? context.save() }
 
     func select(_ id: UUID?) {
-        selectedClipID = id
         // Tapping a CLIP shows the CLIP editor (trim/speed/filter/split). It must NOT also select the
         // clip's climb tag — that popped the OVERLAY editor and hid the clip's options (prompt 14). The
         // climb tag is selected only by tapping the tag itself (its overlay-lane bar / the canvas chip →
         // `selectOverlay`). Each tag is a per-clip property (clipID), so its Attempt# is intrinsic to its
         // own clip (see `effectiveAttemptNumber`) — the old "follow the selected clip" coupling is gone.
-        selectedOverlayID = nil
+        // The selection is ONE value (prompt 301), so selecting a clip is also deselecting the overlay.
+        send(.select(id.map(StudioSelection.clip) ?? .none))
     }
 
     func deleteSelected() {
@@ -632,8 +741,7 @@ final class StudioEditorViewModel {
     /// tapping a clip pop the overlay editor, prompt 14). When ADDING a tag (none selected yet) it's the
     /// clip being tagged; the threaded `suggestedAttemptNumber` is the final fallback (single-clip open).
     var effectiveAttemptNumber: Int? {
-        let clipID = (selectedOverlay?.kind == .climbName ? selectedOverlay?.clipID : nil) ?? selectedClip?.id
-        return attemptNumber(forClipID: clipID) ?? suggestedAttemptNumber
+        return attemptNumber(forClipID: contextClip?.id) ?? suggestedAttemptNumber
     }
 
     /// Whether the "Attempt #" option is available for the selected overlay: a `.climbName` overlay exists
@@ -661,9 +769,18 @@ final class StudioEditorViewModel {
         }
     }
 
-    /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.
+    /// The clip the selection is about: the selected clip, or the clip a selected overlay belongs
+    /// to (a per-clip climb tag's `clipID`). The selection is one value (prompt 301), so while a
+    /// tag is selected no clip is; its own clip is the right one for its setter and attempt number.
+    private var contextClip: TimelineClip? {
+        if let clip = selectedClip { return clip }
+        guard let clipID = selectedOverlay?.clipID else { return nil }
+        return snapshot.clips.first { $0.id == clipID }
+    }
+
+    /// The climb uuid backing the caption: the selection's clip's assignment, else the first assigned clip.
     private var resolvedClimbUUID: String? {
-        if let u = assignedClimbUUID(for: selectedClip) { return u }
+        if let u = assignedClimbUUID(for: contextClip) { return u }
         return clips.lazy.compactMap { self.assignedClimbUUID(for: $0) }.first
     }
 
@@ -700,6 +817,8 @@ final class StudioEditorViewModel {
 
     // MARK: Overlay editing (WYSIWYG — SwiftUI layer over the preview, not in the composition)
 
+    /// Select an overlay (this deselects a clip — the selection is one value). `nil` deselects the
+    /// overlay; a selected clip is left alone.
     func selectOverlay(_ id: UUID?) { selectedOverlayID = id }
 
     /// Commit a dragged overlay to its new normalized centre (`0…1`, top-left). A `.video` (PiP)
@@ -1213,13 +1332,21 @@ final class StudioEditorViewModel {
 
     // MARK: Bake to original (prompt 117 — device-only render + Photos write)
 
-    /// The bake lane's state machine (separate from `exportState`: a bake has no share sheet).
-    enum BakeState: Equatable {
-        case idle, baking
-        case saved(replaced: Bool)
-        case failed(String)
+    /// The bake lane's state machine (separate from `exportState`: a bake has no share sheet). The
+    /// type is the pure `StudioBakeState`; the value lives in `state`.
+    typealias BakeState = StudioBakeState
+    /// The view model moves it through `send(_:)`. The setter writes it directly: it is the seam the
+    /// lock tests use to stand in for a bake in flight (a real bake needs a device).
+    var bakeState: BakeState {
+        get { state.bake }
+        set {
+            var next = state
+            next.bake = newValue
+            state = next
+        }
     }
-    var bakeState: BakeState = .idle
+    /// The result alert closed.
+    func acknowledgeBake() { send(.bakeAcknowledged) }
 
     /// Bake is offered only when the composition renders into ONE source asset that this session
     /// actually tracks (a `SessionMedia` row exists to stamp/re-point). `ClipBakePlan` owns the rule
@@ -1232,18 +1359,19 @@ final class StudioEditorViewModel {
 
     /// A render is already in flight (either lane) — the Export menu disables so two full
     /// AVFoundation exports can't run concurrently.
-    var isRendering: Bool {
-        if case .exporting = exportState { return true }
-        if case .baking = bakeState { return true }
-        // A cancelled export is idle at once, but its session may still be stopping (prompt 298).
-        return exportTask != nil
-    }
+    /// (A cancelled export is idle at once, but its session may still be stopping — prompt 298;
+    /// `state.exportTaskRunning` is true for as long as `exportTask` is alive.)
+    var isRendering: Bool { state.isRendering }
+
+    /// The project may be changed: no render is running in either lane (prompt 301). Every edit
+    /// path checks it, and the view dims and disables the editor when it is false.
+    var canEdit: Bool { state.canEdit }
 
     /// A bake is in flight. The project is LOCKED for its whole length (prompt 294): every edit path
     /// (`edit`, `editOverlaysOnly`, undo, redo) refuses, and the view disables the editor. A bake
     /// ends by replacing the project with a flattened copy of the snapshot it rendered, so an edit
     /// made in between would either be thrown away or be reset as if it were in the pixels.
-    var isBaking: Bool { bakeState == .baking }
+    var isBaking: Bool { state.isBaking }
 
     /// The ONE render both lanes share — `export()` (share as new) and `bake()` (write into the
     /// asset) must produce the identical file for the identical project.
@@ -1267,7 +1395,7 @@ final class StudioEditorViewModel {
     /// undo BARRIER (history resets): a post-bake Undo could otherwise rewind the timeline to a
     /// deleted asset / re-arm the double-apply.
     func bake(replaceOriginal: Bool, service: ClipBakeService = ClipBakeService()) async {
-        guard !isRendering,
+        guard state.canExport,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
         // Read ONCE, before the first await: the snapshot the render is made from is also the one
@@ -1280,7 +1408,8 @@ final class StudioEditorViewModel {
         let clipHR = clipHRContent()
         let hrTileDrawn = clipHR.isEmpty ? resolvedSessionTile() != nil
                                          : clipHR.values.contains { $0.tile != nil }
-        bakeState = .baking
+        pause()                 // the preview does not play under a render
+        send(.bakeBegan)
         do {
             let url = try await renderComposition()
             defer { try? FileManager.default.removeItem(at: url) }   // no share sheet needs the temp file
@@ -1325,10 +1454,10 @@ final class StudioEditorViewModel {
             if let id = selectedOverlayID, !flattened.overlays.contains(where: { $0.id == id }) { selectedOverlayID = nil }
             persist()
             Task { await rebuildPreview() }
-            bakeState = .saved(replaced: replaceOriginal)
+            send(.bakeSaved(replaced: replaceOriginal))
         } catch {
-            bakeState = .failed((error as? LocalizedError)?.errorDescription
-                                ?? "Couldn't save to the original video.")
+            send(.bakeFailed((error as? LocalizedError)?.errorDescription
+                             ?? "Couldn't save to the original video."))
         }
     }
 
@@ -1378,44 +1507,38 @@ final class StudioEditorViewModel {
     /// again only when the render has really stopped, which is what `isRendering` reads.
     private var exportTask: Task<Void, Never>?
 
-    /// The one place `exportState` changes in the export lane: the temp file the old state held and
-    /// the new one does not (`ExportShareState.fileToDelete`) is deleted here.
-    private func setExportState(_ next: ExportShareState) {
-        if let stale = exportState.fileToDelete(movingTo: next) {
-            try? FileManager.default.removeItem(at: stale)
-        }
-        if exportState != next { exportState = next }
-    }
-
-    /// Start "Export as new video". Refused while either lane renders.
+    /// Start "Export as new video". Refused while either lane renders, and until the first preview
+    /// has loaded. Editing is locked for its whole length (prompt 301).
     func startExport() {
-        guard !isRendering else { return }
-        setExportState(exportState.beginningExport())   // also deletes the last export's file
+        guard state.canExport else { return }
+        pause()                 // the preview does not play under a render
+        send(.exportBegan)      // also deletes the last export's file
         exportTask = Task { [weak self] in await self?.runExport() }
     }
 
     private func runExport() async {
-        defer { exportTask = nil }
+        defer {
+            exportTask = nil
+            send(.exportTaskEnded)
+        }
         do {
             // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples in the
             // composer; the session-wide tile stays as the fallback for clips with no media link.
             let url = try await renderComposition { [weak self] fraction in
-                guard let self else { return }
-                self.setExportState(self.exportState.exportProgressed(fraction))
+                self?.send(.exportProgressed(fraction))
             }
             // Cancelled in the moment the render finished: nobody will share this file.
             guard !Task.isCancelled, case .exporting = exportState else {
                 try? FileManager.default.removeItem(at: url)
                 return
             }
-            setExportState(exportState.exportSucceeded(url))
+            send(.exportSucceeded(url))
         } catch {
             // The composer deleted the partial file. A cancel shows no message.
             if error is CancellationError || Task.isCancelled {
-                setExportState(exportState.exportCancelled())
+                send(.exportCancelled)
             } else {
-                setExportState(exportState.failed(
-                    (error as? LocalizedError)?.errorDescription ?? "Export failed."))
+                send(.exportFailed((error as? LocalizedError)?.errorDescription ?? "Export failed."))
             }
         }
     }
@@ -1424,19 +1547,19 @@ final class StudioEditorViewModel {
     /// file in the background (`isRendering` stays true until it has).
     func cancelExport() {
         exportTask?.cancel()
-        setExportState(exportState.exportCancelled())
+        send(.exportCancelled)
     }
 
     /// The share sheet closed: the rendered file has been handed over, delete it.
-    func shareSheetDismissed() { setExportState(exportState.shareDismissed()) }
+    func shareSheetDismissed() { send(.shareDismissed) }
 
     /// The failure alert closed.
-    func acknowledgeExportFailure() { setExportState(exportState.failureAcknowledged()) }
+    func acknowledgeExportFailure() { send(.exportFailureAcknowledged) }
 
     /// The Studio closed: stop a running export and delete the exported file. A bake is not
     /// touched (it cannot be cancelled, and it deletes its own temp file).
     func studioClosed() {
         exportTask?.cancel()
-        setExportState(.idle)
+        send(.studioClosed)
     }
 }

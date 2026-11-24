@@ -12792,3 +12792,64 @@ the snapshot, not the store.
 
 The transaction needs the stack's private history, so it was added to the type where it is defined
 instead of in a new file. Only the `UndoStack` type at the end of that file was edited.
+
+## 2026-11-23 — The Studio phase is derived from the two lane states, not the other way round (prompt 301)
+
+The editor now has one state value (`StudioEditorState`) with a reducer. `ExportShareState` and
+the bake state stay as they were, as two fields of it, and the phase (loading · ready · rendering
+· finished) is computed from them. Rejected: making them payloads of the phase. `ExportShareState`
+owns rules that are tested on their own (progress never moves back, which temp file to delete on
+which transition) and is compared with `==` in the bake lock; folding it into a phase enum would
+have meant rewriting those rules and their tests for no new behaviour. The cost of deriving is
+that "exporting and baking at once" can still be written down as a value. The reducer never
+produces it (`exportBegan` and `bakeBegan` are refused while `isRendering`), and the phase picks
+the bake if it ever happened. `isBaking` and `isRendering` mean exactly what they meant;
+`isRendering` reads `exportTaskRunning`, which is true for as long as the export Task is alive.
+
+## 2026-11-23 — "Loading" is the first preview only, and the project can be edited in it (prompt 301)
+
+A preview is rebuilt after almost every edit. If each rebuild were "loading" and loading locked
+editing, the editor would lock after every tap. So the phase is `loading` only until the first
+build ends; a later rebuild is `ready` with `isBuildingPreview` set. Editing is allowed while
+loading, because edits change the stored project and do not need the player. Playing and
+exporting wait for the load.
+
+## 2026-11-23 — A failed render is not a phase (prompt 301)
+
+The agreed state diagram has no "failed" box. A failed export or bake returns the editor to
+`ready`; the message stays in the lane's own state and is shown by the alert that already read it.
+
+## 2026-11-23 — An export locks editing but not closing (prompt 301)
+
+Editing is refused in the view model (`canEdit`) and dimmed in the view while either lane renders.
+A bake also blocks closing, because its Photos write cannot be undone half way. An export may be
+closed: closing cancels it and deletes its files, as prompt 298 built. Selecting is not editing
+and is not refused by the view model; the view is disabled.
+
+## 2026-11-23 — The Studio selection is one value, so an overlay and a clip cannot both be selected (prompt 301)
+
+`selectedClipID` and `selectedOverlayID` could both be set, and the code relied on it: with a
+climb tag selected, the clip selected underneath supplied the tag's setter and attempt number.
+The selection is now `none / clip / overlay`; the two ids are computed from it. The tag reads its
+own clip (`clipID`) instead, which is the correct clip even when a different one was selected.
+Visible change: "Done" on the overlay bar returns to no selection, not to the earlier clip.
+
+## 2026-11-23 — The play button is read from the player, and "waiting" shows pause (prompt 301)
+
+`isPlaying` is `timeControlStatus != .paused`, copied into the state by KVO and read back right
+after `play()` and `pause()`. A stalled player is still trying to play, so the button shows
+"pause" and tapping it stops the attempt. The playhead follows the player's clock only while it
+is really `.playing`, so a scrub is never overwritten by an observer tick.
+
+## 2026-11-23 — A rebuilt Studio preview resumes where the playhead is at the swap (prompt 301)
+
+The position and the play status are read after the new composition is ready, not before the
+await. The value read before was only ever right when nothing happened in between; the value at
+the swap is right in both cases, so there is no "captured" position any more.
+
+## 2026-11-23 — The Studio's sheets are one value in the view; the share sheet keeps its `onDismiss` (prompt 301)
+
+Nine `@State` flags became one `StudioEditorSheet?`. The share sheet is a case of it and is still
+opened by the export state reaching `.exported` and cleaned up in `onDismiss`: binding it straight
+to the export state would delete the file while the sheet is still animating away. The three
+result alerts are independent of the sheets and still read the lane states.
