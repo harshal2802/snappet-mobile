@@ -143,15 +143,28 @@ golden frames already cover.
   missing the new fields (`phone build = schema superset`).
 - **Cross-surface HR test** (P4): same clip, same numbers, on every surface.
 
-## Open questions
+## How the plan is run (user, 2026-11-24)
 
-1. A feed post with several clips: open a reel of those clips, or pick one clip first? (Suggested:
-   pick a clip, for the first version.)
-2. How a reel made of clips from several sessions is posted to the feed. Today a posted reel is a
+- All work lands on the integration branch `studio-v2`; `main` is not touched until the end.
+- Each phase is one PR into `studio-v2`. It is merged without asking when all of these pass: the
+  full unit suite (golden frames included, from P1); the affected UI suites on the simulator for a
+  phase that changes screens; an independent review with no important finding left open;
+  migration fixtures (from P5); no golden image changed without the prompt saying why.
+- One checkpoint: the wireframes for the new screens are shown to the user before P6.
+- At the end the user gets one list of steps to check on the phone, covering prompt 294 onward,
+  riskiest first. `studio-v2` merges to `main` after that pass.
+
+## Settled questions (user accepted the suggested answers, 2026-11-24)
+
+1. A feed post with several clips opens a "pick a clip" step, not a reel (first version).
+2. The quick reel builder (`ReelView`) stays for one-tap reels, with "Open in editor" for anything
+   more.
+3. Per-reel filter and crop overrides are wanted, after the first version.
+4. A clip baked before prompt 295 (no record of what was burned) is treated as "style already
+   burned". Re-check when the migration fixtures exist.
+
+## Still open
+
+1. How a reel made of clips from several sessions is posted to the feed. Today a posted reel is a
    `SessionMedia` row on one session. Check how the weekly reel does it before P5; the model may
    need a post that is not tied to one session.
-3. Whether the quick reel builder (`ReelView`) keeps its own trim sheet or hands over to the reel
-   editor for any change. (Suggested: keep it for one-tap reels; "Open in editor" for the rest.)
-4. When to add the per-reel filter and crop overrides. (Decided: wanted, after the first version.)
-5. Pre-294 bakes have no record of what was burned. After P6 they are treated as "style already
-   burned"; confirm that is the right default once the migration fixtures exist.
