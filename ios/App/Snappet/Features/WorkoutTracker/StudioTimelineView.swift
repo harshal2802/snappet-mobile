@@ -113,19 +113,35 @@ struct StudioTimelineView: View {
     @ViewBuilder private func clipStrip(_ p: StudioGeometry.PlacedClip) -> some View {
         let selected = p.clip.id == vm.selectedClipID
         let width = max(8, CGFloat(p.durationSec) * pps)
+        // A clip whose video is not on this phone is marked (prompt 302): "iCloud" or "Missing".
+        let media = vm.mediaStatus(of: p.clip)
+        let mediaLabel = StudioMediaPlan.timelineLabel(for: media)
         Button { vm.select(p.clip.id) } label: {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(p.clip.isPhoto ? Color.orange.opacity(0.35) : Color(white: 0.22))
+                    .fill(p.clip.isPhoto ? Color.orange.opacity(0.35)
+                          : Color(white: mediaLabel == nil ? 0.22 : 0.12))
                 HStack(spacing: 4) {
-                    Image(systemName: p.clip.isPhoto ? "photo" : "video").font(.caption2)
-                    if p.clip.filter != .none {
-                        Text(p.clip.filter.display).font(.caption2.weight(.bold))
+                    if let mediaLabel {
+                        Image(systemName: media == .inCloud ? "icloud" : "questionmark.circle").font(.caption2)
+                        Text(mediaLabel).font(.caption2.weight(.bold)).lineLimit(1)
+                    } else {
+                        Image(systemName: p.clip.isPhoto ? "photo" : "video").font(.caption2)
+                        if p.clip.filter != .none {
+                            Text(p.clip.filter.display).font(.caption2.weight(.bold))
+                        }
                     }
                 }
-                .foregroundStyle(.white.opacity(0.8)).padding(.leading, 8)
+                .foregroundStyle(mediaLabel == nil ? Color.white.opacity(0.8) : Color.yellow)
+                .padding(.leading, 8)
             }
             .frame(width: width, height: trackHeight)
+            .overlay {
+                if mediaLabel != nil {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.yellow.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
+            }
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(SnappetColor.workout, lineWidth: selected ? 2.5 : 0))
         }
         .buttonStyle(.plain)
@@ -134,7 +150,7 @@ struct StudioTimelineView: View {
         .accessibilityIdentifier("timelineClip")
         // Meaningful label + (when selected & trimmable) trim actions in the rotor, so a VoiceOver
         // user who can't drag the handles can still trim (#79).
-        .accessibilityLabel("\(p.clip.isPhoto ? "Photo" : "Video") clip, \(String(format: "%.1f", p.durationSec)) seconds\(selected ? ", selected" : "")")
+        .accessibilityLabel("\(p.clip.isPhoto ? "Photo" : "Video") clip, \(String(format: "%.1f", p.durationSec)) seconds\(StudioMediaPlan.accessibilityNote(for: media).map { ", \($0)" } ?? "")\(selected ? ", selected" : "")")
         .accessibilityHint(selected ? "" : "Double-tap to select")
         .modifier(ClipTrimActions(enabled: selected && !p.clip.isPhoto, clip: p, vm: vm))
     }

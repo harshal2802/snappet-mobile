@@ -49,6 +49,27 @@ enum StudioBakeState: Equatable, Sendable {
     case idle, baking
     case saved(replaced: Bool)
     case failed(String)
+    /// The video was written to Photos, but the project could not be saved afterwards
+    /// (prompt 302). Not a success and not a plain failure: the message says both halves.
+    case savedProjectNotUpdated(replaced: Bool)
+
+    /// What a bake ends as once Photos has taken the video: a success only if the project was
+    /// saved too.
+    static func afterPhotosWrite(replaced: Bool, projectSaved: Bool) -> StudioBakeState {
+        projectSaved ? .saved(replaced: replaced) : .savedProjectNotUpdated(replaced: replaced)
+    }
+
+    static let projectNotUpdatedTitle = "Video saved, but this project was not updated"
+
+    /// The message for `savedProjectNotUpdated`.
+    static func projectNotUpdatedMessage(replaced: Bool) -> String {
+        let video = replaced
+            ? "The edited video replaced the original in Photos."
+            : "The edit was saved into the video in Photos."
+        return video + " Snappet could not save the change to this project, so the project may "
+            + "still show the old edits. Keep the Studio open and make any change: Snappet will "
+            + "try to save again."
+    }
 }
 
 // MARK: - Transport
@@ -150,6 +171,9 @@ struct StudioEditorState: Equatable {
         case rendering(RenderLane)
         /// A render ended and its result is on screen.
         case finished(Finish)
+        /// A clip the video needs is not on this phone (prompt 302). The panel says which and
+        /// offers what can be done. The project can be edited; it cannot be played or exported.
+        case clipMissing(StudioMediaPlan.Panel)
     }
 
     /// Everything that moves the state.
@@ -181,7 +205,27 @@ struct StudioEditorState: Equatable {
         case bakeBegan
         case bakeSaved(replaced: Bool)
         case bakeFailed(String)
+        /// Photos took the video and the project could not be saved (prompt 302).
+        case bakeSavedProjectNotUpdated(replaced: Bool)
         case bakeAcknowledged
+
+        // Media availability (prompt 302)
+        /// The service reported where the timeline's videos are.
+        case mediaChecked(sources: [StudioMediaPlan.Source], statuses: [String: StudioAssetStatus])
+        /// The timeline changed (an edit, undo, redo).
+        case mediaSourcesChanged([StudioMediaPlan.Source])
+        case previewWithoutMissing
+        case showMissingOptions
+        case downloadBegan(String)
+        case downloadProgressed(Double)
+        case downloadFinished(String)
+        case downloadFailed(String)
+        case downloadCancelled
+
+        // Saving the project (prompt 302)
+        case saveSucceeded
+        case saveFailed
+        case saveFailureDismissed
     }
 
     var selection: StudioSelection = .none
@@ -200,11 +244,19 @@ struct StudioEditorState: Equatable {
     var previewMessage: String?
     var player: StudioPlayerStatus = .paused
 
+    /// Where the timeline's videos are, and what the user chose to do about the ones that are not
+    /// on this phone (prompt 302).
+    var media = StudioMediaPlan()
+    /// The last save of the project failed and the user has not closed the message. The next
+    /// save that works clears it.
+    var saveFailure: StudioSaveFailure?
+
     // MARK: Derived
 
     var phase: Phase {
         if bake == .baking { return .rendering(.bake) }
         if case .exporting(let progress) = export { return .rendering(.export(progress: progress)) }
+        if let panel = media.panel { return .clipMissing(panel) }
         if !previewLoaded { return .loading }
         if let url = export.exportedURL { return .finished(.exported(url)) }
         if case .saved(let replaced) = bake { return .finished(.savedToOriginal(replaced: replaced)) }
@@ -226,11 +278,19 @@ struct StudioEditorState: Equatable {
         return true
     }
 
-    /// The preview can be played: there is a player and no render is running.
-    var canPlay: Bool { hasPlayer && canEdit }
+    /// The preview can be played: there is a player, no render is running, and no missing clip
+    /// is waiting for a decision.
+    var canPlay: Bool {
+        if case .clipMissing = phase { return false }
+        return hasPlayer && canEdit
+    }
 
-    /// A render may start: the first load is done and no render is in flight.
-    var canExport: Bool { previewLoaded && !isRendering }
+    /// A render may start: the first load is done, no render is in flight, and every clip the
+    /// video needs is on this phone.
+    var canExport: Bool { previewLoaded && !isRendering && media.allAvailable }
+
+    /// Why Export is off although nothing is rendering ("Export needs all clips").
+    var exportBlockedReason: String? { media.exportBlockedReason }
 
     /// The Studio may be closed. A bake cannot be cancelled, so it blocks closing; closing during
     /// an export is allowed and cancels it (prompt 298).
@@ -241,7 +301,7 @@ struct StudioEditorState: Equatable {
         switch phase {
         case .rendering(.export): return "Editing is locked while exporting"
         case .rendering(.bake): return "Editing is locked while saving to the original"
-        case .loading, .ready, .finished: return nil
+        case .loading, .ready, .finished, .clipMissing: return nil
         }
     }
 
@@ -304,9 +364,38 @@ struct StudioEditorState: Equatable {
         case .bakeFailed(let message):
             guard isBaking else { return self }
             s.bake = .failed(message)
+        case .bakeSavedProjectNotUpdated(let replaced):
+            guard isBaking else { return self }
+            s.bake = .savedProjectNotUpdated(replaced: replaced)
         case .bakeAcknowledged:
             guard !isBaking else { return self }
             s.bake = .idle
+
+        case .mediaChecked(let sources, let statuses):
+            s.media = media.checked(sources: sources, statuses: statuses)
+        case .mediaSourcesChanged(let sources):
+            s.media = media.settingSources(sources)
+        case .previewWithoutMissing:
+            s.media = media.previewingWithoutMissing()
+        case .showMissingOptions:
+            s.media = media.showingOptions()
+        case .downloadBegan(let localIdentifier):
+            s.media = media.downloadBegan(localIdentifier)
+        case .downloadProgressed(let fraction):
+            s.media = media.downloadProgressed(fraction)
+        case .downloadFinished(let localIdentifier):
+            s.media = media.downloadFinished(localIdentifier)
+        case .downloadFailed(let message):
+            s.media = media.downloadFailed(message)
+        case .downloadCancelled:
+            s.media = media.downloadCancelled()
+
+        case .saveSucceeded:
+            s.saveFailure = nil
+        case .saveFailed:
+            s.saveFailure = .edit
+        case .saveFailureDismissed:
+            s.saveFailure = nil
         }
         return s
     }
