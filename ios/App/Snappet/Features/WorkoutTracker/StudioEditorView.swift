@@ -139,6 +139,14 @@ struct StudioEditorView: View {
                      : "The edit is baked into this video everywhere. Photos keeps the original — “Revert to Original” restores it (no space is freed).")
             }
         }
+        // Photos took the video but the project could not be saved (prompt 302): not a success.
+        .alert(StudioBakeState.projectNotUpdatedTitle, isPresented: bakeProjectNotUpdatedBinding) {
+            Button("OK") { vm.acknowledgeBake() }
+        } message: {
+            if case .savedProjectNotUpdated(let replaced) = vm.bakeState {
+                Text(StudioBakeState.projectNotUpdatedMessage(replaced: replaced))
+            }
+        }
         .alert("Couldn't save to original", isPresented: bakeFailedBinding) {
             Button("OK") { vm.acknowledgeBake() }
         } message: {
@@ -189,6 +197,10 @@ struct StudioEditorView: View {
         Binding(get: { if case .saved = vm.bakeState { return true } else { return false } },
                 set: { if !$0 { vm.acknowledgeBake() } })
     }
+    private var bakeProjectNotUpdatedBinding: Binding<Bool> {
+        Binding(get: { if case .savedProjectNotUpdated = vm.bakeState { return true } else { return false } },
+                set: { if !$0 { vm.acknowledgeBake() } })
+    }
     private var bakeFailedBinding: Binding<Bool> {
         Binding(get: { if case .failed = vm.bakeState { return true } else { return false } },
                 set: { if !$0 { vm.acknowledgeBake() } })
@@ -213,6 +225,13 @@ struct StudioEditorView: View {
             .accessibilityHint("Rename the project")
             .studioLocked(!vm.canEdit)
             Spacer()
+            // Why Export is off while a clip is not on this phone (prompt 302).
+            if let reason = vm.state.exportBlockedReason {
+                Text(reason)
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.yellow)
+                    .lineLimit(2).multilineTextAlignment(.trailing).minimumScaleFactor(0.8)
+                    .accessibilityIdentifier("studioExportBlockedReason")
+            }
             Menu {
                 Picker("Quality", selection: Binding(get: { vm.exportQuality }, set: { vm.exportQuality = $0 })) {
                     ForEach(StudioExportQuality.allCases) { q in Text(q.label).tag(q) }
@@ -265,38 +284,50 @@ struct StudioEditorView: View {
             Color.black
             if let player = vm.previewPlayer {
                 StudioPlayerLayerView(player: player)
-            } else {
+            } else if missingPanel == nil {
                 VStack(spacing: 8) {
                     Image(systemName: "film.stack").font(.largeTitle).foregroundStyle(.white.opacity(0.7))
-                    Text(vm.isBuildingPreview ? "Building preview…" : "Preview renders on a device")
+                    Text(vm.isBuildingPreview ? "Building preview…" : Self.noPreviewText)
                         .font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
             }
-            // WYSIWYG overlay editing layer: text/sticker overlays are draggable here (they're not in
-            // the live preview video — Core Animation overlays are export-only), and map to the same
-            // normalized position export reads, so what you place is what renders.
-            StudioOverlayCanvas(overlays: vm.canvasOverlays, ratio: vm.previewRatio,
-                                selectedID: vm.selectedOverlayID,
-                                currentTime: vm.currentTime,
-                                snapEnabled: vm.snapEnabled,
-                                baseFrame: vm.baseFrame,
-                                sourceAspects: vm.sourceAspects,
-                                baseAspect: vm.baseSourceAspect,
-                                onSelect: { vm.selectOverlay($0) },
-                                onMove: { vm.setOverlayPosition($0, normalized: $1) },
-                                onScale: { vm.setOverlayScale($0, $1) },
-                                onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
-                                onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
-                .allowsHitTesting(vm.canEdit)   // nothing on the canvas moves while a render runs
-            // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
-            // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
-            // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
-            if let tile = vm.canvasHRTile {   // nil over a baked clip (prompt 295)
-                let preview = vm.previewTile
-                HRTileEditorView(tile: tile, values: preview.values,
-                                 fraction: preview.fraction, ratio: vm.previewRatio,
-                                 onFrame: { vm.setTileFrame(center: $0, size: $1) })
-                    .allowsHitTesting(vm.canEdit)
+            if missingPanel == nil { previewCanvas }
+            if let panel = missingPanel { missingClipPanel(panel) }
+            if let notice = vm.state.media.previewingWithoutNotice {
+                // "Preview without it" is on: say what is left out, and offer the choices again.
+                Button { vm.showMissingClipOptions() } label: {
+                    Label(notice, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.black.opacity(0.65), in: Capsule())
+                        .foregroundStyle(.yellow)
+                }
+                .padding(8)
+                // under the save message when both show
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: vm.state.saveFailure == nil ? .top : .bottom)
+                .accessibilityIdentifier("studioMissingClipNotice")
+                .accessibilityHint("Shows the choices for the missing clip")
+                .disabled(!vm.canEdit)
+            }
+            if let failure = vm.state.saveFailure {
+                // A save that failed (prompt 302). The edit is still in memory; the next save that
+                // works removes this by itself.
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                    Text(failure.message).font(.caption2).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button { vm.dismissSaveFailure() } label: { Image(systemName: "xmark").font(.caption) }
+                        .foregroundStyle(.white)
+                        .accessibilityIdentifier("studioSaveErrorDismiss")
+                        .accessibilityLabel("Close message")
+                }
+                .padding(10)
+                .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 10))
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .accessibilityIdentifier("studioSaveError")
             }
             if let err = vm.previewError {
                 Text(err)
@@ -335,6 +366,111 @@ struct StudioEditorView: View {
         }
         .frame(maxHeight: .infinity)
         .accessibilityIdentifier("studioPreview")
+    }
+
+    /// The simulator has no Photos videos, so it never has a preview; a phone has none only when
+    /// the preview could not be made.
+    private static var noPreviewText: String {
+        #if targetEnvironment(simulator)
+        return "Preview renders on a device"
+        #else
+        return "The preview couldn't be made"
+        #endif
+    }
+
+    /// The panel for a clip that is not on this phone, when the editor is in that phase.
+    private var missingPanel: StudioMediaPlan.Panel? {
+        if case .clipMissing(let panel) = vm.state.phase { return panel }
+        return nil
+    }
+
+    /// "Clip 2 is in iCloud" (prompt 302): what is wrong, and the three things that can be done.
+    /// A deleted clip has no Download. While the clip downloads the buttons give way to a
+    /// progress bar with Cancel.
+    private func missingClipPanel(_ panel: StudioMediaPlan.Panel) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: panel.canDownload ? "icloud.and.arrow.down" : "questionmark.video")
+                .font(.title).foregroundStyle(.white.opacity(0.85))
+            Text(panel.title).font(.headline).foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+            Text(panel.message).font(.caption).foregroundStyle(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let progress = panel.downloadProgress {
+                ProgressView(value: progress) {
+                    Text("Downloading…").font(.subheadline.weight(.semibold))
+                } currentValueLabel: {
+                    Text(panel.downloadPercentLabel ?? "").monospacedDigit()
+                }
+                .tint(SnappetColor.workout)
+                .accessibilityIdentifier("studioClipDownloadProgress")
+                Button("Cancel", role: .cancel) { vm.cancelClipDownload() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("studioClipDownloadCancel")
+                    .accessibilityLabel("Cancel download")
+            } else {
+                if let error = panel.error {
+                    Text(error).font(.caption2).foregroundStyle(.yellow)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("studioClipDownloadError")
+                }
+                if panel.canDownload {
+                    Button { vm.downloadMissingClip() } label: {
+                        Text("Download clip").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("studioClipDownload")
+                }
+                if panel.canPreviewWithout {
+                    Button { vm.previewWithoutMissingClips() } label: {
+                        Text("Preview without it").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("studioClipPreviewWithout")
+                }
+                Button(role: .destructive) { vm.removeMissingClip() } label: {
+                    Text(panel.removeLabel).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("studioClipRemove")
+            }
+        }
+        .frame(maxWidth: 280)
+        .padding()
+        .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 14))
+        .padding()
+        .disabled(!vm.canEdit)
+        .accessibilityIdentifier("studioMissingClipPanel")
+    }
+
+    /// The layers drawn over the video: the overlay canvas and the HR tile.
+    @ViewBuilder private var previewCanvas: some View {
+            // WYSIWYG overlay editing layer: text/sticker overlays are draggable here (they're not in
+            // the live preview video — Core Animation overlays are export-only), and map to the same
+            // normalized position export reads, so what you place is what renders.
+            StudioOverlayCanvas(overlays: vm.canvasOverlays, ratio: vm.previewRatio,
+                                selectedID: vm.selectedOverlayID,
+                                currentTime: vm.currentTime,
+                                snapEnabled: vm.snapEnabled,
+                                baseFrame: vm.baseFrame,
+                                sourceAspects: vm.sourceAspects,
+                                baseAspect: vm.baseSourceAspect,
+                                onSelect: { vm.selectOverlay($0) },
+                                onMove: { vm.setOverlayPosition($0, normalized: $1) },
+                                onScale: { vm.setOverlayScale($0, $1) },
+                                onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
+                                onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
+                .allowsHitTesting(vm.canEdit)   // nothing on the canvas moves while a render runs
+            // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
+            // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
+            // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
+            if let tile = vm.canvasHRTile {   // nil over a baked clip (prompt 295)
+                let preview = vm.previewTile
+                HRTileEditorView(tile: tile, values: preview.values,
+                                 fraction: preview.fraction, ratio: vm.previewRatio,
+                                 onFrame: { vm.setTileFrame(center: $0, size: $1) })
+                    .allowsHitTesting(vm.canEdit)
+            }
     }
 
     // MARK: Transport (play/pause + live timecode + undo/redo)

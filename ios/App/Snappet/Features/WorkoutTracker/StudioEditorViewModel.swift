@@ -16,6 +16,11 @@ final class StudioEditorViewModel {
     let project: StudioProject
     private let context: ModelContext
     private let composer = StudioComposer()
+    /// Reports where the timeline's Photos videos are and downloads the iCloud ones (prompt 302).
+    /// Asked before the composer, so the composer is only handed clips that are on this phone.
+    private let availability: any StudioMediaAvailabilityChecking
+    /// Writes the store. A property so a test can make the save fail; nothing else replaces it.
+    @ObservationIgnored var saver: (ModelContext) throws -> Void = { try $0.save() }
     private var undo: UndoStack<StudioProjectSnapshot>
 
     /// When set, the studio is **scoped** to the clips backed by these `SessionMedia.id`s (per-clip or
@@ -107,9 +112,11 @@ final class StudioEditorViewModel {
     private static let log = Logger(subsystem: "com.snappet.app", category: "studio")
 
     init(project: StudioProject, context: ModelContext, visibleClipMediaIDs: Set<UUID>? = nil,
-         suggestedClimbCaption: String? = nil, suggestedAttemptNumber: Int? = nil) {
+         suggestedClimbCaption: String? = nil, suggestedAttemptNumber: Int? = nil,
+         availability: any StudioMediaAvailabilityChecking = StudioMediaAvailabilityService()) {
         self.project = project
         self.context = context
+        self.availability = availability
         self.visibleClipMediaIDs = visibleClipMediaIDs
         self.suggestedClimbCaption = suggestedClimbCaption?.isEmpty == false ? suggestedClimbCaption : nil
         self.suggestedAttemptNumber = (suggestedAttemptNumber ?? 0) > 0 ? suggestedAttemptNumber : nil
@@ -130,8 +137,10 @@ final class StudioEditorViewModel {
     func togglePlay() { isPlaying ? pause() : play() }
     func play() {
         guard state.canPlay, let player = previewPlayer else { return }
-        // restart from the top if at the end
-        if StudioTransport.restartsFromTop(position: currentTime, duration: totalDuration) { seek(to: 0) }
+        // restart from the top if at the end (of what is played: a "preview without it" is shorter)
+        if StudioTransport.restartsFromTop(
+            position: playerGaps.playerTime(forTimelineTime: currentTime),
+            duration: playerGaps.playableDuration(total: totalDuration)) { seek(to: 0) }
         player.play()
         syncTransport()
     }
@@ -144,9 +153,14 @@ final class StudioEditorViewModel {
     func seek(to seconds: Double) {
         let clamped = max(0, min(seconds, totalDuration))
         currentTime = clamped
-        previewPlayer?.seek(to: CMTime(seconds: clamped, preferredTimescale: 600),
+        previewPlayer?.seek(to: CMTime(seconds: playerGaps.playerTime(forTimelineTime: clamped),
+                                       preferredTimescale: 600),
                             toleranceBefore: .zero, toleranceAfter: .zero)
     }
+
+    /// The parts of the timeline the current preview leaves out ("Preview without it", prompt
+    /// 302). Empty in every other case, when the player's clock IS the timeline's.
+    private var playerGaps = StudioPreviewGaps()
 
     /// Copy the real player's status into the state. Called from the player's own observers and
     /// right after `play()` / `pause()`; it always reads the player, never a remembered intent.
@@ -174,7 +188,7 @@ final class StudioEditorViewModel {
                 // don't fight an active scrub/seek: the clock is followed only while it really plays
                 guard let self, self.transportGeneration == generation,
                       StudioTransport.followsPlayerClock(self.state.player) else { return }
-                self.currentTime = t.seconds
+                self.currentTime = self.playerGaps.timelineTime(forPlayerTime: t.seconds)
             }
         }
         // Play/pause as the PLAYER reports it: an audio interruption, a stall, the end of the item.
@@ -229,6 +243,7 @@ final class StudioEditorViewModel {
         previewPlayer?.pause()
         previewPlayer?.replaceCurrentItem(with: nil)
         previewPlayer = nil
+        playerGaps = StudioPreviewGaps()
         currentTime = StudioTransport.resumePosition(positionNow: currentTime, total: totalDuration)
     }
 
@@ -379,7 +394,17 @@ final class StudioEditorViewModel {
     func onAppear(liveSamples: () -> [HRPoint] = { [] }) async {
         loadHRSeries(liveSamples: liveSamples)
         loadMediaOffsets()
-        for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil {
+        // Where the clips are FIRST (prompt 302): the composer downloads an iCloud clip silently
+        // and skips a deleted one silently, so it is only asked about clips that are on this phone.
+        await checkMediaAvailability()
+        await loadSourceInfo()
+        await rebuildPreview()
+    }
+
+    /// Resolve the length and shape of every clip that is on this phone and not resolved yet.
+    private func loadSourceInfo() async {
+        for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil
+            && state.media.status(of: clip.localIdentifier) == .available {
             if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
                 sourceDurations[clip.id] = d
             }
@@ -388,8 +413,101 @@ final class StudioEditorViewModel {
                 sourceAspects[clip.localIdentifier] = a
             }
         }
-        await rebuildPreview()
     }
+
+    // MARK: Media availability (prompt 302)
+
+    /// The Photos videos the render needs: the visible video clips in timeline order (numbered as
+    /// the PiP chooser numbers them), then the picture-in-picture sources.
+    private var mediaSources: [StudioMediaPlan.Source] {
+        var out: [StudioMediaPlan.Source] = clips.enumerated().compactMap { index, clip in
+            clip.isPhoto ? nil : StudioMediaPlan.Source(role: .clip(id: clip.id, number: index + 1),
+                                                        localIdentifier: clip.localIdentifier)
+        }
+        out += scopedOverlays.filter { $0.kind == .video }.map {
+            StudioMediaPlan.Source(role: .pip(overlayID: $0.id), localIdentifier: $0.content)
+        }
+        return out
+    }
+
+    /// Ask the service where every source is. Called when the Studio opens, before any preview.
+    func checkMediaAvailability() async {
+        let sources = mediaSources
+        let statuses = await availability.statuses(for: sources.map(\.localIdentifier))
+        send(.mediaChecked(sources: mediaSources, statuses: statuses))
+    }
+
+    /// Where a clip's video is — the timeline marks a clip that is not on this phone.
+    func mediaStatus(of clip: TimelineClip) -> StudioAssetStatus {
+        clip.isPhoto ? .available : state.media.status(of: clip.localIdentifier)
+    }
+
+    /// The running download. The view model owns it so it can be cancelled.
+    private(set) var downloadTask: Task<Void, Never>?
+
+    /// "Download clip": fetch the clip the panel is about from iCloud, with progress.
+    func downloadMissingClip() {
+        guard downloadTask == nil, let problem = state.media.blocking, problem.status == .inCloud
+        else { return }
+        let id = problem.source.localIdentifier
+        send(.downloadBegan(id))
+        guard state.media.download != nil else { return }
+        downloadTask = Task { [weak self] in await self?.runDownload(id) }
+    }
+
+    private func runDownload(_ localIdentifier: String) async {
+        defer { downloadTask = nil }
+        do {
+            try await availability.download(localIdentifier: localIdentifier) { [weak self] fraction in
+                self?.send(.downloadProgressed(fraction))
+            }
+            guard !Task.isCancelled else { send(.downloadCancelled); return }
+            send(.downloadFinished(localIdentifier))
+            await loadSourceInfo()
+            await rebuildPreview()
+        } catch {
+            if error is CancellationError || Task.isCancelled {
+                send(.downloadCancelled)
+            } else {
+                Self.log.error("clip download failed: \(error.localizedDescription, privacy: .public)")
+                send(.downloadFailed(StudioMediaPlan.downloadFailedMessage))
+            }
+        }
+    }
+
+    /// The download's Cancel button: the bar goes at once, with no message.
+    func cancelClipDownload() {
+        downloadTask?.cancel()
+        send(.downloadCancelled)
+    }
+
+    /// "Preview without it": play what is on this phone. Export stays off.
+    func previewWithoutMissingClips() {
+        send(.previewWithoutMissing)
+        Task { await rebuildPreview() }
+    }
+
+    /// Back from "Preview without it" to the panel.
+    func showMissingClipOptions() {
+        send(.showMissingOptions)
+        Task { await rebuildPreview() }
+    }
+
+    /// "Remove clip from video": the normal delete, so Undo brings the clip back and the
+    /// deletion is remembered (prompt 296). A picture-in-picture source removes its overlay.
+    func removeMissingClip() {
+        guard let problem = state.media.blocking ?? state.media.problems.first else { return }
+        switch problem.source.role {
+        case .clip(let id, _):
+            select(id)
+            deleteSelected()
+        case .pip(let overlayID):
+            deleteOverlay(overlayID)
+        }
+    }
+
+    /// The save-failed message's close button.
+    func dismissSaveFailure() { send(.saveFailureDismissed) }
 
     /// Load the session's HR samples (FK by `sessionID`) so the HR chart overlay can render. The
     /// whole series maps across the whole video; the playhead dot tracks the video's progress.
@@ -435,11 +553,29 @@ final class StudioEditorViewModel {
         rebuildGeneration += 1
         let generation = rebuildGeneration
         send(.previewBuildBegan)
+        // A clip is not on this phone and the user has not decided what to do (prompt 302): no
+        // preview, and the composer is not asked (it would download or skip the clip silently).
+        guard state.media.blocking == nil else {
+            teardownPlayer()
+            send(.previewUnavailable(message: nil))
+            return
+        }
+        // "Preview without it": the composer gets only what is on this phone, and the playhead is
+        // mapped across the slots that were left out.
+        var playable = scopedSnapshot
+        let unavailable = state.media.unavailableIdentifiers
+        let gaps = StudioPreviewGaps(slots: placedClips
+            .filter { !$0.clip.isPhoto && unavailable.contains($0.clip.localIdentifier) }
+            .map { (start: $0.startSec, end: $0.endSec) })
+        if !unavailable.isEmpty {
+            playable.clips.removeAll { !$0.isPhoto && unavailable.contains($0.localIdentifier) }
+            playable.overlays.removeAll { $0.kind == .video && unavailable.contains($0.content) }
+        }
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
             let (comp, vc, audioMix) = try await composer.makeComposition(
-                for: scopedSnapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
+                for: playable, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
             // A newer edit already kicked off a rebuild while we awaited — drop this stale result.
             guard generation == rebuildGeneration else { return }
             let item = AVPlayerItem(asset: comp)
@@ -474,6 +610,7 @@ final class StudioEditorViewModel {
                 previewPlayer = player
                 attachTransport(to: player)
             }
+            playerGaps = gaps
             send(.previewBuilt(warning: warning))
             seek(to: resumeAt)
             // keep playing across a live edit instead of pausing; either way end on the real status.
@@ -542,7 +679,29 @@ final class StudioEditorViewModel {
         endGesture()
         undo.redo(); persist(); Task { await rebuildPreview() }
     }
-    private func persist() { undo.current.apply(to: project); try? context.save() }
+    /// The ONE place a snapshot is written to the project and the store (prompt 302). A failed
+    /// save is reported through the state (a message the user can close); the edit stays in
+    /// memory and in undo, and the next save that works clears the message.
+    @discardableResult
+    private func persist() -> Bool {
+        undo.current.apply(to: project)
+        send(.mediaSourcesChanged(mediaSources))   // the timeline may have gained or lost a clip
+        return saveStore()
+    }
+
+    /// Save the store and report the result. Returns whether it was saved.
+    @discardableResult
+    private func saveStore() -> Bool {
+        do {
+            try saver(context)
+            send(.saveSucceeded)
+            return true
+        } catch {
+            Self.log.error("studio save failed: \(error.localizedDescription, privacy: .public)")
+            send(.saveFailed)
+            return false
+        }
+    }
 
     func select(_ id: UUID?) {
         // Tapping a CLIP shows the CLIP editor (trim/speed/filter/split). It must NOT also select the
@@ -1261,7 +1420,8 @@ final class StudioEditorViewModel {
     /// Source clips available to drop in as a PiP (the session's main-track video clips).
     var pipSources: [(id: UUID, label: String, localIdentifier: String)] {
         clips.enumerated().compactMap { i, c in
-            c.isPhoto ? nil : (c.id, "Clip \(i + 1)", c.localIdentifier)
+            // A clip that is not on this phone cannot be a picture-in-picture source (prompt 302).
+            c.isPhoto || mediaStatus(of: c) != .available ? nil : (c.id, "Clip \(i + 1)", c.localIdentifier)
         }
     }
     /// Add a picture-in-picture overlay from a source clip's `localIdentifier`, defaulting to a small
@@ -1354,7 +1514,8 @@ final class StudioEditorViewModel {
     var canBakeToOriginal: Bool {
         guard let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return false }
-        return mediaOffsetsByLocalID[target] != nil
+        // Not offered while a clip is not on this phone (prompt 302): the render would leave it out.
+        return mediaOffsetsByLocalID[target] != nil && state.media.allAvailable
     }
 
     /// A render is already in flight (either lane) — the Export menu disables so two full
@@ -1452,9 +1613,14 @@ final class StudioEditorViewModel {
             undo = UndoStack(flattened)
             if let id = selectedClipID, !flattened.clips.contains(where: { $0.id == id }) { selectedClipID = nil }
             if let id = selectedOverlayID, !flattened.overlays.contains(where: { $0.id == id }) { selectedOverlayID = nil }
-            persist()
+            // Photos has the video now. If the project cannot be saved, that is NOT a success
+            // (prompt 302): the message says the video was saved and the project was not.
+            let projectSaved = persist()
             Task { await rebuildPreview() }
-            send(.bakeSaved(replaced: replaceOriginal))
+            switch StudioBakeState.afterPhotosWrite(replaced: replaceOriginal, projectSaved: projectSaved) {
+            case .savedProjectNotUpdated(let replaced): send(.bakeSavedProjectNotUpdated(replaced: replaced))
+            default: send(.bakeSaved(replaced: replaceOriginal))
+            }
         } catch {
             send(.bakeFailed((error as? LocalizedError)?.errorDescription
                              ?? "Couldn't save to the original video."))
@@ -1496,7 +1662,7 @@ final class StudioEditorViewModel {
                 cleared.apply(to: self.project)
             }
             self.project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
-            try? self.context.save()
+            self.saveStore()
             if recordsCleared { await self.rebuildPreview() }
         }
     }
@@ -1561,5 +1727,6 @@ final class StudioEditorViewModel {
     func studioClosed() {
         exportTask?.cancel()
         send(.studioClosed)
+        cancelClipDownload()
     }
 }

@@ -12853,3 +12853,56 @@ Nine `@State` flags became one `StudioEditorSheet?`. The share sheet is a case o
 opened by the export state reaching `.exported` and cleaned up in `onDismiss`: binding it straight
 to the export state would delete the file while the sheet is still animating away. The three
 result alerts are independent of the sheets and still read the lane states.
+
+## 2026-11-23 — The Studio checks where its clips are before the composer runs (prompt 302)
+
+`StudioComposer` allows the network when it asks Photos for a video (prompt 265), so a clip in
+iCloud was downloaded inside "Building preview…" with no progress and no cancel, and a clip that
+could not be fetched was skipped. The composer is owned by another change and is not edited. The
+new `StudioMediaAvailabilityService` is asked first; the view model then hands the composer only
+clips that are on the phone, and never calls it while a missing clip waits for a decision. The
+download makes the composer's own request (current version, high quality) so the composer finds
+the result locally. Cost: one extra Photos request per clip when the Studio opens.
+
+## 2026-11-23 — "Nothing came back and it is not in iCloud" counts as available (prompt 302)
+
+The check asks for the video with the network off. If Photos returns no asset and does not set
+`PHImageResultIsInCloudKey`, the cause is unknown. It is reported as available, so the composer
+tries the clip exactly as it did before the check existed. Reporting it as missing would turn
+Export off for a clip that may be fine. Only an identifier Photos does not return at all is
+"missing". On the simulator everything is reported as available: its sessions carry made-up
+identifiers, and the "can't be found" panel would cover every Studio there.
+
+## 2026-11-23 — The media plan is kept by Photos identifier and holds its own inputs (prompt 302)
+
+`StudioMediaPlan` stores the sources and the statuses and derives the problems, the panel and the
+export reason. Statuses are kept by Photos identifier, not by clip: the two halves of a split
+clip share one, and a removed clip that returns with Undo is still known to be in iCloud. The
+sources are refreshed in `persist()`, the one place every snapshot change passes through.
+
+## 2026-11-23 — `clipMissing` allows editing; "Preview without it" is `ready` with Export off (prompt 302)
+
+In `clipMissing` the project can be edited (the clip has to be removable, and Undo has to work),
+but not played or exported. "Preview without it" is not a phase of its own: the editor is `ready`,
+the plan remembers the choice, the preview leaves the clips out, and `canExport` stays false with
+"Export needs all clips". A render must never silently leave a clip out, so there is no "export
+without it". Problems are handled one at a time, the first on the timeline first.
+
+## 2026-11-23 — The playhead is mapped across left-out clips, and transitions there are not modelled (prompt 302)
+
+The timeline keeps showing a clip that is not on the phone, so in "Preview without it" the player
+is shorter than the timeline. `StudioPreviewGaps` maps player time to timeline time and back by
+the left-out clips' slots. A cross-fade into a left-out clip becomes a cut and the mapping is off
+by the fade's length there. Accepted: this is a stand-in preview, and export is off.
+
+## 2026-11-23 — A failed Studio save is a message, not an alert; the bake has its own result (prompt 302)
+
+`persist()` is the one save. A failure sets `saveFailure` in the editor state: a message over the
+preview that can be closed and that the next successful save removes. The edit stays in memory
+and in undo. Not an alert, because slider drags and quick edits would stack alerts. A bake is
+different: after "Replace original" the original video is already gone, so a failed save there
+ends as `savedProjectNotUpdated`, with an alert that says the video was saved and the project was
+not. It is not `saved` (the success alert must not show) and not `failed` (whose title says the
+video could not be saved). What the bake writes is unchanged; the unsaved changes stay in the
+context and the next save that works writes them. `saver` is a property of the view model only so
+a test can make a save fail.
