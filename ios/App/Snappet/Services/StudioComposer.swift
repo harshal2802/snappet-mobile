@@ -6,22 +6,19 @@ import CoreImage
 import UIKit
 
 /// Turns a `StudioProjectSnapshot` (multi-clip timeline) into a playable/exportable AVFoundation
-/// composition — the studio's one render engine (S1), which originally generalized the per-clip render
-/// path from one clip to many. The single `makeComposition(for:sourceDurations:)` builds the
-/// `(AVMutableComposition, AVVideoComposition?)` reused for **both** preview (`AVPlayer`) and export,
-/// reusing the same `Box`/`avAsset` PHAsset-resolution and `ClipEditGeometry` transform math.
+/// composition — the Studio's one render engine. `makeComposition(for:)` builds the
+/// `(AVMutableComposition, AVVideoComposition?, AVAudioMix?)` used for **both** the preview
+/// (`AVPlayer`) and the export.
 ///
-/// **S1 scope (this file):** ordered **video** clips inserted sequentially (trim + speed) with a
-/// shared output canvas (`renderSize`) and per-clip orientation+crop transforms — the mixed-
-/// orientation normalization, now across many clips. **Device-only** (PHAsset → AVAsset needs a real
-/// Photos library; nothing renders on the simulator), so it is exercised by build + the pure
-/// `StudioGeometry`/`StudioProjectEditor` tests, not a simulator run.
+/// One path since prompt 300: the pure `StudioRenderPlan` says what is on screen when, this class
+/// resolves the Photos assets and puts them on composition tracks, and `StudioCompositor` (a custom
+/// `AVVideoCompositing`) draws every frame with Core Image — crop, base frame, filter, adjust,
+/// transitions, picture-in-picture and background together. Text, climb tags and the HR tile are
+/// drawn over that by the Core Animation tool (`StudioOverlays`), in the export only.
 ///
-/// **Deferred to S2+ (extension points, intentionally not yet rendered):** Core-Image filters/LUTs
-/// (`TimelineClip.filter`) via a custom `AVVideoCompositing`; transitions (`StudioTransition`) as
-/// opacity/transform ramps; overlays (`OverlayItem`) via `AVVideoCompositionCoreAnimationTool`;
-/// Ken-Burns photos via `PhotoClipRenderer`; the audio mix (`AudioTrack`). The model already carries
-/// all of these — only the compositor pass is pending (gated by the S0 device-profiling spike).
+/// Photos-bound (`PHAsset → AVAsset`), so `makeComposition`/`export` need a device; `assemble`
+/// takes already-resolved assets and is rendered on the simulator by `StudioCompositorRenderTests`.
+/// Not rendered: photo clips (left out, as before).
 final class StudioComposer: Sendable {
 
     private struct Box<T>: @unchecked Sendable { let value: T; init(_ v: T) { value = v } }
@@ -56,9 +53,9 @@ final class StudioComposer: Sendable {
     /// `forPlayback`: when **true**, the returned videoComposition omits the Core Animation overlay
     /// tool (`AVVideoCompositionCoreAnimationTool`), which is **offline-render-only** —
     /// `AVPlayerItem.setVideoComposition` raises an NSException for any composition that uses it. So
-    /// the live preview gets a tool-free composition (overlays don't show in preview; everything else
-    /// — transforms / filters / transitions — does), while **export** (default `false`) keeps the
-    /// tool so overlays render into the file.
+    /// the live preview gets a tool-free composition (text, tags and the HR tile are drawn by the
+    /// SwiftUI canvas there; everything the compositor draws shows), while **export** (default
+    /// `false`) keeps the tool so they render into the file.
     func makeComposition(for snapshot: StudioProjectSnapshot,
                          sourceDurations: [UUID: Double] = [:],
                          hrSamples: [HRPoint] = [],
@@ -67,7 +64,7 @@ final class StudioComposer: Sendable {
                          forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
 
-        // S1 renders video clips; photos are a Ken-Burns step in S2+.
+        // Video clips only; photo clips are not rendered.
         let videoClips = StudioGeometry.ordered(snapshot.clips).filter { !$0.isPhoto }
         guard !videoClips.isEmpty else { throw ComposerError.noRenderableClips }
         // Resolve each clip's PHAsset → AVAsset (the device-only / Photos-bound step), then assemble.
@@ -87,12 +84,25 @@ final class StudioComposer: Sendable {
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
                                   videoOverlays: videoOverlays, hrSamples: hrSamples,
                                   hrTile: hrTile, clipHRByID: clipHRByID,
-                                  baseFrame: snapshot.baseFrame, forPlayback: forPlayback)
+                                  baseFrame: snapshot.baseFrame,
+                                  background: StudioBackground(rawValue: snapshot.backgroundRaw) ?? .black,
+                                  forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
-    /// testable seam, decoupled from Photos. The S0 profiling spike drives this directly with a
-    /// synthetic on-device video (no PHAsset needed), so on-device export cost can be measured.
+    /// testable seam, decoupled from Photos (the render tests and the S0 profiling spike drive it
+    /// with synthetic videos).
+    ///
+    /// There is ONE path (prompt 300). `StudioRenderPlan` lays the clips out with
+    /// `StudioGeometry.timeline` and lists what is on screen in each stretch of time; this function
+    /// puts the sources on composition tracks where the plan says, and hands each stretch to
+    /// `StudioCompositor` as a `StudioCompositionInstruction`. Crop, base frame, filter, adjust,
+    /// transitions, picture-in-picture and the background are all drawn there, together. Audio is
+    /// every clip's own sound at its volume, cross-faded over a transition, plus the added music —
+    /// in every case.
+    ///
+    /// A clip whose asset has no video track or no length is left out (as before), and the plan is
+    /// made from the clips that are left, so a transition into a missing clip does not apply.
     func assemble(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
                   aspect: ClipEditGeometry.OutputAspect,
                   sourceDurations: [UUID: Double] = [:],
@@ -104,219 +114,183 @@ final class StudioComposer: Sendable {
                   hrTile: ResolvedHRTile? = nil,
                   clipHRByID: [UUID: StudioClipHRContent] = [:],
                   baseFrame: StudioFrameRect? = nil,
+                  background: StudioBackground = .black,
                   forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
-        // Transitions need two overlapping tracks (separate path); the CIFilter handler composites
-        // tracks itself so it can't combine with them. Use the transition path when a transition is
-        // set, NO clip has a filter, AND there's no PiP (PiP needs the instruction layer path). If
-        // both are present, fall through — filters/PiP render and the transition is dropped (graceful
-        // degradation; combining needs a custom AVVideoCompositing, deferred — decisions.md).
-        if transitions.contains(where: { $0.kind != .none }),
-           !resolved.contains(where: { $0.clip.filter != .none }), videoOverlays.isEmpty {
-            return try await assembleWithTransitions(
-                resolved: resolved, transitions: transitions, aspect: aspect,
-                sourceDurations: sourceDurations, overlays: overlays,
-                hrSamples: hrSamples, hrTile: hrTile,
-                clipHRByID: clipHRByID,
-                baseFrame: baseFrame, forPlayback: forPlayback)
-        }
-        return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
-                                             sourceDurations: sourceDurations, overlays: overlays,
-                                             audioTracks: audioTracks, videoOverlays: videoOverlays,
-                                             hrSamples: hrSamples,
-                                             hrTile: hrTile, clipHRByID: clipHRByID,
-                                             baseFrame: baseFrame, forPlayback: forPlayback)
-    }
-
-    /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
-    /// per-clip transform/crop layer instruction; any filtered clip routes through a Core Image handler.
-    private func assembleSingleTrack(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
-                                     aspect: ClipEditGeometry.OutputAspect,
-                                     sourceDurations: [UUID: Double],
-                                     overlays: [OverlayItem],
-                                     audioTracks: [AudioTrack] = [],
-                                     videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
-                                     hrSamples: [HRPoint] = [],
-                                     hrTile: ResolvedHRTile? = nil,
-                                     clipHRByID: [UUID: StudioClipHRContent] = [:],
-                                     baseFrame: StudioFrameRect? = nil,
-                                     forPlayback: Bool) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
-        let composition = AVMutableComposition()
-        guard let vTrack = composition.addMutableTrack(
-            withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw ComposerError.noRenderableClips
-        }
-        // Audio track is created LAZILY (only when a clip actually has audio) — an empty audio track
-        // left in the composition makes the videoComposition export fail -11838 on-device, and real
-        // clips can legitimately have no audio (S0 spike).
-        var aTrack: AVMutableCompositionTrack?
-
-        var cursor = CMTime.zero
-        // ONE layer instruction for the single video track; each clip sets its transform at its own
-        // start time (a piecewise-constant transform across the sequential cuts). Multiple layer
-        // instructions for the same track in one instruction is malformed and fails export.
-        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
+        // 1. Read what the plan needs from each source.
+        struct MainInput { let video: AVAssetTrack; let audio: AVAssetTrack?; let orient: CGAffineTransform }
+        var inputs: [UUID: MainInput] = [:]
+        var clips: [TimelineClip] = []
+        var durations: [UUID: Double] = [:]
+        var orientedSizes: [UUID: CGSize] = [:]
         var renderSize: CGSize?
-        // Per-clip colour filter + manual adjust, by output time range (drives the CIFilter path below).
-        var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double, adjust: ClipAdjust?)] = []
-        // Per-clip original-audio volume, by the audio segment's start time (drives the AVAudioMix).
-        var audioVolumes: [(at: CMTime, volume: Double)] = []
-        // Per-clip HR placed at each clip's output slot (empty when no per-clip HR placement applies).
-        var placedHR: [PlacedClipHR] = []
+        for (clip, source) in resolved where inputs[clip.id] == nil {
+            guard let video = try? await source.loadTracks(withMediaType: .video).first else { continue }
+            var duration = sourceDurations[clip.id] ?? 0
+            if duration <= 0 { duration = (try? await source.load(.duration).seconds) ?? 0 }
+            guard duration > 0 else { continue }
+            let o = await orientation(of: video)
+            if renderSize == nil { renderSize = ClipEditGeometry.renderSize(for: aspect, sourceSize: o.size) }
+            let audio = try? await source.loadTracks(withMediaType: .audio).first
+            inputs[clip.id] = MainInput(video: video, audio: audio, orient: o.orient)
+            clips.append(clip)
+            durations[clip.id] = duration
+            orientedSizes[clip.id] = o.size
+        }
+        guard let canvas = renderSize else { throw ComposerError.noRenderableClips }
 
-        for (clip, source) in resolved {
-            guard let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
-                continue   // no video track → skip this clip, keep the rest
-            }
-            var assetDuration = sourceDurations[clip.id] ?? 0
-            if assetDuration <= 0 { assetDuration = (try? await source.load(.duration).seconds) ?? 0 }
-            guard let window = ClipEditGeometry.trimWindow(
-                start: clip.trimStart, end: clip.trimEnd ?? assetDuration,
-                assetDuration: assetDuration) else { continue }
-
-            let naturalSize = (try? await srcVideo.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
-            let preferred = (try? await srcVideo.load(.preferredTransform)) ?? .identity
-            let orientedSize = orientedSize(naturalSize, transform: preferred)
-            let canvas = renderSize ?? ClipEditGeometry.renderSize(for: aspect, sourceSize: orientedSize)
-            renderSize = canvas
-
-            let sourceRange = CMTimeRange(
-                start: CMTime(seconds: window.start, preferredTimescale: timescale),
-                duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-            let insertAt = cursor
-            do { try vTrack.insertTimeRange(sourceRange, of: srcVideo, at: insertAt) }
-            catch { continue }
-
-            // Speed-scale the just-inserted segment in place.
-            let outDuration = ClipEditGeometry.scaledDuration(sourceDuration: window.duration, speed: clip.speed)
-            if abs(clip.speed - 1.0) > 0.001 {
-                let segment = CMTimeRange(start: insertAt,
-                                          duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-                vTrack.scaleTimeRange(segment, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
-            }
-
-            // Original audio (also speed-scaled), if present — create the audio track on first use.
-            if let srcAudio = try? await source.loadTracks(withMediaType: .audio).first {
-                let track = aTrack ?? composition.addMutableTrack(
-                    withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-                aTrack = track
-                if let track {
-                    try? track.insertTimeRange(sourceRange, of: srcAudio, at: insertAt)
-                    if abs(clip.speed - 1.0) > 0.001 {
-                        let seg = CMTimeRange(start: insertAt,
-                                              duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-                        track.scaleTimeRange(seg, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
-                    }
-                    audioVolumes.append((insertAt, max(0, min(1, clip.volume ?? 1))))
-                }
-            }
-
-            // Per-clip transform (orientation THEN crop→canvas, OR orientation THEN fit-into-base-
-            // frame when the main video is framed into a collage cell), set at this clip's start time
-            // on the shared layer instruction — it holds until the next clip's transform.
-            let xform = mainClipTransform(preferred: preferred, orientedSize: orientedSize,
-                                          cropRect: clip.cropRect, canvas: canvas, baseFrame: baseFrame)
-            layerInstruction.setTransform(xform, at: insertAt)
-
-            let outRange = CMTimeRange(start: insertAt,
-                                       duration: CMTime(seconds: outDuration, preferredTimescale: timescale))
-            filterRanges.append((outRange, clip.filter, clip.filterIntensity, clip.adjust))
-            if let content = clipHRByID[clip.id] {
-                placedHR.append(PlacedClipHR(startSec: insertAt.seconds, durationSec: outDuration,
-                                             samples: content.samples, tile: content.tile))
-            }
-            cursor = outRange.end
+        struct PiPInput { let video: AVAssetTrack; let orient: CGAffineTransform }
+        var pipInputs: [UUID: PiPInput] = [:]
+        var pipSources: [UUID: StudioRenderPlan.PiPSource] = [:]
+        for (overlay, source) in videoOverlays where pipInputs[overlay.id] == nil {
+            guard let video = try? await source.loadTracks(withMediaType: .video).first else { continue }
+            let o = await orientation(of: video)
+            let duration = (try? await source.load(.duration).seconds) ?? 0
+            pipInputs[overlay.id] = PiPInput(video: video, orient: o.orient)
+            pipSources[overlay.id] = StudioRenderPlan.PiPSource(orientedSize: o.size, durationSec: duration)
         }
 
-        guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
+        // 2. The plan: placement, segments, layers. Everything below only carries it out.
+        let plan = StudioRenderPlan.make(clips: clips, sourceDurations: durations,
+                                         orientedSizes: orientedSizes, transitions: transitions,
+                                         overlays: overlays, pipSources: pipSources, canvas: canvas,
+                                         baseFrame: baseFrame, background: background)
+        guard plan.totalDuration > 0, !plan.clips.isEmpty else { throw ComposerError.noRenderableClips }
 
-        let hasPiP = !videoOverlays.isEmpty
-        let videoComposition: AVMutableVideoComposition
-        if !hasPiP, filterRanges.contains(where: { $0.filter != .none || ($0.adjust?.isNeutral == false) }) {
-            // S2 — at least one clip has a colour filter or a manual adjust: composite through Core
-            // Image. AVFoundation hands each frame to the handler as a CIImage; we aspect-fill it to
-            // the canvas and apply the active clip's filter THEN its adjust. (This path supersedes the
-            // per-clip transform/crop instruction; combining precise crop WITH a filter is a follow-up
-            // — the layout here is aspect-fill.)
-            let ranges = filterRanges
-            videoComposition = AVMutableVideoComposition(asset: composition) { request in
-                let t = request.compositionTime
-                var image = StudioFilters.aspectFill(request.sourceImage, to: canvas)
-                if let active = ranges.first(where: { $0.range.containsTime(t) }) {
-                    if active.filter != .none {
-                        image = StudioFilters.apply(active.filter, intensity: active.intensity, to: image)
-                    }
-                    image = StudioFilters.applyAdjust(active.adjust, to: image)
-                }
-                request.finish(with: image, context: nil)
+        // 3. Main clips onto their tracks. Audio tracks are created only when a clip has sound: an
+        // empty audio track makes a videoComposition export fail -11838 on a device (S0 spike).
+        let composition = AVMutableComposition()
+        var videoTracks: [Int: AVMutableCompositionTrack] = [:], videoEnds: [Int: CMTime] = [:]
+        var soundTracks: [Int: AVMutableCompositionTrack] = [:], soundEnds: [Int: CMTime] = [:]
+        var soundParams: [Int: AVMutableAudioMixInputParameters] = [:]
+        var soundNeedsMix: Set<Int> = []
+        var mainSources: [UUID: StudioCompositionInstruction.Source] = [:]
+        for placed in plan.clips {
+            guard let input = inputs[placed.clip.id] else { continue }
+            let index = placed.trackIndex
+            guard let track = videoTracks[index] ?? composition.addMutableTrack(
+                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            videoTracks[index] = track
+            let start = time(placed.startSec), end = time(placed.endSec)
+            let outDuration = end - start
+            guard outDuration > .zero else { continue }
+            // At speed 1 the source range IS the output range (no scale, so no audio time-stretch).
+            let unscaled = abs(StudioGeometry.clampSpeed(placed.clip.speed) - 1) <= 0.001
+            let sourceRange = CMTimeRange(start: time(placed.sourceStartSec),
+                                          duration: unscaled ? outDuration : time(placed.sourceDurationSec))
+            guard place(sourceRange, of: input.video, on: track, at: start, outDuration: outDuration,
+                        trackEnd: &videoEnds[index, default: .zero]) else { continue }
+            mainSources[placed.clip.id] = .init(trackID: track.trackID, orient: input.orient)
+
+            guard let audio = input.audio, let sound = soundTracks[index] ?? composition.addMutableTrack(
+                withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            soundTracks[index] = sound
+            guard place(sourceRange, of: audio, on: sound, at: start, outDuration: outDuration,
+                        trackEnd: &soundEnds[index, default: .zero]) else { continue }
+            // Volume: the clip's own level, rising over the transition into it and falling over
+            // the transition out of it (a cross-fade with the neighbour on the other track).
+            let params = soundParams[index] ?? AVMutableAudioMixInputParameters(track: sound)
+            soundParams[index] = params
+            let volume = Float(placed.volume)
+            if let fade = placed.audioFadeIn {
+                params.setVolumeRamp(fromStartVolume: 0, toEndVolume: volume,
+                                     timeRange: CMTimeRange(start: time(fade.lowerBound), end: time(fade.upperBound)))
+            } else {
+                params.setVolume(volume, at: start)
             }
-            videoComposition.renderSize = canvas
-            // Overlays compose over the filtered frames too (text/sticker on a filtered clip) — but
-            // the Core Animation tool is export-only (AVPlayerItem rejects it), so skip it for preview.
-            if !forPlayback {
-                videoComposition.animationTool = StudioOverlays.makeAnimationTool(
-                    overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrTile: hrTile,
-                    clipHR: placedHR)
+            if let fade = placed.audioFadeOut {
+                params.setVolumeRamp(fromStartVolume: volume, toEndVolume: 0,
+                                     timeRange: CMTimeRange(start: time(fade.lowerBound), end: time(fade.upperBound)))
             }
-        } else {
-            // No filters: the transform/crop path. Build from the composition's own properties (so
-            // color/format tags + a valid source-track mapping are present) rather than a bare
-            // `AVMutableVideoComposition()`, which the on-device encoder rejects with -11838 (S0).
-            // Picture-in-picture: add a second video track per .video overlay BEFORE deriving the
-            // videoComposition (so its tracks are present), composited on top of the main track.
-            var pipLayerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
-            for (ov, asset) in videoOverlays {
-                if let li = await insertPiPTrack(ov, asset: asset, into: composition, canvas: canvas) {
-                    pipLayerInstructions.append(li)
-                }
-            }
-            videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
-            videoComposition.renderSize = canvas
-            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-            instruction.layerInstructions = pipLayerInstructions + [layerInstruction]   // PiP on top
-            videoComposition.instructions = [instruction]
-            // S4: time-gated text overlays via Core Animation (nil when there are none). Combining
-            // overlays with a colour filter is a follow-up (the filter path composites differently).
-            // The Core Animation tool is export-only (AVPlayerItem rejects it), so skip it for preview.
-            if !forPlayback {
-                videoComposition.animationTool = StudioOverlays.makeAnimationTool(
-                    overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrTile: hrTile,
-                    clipHR: placedHR)
+            if placed.volume < 0.999 || placed.audioFadeIn != nil || placed.audioFadeOut != nil {
+                soundNeedsMix.insert(index)
             }
         }
+        // A clip with sound only on some tracks can leave an audio track that got no content.
+        for (index, sound) in soundTracks where soundEnds[index, default: .zero] == .zero {
+            composition.removeTrack(sound)
+            soundParams[index] = nil
+        }
+        guard !mainSources.isEmpty, composition.duration > .zero else { throw ComposerError.noRenderableClips }
 
-        // Added **music** tracks (the edits "Add audio"): each is inserted on its own audio track at
-        // its startSec and volume-mixed. Resolved from the app's Documents (where the importer copied
-        // the picked file); a missing file is skipped so export never fails on it.
-        var mixParams: [AVMutableAudioMixInputParameters] = []
+        // 4. Each picture-in-picture on its own video track, inside its window.
+        var pipTrackSources: [UUID: StudioCompositionInstruction.Source] = [:]
+        for pip in plan.pips {
+            guard let input = pipInputs[pip.overlay.id], let track = composition.addMutableTrack(
+                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            let start = time(pip.startSec), end = time(pip.endSec)
+            var trackEnd = CMTime.zero
+            guard end > start,
+                  place(CMTimeRange(start: .zero, duration: end - start), of: input.video, on: track,
+                        at: start, outDuration: end - start, trackEnd: &trackEnd) else {
+                composition.removeTrack(track)
+                continue
+            }
+            pipTrackSources[pip.overlay.id] = .init(trackID: track.trackID, orient: input.orient)
+        }
+
+        // 5. One instruction per plan segment, back to back from zero to the end.
+        var instructions: [StudioCompositionInstruction] = []
+        let finalEnd = max(time(plan.totalDuration), composition.duration)
+        for (i, segment) in plan.segments.enumerated() {
+            let start = instructions.last?.timeRange.end ?? .zero
+            let end = i == plan.segments.count - 1 ? finalEnd : time(segment.endSec)
+            guard end > start else { continue }
+            instructions.append(StudioCompositionInstruction(
+                timeRange: CMTimeRange(start: start, end: end), canvas: canvas, background: plan.background,
+                main: segment.main.compactMap { layer in mainSources[layer.clipID].map { (layer, $0) } },
+                pips: segment.pips.compactMap { layer in pipTrackSources[layer.overlayID].map { (layer, $0) } }))
+        }
+
+        // Start from the composition's own properties (a bare video composition was rejected by
+        // the on-device encoder, S0), then replace what this compositor decides. SDR BT.709 out.
+        let videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
+        videoComposition.customVideoCompositorClass = StudioCompositor.self
+        videoComposition.renderSize = canvas
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        videoComposition.instructions = instructions
+        videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+        videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+        videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+        // Text, climb tags and the HR tile: the Core Animation tool draws them over the
+        // compositor's frames. Export only — `AVPlayerItem` rejects a composition that has it.
+        if !forPlayback {
+            let placedHR: [PlacedClipHR] = plan.clips.compactMap { placed in
+                guard let content = clipHRByID[placed.clip.id] else { return nil }
+                return PlacedClipHR(startSec: placed.startSec, durationSec: placed.durationSec,
+                                    samples: content.samples, tile: content.tile)
+            }
+            videoComposition.animationTool = StudioOverlays.makeAnimationTool(
+                overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
+                hrSamples: hrSamples, hrTile: hrTile, clipHR: placedHR)
+        }
+
+        // 6. Added **music** (the edits "Add audio"): each on its own audio track at its startSec,
+        // cut to the end of the video. Resolved from the app's Documents (where the importer
+        // copied the picked file); a missing file is skipped so export never fails on it.
+        var mixParams: [AVMutableAudioMixInputParameters] = soundNeedsMix.sorted().compactMap { soundParams[$0] }
+        let videoEnd = composition.duration
         for music in audioTracks where music.kind != .original {
-            guard let url = Self.musicURL(music.sourceRef),
-                  let mAudio = try? await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first,
-                  let mTrack = composition.addMutableTrack(
+            guard let url = Self.musicURL(music.sourceRef) else { continue }
+            let asset = AVURLAsset(url: url)
+            guard let source = try? await asset.loadTracks(withMediaType: .audio).first else { continue }
+            let sourceDuration = (try? await asset.load(.duration)) ?? .zero
+            let at = time(max(0, music.startSec))
+            let available = videoEnd - at
+            guard available > .zero, sourceDuration > .zero,
+                  let track = composition.addMutableTrack(
                     withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
-            let mAsset = AVURLAsset(url: url)
-            let srcDur = (try? await mAsset.load(.duration)) ?? .zero
-            let at = CMTime(seconds: max(0, music.startSec), preferredTimescale: timescale)
-            let avail = composition.duration - at
-            guard avail > .zero, srcDur > .zero else { continue }
-            let dur = min(srcDur, avail)
-            try? mTrack.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: mAudio, at: at)
-            let p = AVMutableAudioMixInputParameters(track: mTrack)
-            p.setVolume(Float(max(0, min(1, music.volume))), at: at)
-            mixParams.append(p)
-        }
-
-        // Per-clip original-audio volume → AVAudioMix params (only when a clip dials volume off 1).
-        if let aTrack, audioVolumes.contains(where: { $0.volume < 0.999 }) {
-            let params = AVMutableAudioMixInputParameters(track: aTrack)
-            for v in audioVolumes { params.setVolume(Float(v.volume), at: v.at) }
+            do {
+                try track.insertTimeRange(CMTimeRange(start: .zero, duration: min(sourceDuration, available)),
+                                          of: source, at: at)
+            } catch {
+                composition.removeTrack(track)   // never leave an empty audio track behind (-11838)
+                continue
+            }
+            let params = AVMutableAudioMixInputParameters(track: track)
+            params.setVolume(Float(max(0, min(1, music.volume))), at: at)
             mixParams.append(params)
         }
 
@@ -329,44 +303,35 @@ final class StudioComposer: Sendable {
         return (composition, videoComposition, audioMix)
     }
 
-    /// Insert a **picture-in-picture** clip on its own video track and return its layer instruction
-    /// (aspect-FIT into the PiP frame, oriented, time-gated to `[startSec, endSec]`). Returns nil if the
-    /// source has no video track. The frame is placed in the layer-instruction render space, which is
-    /// **top-left origin** (NOT the Core-Animation overlay's bottom-left), so the PiP lands exactly where
-    /// the editor outline shows it.
-    private func insertPiPTrack(_ ov: OverlayItem, asset: AVAsset, into composition: AVMutableComposition,
-                                canvas: CGSize) async -> AVMutableVideoCompositionLayerInstruction? {
-        guard let pv = try? await asset.loadTracks(withMediaType: .video).first,
-              let track = composition.addMutableTrack(
-                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        let nat = (try? await pv.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
-        let pref = (try? await pv.load(.preferredTransform)) ?? .identity
-        let oriented = orientedSize(nat, transform: pref)
-        let srcDur = ((try? await asset.load(.duration))?.seconds) ?? 0
-        let winStart = max(0, ov.startSec)
-        let winEnd = max(winStart + 0.1, ov.endSec)
-        let insertDur = min(srcDur > 0 ? srcDur : (winEnd - winStart), winEnd - winStart)
-        guard insertDur > 0 else { return nil }
-        let at = CMTime(seconds: winStart, preferredTimescale: timescale)
-        if at > .zero { track.insertEmptyTimeRange(CMTimeRange(start: .zero, end: at)) }
-        do {
-            try track.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(seconds: insertDur, preferredTimescale: timescale)),
-                                      of: pv, at: at)
-        } catch { return nil }
+    private func time(_ seconds: Double) -> CMTime {
+        CMTime(seconds: max(0, seconds), preferredTimescale: timescale)
+    }
 
-        let li = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
-        // Top-left origin — the layer-instruction render space (same as cropTransform), matching the
-        // editor's SwiftUI outline; NO Y flip. Aspect-FIT so the PiP stays inside its frame (a layer
-        // instruction can't clip its track, so a fill would spill past the frame onto the rest of the canvas).
-        let rect = ClipEditGeometry.pipRect(normalizedCenter: ov.position, size: ov.pipSize, canvas: canvas)
-        li.setTransform(pref.concatenating(ClipEditGeometry.fitTransform(sourceSize: oriented, into: rect)), at: .zero)
-        // Visible only within the window (opacity 0 outside). Honor the overlay's opacity (it
-        // defaults to 1 in the initializer, so no special-casing 0).
-        let op = Float(min(1, max(0, ov.opacity)))
-        if at > .zero { li.setOpacity(0, at: .zero); li.setOpacity(op, at: at) } else { li.setOpacity(op, at: .zero) }
-        let endTime = CMTime(seconds: winEnd, preferredTimescale: timescale)
-        if endTime < composition.duration { li.setOpacity(0, at: endTime) }
-        return li
+    /// Put `sourceRange` of `source` on `track` so it plays over `[at, at + outDuration]`: pad the
+    /// track with an empty range up to `at`, insert, and scale the inserted part when the two
+    /// lengths differ (a speed change). `trackEnd` is where the track's content ends; it moves
+    /// only when the insert succeeds. Returns false when the insert fails.
+    private func place(_ sourceRange: CMTimeRange, of source: AVAssetTrack,
+                       on track: AVMutableCompositionTrack, at requested: CMTime,
+                       outDuration: CMTime, trackEnd: inout CMTime) -> Bool {
+        let at = max(requested, trackEnd)
+        if at > trackEnd { track.insertEmptyTimeRange(CMTimeRange(start: trackEnd, end: at)) }
+        do { try track.insertTimeRange(sourceRange, of: source, at: at) } catch { return false }
+        if sourceRange.duration != outDuration {
+            track.scaleTimeRange(CMTimeRange(start: at, duration: sourceRange.duration), toDuration: outDuration)
+        }
+        trackEnd = at + outDuration
+        return true
+    }
+
+    /// A track's size after its `preferredTransform`, and that transform moved so the upright
+    /// picture's corner is at the origin (some files carry a rotation with no translation).
+    private func orientation(of track: AVAssetTrack) async -> (size: CGSize, orient: CGAffineTransform) {
+        let natural = (try? await track.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+        let preferred = (try? await track.load(.preferredTransform)) ?? .identity
+        let rect = CGRect(origin: .zero, size: natural).applying(preferred)
+        return (CGSize(width: abs(rect.width), height: abs(rect.height)),
+                preferred.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY)))
     }
 
     /// Resolve a music track's `sourceRef` (the filename the importer copied) to a URL in the app's
@@ -375,146 +340,6 @@ final class StudioComposer: Sendable {
         guard !ref.isEmpty else { return nil }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         return docs?.appendingPathComponent(ref)
-    }
-
-    /// Build a **dissolve-transition** composition (S3). Clips alternate between two video tracks
-    /// (A = even, B = odd) placed with the `StudioGeometry.timeline` overlaps; B is composited on top
-    /// and its opacity is ramped over each overlap — fading B IN when it's the incoming clip, OUT when
-    /// it's outgoing — so A (always opaque, underneath) is revealed/covered to cross-dissolve. Only
-    /// dissolve for now (slide/zoom = transform ramps, and combining with filters, are follow-ups).
-    func assembleWithTransitions(
-        resolved: sending [(clip: TimelineClip, asset: AVAsset)],
-        transitions: [StudioTransition],
-        aspect: ClipEditGeometry.OutputAspect,
-        sourceDurations: [UUID: Double],
-        overlays: [OverlayItem] = [],
-        hrSamples: [HRPoint] = [],
-        hrTile: ResolvedHRTile? = nil,
-        clipHRByID: [UUID: StudioClipHRContent] = [:],
-        baseFrame: StudioFrameRect? = nil,
-        forPlayback: Bool = false) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
-
-        let ordered = StudioGeometry.ordered(resolved.map(\.clip))
-        let assetByID = Dictionary(resolved.map { ($0.clip.id, $0.asset) }, uniquingKeysWith: { a, _ in a })
-
-        var durations: [UUID: Double] = [:]
-        for clip in ordered {
-            var d = sourceDurations[clip.id] ?? 0
-            if d <= 0, let a = assetByID[clip.id] { d = (try? await a.load(.duration).seconds) ?? 0 }
-            durations[clip.id] = d
-        }
-        let placed = StudioGeometry.timeline(clips: ordered, sourceDurations: durations, transitions: transitions)
-        let placeByID = Dictionary(placed.map { ($0.clip.id, $0) }, uniquingKeysWith: { a, _ in a })
-
-        let composition = AVMutableComposition()
-        guard let trackA = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              let trackB = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw ComposerError.noRenderableClips
-        }
-        let liA = AVMutableVideoCompositionLayerInstruction(assetTrack: trackA)
-        let liB = AVMutableVideoCompositionLayerInstruction(assetTrack: trackB)
-        var aTrack: AVMutableCompositionTrack?
-        var endA = CMTime.zero, endB = CMTime.zero
-        var canvas: CGSize?
-        var transformByID: [UUID: CGAffineTransform] = [:]   // each clip's base transform
-
-        for (i, clip) in ordered.enumerated() {
-            guard let asset = assetByID[clip.id], let p = placeByID[clip.id],
-                  let srcVideo = try? await asset.loadTracks(withMediaType: .video).first else { continue }
-            let dur = durations[clip.id] ?? 0
-            guard let window = ClipEditGeometry.trimWindow(
-                start: clip.trimStart, end: clip.trimEnd ?? dur, assetDuration: dur) else { continue }
-            let nat = (try? await srcVideo.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
-            let pref = (try? await srcVideo.load(.preferredTransform)) ?? .identity
-            let oriented = orientedSize(nat, transform: pref)
-            let cv = canvas ?? ClipEditGeometry.renderSize(for: aspect, sourceSize: oriented)
-            canvas = cv
-
-            let isA = (i % 2 == 0)
-            let vtrack = isA ? trackA : trackB
-            let li = isA ? liA : liB
-            let at = CMTime(seconds: p.startSec, preferredTimescale: timescale)
-            // Pad with an empty range so the clip lands exactly at its placed (overlapped) start.
-            let curEnd = isA ? endA : endB
-            if at > curEnd { vtrack.insertEmptyTimeRange(CMTimeRange(start: curEnd, end: at)) }
-
-            let sourceRange = CMTimeRange(
-                start: CMTime(seconds: window.start, preferredTimescale: timescale),
-                duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-            do { try vtrack.insertTimeRange(sourceRange, of: srcVideo, at: at) } catch { continue }
-            let outDur = ClipEditGeometry.scaledDuration(sourceDuration: window.duration, speed: clip.speed)
-            if abs(clip.speed - 1.0) > 0.001 {
-                let seg = CMTimeRange(start: at, duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-                vtrack.scaleTimeRange(seg, toDuration: CMTime(seconds: outDur, preferredTimescale: timescale))
-            }
-            let newEnd = CMTimeAdd(at, CMTime(seconds: outDur, preferredTimescale: timescale))
-            if isA { endA = newEnd } else { endB = newEnd }
-
-            if let aSrc = try? await asset.loadTracks(withMediaType: .audio).first {
-                let track = aTrack ?? composition.addMutableTrack(
-                    withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-                aTrack = track
-                try? track?.insertTimeRange(sourceRange, of: aSrc, at: at)
-            }
-
-            let xform = mainClipTransform(preferred: pref, orientedSize: oriented,
-                                          cropRect: clip.cropRect, canvas: cv, baseFrame: baseFrame)
-            li.setTransform(xform, at: at)
-            transformByID[clip.id] = xform
-        }
-
-        guard let cv = canvas, composition.duration > .zero else { throw ComposerError.noRenderableClips }
-
-        // Each transition animates track B (always on top): IN when B is the incoming clip, OUT when
-        // outgoing, over the overlap [next.start, current.end]. Dissolve/fade ramp opacity; slide/zoom
-        // ramp B's transform between its in-place pose and an off-canvas pose.
-        for i in 0 ..< (ordered.count - 1) {
-            guard let t = transitions.first(where: { $0.afterClipID == ordered[i].id && $0.kind != .none }),
-                  let cur = placeByID[ordered[i].id], let nxt = placeByID[ordered[i + 1].id] else { continue }
-            let start = CMTime(seconds: nxt.startSec, preferredTimescale: timescale)
-            let end = CMTime(seconds: cur.endSec, preferredTimescale: timescale)
-            guard end > start else { continue }
-            let range = CMTimeRange(start: start, end: end)
-            let bIncoming = (i + 1) % 2 == 1                         // the incoming clip (i+1) is on track B
-            let base = transformByID[bIncoming ? ordered[i + 1].id : ordered[i].id] ?? .identity
-            switch t.kind {
-            case .dissolve, .fadeThroughBlack:
-                liB.setOpacityRamp(fromStartOpacity: bIncoming ? 0 : 1,
-                                   toEndOpacity: bIncoming ? 1 : 0, timeRange: range)
-            case .slideLeft, .slideRight, .zoomIn:
-                let off = Self.offCanvasTransform(kind: t.kind, base: base, canvas: cv, incoming: bIncoming)
-                liB.setTransformRamp(fromStart: bIncoming ? off : base,
-                                     toEnd: bIncoming ? base : off, timeRange: range)
-            case .none:
-                break
-            }
-        }
-
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-        instruction.layerInstructions = [liB, liA]   // B on top
-
-        let vc = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
-        vc.renderSize = cv
-        vc.frameDuration = CMTime(value: 1, timescale: 30)
-        vc.instructions = [instruction]
-        // S4 text overlays via the Core Animation tool — export-only (AVPlayerItem rejects it), so
-        // skip it for the live preview.
-        if !forPlayback {
-            // Per-clip HR at each clip's overlapped slot (multi-clip Studio); empty → session-wide path.
-            let placedHR: [PlacedClipHR] = ordered.compactMap { clip in
-                guard let content = clipHRByID[clip.id], let p = placeByID[clip.id] else { return nil }
-                return PlacedClipHR(startSec: p.startSec, durationSec: p.durationSec,
-                                    samples: content.samples, tile: content.tile)
-            }
-            vc.animationTool = StudioOverlays.makeAnimationTool(
-                overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds,
-                hrSamples: hrSamples, hrTile: hrTile,
-                clipHR: placedHR)
-        }
-        // Per-clip volume on the transition path is a follow-up (audio here is a plain stitch).
-        return (composition, vc, nil)
     }
 
     /// Export the composed timeline to a temp `.mp4` via an async `AVAssetExportSession`.
@@ -584,43 +409,6 @@ final class StudioComposer: Sendable {
         let o = orientedSize(nat, transform: pref)
         guard o.width > 0, o.height > 0 else { return nil }
         return o.width / o.height
-    }
-
-    /// The off-canvas pose for a slide/zoom transition, relative to a clip's in-place `base` transform.
-    /// slide = a full-width translation (enter-from / exit-to a side); zoom = a small scale about the
-    /// canvas centre. `incoming` flips the side so the clip enters from the opposite edge it exits to.
-    private static func offCanvasTransform(kind: StudioTransitionKind, base: CGAffineTransform,
-                                           canvas: CGSize, incoming: Bool) -> CGAffineTransform {
-        switch kind {
-        case .slideLeft:
-            return base.concatenating(CGAffineTransform(translationX: incoming ? canvas.width : -canvas.width, y: 0))
-        case .slideRight:
-            return base.concatenating(CGAffineTransform(translationX: incoming ? -canvas.width : canvas.width, y: 0))
-        case .zoomIn:
-            let cx = canvas.width / 2, cy = canvas.height / 2
-            let scaleAboutCentre = CGAffineTransform(translationX: cx, y: cy)
-                .scaledBy(x: 0.2, y: 0.2).translatedBy(x: -cx, y: -cy)
-            return base.concatenating(scaleAboutCentre)
-        default:
-            return base
-        }
-    }
-
-    /// The transform that places a main-track clip onto the canvas: orientation THEN either the normal
-    /// crop→full-canvas (no base frame) OR an aspect-FIT into the base **collage frame** (a sub-rect of
-    /// the canvas — the rest shows the canvas background). The frame is in the layer-instruction
-    /// **top-left** render space (no Y flip), the same as a PiP (`insertPiPTrack`), so base + PiP cells
-    /// line up with each other and with the editor outline. A per-clip crop is ignored while framed
-    /// (crop-WITH-frame is a follow-up — decisions.md).
-    private func mainClipTransform(preferred: CGAffineTransform, orientedSize: CGSize,
-                                   cropRect: CGRect, canvas: CGSize,
-                                   baseFrame: StudioFrameRect?) -> CGAffineTransform {
-        if let bf = baseFrame, !bf.isFull {
-            let rect = ClipEditGeometry.pipRect(normalizedCenter: bf.center, size: bf.size, canvas: canvas)
-            return preferred.concatenating(ClipEditGeometry.fitTransform(sourceSize: orientedSize, into: rect))
-        }
-        let crop = ClipEditGeometry.cropTransform(cropRect: cropRect, sourceSize: orientedSize, renderSize: canvas)
-        return preferred.concatenating(crop)
     }
 
     private func orientedSize(_ size: CGSize, transform: CGAffineTransform) -> CGSize {

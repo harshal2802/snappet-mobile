@@ -12906,3 +12906,61 @@ not. It is not `saved` (the success alert must not show) and not `failed` (whose
 video could not be saved). What the bake writes is unchanged; the unsaved changes stay in the
 context and the next save that works writes them. `saver` is a property of the view model only so
 a test can make a save fail.
+## 2026-11-23 — One custom compositor replaces the Studio's three render paths (prompt 300)
+
+Supersedes "[2026-06-04] Studio effects batch — … filter+transition deferred", which cut the
+custom `AVVideoCompositing` for Swift 6 Sendable friction and because it could not be checked
+without eyes on a device. Both reasons are answered now. `StudioCompositor` holds no mutable
+shared state (a serial queue, one lock-guarded cancel counter, one shared `CIContext`) and its
+instruction is immutable, so both are plainly `Sendable`. And it is checked by pixel: the render
+tests write solid-colour videos, render through `assemble`, and read colours back on the simulator.
+The three paths (`assembleSingleTrack` with layer instructions, the deprecated
+`applyingCIFiltersWithHandler` handler, `assembleWithTransitions`) are deleted, not flagged.
+Rejected: keeping the built-in compositor as a fast path for projects with no effects — two paths
+is how the preview and the file came to disagree; the cost is on the device list of the prompt.
+Rejected: `AVVideoComposition.Configuration` and the read-only pixel-buffer API — iOS 26/27 only,
+and the deployment target is iOS 18.
+
+## 2026-11-23 — The render plan is pure and takes placement from `StudioGeometry.timeline` (prompt 300)
+
+`StudioRenderPlan` (Foundation + CoreGraphics) decides everything: placement, source ranges,
+track assignment, segments, layers, audio fades, and the per-frame transition poses. The composer
+and the compositor only carry it out. A transition exists in the plan only where
+`StudioGeometry.timeline` gave two clips an overlap, so a transition on the last clip or keyed to
+a clip outside the rendered list cannot affect the render — which is why `ClipBakePlan.rendersMusic`
+could be removed instead of repaired. Tracks are assigned to the first track free at the clip's
+start (not odd/even), so a clip shorter than its two transitions gets a third track instead of
+overlapping its neighbour on one.
+
+## 2026-11-23 — What the single compositor renders differently on purpose (prompt 300)
+
+- Fade through black goes to black (it was a dissolve). Slide is a push of both clips and zoom
+  always grows the incoming clip; before, which clip moved depended on odd/even track.
+- A crop is kept with a filter and with a base frame (the cropped part is fitted into the cell).
+- Picture-in-picture: later overlay on top (the canvas order); opacity keyframes use absolute
+  output time, as the canvas does for text; `rotationDegrees` is applied about the frame centre.
+- Ken-Burns `scaleKeyframes` are rendered on the clip's own time (seconds from its start), about
+  the centre of its area. Nothing writes them today; clip-local time survives a reorder.
+- Background: black, white, or the main clip blurred. Nothing sets it today.
+- Audio across a transition is a linear cross-fade on two tracks. The old transition path was not
+  a cross-fade (one track, overlapping inserts, no speed), so there was nothing to keep.
+- Frame rate is 30 for every project (the filter path used the source's).
+- SDR BT.709 output is set on the video composition. `supportsHDRSourceFrames` and
+  `supportsWideColorSourceFrames` stay false, so AVFoundation converts HDR sources to SDR first.
+
+## 2026-11-23 — The Core Animation tool stays, over the custom compositor (prompt 300)
+
+`StudioOverlays.makeAnimationTool` is unchanged; the instruction sets `enablePostProcessing` and
+the compositor outputs BGRA. On the simulator the tool does compose over the compositor's frames:
+the text's highlight chip, gated by the same opacity animation as the text, is in the exported
+file. The simulator's offline renderer does not draw bitmap-backed layers (glyphs), and with the
+built-in compositor it crashes in `CARenderer`, so glyphs, stickers and the HR tile over the new
+compositor are a device check — first on the prompt's list.
+
+## 2026-11-23 — A picture-in-picture opacity drag rebuilds the preview once (prompt 300)
+
+A picture-in-picture is drawn by the compositor, so its opacity needs a preview rebuild; a text's
+does not. `setOverlayOpacity` on a `.video` overlay marks the open gesture and `endGesture`
+rebuilds once if the value changed; outside a gesture it goes through `edit`. Rebuilding per tick
+was rejected: a rebuild replaces the player item. Only those two functions (and one flag beside
+them) were touched in the view model.

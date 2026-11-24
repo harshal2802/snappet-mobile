@@ -665,10 +665,20 @@ final class StudioEditorViewModel {
     /// Not guarded by `isBaking` on purpose: a gesture left open would swallow later edits, and
     /// closing it changes nothing a bake depends on — live edits are refused while it renders, so
     /// this saves exactly the snapshot the bake read when it started.
+    ///
+    /// A drag that changed a picture-in-picture rebuilds the preview here, once (prompt 300): the
+    /// picture-in-picture is drawn by the compositor, not by the canvas.
     func endGesture() {
         guard undo.isInTransaction else { return }
-        if undo.endTransactionIfChanged() { persist() }
+        let rebuild = gestureChangedComposition
+        gestureChangedComposition = false
+        if undo.endTransactionIfChanged() {
+            persist()
+            if rebuild { Task { await rebuildPreview() } }
+        }
     }
+    /// Set by a live tick that changed something the compositor draws (prompt 300).
+    private var gestureChangedComposition = false
     func undoEdit() {
         guard canEdit else { return }
         endGesture()                      // the open drag becomes a step first, then Undo removes it
@@ -1458,16 +1468,32 @@ final class StudioEditorViewModel {
         isVideo ? edit(t) : editOverlaysOnly(t)   // a PiP is in the composition → rebuild
         if selectedOverlayID == id { selectedOverlayID = nil }
     }
+    /// A text, sticker or tag is drawn by the canvas, so its opacity needs no preview rebuild. A
+    /// picture-in-picture is in the composition (prompt 300): during a slider drag the value is
+    /// stored live and the preview is rebuilt once, in `endGesture`; outside a drag it is a plain
+    /// edit, which rebuilds.
     func setOverlayOpacity(_ id: UUID, _ opacity: Double) {
-        editOverlaysOnly(live: true) { StudioProjectEditor.setOverlayOpacity($0, id: id, opacity: opacity) }
+        let change: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayOpacity($0, id: id, opacity: opacity)
+        }
+        guard snapshot.overlays.first(where: { $0.id == id })?.kind == .video else {
+            editOverlaysOnly(live: true, change)
+            return
+        }
+        guard undo.isInTransaction else { edit(change); return }
+        if !isBaking { gestureChangedComposition = true }
+        editOverlaysOnly(live: true, change)
     }
     /// Capture the selected overlay's current opacity as a keyframe at the playhead (the marker
     /// button). Two keyframes of differing opacity → the overlay fades over output time.
     func addOverlayKeyframeAtPlayhead() {
         guard let ov = selectedOverlay else { return }
-        editOverlaysOnly {
-            StudioProjectEditor.addOverlayOpacityKeyframe($0, id: ov.id, timeSec: currentTime, value: ov.opacity)
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.addOverlayOpacityKeyframe($0, id: ov.id, timeSec: self.currentTime, value: ov.opacity)
         }
+        // A picture-in-picture is drawn by the compositor, which now renders its opacity keyframes
+        // (prompt 300), so its preview must be rebuilt; other overlays are drawn by the canvas.
+        ov.kind == .video ? edit(t) : editOverlaysOnly(t)
     }
 
     // MARK: Audio tracks (added music)

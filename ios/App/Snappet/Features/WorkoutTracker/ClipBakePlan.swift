@@ -76,17 +76,6 @@ enum ClipBakePlan {
         !s.clips.isEmpty && s.clips.allSatisfy { !$0.isPhoto && $0.localIdentifier == target }
     }
 
-    /// Whether the composer mixed the added music into this render. It mirrors the path choice in
-    /// `StudioComposer.assemble`: the transition path (a transition is set, no clip has a filter, no
-    /// picture-in-picture) does not take the music tracks, so the file has no music and the tracks
-    /// must stay in the project. Remove this mirror when the composer has one path.
-    static func rendersMusic(_ rendered: StudioProjectSnapshot) -> Bool {
-        let transitionPath = rendered.transitions.contains { $0.kind != .none }
-            && !rendered.clips.contains { !$0.isPhoto && $0.filter != .none }
-            && !rendered.overlays.contains { $0.kind == .video }
-        return !transitionPath
-    }
-
     /// The project after a bake of `target`, computed from the snapshot the render was made from.
     /// The rule is "remove exactly what is now in the pixels, and nothing that belongs to another
     /// clip":
@@ -98,7 +87,7 @@ enum ClipBakePlan {
     ///   transition after the last part leads to another clip, so it moves to the merged clip.
     /// - When the bake covers the whole project, everything project-wide was rendered too and is
     ///   removed: unbound text/stickers/climb tags, picture-in-picture, the HR tile, the base frame,
-    ///   and the music (only if it was mixed — `rendersMusic`).
+    ///   and the added music (the composer mixes it into every render — prompt 300).
     /// - When other clips exist, project-wide items are KEPT, because the other clips still use
     ///   them. A picture-in-picture that showed the replaced asset is re-pointed at the new one.
     ///   The merged clip gets a `baked` record of the kept items that are in its pixels (prompt
@@ -121,7 +110,6 @@ enum ClipBakePlan {
         scope.clips = parts
         scope.overlays = s.overlays.filter { $0.clipID.map(partIDs.contains) ?? true }
         let rendered = standingDown(scope, visible: parts)
-        let musicWasMixed = rendersMusic(rendered)
         var out = s
 
         // Clips: one neutral clip in the first part's place.
@@ -144,7 +132,7 @@ enum ClipBakePlan {
             out.overlays = []
             out.hrOverlay = nil
             out.baseFrame = nil
-            if musicWasMixed { out.audioTracks.removeAll { $0.kind != .original } }
+            out.audioTracks.removeAll { $0.kind != .original }
         } else {
             out.overlays = s.overlays.compactMap { ov in
                 if let clipID = ov.clipID, partIDs.contains(clipID) { return nil }
@@ -162,9 +150,7 @@ enum ClipBakePlan {
         overlayIDs.formUnion(rendered.overlays
             .filter { $0.clipID == nil && ($0.kind == .video || !$0.content.isEmpty) }.map(\.id))
         var trackIDs = Set(record.audioTrackIDs)
-        if musicWasMixed {
-            trackIDs.formUnion(rendered.audioTracks.filter { $0.kind != .original }.map(\.id))
-        }
+        trackIDs.formUnion(rendered.audioTracks.filter { $0.kind != .original }.map(\.id))
         record.overlayIDs = BakedItems.sorted(overlayIDs.intersection(out.overlays.map(\.id)))
         record.audioTrackIDs = BakedItems.sorted(trackIDs.intersection(out.audioTracks.map(\.id)))
         record.hrTile = (record.hrTile || (hrTileDrawn && rendered.hrOverlay?.tile != nil))
