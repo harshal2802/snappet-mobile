@@ -72,12 +72,18 @@ final class ClipBakePlanTests: XCTestCase {
                                                 renderedDurationSec: 41).offsetSec, 100)
     }
 
-    func testEarliestTrimStart() {
-        let clips = [tclip(local: "A", order: 1, trimStart: 20),
-                     tclip(local: "A", order: 0, trimStart: 8, trimEnd: 12),
-                     tclip(local: "B", order: 2, trimStart: 1)]
-        XCTAssertEqual(ClipBakePlan.earliestTrimStart(clips: clips, localIdentifier: "A"), 8)
-        XCTAssertEqual(ClipBakePlan.earliestTrimStart(clips: clips, localIdentifier: "missing"), 0)
+    /// The amount the offset moves by is the earliest footage the bake kept, read from the
+    /// bake's time map (prompt 305; `earliestTrimStart` is gone). Parts of other assets are not
+    /// in the bake.
+    func testTheOffsetMovesToTheEarliestKeptFootage() {
+        let parts = [tclip(local: "A", order: 1, trimStart: 20),
+                     tclip(local: "A", order: 0, trimStart: 8, trimEnd: 12)]
+        let map = ClipBakePlan.timeMap(parts: parts,
+                                       sourceDurations: Dictionary(uniqueKeysWithValues: parts.map { ($0.id, 60.0) }),
+                                       transitions: [])
+        XCTAssertEqual(map?.earliestSourceSec, 8)
+        XCTAssertEqual(ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 100, renderedDurationSec: 44,
+                                                        timeMap: map).offsetSec, 108)
     }
 
     /// Re-pointing swaps the identifier and resets trims (they're in the pixels now) on the target

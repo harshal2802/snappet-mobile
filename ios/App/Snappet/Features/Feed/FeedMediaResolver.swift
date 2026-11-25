@@ -75,7 +75,7 @@ struct FeedMediaResolver {
         guard media.contains(where: { $0.kind == .video }) else { return nil }
         let clips = media.map {
             SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                                       offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
         }
         let duration: Double
         var restHR: Double? = nil

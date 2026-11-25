@@ -252,6 +252,47 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertNil(restored.linkFingerprint, "an old backup restores un-stamped, not rejected")
     }
 
+    /// Prompt 305: a baked clip's time map is in the backup (it cannot be worked out again: the
+    /// edit that made it left the project with the bake), and a backup written before the field
+    /// existed restores with no map.
+    func testABakedClipsTimeMapSurvivesABackupAndAnOlderBackupRestoresWithoutOne() throws {
+        let context = sourceContainer.mainContext
+        let media = SessionMedia(sessionID: UUID(), localIdentifier: "ASSET/L0/305", kind: .video,
+                                 offsetSec: 30, durationSec: 4)
+        let map = BakedTimeMap(segments: [.init(renditionStartSec: 0, sourceStartSec: 2, speed: 1),
+                                          .init(renditionStartSec: 3, sourceStartSec: 9, speed: 0.5)],
+                               renditionDurationSec: 6, isRevertible: true)
+        media.isBaked = true
+        media.bakeTimeMap = map
+        context.insert(media)
+        try context.save()
+        let current = try SnappetBackup.encode(try SnappetBackup.snapshot(of: context))
+
+        try SnappetBackup.restore(try SnappetBackup.decode(current), into: targetContainer.mainContext)
+        let carried = try XCTUnwrap(targetContainer.mainContext.fetch(FetchDescriptor<SessionMedia>()).first)
+        XCTAssertEqual(carried.bakeTimeMap, map)
+        XCTAssertTrue(carried.isBaked)
+        XCTAssertEqual(carried.offsetSec, 30)
+        XCTAssertEqual(carried.captureClock.captureTime(renditionTime: 4), 30 + 9.5)
+
+        // The same file as an older build wrote it: no `bakeTimeMap` key.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: current) as? [String: Any])
+        var rows = try XCTUnwrap(json["sessionMedia"] as? [[String: Any]])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertNotNil(rows[0]["bakeTimeMap"], "the current file carries the map")
+        rows[0].removeValue(forKey: "bakeTimeMap")
+        json["sessionMedia"] = rows
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+
+        try SnappetBackup.restore(try SnappetBackup.decode(legacy), into: targetContainer.mainContext)
+        let all = try targetContainer.mainContext.fetch(FetchDescriptor<SessionMedia>())
+        XCTAssertEqual(all.count, 1)
+        let restored = try XCTUnwrap(all.first)
+        XCTAssertNil(restored.bakeTimeMapData, "an old backup restores with no map, not rejected")
+        XCTAssertTrue(restored.isBaked)
+        XCTAssertEqual(restored.captureClock.captureTime(renditionTime: 4), 34)
+    }
+
     func testRestoreReplacesExistingDataIncludingUniqueKeyOverlap() throws {
         // The backup: one favorite + one session.
         let source = sourceContainer.mainContext

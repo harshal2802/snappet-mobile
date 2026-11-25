@@ -146,9 +146,9 @@ Device edge and view model:
 
 ## Not done
 
-- A "Save to original" bake does not move the capture offset, so an HR tile added in the Studio
-  to an already baked, start-trimmed clip is sampled from the original's start (earlier by the
-  trimmed length). Moving it needs the old offset stored for a revert: a new model field.
+- (Done in prompt 305, `305-ios-studio-baked-clip-hr-time-map.md`: a baked clip now carries a
+  time map, so an HR tile added after "Save to original" is sampled where the kept footage was
+  filmed. The capture offset still does not move.)
 - In "Preview without it", music that started before a left-out clip does not skip that clip's
   length (there is no source offset to move).
 - A short clip that lies wholly under both of its transitions owns no stretch, so its own HR tile

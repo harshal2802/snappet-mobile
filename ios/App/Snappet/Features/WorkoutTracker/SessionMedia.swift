@@ -53,6 +53,14 @@ final class SessionMedia {
     /// row). Cleared when a Photos "Revert to Original" is detected at a Studio-open touchpoint.
     var isBakedRaw: Bool?
 
+    /// How the baked video's time maps back to the original recording (prompt 305): a JSON
+    /// `BakedTimeMap`, read and written through `bakeTimeMap`. `nil` = the asset plays the
+    /// recording `offsetSec` describes (never baked, reverted, a bake that changed no timing, or
+    /// baked before this field existed). Written with `isBaked` by a bake and cleared with it when
+    /// a Photos "Revert to Original" is found. `offsetSec` and this are combined in ONE place,
+    /// `ClipCaptureClock`. Additive + optional, no default → SwiftData lightweight migration.
+    var bakeTimeMapData: Data?
+
     /// Non-nil marks this row as a POSTED HIGHLIGHT REEL (highlights P2): the value is the feed
     /// post's title (e.g. "Push Day — Highlights"). The composer gives a reel its own ✦ REEL post
     /// (never grouped into a set/climb carousel) and — like a baked clip — plays it raw: the glass
@@ -120,6 +128,23 @@ final class SessionMedia {
         get { isBakedRaw ?? false }
         set { isBakedRaw = newValue }
     }
+
+    /// Typed view over `bakeTimeMapData` (prompt 305).
+    var bakeTimeMap: BakedTimeMap? {
+        get { BakedTimeMap.decode(bakeTimeMapData) }
+        set { bakeTimeMapData = newValue?.encoded }
+    }
+
+    /// When each frame of the video this row's asset plays now was filmed: `offsetSec` and
+    /// `bakeTimeMap` combined by the one rule (`ClipCaptureClock`). Heart-rate readers use this,
+    /// never `offsetSec` alone.
+    var captureClock: ClipCaptureClock { ClipCaptureClock(offsetSec: offsetSec, timeMap: bakeTimeMap) }
+
+    /// The clip's start as the reel maker is told it (`SessionHighlightInput.Clip`,
+    /// `KilterWorkoutBuilder.Clip`): when the FIRST frame of the video the asset plays now was
+    /// filmed. The reel planner knows a start and a length only, so a baked start trim is exact
+    /// and a baked speed change or joined parts are not (prompt 305, "Not done").
+    var reelStartSec: Double { captureClock.captureStartSec }
 
     /// Typed view over `assignmentSourceRaw` (defaults to `.auto` for any unknown raw).
     var assignmentSource: MediaAssignmentSource {

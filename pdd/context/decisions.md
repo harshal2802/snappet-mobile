@@ -13079,3 +13079,75 @@ lets the composer try, as it did before the check existed. The answer-to-status 
 (`StudioAvailabilityProbe`); the wait (`StudioFirstAnswer`) has no Photos in it and is unit
 tested; only the request itself is device code.
 
+
+## 2026-11-25 — A baked clip carries a time map; the capture offset still does not move (prompt 305)
+
+Supersedes the cost stated in "'Save to original' records the rendered length and keeps the
+capture offset (prompt 303)" above: that entry's reason for not moving the offset stands, and its
+"needs a stored pre-bake offset" is answered differently. Storing the old offset would have fixed
+a start trim only. A baked speed change and baked joined parts are wrong in the same way, and no
+single offset can describe them.
+
+`SessionMedia.bakeTimeMapData` (optional, JSON `BakedTimeMap`) records how the video the asset
+plays now maps back to the recording: ordered segments `(renditionStartSec, sourceStartSec,
+speed)`, the planned length, and `isRevertible`. `nil` = the asset plays the recording.
+
+How it combines with `offsetSec` is one line in one place, `ClipCaptureClock`:
+`capture time = offsetSec + (map?.sourceTime(t) ?? t)`. `offsetSec` is when source time 0 was
+filmed; the map turns a time in the current video into source time. Every heart-rate reader
+calls it (the list is in the prompt file). A reader that adds a trim to `offsetSec` by hand is a
+bug.
+
+- **"Save to original" never moves `offsetSec`.** A revert only has to drop the map; the offset
+  was never wrong.
+- **An identity map is not stored.** A bake with no start trim, speed 1 and nothing left out
+  writes `nil`, so "has a map" means "the timing differs".
+- **A transition between two baked parts is split at its middle** (`StudioGeometry.ownedWindows`,
+  the rule from prompt 303 for the HR tile and the playhead). Both parts are on screen for its
+  length; the outgoing one gives the times for the first half.
+- **The heart-rate window of joined parts is one stretch**, from the earliest frame to the
+  latest, including the seconds left out. A chart is one stretch of the session, and the effort
+  between two kept parts belongs in it. The dot's pace inside that window is even, so it is
+  approximate after a join.
+- **A second bake composes.** The bake renders the asset's current video, so its trims are times
+  in the first rendition; the stored map is the two composed and is still measured from the
+  original recording. A clip baked before this field existed has no first map; its second bake
+  is stored as if it were the first.
+- **Clips baked before this change keep their behaviour.** The trim left the project with the
+  bake and cannot be rebuilt.
+
+## 2026-11-25 — "Replace original" stores a map only for what a moved offset cannot say (prompt 305)
+
+"Replace original" keeps moving `offsetSec` to the earliest kept footage (the new asset is a
+recording that starts later, and the feed orders clips by it). For a plain start trim that is the
+whole story and no map is stored, as before. With a speed change, joined parts, or a map carried
+over from an earlier "Save to original", the offset alone is wrong, so the map is stored as well
+(`ClipBakePlan.replacedMediaUpdate`).
+
+To keep one shift out of both values, the offset's shift (`BakedTimeMap.earliestSourceSec`) is
+subtracted from every segment of the stored map (`movingSource`). The capture times before and
+after are equal; a test compares them.
+
+Such a map has `isRevertible = false`. The revert probe asks "does the asset have an edited
+rendition?", and a replaced asset never has one, so it reads as reverted the next time the Studio
+opens. That clears `isBaked` on a replaced clip today (not changed here; noted in the prompt
+file). It must not clear the map: there is no original to go back to, and without the map a 2×
+replaced clip reads half of its effort. `ClipBakePlan.revertedTimeMap` keeps it, and
+`ClipHROverlay.make` passes the map on, so the live overlay such a clip then gets is on the right
+seconds.
+
+## 2026-11-25 — The reel maker is told the baked clip's first frame, nothing more (prompt 305)
+
+`HighlightEngine`'s `MediaItem` is a start and a length. Rows now hand it
+`SessionMedia.reelStartSec` (the capture time of the first frame of the current video) instead
+of `offsetSec`. That is exact for a baked start trim and equal to `offsetSec` for every clip
+with no map. A baked speed change or joined parts cannot be expressed there; the engine stays
+platform-free and unchanged, and the one resolver of `PLAN.md` P4 takes it over.
+
+## 2026-11-25 — A fourth test seam in the Studio view model: the revert probe (prompt 305)
+
+`bakedAssetProbe` stands in for the two Photos questions of revert detection
+(`ClipBakeService.hasEditedRendition`, `currentDuration`), `nil` in the app like the three seams
+of prompt 303. `reconcileBakedFlags()` returns its task so a test can wait for it. The length of
+the current video is now read for every baked row, not only for a reverted one: one more
+`PHAsset` fetch per baked row, off the main actor.

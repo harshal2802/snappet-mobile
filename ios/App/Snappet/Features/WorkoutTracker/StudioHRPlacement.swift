@@ -36,12 +36,20 @@ enum StudioHRPlacement {
     /// trimmed sub-range `[trimStart, trimEnd]` of the asset, offset by the clip's capture time
     /// (`SessionMedia.offsetSec`). Speed doesn't change *which* HR the footage shows, only how fast it
     /// plays, so it's not part of the window (the chart's playhead duration handles speed at render).
+    ///
+    /// `timeMap` is the asset's `SessionMedia.bakeTimeMap` (prompt 305): the trims are times in the
+    /// video the asset plays NOW, and for a baked asset that is not the recording `offset`
+    /// describes. The window comes from `ClipCaptureClock`, the one rule every heart-rate reader
+    /// uses; with no map it is the trimmed range moved by `offset`, as before.
     static func captureWindow(offset: Double, trimStart: Double, trimEnd: Double?,
-                              sourceDuration: Double?) -> (start: Double, span: Double) {
+                              sourceDuration: Double?,
+                              timeMap: BakedTimeMap? = nil) -> (start: Double, span: Double) {
         let src = sourceDuration ?? trimEnd ?? 0
         let end = min(trimEnd ?? src, src > 0 ? src : (trimEnd ?? 0))
-        let span = max(0.001, end - max(0, trimStart))
-        return (offset + max(0, trimStart), span)
+        let start = max(0, trimStart)
+        let window = ClipCaptureClock(offsetSec: offset, timeMap: timeMap)
+            .captureWindow(renditionStart: start, renditionEnd: end)
+        return (window.start, max(0.001, window.span))
     }
 
     /// The **extended** HR window for a clip (prompt 115): the footage capture window widened by the
@@ -51,10 +59,11 @@ enum StudioHRPlacement {
     /// slicer's coverage clamp surfaces via the sliced samples' `maxT`, which every fraction in
     /// `HRClipWindow` is computed against.
     static func extendedWindow(offset: Double, trimStart: Double, trimEnd: Double?,
-                               sourceDuration: Double?, leadSec: Double, tailSec: Double)
+                               sourceDuration: Double?, leadSec: Double, tailSec: Double,
+                               timeMap: BakedTimeMap? = nil)
         -> (start: Double, window: HRClipWindow) {
         let base = captureWindow(offset: offset, trimStart: trimStart, trimEnd: trimEnd,
-                                 sourceDuration: sourceDuration)
+                                 sourceDuration: sourceDuration, timeMap: timeMap)
         let lead = min(max(0, leadSec), base.start)
         let window = HRClipWindow(leadSec: lead, footageSec: base.span, tailSec: max(0, tailSec))
         return (base.start - lead, window)
@@ -66,17 +75,20 @@ enum StudioHRPlacement {
     /// the clip's `SessionMedia.offsetSec`; clips with no resolved offset are skipped.
     static func sample(clips: [TimelineClip], offsets: [UUID: Double],
                        sourceDurations: [UUID: Double], series: [HRPoint],
+                       timeMaps: [UUID: BakedTimeMap] = [:],
                        clampTolerance: Double = HRWindowSlicer.defaultClampTolerance) -> [UUID: [HRPoint]] {
         sampleExtended(clips: clips.map { var c = $0; c.hrLeadSec = 0; c.hrTailSec = 0; return c },
                        offsets: offsets, sourceDurations: sourceDurations, series: series,
-                       clampTolerance: clampTolerance).mapValues(\.samples)
+                       timeMaps: timeMaps, clampTolerance: clampTolerance).mapValues(\.samples)
     }
 
     /// `sample`, but over each clip's **extended** window (its `hrWindowLeadSec`/`hrWindowTailSec`),
     /// returning the window geometry alongside the slice so the renderers can draw the region panes
-    /// and confine the playhead to the footage span.
+    /// and confine the playhead to the footage span. `timeMaps[clipID]` is the clip's asset's
+    /// `SessionMedia.bakeTimeMap`, for a clip whose asset was baked (prompt 305).
     static func sampleExtended(clips: [TimelineClip], offsets: [UUID: Double],
                                sourceDurations: [UUID: Double], series: [HRPoint],
+                               timeMaps: [UUID: BakedTimeMap] = [:],
                                clampTolerance: Double = HRWindowSlicer.defaultClampTolerance)
         -> [UUID: SampledClipHR] {
         guard !series.isEmpty else { return [:] }
@@ -85,7 +97,8 @@ enum StudioHRPlacement {
             guard let offset = offsets[clip.id] else { continue }
             let ext = extendedWindow(offset: offset, trimStart: clip.trimStart, trimEnd: clip.trimEnd,
                                      sourceDuration: sourceDurations[clip.id],
-                                     leadSec: clip.hrWindowLeadSec, tailSec: clip.hrWindowTailSec)
+                                     leadSec: clip.hrWindowLeadSec, tailSec: clip.hrWindowTailSec,
+                                     timeMap: timeMaps[clip.id])
             let sliced = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
                                               clampTolerance: clampTolerance)
             if !sliced.isEmpty { out[clip.id] = SampledClipHR(samples: sliced, window: ext.window) }
@@ -109,11 +122,25 @@ enum StudioHRPlacement {
         return out
     }
 
-    /// The single-clip form of the rule above — the ONE implementation every production call site
-    /// (`StudioEditorViewModel.captureOffset`) routes through, so the tested policy can't drift from
-    /// the shipping one.
+    /// The single-clip form of the rule above. Production reads the offset together with the
+    /// asset's time map through `resolveClock` (prompt 305), which uses the same lookup, so the
+    /// tested policy can't drift from the shipping one.
     static func resolveOffset(of clip: TimelineClip, byMediaID: [UUID: Double],
                               byLocalID: [String: Double]) -> Double? {
+        resolve(of: clip, byMediaID: byMediaID, byLocalID: byLocalID)
+    }
+
+    /// The lookup itself: the media link first, then the Photos identifier.
+    private static func resolve<Value>(of clip: TimelineClip, byMediaID: [UUID: Value],
+                                       byLocalID: [String: Value]) -> Value? {
         clip.sessionMediaID.flatMap { byMediaID[$0] } ?? byLocalID[clip.localIdentifier]
+    }
+
+    /// A clip's capture clock (prompt 305): its row's offset AND time map, found by the same
+    /// rule as `resolveOffset`, so the two always come from one row. What
+    /// `StudioEditorViewModel.captureClock` routes through.
+    static func resolveClock(of clip: TimelineClip, byMediaID: [UUID: ClipCaptureClock],
+                             byLocalID: [String: ClipCaptureClock]) -> ClipCaptureClock? {
+        resolve(of: clip, byMediaID: byMediaID, byLocalID: byLocalID)
     }
 }

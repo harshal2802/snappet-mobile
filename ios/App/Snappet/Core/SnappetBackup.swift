@@ -714,6 +714,10 @@ extension SnappetBackup {
         /// lift the feed's stand-down and double-render the burned-in HR tile. Optional → old backups
         /// decode `nil` (= false).
         var isBakedRaw: Bool?
+        /// How a baked video's time maps back to the recording (prompt 305). NOT re-derivable: the
+        /// edit that made it is gone from the project after the bake. Optional → old backups
+        /// decode `nil` (= no map, the behaviour from before the field).
+        var bakeTimeMap: BakedTimeMap?
         /// Durable link handles (prompt 265) — the WHOLE point of carrying them is a restore onto
         /// another phone, where `localIdentifier` is dead and these are the only way back to the
         /// asset. Optional → old backups decode `nil`.
@@ -732,6 +736,7 @@ extension SnappetBackup {
             assignmentSourceRaw = m.assignmentSourceRaw; assignedClimbUUID = m.assignedClimbUUID
             createdAt = m.createdAt
             isBakedRaw = m.isBakedRaw
+            bakeTimeMap = m.bakeTimeMap
             cloudIdentifier = m.cloudIdentifier
             linkCapturedAt = m.linkCapturedAt; linkDurationSec = m.linkDurationSec
             linkPixelWidth = m.linkPixelWidth; linkPixelHeight = m.linkPixelHeight
@@ -748,6 +753,7 @@ extension SnappetBackup {
             media.kindRaw = kindRaw
             media.assignmentSourceRaw = assignmentSourceRaw
             media.isBakedRaw = isBakedRaw
+            media.bakeTimeMap = bakeTimeMap
             media.cloudIdentifier = cloudIdentifier
             media.linkCapturedAt = linkCapturedAt; media.linkDurationSec = linkDurationSec
             media.linkPixelWidth = linkPixelWidth; media.linkPixelHeight = linkPixelHeight

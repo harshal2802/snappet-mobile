@@ -62,6 +62,8 @@ struct ActivityMediaInput: Sendable, Equatable {
     var isBaked: Bool = false
     /// The Kilter board climb it's filed to (prompt 188) — board clips are filed by climb, not exercise.
     var assignedClimbUUID: String? = nil
+    /// The asset's `SessionMedia.bakeTimeMap` (prompt 305); `nil` for a clip with no map.
+    var timeMap: BakedTimeMap? = nil
 }
 
 /// One clip of an activity, stamped with the set it was filmed during and the heart rate around it —
@@ -155,10 +157,13 @@ enum ActivityMediaIndex {
     }
 
     /// Mean BPM over a clip: a video's `[offset, offset + duration]`, a photo's `± photoHRWindowSec`.
-    /// `nil` when no HR sample falls inside.
+    /// `nil` when no HR sample falls inside. A video's window comes from `ClipCaptureClock`
+    /// (prompt 305), so a baked clip is read where its frames were filmed.
     static func averageBPM(for m: ActivityMediaInput, hrSeries: [HRPoint]) -> Int? {
+        let video = ClipCaptureClock(offsetSec: m.offsetSec, timeMap: m.timeMap)
+            .captureWindow(renditionStart: 0, renditionEnd: max(1, m.durationSec ?? 1))
         let (start, end): (Double, Double) = m.kindRaw == "video"
-            ? (m.offsetSec, m.offsetSec + max(1, m.durationSec ?? 1))
+            ? (video.start, video.start + video.span)
             : (m.offsetSec - photoHRWindowSec, m.offsetSec + photoHRWindowSec)
         let inWindow = hrSeries.filter { $0.t >= start && $0.t <= end }.map(\.bpm)
         guard !inWindow.isEmpty else { return nil }

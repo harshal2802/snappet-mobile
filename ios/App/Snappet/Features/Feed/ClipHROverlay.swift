@@ -49,6 +49,9 @@ enum ClipHROverlay {
         // overlay on top would double-render the chart. The name-tag-only degrade, like photos.
         // A posted HIGHLIGHT REEL (highlights P2) is the same case: its glass scorebug was burned in
         // by ReelExporter, so the feed, browser, and fullscreen viewer all play it raw.
+        // (Prompt 305: this is why the feed needs no time map for a baked clip. It is passed below
+        // all the same, for a clip that carries a map and is not marked baked: a "Replace
+        // original" video keeps its map when its flag is cleared.)
         guard !clip.isBaked, !clip.isReel else { return nil }
         let edit = clip.edit ?? ClipStudioEdit()
         let footage = keptFootage(clip)
@@ -59,7 +62,8 @@ enum ClipHROverlay {
                                                    trimStart: footage.start,
                                                    trimEnd: footage.start + footage.span,
                                                    sourceDuration: footage.rawDur,
-                                                   leadSec: edit.hrLeadSec, tailSec: edit.hrTailSec)
+                                                   leadSec: edit.hrLeadSec, tailSec: edit.hrTailSec,
+                                                   timeMap: clip.timeMap)
         let window = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
         guard !window.isEmpty else { return nil }
         // Metrics scope (prompt 115 semantics): `.clip` re-slices the aggregates to the footage

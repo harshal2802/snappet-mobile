@@ -50,7 +50,7 @@ extension MediaInput {
                    exerciseId: m.assignedExerciseID, setIndex: m.assignedSetIndex,
                    climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier,
                    aspect: m.aspectRatio, edit: (m.isBaked || m.isReel) ? nil : edit,
-                   isBaked: m.isBaked, reelTitle: m.reelTitle)
+                   isBaked: m.isBaked, reelTitle: m.reelTitle, timeMap: m.bakeTimeMap)
     }
 }
 

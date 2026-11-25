@@ -31,6 +31,13 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     /// title. The composer gives it its own ✦ REEL post; like `isBaked`, it plays raw (the HR
     /// scorebug is burned into the pixels) so no live overlay is drawn on top.
     var reelTitle: String? = nil
+    /// The asset's `SessionMedia.bakeTimeMap` (prompt 305): how a baked video's time maps back to
+    /// the recording `offsetSec` describes. `nil` for a clip with no map. Populated by
+    /// `MediaInput.from`; read only through `captureClock`.
+    var timeMap: BakedTimeMap? = nil
+
+    /// When each frame of this clip was filmed: the one rule every heart-rate reader uses.
+    var captureClock: ClipCaptureClock { ClipCaptureClock(offsetSec: offsetSec, timeMap: timeMap) }
 
     /// A posted highlight reel — `reelTitle` is the marker AND the title (mirrors `SessionMedia`).
     var isReel: Bool { reelTitle != nil }
@@ -75,8 +82,13 @@ enum FeedMedia {
     /// Peak/avg/zone BPM for a clip's HR window — computed over the **same** sliced window the overlay
     /// draws (`clipHRWindow` → `HRWindowSlicer`), so the still poster's chip and the inline / fullscreen
     /// overlay can never disagree. `nil` when the window resolves no HR (the name-tag-only path).
-    static func clipHR(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint], maxHR: Double) -> MediaClipHR {
-        let bpms = clipHRWindow(offsetSec: offsetSec, durationSec: durationSec, hrSeries: hrSeries).map(\.bpm)
+    ///
+    /// `timeMap` is the clip's `MediaInput.timeMap` (prompt 305): a baked, start-trimmed clip's
+    /// chip is then read where its frames were filmed, not from the original's start.
+    static func clipHR(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint], maxHR: Double,
+                       timeMap: BakedTimeMap? = nil) -> MediaClipHR {
+        let bpms = clipHRWindow(offsetSec: offsetSec, durationSec: durationSec, hrSeries: hrSeries,
+                                timeMap: timeMap).map(\.bpm)
         guard !bpms.isEmpty else { return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil) }
         let peak = bpms.max() ?? 0
         let avg = bpms.reduce(0, +) / Double(bpms.count)
@@ -96,8 +108,14 @@ enum FeedMedia {
     /// chart never blanks and the playhead `maxT` reaches the window edge), and an honest **empty** `[]`
     /// only when the window is farther than that pad from all data. A photo (`nil` duration) uses
     /// `photoWindowSec`; a 0-duration clip collapses to a degenerate flat line at its instant.
-    static func clipHRWindow(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint]) -> [HRPoint] {
-        HRWindowSlicer.slice(hrSeries, start: offsetSec, span: durationSec ?? Self.photoWindowSec)
+    ///
+    /// The window is `ClipCaptureClock.captureWindow` over the whole video (prompt 305); with no
+    /// time map that is `[offsetSec, offsetSec + durationSec]`, as before.
+    static func clipHRWindow(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint],
+                             timeMap: BakedTimeMap? = nil) -> [HRPoint] {
+        let window = ClipCaptureClock(offsetSec: offsetSec, timeMap: timeMap)
+            .captureWindow(renditionStart: 0, renditionEnd: durationSec ?? Self.photoWindowSec)
+        return HRWindowSlicer.slice(hrSeries, start: window.start, span: window.span)
     }
 
     /// The default window (seconds) used for a photo / nil-duration clip when slicing HR.

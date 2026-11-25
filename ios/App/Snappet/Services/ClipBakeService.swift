@@ -17,6 +17,15 @@ import Photos
 //
 // Device-only (Photos + a real asset); the Studio's export render itself comes from `StudioComposer`.
 
+/// What Photos says about a baked asset (revert detection). A value only so the view model's
+/// revert handling can be tested with a stand-in (prompt 305).
+struct BakedAssetProbe: Sendable {
+    /// `ClipBakeService.hasEditedRendition`: `false` = reverted, `nil` = the asset was not found.
+    var hasEditedRendition: Bool?
+    /// `ClipBakeService.currentDuration`: the length of the video the asset plays now.
+    var currentDuration: Double?
+}
+
 /// The two Photos writes of a bake. A protocol only so the view model's bake can be tested with a
 /// stand-in (prompt 303): the real writes need a device and a real asset.
 @MainActor
