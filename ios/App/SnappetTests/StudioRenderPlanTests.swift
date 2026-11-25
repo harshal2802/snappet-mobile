@@ -224,6 +224,27 @@ final class StudioRenderPlanTests: XCTestCase {
         XCTAssertEqual(q.clips.first?.ownedStartSec, 0)
         XCTAssertEqual(q.clips.last?.ownedEndSec ?? -1, q.totalDuration, accuracy: 1e-9)
 
+        // The short middle clip under two transitions of DIFFERENT lengths (1 s and 0.4 s):
+        // A 0–4, the short one 3–4, C 3.6–7.6. The middles are 3.5 and 3.8.
+        let uneven = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1),
+                      StudioTransition(afterClipID: short.id, kind: .dissolve, durationSec: 0.4)]
+        let u = plan([a, short, c], transitions: uneven)
+        XCTAssertEqual(u.clips.map(\.startSec), [0, 3, 3.6])
+        zip(u.clips.map(\.ownedStartSec), [0, 3.5, 3.8]).forEach { XCTAssertEqual($0, $1, accuracy: 1e-9) }
+        zip(u.clips.map(\.ownedEndSec), [3.5, 3.8, 7.6]).forEach { XCTAssertEqual($0, $1, accuracy: 1e-9) }
+
+        // Slots whose two middles cross (the middle clip ends before the first one does): the
+        // middle clip owns nothing and its neighbours meet at ONE point, with no moment owned twice.
+        let crossed = [StudioGeometry.PlacedClip(clip: a, startSec: 0, durationSec: 5),       // 0–5
+                       StudioGeometry.PlacedClip(clip: short, startSec: 4, durationSec: 0.6), // 4–4.6
+                       StudioGeometry.PlacedClip(clip: c, startSec: 4.2, durationSec: 4)]     // 4.2–8.2
+        let w = StudioGeometry.ownedWindows(crossed)          // middles 4.5 and 4.4 → meet at 4.45
+        XCTAssertEqual(w[0].end, 4.45, accuracy: 1e-9)
+        XCTAssertEqual(w[1].start, w[1].end)
+        XCTAssertEqual(w[2].start, 4.45, accuracy: 1e-9)
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 4.42, in: crossed), 0)
+        XCTAssertEqual(StudioGeometry.ownerIndex(at: 4.47, in: crossed), 2)
+
         // The editor asks the same rule which clip is under the playhead.
         let durations = [a.id: 60.0, b.id: 60.0, c.id: 60.0]
         let placed = StudioGeometry.timeline(clips: [a, b, c], sourceDurations: durations, transitions: t)
@@ -247,6 +268,38 @@ final class StudioRenderPlanTests: XCTestCase {
                                               visibleStartSec: 1, visibleEndSec: 9)
         XCTAssertEqual(clamped.start, 3)
         XCTAssertEqual(clamped.end, 7)
+    }
+
+    /// The heart-rate tiles the export hands the overlay tool are shown over the stretch each
+    /// clip OWNS, not over its whole slot; a clip that owns nothing gets no tile.
+    func testTheExportsHeartRateTilesAreShownOverTheOwnedWindows() {
+        let a = clip(0), b = clip(1), c = clip(2)
+        let t = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1)]
+        let p = plan([a, b, c], transitions: t)                   // A 0–4, B 3–7, C 7–11
+        let samples = [HRPoint(t: 0, bpm: 120), HRPoint(t: 4, bpm: 150)]
+        let content = [a.id: StudioClipHRContent(samples: samples),
+                       b.id: StudioClipHRContent(samples: samples)]   // C has no heart rate
+        XCTAssertEqual(StudioComposer.placedHR(clips: p.clips, clipHRByID: content), [
+            PlacedClipHR(startSec: 0, durationSec: 4, samples: samples,
+                         visibleStartSec: 0, visibleEndSec: 3.5),
+            PlacedClipHR(startSec: 3, durationSec: 4, samples: samples,
+                         visibleStartSec: 3.5, visibleEndSec: 7),
+        ])
+
+        // a 1 s clip under two 1 s transitions owns nothing: no tile for it
+        let short = clip(1, seconds: 1)
+        let both = [StudioTransition(afterClipID: a.id, kind: .dissolve, durationSec: 1),
+                    StudioTransition(afterClipID: short.id, kind: .dissolve, durationSec: 1)]
+        let q = plan([a, short, c], transitions: both)
+        let all = Dictionary(uniqueKeysWithValues: [a, short, c].map { ($0.id, StudioClipHRContent(samples: samples)) })
+        let placed = StudioComposer.placedHR(clips: q.clips, clipHRByID: all)
+        XCTAssertEqual(placed.count, 2)
+        XCTAssertEqual(placed.first?.visibleEndSec, placed.last?.visibleStartSec)
+
+        XCTAssertFalse(StudioOverlays.tileIsShown((start: 3.5, end: 3.5)))
+        XCTAssertFalse(StudioOverlays.tileIsShown(StudioOverlays.tileGate(
+            slotStartSec: 3, slotDurationSec: 1, visibleStartSec: 3.5, visibleEndSec: 3.5)))
+        XCTAssertTrue(StudioOverlays.tileIsShown((start: 3.5, end: 7)))
     }
 
     // MARK: Source lengths (prompt 303)

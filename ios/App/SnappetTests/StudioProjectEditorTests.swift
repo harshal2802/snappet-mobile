@@ -353,6 +353,22 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(StudioProjectEditor.splitClip(s, id: a.id, atOutputOffset: 10, sourceDuration: 10).clips.count, 1)
     }
 
+    /// A clip with no stored end keeps none in its second half: the length it was cut against may
+    /// be an estimate (prompt 303).
+    func testSplitOfAClipWithNoStoredEndLeavesTheSecondHalfWithout() {
+        let a = video(0)                                          // trimEnd nil
+        var s = empty(); s.clips = [a]
+        s = StudioProjectEditor.splitClip(s, id: a.id, atOutputOffset: 4, sourceDuration: 10)
+        let seq = StudioGeometry.ordered(s.clips)
+        XCTAssertEqual(seq.count, 2)
+        XCTAssertEqual(seq[0].trimEnd, 4)
+        XCTAssertEqual(seq[1].trimStart, 4)
+        XCTAssertNil(seq[1].trimEnd)
+        // the two halves still add up to the whole clip
+        XCTAssertEqual(StudioGeometry.clipOutputDuration(seq[0], sourceDuration: 10)
+                       + StudioGeometry.clipOutputDuration(seq[1], sourceDuration: 10), 10, accuracy: 1e-9)
+    }
+
     func testPhotoIsNotSplit() {
         let p = TimelineClip(sessionMediaID: nil, localIdentifier: "p", isPhoto: true, order: 0, photoDurationSec: 5)
         var s = empty(); s.clips = [p]

@@ -176,4 +176,10 @@ final class ClipBakeService: ClipBaking {
         else { return nil }
         return PHAssetResource.assetResources(for: asset).contains { $0.type == .fullSizeVideo }
     }
+
+    /// The length of the video the asset plays now (its current version). `nil` when the asset
+    /// can't be found. Read after a revert, when the original video is the current one again.
+    nonisolated static func currentDuration(localIdentifier: String) -> Double? {
+        PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject?.duration
+    }
 }

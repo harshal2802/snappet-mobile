@@ -557,4 +557,27 @@ final class ClipBakePlanTests: XCTestCase {
         // by the from() contract below via a SessionMedia-shaped fixture in integration tests; the
         // pure guarantee here is the overlay's nil).
     }
+
+    // MARK: "Save to original" keeps the offset (prompt 303)
+
+    /// The recorded length becomes the rendered one; the capture offset does not move (Photos can
+    /// bring the original back). An unreadable rendered length keeps the recorded one.
+    func testSaveToOriginalRecordsTheRenderedLengthAndKeepsTheOffset() {
+        let update = ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: 100, oldDurationSec: 60,
+                                                        renderedDurationSec: 10)
+        XCTAssertEqual(update.offsetSec, 100)
+        XCTAssertEqual(update.durationSec, 10)
+        for unreadable in [nil, 0, -1, Double.nan] as [Double?] {
+            XCTAssertEqual(ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: 100, oldDurationSec: 60,
+                                                              renderedDurationSec: unreadable).durationSec, 60)
+        }
+    }
+
+    /// After "Revert to Original" the recorded length is the asset's again.
+    func testARevertRecordsTheAssetsLength() {
+        XCTAssertEqual(ClipBakePlan.revertedDuration(recorded: 10, asset: 60), 60)
+        XCTAssertEqual(ClipBakePlan.revertedDuration(recorded: 10, asset: nil), 10)
+        XCTAssertEqual(ClipBakePlan.revertedDuration(recorded: 10, asset: 0), 10)
+        XCTAssertNil(ClipBakePlan.revertedDuration(recorded: nil, asset: nil))
+    }
 }

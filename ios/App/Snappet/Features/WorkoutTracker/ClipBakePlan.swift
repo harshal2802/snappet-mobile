@@ -56,6 +56,25 @@ enum ClipBakePlan {
         (max(0, oldOffsetSec + max(0, earliestTrimStart)), renderedDurationSec)
     }
 
+    /// The `SessionMedia` field updates a "Save to original" bake applies (prompt 303). The
+    /// length becomes the rendered length: it is what the asset now plays, and it is the
+    /// timeline's fallback when the video is later not on this phone. The capture offset does
+    /// NOT move, unlike `mediaUpdate`: the asset still holds the original video, "Revert to
+    /// Original" in Photos brings it back, and the offset from before the bake is the only
+    /// record of when that original starts. A rendered length that could not be read keeps the
+    /// recorded one.
+    static func revertibleMediaUpdate(oldOffsetSec: Double, oldDurationSec: Double?,
+                                      renderedDurationSec: Double?) -> (offsetSec: Double, durationSec: Double?) {
+        let rendered = renderedDurationSec.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        return (oldOffsetSec, rendered ?? oldDurationSec)
+    }
+
+    /// The recorded length after "Revert to Original" was found: the asset's own length (the
+    /// original video is back), or the recorded one when the asset's could not be read.
+    static func revertedDuration(recorded: Double?, asset: Double?) -> Double? {
+        asset.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? recorded
+    }
+
     /// Re-point a project's timeline at the replacement asset (destructive bake): neutralize the
     /// baked edit state (`neutralizedClips`) AND swap the `localIdentifier` on the old asset's parts.
     static func repointedClips(_ clips: [TimelineClip], from oldID: String, to newID: String) -> [TimelineClip] {

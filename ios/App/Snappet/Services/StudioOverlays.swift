@@ -126,6 +126,13 @@ enum StudioOverlays {
                             visibleStartSec: Double? = nil,
                             visibleEndSec: Double? = nil) -> CALayer? {
         guard canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
+        // A clip that owns no stretch has no tile at all: an empty window still pulsed for the
+        // length of the gate's edges (prompt 303).
+        if let slotDurationSec,
+           !tileIsShown(tileGate(slotStartSec: slotStartSec, slotDurationSec: slotDurationSec,
+                                 visibleStartSec: visibleStartSec, visibleEndSec: visibleEndSec)) {
+            return nil
+        }
         let w = max(1, canvas.width * tile.width)
         let h = max(1, canvas.height * tile.height)
         let cxTL = tile.centerX * canvas.width
@@ -230,6 +237,11 @@ enum StudioOverlays {
         let start = min(slotEnd, max(slotStartSec, visibleStartSec ?? slotStartSec))
         let end = max(start, min(slotEnd, visibleEndSec ?? slotEnd))
         return (start, end)
+    }
+
+    /// Whether a tile with this window is drawn at all. An empty window is not.
+    static func tileIsShown(_ gate: (start: Double, end: Double)) -> Bool {
+        gate.end - gate.start > 1e-6
     }
 
     /// Value text for a hero / field / chip slot (issue #163), the export twin of `HRTileView`'s

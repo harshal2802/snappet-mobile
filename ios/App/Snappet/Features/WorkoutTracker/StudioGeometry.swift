@@ -148,6 +148,15 @@ enum StudioGeometry {
             out[i].end = middle
             out[i + 1].start = middle
         }
+        // A clip shorter than its two transitions: the two middles cross, so it owns nothing.
+        // With transitions of different lengths the clip before would then own past the point
+        // where the clip after starts to own. The two meet in the middle of the crossed stretch.
+        for i in out.indices where out[i].start > out[i].end {
+            let meet = (out[i].start + out[i].end) / 2
+            out[i] = (start: meet, end: meet)
+            if i > 0 { out[i - 1].end = meet }
+            if i + 1 < out.count { out[i + 1].start = meet }
+        }
         return out.map { (start: $0.start, end: max($0.start, $0.end)) }
     }
 

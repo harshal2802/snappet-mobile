@@ -15,7 +15,8 @@ import os
 final class StudioEditorViewModel {
     let project: StudioProject
     private let context: ModelContext
-    private let composer = StudioComposer()
+    /// Not private so a test can see what it keeps (`hasOpened`); nothing else reaches in.
+    let composer = StudioComposer()
     /// Reports where the timeline's Photos videos are and downloads the iCloud ones (prompt 302).
     /// Asked before the composer, so the composer is only handed clips that are on this phone.
     private let availability: any StudioMediaAvailabilityChecking
@@ -27,6 +28,9 @@ final class StudioEditorViewModel {
     /// Makes the rendered file for a bake or an export. `nil` (always, in the app) renders with
     /// the composer; a test sets it, because the composer needs real Photos videos.
     @ObservationIgnored var renderOverride: (@MainActor () async throws -> URL)?
+    /// Moves the player to a player time and calls back when it is there. `nil` (always, in the
+    /// app) seeks the preview player; `useStandInPlayer` sets it for a test.
+    @ObservationIgnored private var playerSeek: (@MainActor (Double, @escaping @MainActor () -> Void) -> Void)?
     private var undo: UndoStack<StudioProjectSnapshot>
 
     /// When set, the studio is **scoped** to the clips backed by these `SessionMedia.id`s (per-clip or
@@ -168,12 +172,17 @@ final class StudioEditorViewModel {
     func seek(to seconds: Double) {
         let clamped = max(0, min(seconds, totalDuration))
         currentTime = clamped
-        guard let player = previewPlayer else { return }
+        guard playerSeek != nil || previewPlayer != nil else { return }
         // Until the player has finished this seek its clock still reports the old position; the
         // gate keeps those ticks from moving the playhead back (prompt 303).
         let generation = seekGate.begin()
-        player.seek(to: CMTime(seconds: playerGaps.playerTime(forTimelineTime: clamped),
-                               preferredTimescale: 600),
+        let target = playerGaps.playerTime(forTimelineTime: clamped)
+        if let playerSeek {
+            playerSeek(target) { [weak self] in self?.seekGate.finish(generation) }
+            return
+        }
+        guard let player = previewPlayer else { return }
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor [weak self] in self?.seekGate.finish(generation) }
         }
@@ -193,7 +202,27 @@ final class StudioEditorViewModel {
         case .paused, .none: status = .paused
         @unknown default: status = .paused
         }
+        playerStatusChanged(status)
+    }
+
+    private func playerStatusChanged(_ status: StudioPlayerStatus) {
         send(.playerStatusChanged(status))
+    }
+
+    /// For a test only: behave as if a preview was built and its player plays, with `seek`
+    /// standing in for the player's seek. The simulator never has a preview player.
+    func useStandInPlayer(seek: @escaping @MainActor (Double, @escaping @MainActor () -> Void) -> Void) {
+        playerSeek = seek
+        send(.previewBuilt(warning: nil))
+        playerStatusChanged(.playing)
+    }
+
+    /// The player's clock reported this time. The playhead follows it only while the player
+    /// really plays, and not while a seek is still on its way (the clock then still reports the
+    /// position from before the seek). Called by the clock observer, and by a test.
+    func playerClockTicked(_ seconds: Double) {
+        guard StudioTransport.followsPlayerClock(state.player), seekGate.acceptsTick else { return }
+        currentTime = playerGaps.timelineTime(forPlayerTime: seconds)
     }
 
     /// The thin device edge of the transport: observe the player's clock, its play/pause status,
@@ -206,11 +235,9 @@ final class StudioEditorViewModel {
         let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
-                // don't fight an active scrub/seek: the clock is followed only while it really plays
-                guard let self, self.transportGeneration == generation,
-                      StudioTransport.followsPlayerClock(self.state.player),
-                      self.seekGate.acceptsTick else { return }
-                self.currentTime = self.playerGaps.timelineTime(forPlayerTime: t.seconds)
+                // don't fight an active scrub/seek (`playerClockTicked`)
+                guard let self, self.transportGeneration == generation else { return }
+                self.playerClockTicked(t.seconds)
             }
         }
         // Play/pause as the PLAYER reports it: an audio interruption, a stall, the end of the item.
@@ -868,7 +895,11 @@ final class StudioEditorViewModel {
         var end = endSeconds ?? clip.trimEnd ?? src
         start = max(0, min(start, end - minLen))
         end = min(src, max(end, start + minLen))
-        edit { StudioProjectEditor.trimClip($0, id: clip.id, start: start, end: end) }
+        // A trim of the start alone leaves the stored end as it was (none stays none): `src` may
+        // be an estimate, the recorded length of a video that is not on this phone, and a stored
+        // estimate would stay after the real length is read (prompt 303).
+        let storedEnd = endSeconds == nil ? clip.trimEnd : end
+        edit { StudioProjectEditor.trimClip($0, id: clip.id, start: start, end: storedEnd) }
     }
     func setSelectedFilter(_ filter: StudioFilter) {
         guard let id = selectedClipID else { return }
@@ -1746,8 +1777,21 @@ final class StudioEditorViewModel {
             } else {
                 try await service.saveToOriginal(renderedURL: url, localIdentifier: target,
                                                  projectID: project.id)
-                for m in rows { m.isBaked = true }
+                for m in rows {
+                    // The length is the rendered one; the capture offset stays, because Photos
+                    // can bring the original back (`ClipBakePlan.revertibleMediaUpdate`).
+                    let update = ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: m.offsetSec,
+                                                                    oldDurationSec: m.durationSec,
+                                                                    renderedDurationSec: renderedDur)
+                    m.offsetSec = update.offsetSec
+                    m.durationSec = update.durationSec
+                    m.isBaked = true
+                }
                 flattened = ClipBakePlan.flattened(base, target: target, hrTileDrawn: hrTileDrawn)
+                // The recorded lengths are cached with the offsets; read them again.
+                mediaOffsets = [:]
+                mediaOffsetsByLocalID = [:]
+                loadMediaOffsets()
             }
             // `ClipBakePlan.flattened` removed what is now in the pixels and kept what belongs to
             // other clips. Reset undo (barrier), persist. The updatedAt bump also feeds the Clips
@@ -1796,17 +1840,29 @@ final class StudioEditorViewModel {
         guard !rows.isEmpty else { return }
         let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
         Task { [weak self] in
-            let reverted: [UUID] = await Task.detached(priority: .utility) {
-                probes.compactMap { probe in
-                    ClipBakeService.hasEditedRendition(localIdentifier: probe.localIdentifier) == false
-                        ? probe.id : nil
+            // For a reverted asset, also the length of the video it plays again (the original).
+            let found: [UUID: Double?] = await Task.detached(priority: .utility) {
+                var out: [UUID: Double?] = [:]
+                for probe in probes
+                where ClipBakeService.hasEditedRendition(localIdentifier: probe.localIdentifier) == false {
+                    out[probe.id] = ClipBakeService.currentDuration(localIdentifier: probe.localIdentifier)
                 }
+                return out
             }.value
+            let reverted = Array(found.keys)
             // A bake in flight replaces the project when it ends; leave everything for the next
             // open rather than have the clearing below overwritten.
             guard let self, !reverted.isEmpty, !self.isBaking else { return }
             let revertedRows = rows.filter { reverted.contains($0.id) }
-            for m in revertedRows { m.isBaked = false }
+            for m in revertedRows {
+                m.isBaked = false
+                // The bake recorded the rendered length; the original's is back (prompt 303).
+                m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
+                                                              asset: found[m.id] ?? nil)
+            }
+            self.mediaOffsets = [:]
+            self.mediaOffsetsByLocalID = [:]
+            self.loadMediaOffsets()
             // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
             // go and the project's items draw over it again (prompt 295). Like a bake, this is
             // an undo barrier: an older step would bring the record back.

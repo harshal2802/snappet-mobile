@@ -13043,3 +13043,39 @@ the length handling can be tested on the simulator, which has no Photos videos. 
 `nil` / the real service in the app, like `saver` (prompt 302). Preview rebuilds go through one
 `scheduleRebuild()` that keeps its tasks; a test waits with `previewBuildsFinished()` and counts
 with `previewBuildCount` instead of watching observation callbacks and sleeping.
+
+## 2026-11-25 — "Save to original" records the rendered length and keeps the capture offset (prompt 303)
+
+`SessionMedia.durationSec` is the timeline's fallback for a video that is not on the phone, so a
+"Save to original" bake now sets it to the rendered length, as "Replace original" always did.
+The capture offset is different: "Replace original" moves it by the earliest trim start because
+the new asset IS the trimmed video and the old one is gone. A "Save to original" asset still
+holds the original video, and "Revert to Original" in Photos brings it back. The offset from
+before the bake is the only record of when that original starts; there is no field to keep it
+in while the offset is moved, and a revert that left the offset late by the trim start would put
+the feed's live HR overlay (which stands up again on a revert) on the wrong seconds for good. So
+it does **not** move. The cost: an HR tile added in the Studio to an already baked,
+start-trimmed clip is sampled from the original's start. A baked clip's HR is approximate in any
+case (a baked speed change is not undone either), and the feed draws no live overlay on a baked
+clip. Fixing it needs a stored pre-bake offset on `SessionMedia` (a schema change, not made
+here). On a detected revert the recorded length is set back to the asset's own length, read
+from Photos with the probe that finds the revert.
+
+## 2026-11-25 — A stored trim end is always chosen, never estimated (prompt 303)
+
+`trimEnd == nil` means "to the end of the video, whatever its length is". A trim of the start
+alone and the second half of a split used to store the length they were clamped against. That
+length can be the recorded one of a video that is in iCloud (prompt 303's fallback), and a stored
+estimate stays after the real length is read. Both now leave `trimEnd` as it was. An end the user
+drags is stored, clamped to the length known at that moment.
+
+## 2026-11-25 — The availability question waits 4 s for Photos (prompt 303)
+
+Since no preview is built before the first availability result, one Photos request that never
+calls back left the Studio without a preview for good. Each question now ends after 4 s as "no
+answer", which counts as available: the same fallback "no local video, no reason given" already
+had, because a wrong "missing" blocks the export of a good clip while a wrong "available" only
+lets the composer try, as it did before the check existed. The answer-to-status rule is pure
+(`StudioAvailabilityProbe`); the wait (`StudioFirstAnswer`) has no Photos in it and is unit
+tested; only the request itself is device code.
+

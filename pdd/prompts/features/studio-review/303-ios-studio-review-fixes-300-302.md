@@ -118,11 +118,37 @@ Device edge and view model:
   build shows it.
 - A never-trimmed clip whose length is not known cannot be trimmed until it is.
 
+### Follow-ups from the second review (same PR, second commit)
+
+- **"Save to original" records the rendered length.** `ClipBakePlan.revertibleMediaUpdate` sets
+  `SessionMedia.durationSec` to the rendered length (a 60 s clip trimmed to 10 s, baked and later
+  moved to iCloud showed 60 s on the timeline). The capture offset does **not** move for this
+  variant; see `decisions.md`. When a "Revert to Original" is found, the recorded length becomes
+  the asset's own again (`ClipBakePlan.revertedDuration`, `ClipBakeService.currentDuration`).
+- **A stored end is never an estimate.** A trim of the start alone leaves `trimEnd` as it was
+  (none stays none), and the second half of a split keeps the clip's own `trimEnd` (none stays
+  none). Before, both stored the length they were clamped against, which can be the recorded
+  length of a video that is not on the phone.
+- **No HR tile for a clip that owns no stretch.** `StudioComposer.placedHR` (the tiles the export
+  hands the overlay tool, now one function) leaves such a clip out, and
+  `StudioOverlays.hrTileLayer` returns no layer for an empty window (`tileIsShown`). The empty
+  window used to pulse for the length of the gate's edges.
+- **`ownedWindows` with crossed middles.** When a clip's two boundaries cross, it owns nothing and
+  its neighbours meet at one point. `StudioGeometry.timeline` cannot produce such slots today (a
+  transition is no longer than either clip); the rule no longer depends on that.
+- **The availability question has a time limit.** `StudioAvailabilityProbe` (pure): the four
+  answers and the status each gives; no answer within 4 s counts as available, like "no reason".
+  `StudioFirstAnswer.wait` (no Photos): one answer from a callback, or the fallback after the
+  limit, resumed once; the request is cancelled when the limit wins.
+- **Seams for the tests:** `useStandInPlayer(seek:)` (acts as a built preview whose player plays,
+  with the given seek), `playerClockTicked` (the clock observer now calls it), `composer` is
+  readable, and `StudioComposer.remember` / `hasOpened`.
+
 ## Not done
 
-- A "Save to original" bake still leaves `SessionMedia.durationSec` at the length from before the
-  bake ("Replace original" updates it). It only matters as the timeline's fallback, for a baked
-  clip that is later moved to iCloud.
+- A "Save to original" bake does not move the capture offset, so an HR tile added in the Studio
+  to an already baked, start-trimmed clip is sampled from the original's start (earlier by the
+  trimmed length). Moving it needs the old offset stored for a revert: a new model field.
 - In "Preview without it", music that started before a left-out clip does not skip that clip's
   length (there is no source offset to move).
 - A short clip that lies wholly under both of its transitions owns no stretch, so its own HR tile
@@ -147,10 +173,25 @@ Device edge and view model:
   refuses while the clip is in iCloud; a bake with a save that fails ends as
   `savedProjectNotUpdated` for both variants, with no save banner; after a bake the clip's length
   is read again; a bake is refused, with nothing rendered or written, when the video has no rows.
+- follow-ups: the bake fixture renders a real 1 s video and the stand-in reader then reports
+  1.5 s, so the length after the bake can only come from the second read (`refreshing:`), and the
+  composer is given an opened video first, which must be gone after the bake (`forget`); the
+  recorded length is the rendered one and the offset stays (moves by the trim start for "Replace
+  original"); a baked clip later in iCloud has its baked length; a start-only trim and a split
+  against the recorded length store no end; a clock tick before the seek has finished does not
+  move the playhead (through `useStandInPlayer`), also with two seeks in a row; the four probe answers;
+  `StudioFirstAnswer.wait` with an answer, with none (fallback, cancel called), and with a late one.
+  The unused view model in the picture-in-picture test is gone.
 
 `StudioRenderPlanTests`: the short-middle-clip test asserts its fades unconditionally (up over
 3…3.5, down over 3.5…4); the fade rule by itself; owned stretches (back to back, inside each
 slot, the editor's owner rule, the export's tile gate); timeline lengths and the trim length.
+Follow-ups: a short middle clip under transitions of different lengths; slots whose middles
+cross; the `PlacedClipHR` values the composer builds are the owned windows, and a clip that owns
+nothing has none.
+
+`StudioProjectEditorTests`: a split of a clip with no stored end. `ClipBakePlanTests`: the
+"Save to original" update and the length after a revert.
 
 `StudioEditorStateTests`: the seek gate.
 
@@ -190,3 +231,9 @@ Nothing here was run on a phone.
 11. Start a download, cancel, start again: the bar starts at 0.
 12. A picture-in-picture moved past the end of the timeline, with its source in iCloud: Export is
     on. Drag it back inside: the panel appears.
+13. "Save to original" on a trimmed clip, then "Revert to Original" in Photos, then open the
+    Studio: the clip has its full length again (the reverted length is read from Photos; the
+    simulator cannot run this).
+14. The time limit of the availability question is only compiled for a phone
+    (`StudioMediaAvailabilityService.localStatus`); the Studio opens as before with clips on the
+    phone and in iCloud.

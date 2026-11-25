@@ -431,3 +431,33 @@ enum StudioSaveFailure: Equatable, Sendable {
         }
     }
 }
+
+/// What the "is this video on the phone" question came back with, and the status each answer
+/// gives (prompt 303). Pure; `StudioMediaAvailabilityService` asks Photos and waits.
+enum StudioAvailabilityProbe {
+    enum Answer: Equatable, Sendable {
+        /// Photos handed the video over with the network off.
+        case onPhone
+        /// Photos has no local video and says it is in iCloud.
+        case inCloud
+        /// Photos has no local video and gave no reason.
+        case noReason
+        /// Photos did not answer within `timeoutSec`.
+        case noAnswer
+    }
+
+    /// How long one answer is waited for. Photos normally answers a network-off request at once;
+    /// without a limit, one request that never calls back kept the Studio from ever building a
+    /// preview (nothing is built before the first availability result).
+    static let timeoutSec: Double = 4
+
+    /// Only a definite "in iCloud" asks for a download. No reason and no answer both count as
+    /// available, so the composer tries the clip exactly as it did before this check existed (a
+    /// wrong "missing" would block the export of a good clip).
+    static func status(_ answer: Answer) -> StudioAssetStatus {
+        switch answer {
+        case .inCloud: return .inCloud
+        case .onPhone, .noReason, .noAnswer: return .available
+        }
+    }
+}

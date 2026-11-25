@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import AVFoundation
 @testable import Snappet
 
 /// Missing media as a real state, and a failed save that is reported (prompt 302): the pure
@@ -519,9 +520,49 @@ final class StudioMediaPlanTests: XCTestCase {
         init(_ byAsset: [String: Double]) { self.byAsset = byAsset }
     }
 
-    /// A project that can be baked: one video clip of asset "A" (trimmed to 4 s of 9), its
-    /// `SessionMedia` row unless `withRow` is false, a stand-in render (an empty temp file) and
-    /// a stand-in duration reader. `renders` counts the renders.
+    /// A real, very small H.264 video of the given length (the stand-in for a bake's render).
+    private func shortVideo(seconds: Double) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("studio303-render-\(UUID().uuidString).mp4")
+        let side = 32, fps: Int32 = 30
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: side, AVVideoHeightKey: side])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: side, kCVPixelBufferHeightKey as String: side])
+        writer.add(input)
+        XCTAssertTrue(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        let frames = Int(seconds * Double(fps))
+        var index = 0
+        while index < frames {
+            guard input.isReadyForMoreMediaData, let pool = adaptor.pixelBufferPool else { usleep(1_000); continue }
+            var made: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &made)
+            let buffer = try XCTUnwrap(made)
+            CVPixelBufferLockBaseAddress(buffer, [])
+            if let base = CVPixelBufferGetBaseAddress(buffer) {
+                memset(base, 128, CVPixelBufferGetBytesPerRow(buffer) * side)
+            }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(index), timescale: fps))
+            index += 1
+        }
+        input.markAsFinished()
+        writer.endSession(atSourceTime: CMTime(value: CMTimeValue(frames), timescale: fps))
+        let done = DispatchSemaphore(value: 0)
+        writer.finishWriting { done.signal() }
+        done.wait()
+        XCTAssertEqual(writer.status, .completed)
+        return url
+    }
+
+    /// A project that can be baked: one video clip of asset "A" (4 s of its 9, from 2 s in), its
+    /// `SessionMedia` row unless `withRow` is false, a stand-in render (a real video, 1 s long:
+    /// `rendered`, copied for each render because a bake deletes its file) and a stand-in
+    /// duration reader. `renders` counts the renders.
     @MainActor
     private struct BakeFixture {
         let vm: StudioEditorViewModel
@@ -530,6 +571,7 @@ final class StudioMediaPlanTests: XCTestCase {
         let media: SessionMedia
         let lengths: Lengths
         let renders: Lengths
+        let rendered: URL
         let container: ModelContainer
     }
 
@@ -542,7 +584,7 @@ final class StudioMediaPlanTests: XCTestCase {
         let media = SessionMedia(sessionID: project.sessionID, localIdentifier: "A", kind: .video,
                                  offsetSec: 10, durationSec: 9)
         let clip = TimelineClip(sessionMediaID: media.id, localIdentifier: "A", isPhoto: false,
-                                order: 0, trimStart: 0, trimEnd: 4)
+                                order: 0, trimStart: 2, trimEnd: 6)
         project.clips = [clip]
         container.mainContext.insert(project)
         if withRow { container.mainContext.insert(media) }
@@ -551,15 +593,17 @@ final class StudioMediaPlanTests: XCTestCase {
         let lengths = Lengths(["A": 9])
         let renders = Lengths([:])
         vm.sourceDurationLoader = { lengths.byAsset[$0] }
+        let rendered = try shortVideo(seconds: 1)
+        addTeardownBlock { try? FileManager.default.removeItem(at: rendered) }
         vm.renderOverride = {
             renders.byAsset["count", default: 0] += 1
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("studio303-bake-\(UUID().uuidString).mp4")
-            try Data().write(to: url)
+            try FileManager.default.copyItem(at: rendered, to: url)
             return url
         }
         return BakeFixture(vm: vm, project: project, clip: clip, media: media, lengths: lengths,
-                           renders: renders, container: container)
+                           renders: renders, rendered: rendered, container: container)
     }
 
     /// The panel's title, or nil when the editor is not in the clip-missing phase.
@@ -832,7 +876,9 @@ final class StudioMediaPlanTests: XCTestCase {
     /// the editor in the clip-missing phase or block the export.
     @MainActor
     func testAPictureInPicturePastTheEndDoesNotBlockExport() async throws {
-        let (vm, project, _, container) = try makeViewModel(
+        // `makeViewModel`'s own view model is not used: the overlay is added first, and the one
+        // under test is made from the project as it then is.
+        let (_, project, _, container) = try makeViewModel(
             FakeAvailability(["A": .available, "B": .available, "C": .available, "P": .inCloud]))
         defer { withExtendedLifetime(container) {} }
         let past = OverlayItem(kind: .video, content: "P", startSec: 20, endSec: 25)   // timeline is 12 s
@@ -840,7 +886,6 @@ final class StudioMediaPlanTests: XCTestCase {
         let fresh = StudioEditorViewModel(project: project, context: container.mainContext,
                                           availability: FakeAvailability(["A": .available, "B": .available,
                                                                           "C": .available, "P": .inCloud]))
-        _ = vm
         await fresh.onAppear()
         XCTAssertNil(panelTitle(fresh))
         XCTAssertTrue(fresh.state.canExport)
@@ -882,29 +927,187 @@ final class StudioMediaPlanTests: XCTestCase {
         XCTAssertEqual(f.vm.sourceDurations[f.clip.id], 9)
         XCTAssertEqual(f.vm.totalDuration, 4)                  // trimmed to 4 of 9
 
-        f.lengths.byAsset["A"] = 4                             // the baked video is the 4 s that were kept
+        // The render is 1 s long. Photos then reports 1.5 s for the baked video: a different
+        // number on purpose, so the length after the bake can only come from reading it again.
+        f.lengths.byAsset["A"] = 1.5
+        await f.vm.composer.remember(url: f.rendered, localIdentifier: "A")   // opened before the bake
         let baker = FakeBaker()
         await f.vm.bake(replaceOriginal: false, service: baker)
         XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
         XCTAssertTrue(f.media.isBaked)
+        // the recorded length is the rendered one (it was 9); the capture offset has not moved
+        XCTAssertEqual(f.media.durationSec ?? -1, 1, accuracy: 0.1)
+        XCTAssertEqual(f.media.offsetSec, 10)
         await f.vm.previewBuildsFinished()
 
         XCTAssertNil(f.vm.clips.first?.trimEnd)                // the trim is in the pixels now
-        XCTAssertEqual(f.vm.sourceDurations[f.clip.id], 4)     // not the 9 s from before the bake
-        XCTAssertEqual(f.vm.totalDuration, 4)
+        XCTAssertEqual(f.vm.clips.first?.trimStart, 0)
+        XCTAssertEqual(f.vm.sourceDurations[f.clip.id], 1.5)   // read again: not 9, not the render's 1
+        XCTAssertEqual(f.vm.totalDuration, 1.5)
+        // the composer no longer keeps the video it opened before the bake
+        let stillOpened = await f.vm.composer.hasOpened(localIdentifier: "A")
+        XCTAssertFalse(stillOpened)
 
         // "Replace original": the clip points at the new asset and its length is that asset's
         let r = try makeBakeFixture()
         defer { withExtendedLifetime(r.container) {} }
         await r.vm.onAppear()
-        r.lengths.byAsset["NEW"] = 4
+        r.lengths.byAsset["NEW"] = 1.5
+        await r.vm.composer.remember(url: r.rendered, localIdentifier: "A")
         await r.vm.bake(replaceOriginal: true, service: baker)
         XCTAssertEqual(r.vm.bakeState, .saved(replaced: true))
+        XCTAssertEqual(r.media.durationSec ?? -1, 1, accuracy: 0.1)
+        XCTAssertEqual(r.media.offsetSec, 12)                  // the new video starts 2 s in
         await r.vm.previewBuildsFinished()
         XCTAssertEqual(r.vm.clips.first?.localIdentifier, "NEW")
         XCTAssertEqual(r.media.localIdentifier, "NEW")
-        XCTAssertEqual(r.vm.sourceDurations[r.clip.id], 4)
-        XCTAssertEqual(r.vm.totalDuration, 4)
+        XCTAssertEqual(r.vm.sourceDurations[r.clip.id], 1.5)
+        XCTAssertEqual(r.vm.totalDuration, 1.5)
+        let oldStillOpened = await r.vm.composer.hasOpened(localIdentifier: "A")
+        XCTAssertFalse(oldStillOpened)
+    }
+
+    /// A baked clip that is later not on this phone has the baked length on the timeline, not
+    /// the length from before the bake.
+    @MainActor
+    func testABakedClipThatIsLaterInICloudHasItsBakedLength() async throws {
+        let f = try makeBakeFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        await f.vm.onAppear()
+        await f.vm.bake(replaceOriginal: false, service: FakeBaker())
+        await f.vm.previewBuildsFinished()
+
+        // the Studio is opened again, with the video offloaded to iCloud
+        let later = StudioEditorViewModel(project: f.project, context: f.container.mainContext,
+                                          availability: FakeAvailability(["A": .inCloud]))
+        await later.onAppear()
+        XCTAssertNil(later.sourceDurations[f.clip.id])
+        XCTAssertEqual(later.totalDuration, 1, accuracy: 0.1)  // not the 9 s recorded before the bake
+    }
+
+    // MARK: A stored end is never an estimate (prompt 303)
+
+    /// While a clip's length is the recorded one (the video is in iCloud), a trim of its start
+    /// and a split do not store that length as the clip's end.
+    @MainActor
+    func testATrimOrSplitAgainstTheRecordedLengthDoesNotStoreIt() async throws {
+        let (vm, _, clips, container) = try makeViewModel(
+            FakeAvailability(["A": .available, "B": .inCloud, "C": .available]), trimEnd: nil, recorded: 6)
+        defer { withExtendedLifetime(container) {} }
+        vm.sourceDurationLoader = { ["A": 5.0, "B": 7.0, "C": 3.0][$0] }
+        await vm.onAppear()
+
+        vm.select(clips[1].id)
+        vm.trimSelected(startSeconds: 1, endSeconds: nil)
+        XCTAssertEqual(vm.clips[1].trimStart, 1)
+        XCTAssertNil(vm.clips[1].trimEnd)                      // not 6
+        XCTAssertEqual(vm.outputDuration(of: vm.clips[1]), 5)  // 1…6 while the length is the recorded one
+
+        vm.splitSelected()                                     // in the middle: 3.5 s into the source
+        XCTAssertEqual(vm.clips.count, 4)
+        XCTAssertEqual(vm.clips[1].trimEnd ?? -1, 3.5, accuracy: 1e-9)   // the cut: chosen, not estimated
+        XCTAssertEqual(vm.clips[2].trimStart, 3.5, accuracy: 1e-9)
+        XCTAssertNil(vm.clips[2].trimEnd)
+
+        // an end the user sets IS stored
+        vm.select(clips[0].id)
+        vm.trimSelected(startSeconds: nil, endSeconds: 2)
+        XCTAssertEqual(vm.clips[0].trimEnd, 2)
+        // and a start-only trim of a clip that has an end keeps that end
+        vm.trimSelected(startSeconds: 0.5, endSeconds: nil)
+        XCTAssertEqual(vm.clips[0].trimStart, 0.5)
+        XCTAssertEqual(vm.clips[0].trimEnd, 2)
+    }
+
+    // MARK: The seek gate is asked (prompt 303)
+
+    @MainActor
+    private final class SeekCalls {
+        var targets: [Double] = []
+        var arrived: [@MainActor () -> Void] = []
+    }
+
+    /// A clock tick that arrives before the player has finished a seek does not move the
+    /// playhead back; the first tick after it does move it.
+    @MainActor
+    func testAClockTickBeforeTheSeekHasFinishedDoesNotMoveThePlayhead() async throws {
+        let (vm, _, _, container) = try makeViewModel(
+            FakeAvailability(["A": .available, "B": .available, "C": .available]))
+        defer { withExtendedLifetime(container) {} }
+        await vm.onAppear()
+        let calls = SeekCalls()
+        vm.useStandInPlayer { target, arrived in
+            calls.targets.append(target)
+            calls.arrived.append(arrived)
+        }
+        XCTAssertEqual(vm.state.player, .playing)
+        vm.playerClockTicked(1)
+        XCTAssertEqual(vm.currentTime, 1)                      // playing: the clock is followed
+
+        vm.seek(to: 5)
+        XCTAssertEqual(calls.targets, [5])
+        vm.playerClockTicked(1.05)                             // the clock still reports the old position
+        XCTAssertEqual(vm.currentTime, 5)
+        calls.arrived[0]()
+        vm.playerClockTicked(5.05)
+        XCTAssertEqual(vm.currentTime, 5.05)
+
+        // two seeks in a row: the first one finishing does not open the gate for the second
+        vm.seek(to: 2)
+        vm.seek(to: 8)
+        calls.arrived[1]()
+        vm.playerClockTicked(2.05)
+        XCTAssertEqual(vm.currentTime, 8)
+        calls.arrived[2]()
+        vm.playerClockTicked(8.05)
+        XCTAssertEqual(vm.currentTime, 8.05)
+    }
+
+    // MARK: The availability question has a time limit (prompt 303)
+
+    func testOnlyADefiniteICloudAnswerAsksForADownload() {
+        XCTAssertEqual(StudioAvailabilityProbe.status(.onPhone), .available)
+        XCTAssertEqual(StudioAvailabilityProbe.status(.inCloud), .inCloud)
+        XCTAssertEqual(StudioAvailabilityProbe.status(.noReason), .available)
+        XCTAssertEqual(StudioAvailabilityProbe.status(.noAnswer), .available)   // Photos never called back
+        XCTAssertGreaterThan(StudioAvailabilityProbe.timeoutSec, 0)
+        XCTAssertLessThanOrEqual(StudioAvailabilityProbe.timeoutSec, 10)
+    }
+
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.lock(); value = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    /// The wait ends with the answer when it comes, and with the fallback (and a cancel of the
+    /// request) when it does not come in time. A late or a second answer changes nothing.
+    func testAnAnswerThatNeverComesEndsAsTheFallback() async {
+        let answered = await StudioFirstAnswer.wait(seconds: 5, otherwise: StudioAvailabilityProbe.Answer.noAnswer) { answer in
+            answer(.inCloud)
+            answer(.onPhone)                                   // a second callback is ignored
+            return nil
+        }
+        XCTAssertEqual(answered, .inCloud)
+
+        let cancelled = Flag()
+        let started = Date()
+        let silent = await StudioFirstAnswer.wait(seconds: 0.05, otherwise: StudioAvailabilityProbe.Answer.noAnswer) { _ in
+            return { cancelled.set() }                         // never answers
+        }
+        XCTAssertEqual(silent, .noAnswer)
+        XCTAssertTrue(cancelled.isSet)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        XCTAssertEqual(StudioAvailabilityProbe.status(silent), .available)
+
+        // an answer that comes after the limit is dropped, not delivered twice
+        let late = await StudioFirstAnswer.wait(seconds: 0.05, otherwise: 0) { answer in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { answer(7) }
+            return nil
+        }
+        XCTAssertEqual(late, 0)
+        try? await Task.sleep(for: .milliseconds(300))         // the late answer arrives; nothing crashes
     }
 
     /// The video's records are read before anything is rendered or written. If there are none
@@ -921,7 +1124,7 @@ final class StudioMediaPlanTests: XCTestCase {
         XCTAssertTrue(baker.replaced.isEmpty)                  // Photos was not touched
         XCTAssertTrue(baker.saved.isEmpty)
         XCTAssertNil(f.renders.byAsset["count"])               // nothing was rendered
-        XCTAssertEqual(f.vm.clips.first?.trimEnd, 4)           // the project is as it was
+        XCTAssertEqual(f.vm.clips.first?.trimEnd, 6)           // the project is as it was
         XCTAssertEqual(f.vm.clips.first?.localIdentifier, "A")
         XCTAssertFalse(f.vm.isBaking)
         XCTAssertTrue(f.vm.canEdit)
