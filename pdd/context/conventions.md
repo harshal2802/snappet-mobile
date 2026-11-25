@@ -130,6 +130,24 @@ Each mini-app is a self-contained `Features/<App>/` folder. To add one:
    relations by `UUID` foreign key for clean per-parent `#Predicate` queries). Trivial state → `@AppStorage`.
 5. **Two central edits to wire it in:** append `<App>Module.module` to `ModuleRegistry.all` and your
    `@Model` types to `SnappetSchema.models` (both in `Core/`). Then `xcodegen generate` & build.
+- **Studio golden frames** (prompt 304): **a change to how a Studio frame looks must change a golden image in
+  the same PR, and the prompt must say why.** `SnappetTests/StudioGoldenFrameTests` renders each
+  `StudioGoldenScene` through the export (a real file) and through the preview's video composition and compares
+  the listed frames with the PNGs in `ios/App/SnappetTests/GoldenFrames/`. A golden image that changed with no
+  reason in the prompt is a review finding; so is a rendering change with no golden image changed.
+  - New rendering gets a scene (or a frame in one) in `StudioGoldenScenes.swift` and a test in that class. The
+    placeholder tests there (`XCTSkip`) are for what the compositor does not draw yet.
+  - The source videos are **not** in the repo. `StudioGoldenRenderer.makeFixture` writes them from
+    `StudioGoldenPattern`; do not commit a video for a golden test.
+  - **To record**: `touch ios/App/SnappetTests/GoldenFrames/.record`, run
+    `-only-testing:SnappetTests/StudioGoldenFrameTests`, delete the file, run again. With the file there every
+    scene's export frames are written as the new images and `testRecordModeIsOff` fails, so a recording run is
+    never green. It is a file, not an environment variable, because `xcodebuild` does not pass the shell's
+    environment to a hosted unit test. `.record` is git-ignored. Look at each changed PNG before committing it.
+  - The tolerances are in `StudioSelfCheck.tolerance(for:on:)`. Do not loosen one to make a test pass; find out
+    what moved.
+  - A Debug build copies the images into the app (`project.yml`, "Copy Studio golden frames") for the
+    Settings → Developer → **Studio render check** screen, which runs the same check on a phone.
 
 ## Keep the knowledge graph current
 

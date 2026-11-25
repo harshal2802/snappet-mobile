@@ -13079,3 +13079,87 @@ lets the composer try, as it did before the check existed. The answer-to-status 
 (`StudioAvailabilityProbe`); the wait (`StudioFirstAnswer`) has no Photos in it and is unit
 tested; only the request itself is device code.
 
+
+## 2026-11-25 — Golden frames compare brightness per pixel and colour averaged over 8 pixels (prompt 304)
+
+The first comparison looked at R, G and B per pixel. It could not tell an encoder from a bug. A
+video file keeps brightness for every pixel and colour for every second pixel each way, so a
+frame read back from an export has a band of wrong-coloured pixels along every sharp colour
+edge: up to 158 levels off in one channel and 4 pixels wide after the `vivid` filter. A block
+drawn one frame late is also a band of very different pixels, of the same size. Measured on the
+56 golden frames (preview frame against the export's golden image): 300–2,300 pixels a frame
+were more than 24 levels off in a channel.
+
+The comparison (`StudioGoldenCompare`) now looks at the two things a file treats differently:
+
+- **brightness** (BT.709 luma), per pixel. Over the same 56 frames the largest difference
+  between preview and export is **17**.
+- **colour** (the two colour-difference values), each averaged over an 8 × 8 square. The smear
+  at an edge averages out; a wrong filter or a wrong clip does not. Largest difference: **18**.
+
+A pixel differs when either is over its limit. A frame fails when more than `maxFraction` of its
+pixels differ, or when more than `maxCellFraction` of one 16 × 16 square does (the squares overlap
+by half). The second rule is what catches a small element in the wrong place.
+
+What the colour average gives up: a change of colour only, with the same brightness, in a patch
+smaller than about 3 × 3 pixels. Nothing the Studio draws is that.
+
+## 2026-11-25 — Golden-frame tolerances (prompt 304)
+
+`StudioSelfCheck.tolerance(for:on:)`. Limits are brightness / averaged colour (0…255), share of
+the frame, share of one 16 × 16 square.
+
+| Where | Limits | Why |
+|---|---|---|
+| Simulator, export | 10 / 8, 0.2 %, 6 % | The golden images are made this way. Two runs, in one process and in two, gave the same bytes (largest difference 0). The room is for another Mac's encoder. |
+| Simulator, preview | 24 / 22, 0.5 %, 10 % | The same frame without the export's H.264 pass. Measured: 17 / 18. With these limits no pixel of any of the 56 frames differs. |
+| Device, export | 28 / 24, 1 %, 15 % | **Not measured**: no phone run yet. Another encoder writes the sources and the file, another GPU draws. |
+| Device, preview | 32 / 26, 1.5 %, 20 % | As above. |
+
+Every one of them still fails the two mistakes the fixture is built to show
+(`StudioSelfCheckPlanTests`): the white block one frame early or late (it moves 6 pixels a
+frame, so a strip 6 pixels wide changes brightness by about 100 — 37 % of a square), and the
+block missing. If the first phone run fails on a device limit, look at the difference pictures
+before changing a number: a limit is raised only for noise that is spread along edges.
+
+## 2026-11-25 — The golden fixture is written in code, not committed (prompt 304)
+
+The source videos for the golden frames are drawn by `StudioGoldenPattern` (four colour
+quarters, a corner mark, a white block that moves 6 pixels a frame) and written with
+`AVAssetWriter` when a test class or the self-check starts: two 180×320 clips, one 320×180, one
+320×180 with a quarter-turn `preferredTransform`, 1 s each at 30 frames a second, with a 440 Hz
+tone. (They were 2 s at first; halving them halved the suite's time and lost no case.) Fixed encoder settings (H.264, no frame reordering, a key frame every second, a fixed bit
+rate, BT.709). A test writes one source twice and requires the same decoded pixels.
+
+Why not commit them: a video in the repo cannot be reviewed, and a phone would need it bundled.
+Written in code, the same sources exist on the simulator and on the phone, and a test can say
+where the block must be in any frame. The cost: the sources depend on the machine's H.264
+encoder, so a new Xcode or macOS can move the goldens by a little. The tolerances above are
+the room for that; a re-record is the fix if it is more.
+
+The golden images themselves **are** committed: 56 PNGs, 290 KB in all, in
+`ios/App/SnappetTests/GoldenFrames/`. They are recorded from the **export** (a real file from
+`StudioComposer.export`), because that is what a person gets; the preview is compared with the
+same images.
+
+## 2026-11-25 — One folder of golden images, read two ways (prompt 304)
+
+The unit tests read `SnappetTests/GoldenFrames/` by path (from `#filePath`, as
+`WardrobeImageStoreRealDataTests` finds its folder), so a recording is readable at once. The
+debug self-check needs the same images on a phone, so a build script on the app target copies
+them into `Snappet.app/StudioGoldenFrames/` in a **Debug** build and removes the folder in any
+other. They are left out of the test bundle. `testTheAppBundleCarriesTheSameGoldenImages` fails
+if the app's copies are not byte-for-byte the repo's. Record mode is a marker file
+(`GoldenFrames/.record`, git-ignored), not an environment variable: `xcodebuild` does not pass
+the shell's environment to a hosted unit test. A recording run always fails one test.
+
+## 2026-11-25 — The self-check exports through `StudioComposer.export(composition:…)` (prompt 304)
+
+`StudioComposer.export(_:)` was split in two: it builds the composition from Photos and hands
+it to a new `export(composition:videoComposition:audioMix:quality:progress:)`, which holds the
+session, the preset, the progress reports and the clean-up, unchanged. The golden tests and the
+self-check build their composition with `assemble` (no Photos) and call the second half, so
+they write a file with the code the Studio uses. Nothing about what is drawn changed.
+
+All the check's code in the app (`StudioGoldenCompare`, `StudioGoldenScenes`,
+`StudioSelfCheck`, `StudioGoldenRenderer`, `StudioSelfCheckView`) is inside `#if DEBUG`.

@@ -392,6 +392,17 @@ final class StudioComposer: Sendable {
             hrTile: hrTile, clipHRByID: clipHRByID)
         // Building the composition does not stop on a cancel; do not start a render nobody wants.
         try Task.checkCancellation()
+        return try await export(composition: composition, videoComposition: videoComposition,
+                                audioMix: audioMix, quality: quality, progress: progress)
+    }
+
+    /// The export itself, for a composition that is already built: the session, its preset, the
+    /// progress reports and the clean-up. `export(_:)` above ends here; the golden-frame tests and
+    /// the debug self-check (prompt 304) call it with a composition from `assemble`, so they write
+    /// a file the same way the Studio does.
+    func export(composition: AVMutableComposition, videoComposition: AVVideoComposition?,
+                audioMix: AVAudioMix?, quality: StudioExportQuality = .highest,
+                progress: (@MainActor @Sendable (Double) -> Void)? = nil) async throws -> URL {
         let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
             ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
         guard let session else {
