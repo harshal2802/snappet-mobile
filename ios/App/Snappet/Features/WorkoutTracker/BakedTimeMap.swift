@@ -10,7 +10,13 @@ import Foundation
 /// **Source time** is seconds into the recording whose first frame was filmed at
 /// `SessionMedia.offsetSec`. `nil` on a row means "the rendition is that recording": source time
 /// equals rendition time. That is every clip that was never baked, a clip whose bake was reverted
-/// in Photos, a bake that changed no timing, and every clip baked before this field existed.
+/// in Photos, a "Save to original" that changed no timing, and every clip baked before this
+/// field existed.
+///
+/// It is also the row's **bake record**: a value with `isRevertible == false` says "this asset IS
+/// the bake, there is nothing to revert" ("Replace original"). Such a row always has one, also
+/// when its timing is the identity, because the revert probe cannot tell a replaced asset from a
+/// reverted one.
 ///
 /// Foundation only; stored on `SessionMedia` as JSON (`bakeTimeMapData`) and carried in the
 /// backup as a nested value.
@@ -36,12 +42,45 @@ struct BakedTimeMap: Codable, Sendable, Hashable {
     /// this map wrong, so it is dropped when the revert is found. `false` for "Replace original":
     /// the asset is a new video with nothing to revert to, and the map stays for the row's life.
     var isRevertible: Bool
+    /// Only on a revertible map written over a "Replace original" asset: the timing of that
+    /// replaced video, which is what Photos goes back to on "Revert to Original". `nil` = a revert
+    /// goes back to the recording itself. Optional, so a value stored without it still decodes.
+    var revertsTo: Timing?
 
-    init(segments: [Segment], renditionDurationSec: Double, isRevertible: Bool = true) {
+    /// A map's timing with no flags (a struct cannot hold an optional of itself).
+    struct Timing: Codable, Sendable, Hashable {
+        var segments: [Segment]
+        var renditionDurationSec: Double
+    }
+
+    init(segments: [Segment], renditionDurationSec: Double, isRevertible: Bool = true,
+         revertsTo: Timing? = nil) {
         self.segments = segments
         self.renditionDurationSec = renditionDurationSec
         self.isRevertible = isRevertible
+        self.revertsTo = revertsTo
     }
+
+    /// The identity over a video of `seconds`: the rendition is the recording.
+    static func identity(durationSec seconds: Double, isRevertible: Bool) -> BakedTimeMap {
+        BakedTimeMap(segments: [Segment(renditionStartSec: 0, sourceStartSec: 0, speed: 1)],
+                     renditionDurationSec: max(0, seconds), isRevertible: isRevertible)
+    }
+
+    var timing: Timing { Timing(segments: segments, renditionDurationSec: renditionDurationSec) }
+
+    /// What a Photos revert of this (revertible) map goes back to when the asset under it is a
+    /// replaced video: that video's own, non-revertible map. `nil` = back to the recording.
+    var revertedMap: BakedTimeMap? {
+        guard isRevertible, let base = revertsTo, !base.segments.isEmpty else { return nil }
+        return BakedTimeMap(segments: base.segments, renditionDurationSec: base.renditionDurationSec,
+                            isRevertible: false)
+    }
+
+    /// What the asset goes back to when THIS map's bake is reverted in Photos, as seen by the
+    /// next "Save to original" on top of it: a replaced video stays the base however many
+    /// revertible bakes are stacked on it (Photos keeps one original).
+    var revertBase: Timing? { isRevertible ? revertsTo : timing }
 
     /// Two times closer than this are the same time (float noise from the timeline math).
     static let tolerance = 1e-6
@@ -136,7 +175,7 @@ struct BakedTimeMap: Codable, Sendable, Hashable {
             out.append(s)
         }
         return BakedTimeMap(segments: out, renditionDurationSec: renditionDurationSec,
-                            isRevertible: isRevertible)
+                            isRevertible: isRevertible, revertsTo: revertsTo)
     }
 
     // MARK: Storage
@@ -171,8 +210,9 @@ struct BakedTimeMap: Codable, Sendable, Hashable {
 /// - "Save to original" never moves `offsetSec` (Photos can bring the original back). All of the
 ///   bake's timing goes in the map.
 /// - "Replace original" moves `offsetSec` forward to the earliest footage that was kept, and
-///   stores a map only for what a moved offset cannot say (a speed change, joined parts), with
-///   that same shift taken out of the map (`ClipBakePlan.replacedMediaUpdate`).
+///   takes that same shift out of the map it stores (`ClipBakePlan.replacedMediaUpdate`). For a
+///   plain start trim the stored map is then the identity: it is kept as the row's "nothing to
+///   revert" record and changes no time.
 struct ClipCaptureClock: Sendable, Equatable {
     var offsetSec: Double
     var timeMap: BakedTimeMap?

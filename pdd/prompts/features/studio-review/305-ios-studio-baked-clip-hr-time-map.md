@@ -39,12 +39,17 @@ BakedTimeMap
   segments: [ (renditionStartSec, sourceStartSec, speed) ]   ordered, the first starts at 0
   renditionDurationSec                                        where the last segment ends
   isRevertible                                                true = "Save to original"
+  revertsTo: (segments, renditionDurationSec)?                only over a replaced video
 ```
 
 - **Rendition time** is seconds into the video the asset plays now. **Source time** is seconds
   into the recording whose first frame was filmed at `offsetSec`.
-- `nil` means the two are the same: never baked, reverted, a bake that changed no timing, or
-  baked before this field existed. An identity map is never stored.
+- `nil` means the two are the same: never baked, reverted, a "Save to original" that changed no
+  timing, or baked before this field existed.
+- The value is also the row's **bake record**. `isRevertible == false` says "this asset IS the
+  bake, there is nothing to revert". A "Replace original" row always has one, also when its
+  timing is the identity (review follow-up, below). `revertsTo` is the timing of a replaced video
+  under a later "Save to original": what a Photos revert goes back to.
 - A segment owns its start and not its end, so a boundary belongs to the segment that begins
   there.
 
@@ -64,10 +69,10 @@ parts give one window that includes the seconds left out between them.
 A bake changes one of the two values for a given shift, never both:
 
 - **"Save to original"** never moves `offsetSec`. All of the bake's timing goes in the map.
-- **"Replace original"** moves `offsetSec` forward to the earliest kept footage, as before. A
-  plain start trim needs nothing else and stores no map. A speed change, joined parts, or a map
-  carried over from an earlier bake cannot be said with an offset, so the map is stored too, with
-  the offset's shift taken out of it and `isRevertible = false`.
+- **"Replace original"** moves `offsetSec` forward to the earliest kept footage, as before, and
+  stores a map with that shift taken out of it and `isRevertible = false`. For a plain start
+  trim that map is the identity: it changes no time and is kept as the record. A speed change,
+  joined parts, or a map carried over from an earlier bake give a real map.
 
 ### `ClipBakePlan` (pure)
 
@@ -81,15 +86,50 @@ A bake changes one of the two values for a given shift, never both:
   so the two maps are composed: the result is still measured from the original recording.
 - `revertibleMediaUpdate` and the new `replacedMediaUpdate` return `MediaUpdate(offsetSec,
   durationSec, timeMap)`. `bake()` writes all three with `isBaked`, before its one save.
-- `revertedTimeMap`: `nil` for a revertible map, unchanged for a "Replace original" map.
+- `revertFinding(map:)` reads what "no edited rendition" means for a row: `nothingToRevert`
+  (a replaced asset), `backToReplaced(map)` (a "Save to original" over a replaced video), or
+  `backToRecording`.
 - `earliestTrimStart` is gone. The shift is `BakedTimeMap.earliestSourceSec`.
 
 ### Revert
 
-`reconcileBakedFlags` clears the map with `isBaked` and the restored length, in the same save. A
-"Replace original" map stays: that asset is a new video with no edited rendition, which is what
-the revert probe looks for, and it has no original to go back to. The two Photos questions are
+`reconcileBakedFlags` clears the map with `isBaked` and the restored length, in the same save,
+when the row's record says the asset went back to the recording. The two Photos questions are
 behind `bakedAssetProbe` (`nil` in the app), so the revert path can be tested.
+
+### Review follow-ups (same PR, second commit)
+
+1. **A replaced clip stays baked.** A "Replace original" asset is a new video with no edited
+   rendition, and "no edited rendition" is how a revert is found. So the next Studio open cleared
+   `isBaked` and the clip's `baked` record on every replaced clip: the feed drew a live HR
+   overlay over the burned one, "Share with heart rate" burned a second tile and the Studio drew
+   project-wide items again. (This was so since prompt 117.) Now a replaced row always carries a
+   not-revertible record, and the check leaves such a row alone: flag, `baked` record, map,
+   offset and length stay.
+2. **A revert over a replaced clip goes back to the replaced video's record.** "Save to
+   original" on a replaced clip keeps that clip's timing in `revertsTo`. A found revert sets the
+   row's map to it (not revertible again), keeps `isBaked`, and records the asset's length. A
+   "Save to original" that changes no timing over a replaced clip stores an identity map, so the
+   record is not lost.
+3. **The festival set screen** (`FestivalSetDetailView.ClipRow`) carries the row's flag and map:
+   its viewer stands down on a baked clip and its set reel starts at `captureStartSec`.
+4. **A bake asks Photos first.** `bake()` awaits the same check before it reads its snapshot, so
+   the row's map is composed into the new one only after a probe. The check also runs when the
+   app returns to the foreground with the Studio open. After a found revert the clip's length is
+   read again and the composer forgets the opened asset, as after a bake. The check does nothing
+   while a bake or an export renders.
+
+### Clips replaced before this change
+
+They have `isBaked` and no record, exactly like a "Save to original" that changed no timing.
+Nothing stored tells the two apart, so such a clip is still un-flagged the next time the Studio
+is opened for its session (if it is still flagged today; any clip whose Studio was opened since
+its bake already is). A rule from dates was looked at and dropped: a replaced asset's creation
+date is the bake time only when the rendered file has no creation date of its own, the row's
+`linkCapturedAt` is stamped again from whatever asset the row points at, and a manually added
+clip's capture date has no fixed relation to its offset. A wrong "replaced" would keep a
+reverted clip flagged for good, with no overlay anywhere. To put one right by hand: "Replace
+original" again from the Studio (a bake with no edits), which writes the record.
 
 ### Every heart-rate reader
 
@@ -102,7 +142,8 @@ behind `bakedAssetProbe` (`nil` in the app), so the revert path can be tested.
 | "Share with heart rate" (`ClipSharePlan`) | raw for a baked clip | unchanged and pinned; it burns the feed overlay's payload |
 | Poster peak / average chip (`FeedMedia.clipHR`: Recap carousel, media browser) | offset + length | the clock, through `MediaInput.timeMap` |
 | Activity pages' average (`ActivityMediaIndex.averageBPM`, also Kilter library) | offset + length | the clock, through `ActivityMediaInput.timeMap` |
-| Reel maker (`SessionHighlightInput.Clip`, `KilterWorkoutBuilder.Clip`: session, weekly, festival-recap and Kilter reels, the feed's Animate) | offset as the clip's start | `SessionMedia.reelStartSec`: when the first frame of the baked video was filmed |
+| Reel maker (`SessionHighlightInput.Clip`, `KilterWorkoutBuilder.Clip`: session, weekly, festival-recap, festival-set and Kilter reels, the feed's Animate) | offset as the clip's start | `SessionMedia.reelStartSec` (`ClipRow.reelClip` on the festival set screen): when the first frame of the baked video was filmed |
+| Festival set viewer (`FestivalSetDetailView`) | offset, no flag | `ClipRow.mediaInput` carries the flag and the map, like `MediaInput.from` |
 
 `StudioEditorViewModel` keeps one clock per media row (`mediaClocks`), so a clip's offset and map
 always come from the same row (`StudioHRPlacement.resolveClock`, the lookup `resolveOffset` uses).
@@ -125,15 +166,23 @@ original's start). Baking such a clip again stores a map for the second bake onl
   is now exact in a reel. A baked speed change or joined parts are not: the reel reads heart rate
   second for second from the first baked frame. P4 of `PLAN.md` (one heart-rate resolver) is the
   place for it.
-- The festival set viewer and the festival set reel build their clips from the tag pipeline's own
-  snapshot (`FestivalTagging`), which does not carry the map. They read `offsetSec` as before.
+- The festival tag matcher (`FestivalTagging`, which set a clip belongs to) still places a clip
+  by `offsetSec`. It reads no heart rate.
 - Inside the HR window of joined parts the chart is one stretch of the session and the dot moves
   through it at an even pace, so it runs slightly behind after a join. The window's start, end
   and numbers are right.
-- A "Replace original" clip loses `isBaked` the next time the Studio opens (the new asset has no
-  edited rendition, so the revert probe reads it as reverted). That was so before this prompt and
-  is not changed here; the map of such a clip is kept, and the feed overlay it then gets reads
-  through the map.
+- A clip replaced before this change is still read as reverted (see "Clips replaced before this
+  change").
+- After a revert over a replaced clip the Studio clip's `baked` record (which project-wide items
+  are in its pixels) is kept as the later bake left it. Items only the reverted bake burned stay
+  hidden over that clip until it is baked again; the other way round would draw the replaced
+  video's own items twice.
+- **Cloud vault.** The vault uploads an asset's `.video` resource (the original) in preference to
+  `.fullSizeVideo`. A "Save to original" clip restored on another phone can therefore carry a
+  revertible map over an untrimmed original until the Studio is opened for that session (the
+  check then finds no edited rendition and clears it).
+- **The same asset in another session.** A bake updates the rows of the session it was made in.
+  A row for the same asset in another session gets no map and no flag.
 
 ## Tests
 
@@ -146,9 +195,11 @@ second it came from.
   of recording order; a transition between parts; a second bake on top of a first (trim and
   speed, 2× on 2×, a bake that changes nothing); a second bake across a join.
 - row updates, pure: "Save to original" keeps the offset and writes a revertible map; "Replace
-  original" moves the offset and stores a map only for speed, joined parts or a carried map, with
-  the same capture times before and after; a revert drops a revertible map only; the stored JSON,
-  an unreadable value, `captureClock` and `reelStartSec` on the row.
+  original" moves the offset and always stores a not-revertible record (the identity for a plain
+  trim), with the same capture times before and after; what a found revert means for each kind
+  of record; replace at 2×, save with a 5 s trim, revert: the row is back on the replaced
+  record and 30 s read 60 s of heart rate; the stored JSON, a value without `revertsTo`, an
+  unreadable value, `captureClock` and `reelStartSec` on the row.
 - readers: no map changes nothing; the Studio window builder and `sample` with a map; the clock
   is resolved like the offset; the poster chip and the activity average; the feed gives no
   overlay for a baked clip with a map, shares it raw, and reads the map for a clip not marked
@@ -159,8 +210,14 @@ second it came from.
   and end at 116; `offsetSec` is still 10; the lead-in slider reaches back from second 12; the map
   is in the store. After a stand-in revert the map is `nil`, the length is the original's and
   both start at 110. A probe that still finds the edited video, or no asset, clears nothing. A
-  baked 2× clip reads 4 s over its 2 s. "Replace original": offset 12 and no map; with 2×, offset
-  12 and a map, which a "revert" probe does not clear. A failing save: the flag, the length and
+  baked 2× clip reads 4 s over its 2 s. "Replace original": offset 12 and an identity record;
+  with 2×, offset 12 and a map. A replaced clip (plain trim and 2×, scoped, with a burned tile)
+  stays baked when the Studio asks Photos again: flag, `baked` record, map, offset and length
+  stay, no tile in the Studio or an export, no feed overlay, raw share. A clip flagged with no
+  record is still un-flagged. A revert over a replaced clip restores its record and the clip's
+  length. A bake after an unseen revert stores source start 5, not 25; the same bake with the
+  first still in place stores 25. The festival set row carries the flag and the map. A failing
+  save: the flag, the length and
   the map are all on the row when the save is tried, nothing reaches the store, and the next save
   that works stores the three together.
 
@@ -185,8 +242,13 @@ Nothing here was run on a phone. Each step needs a session with recorded heart r
 4. Split a clip, delete the middle part, "Save to original", add the tile: the chart runs from
    the first kept frame to the last.
 5. Bake a baked clip again with a further start trim: the tile is still on the right seconds.
-6. "Replace original" with a start trim: as before this prompt (the tile is on the right
-   seconds). With 2×: the chart covers the whole effort.
+6. "Replace original" with a start trim: the tile is on the right seconds. With 2×: the chart
+   covers the whole effort. Close and open the Studio: the clip still shows BAKED in the feed,
+   with no live overlay over the burned tile.
+9. "Replace original", then "Save to original" with a further trim, then "Revert to Original"
+   in Photos: the clip is the replaced video again and is still BAKED.
+10. "Save to original", leave the Studio open, revert in Photos, come back, trim and "Save to
+    original" again: the tile is on the right seconds.
 7. Back up, restore on the same phone, open a baked clip in the Studio: the tile is unchanged.
 8. Install over a store from the build before this one: every clip is there and nothing about
    clips baked earlier has changed.

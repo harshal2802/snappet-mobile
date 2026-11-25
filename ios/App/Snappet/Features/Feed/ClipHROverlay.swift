@@ -50,8 +50,8 @@ enum ClipHROverlay {
         // A posted HIGHLIGHT REEL (highlights P2) is the same case: its glass scorebug was burned in
         // by ReelExporter, so the feed, browser, and fullscreen viewer all play it raw.
         // (Prompt 305: this is why the feed needs no time map for a baked clip. It is passed below
-        // all the same, for a clip that carries a map and is not marked baked: a "Replace
-        // original" video keeps its map when its flag is cleared.)
+        // all the same, so a row that carries a map without the flag is still read through the
+        // one rule and not from `offsetSec` alone.)
         guard !clip.isBaked, !clip.isReel else { return nil }
         let edit = clip.edit ?? ClipStudioEdit()
         let footage = keptFootage(clip)

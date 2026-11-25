@@ -187,19 +187,33 @@ final class BakedClipHRTimeTests: XCTestCase {
         XCTAssertEqual(update.durationSec, 4)
         XCTAssertEqual(update.timeMap?.segments, [segment(0, 2)])
         XCTAssertEqual(update.timeMap?.isRevertible, true)
+        // no timing change and nothing under it: no map is stored, not an identity map
         XCTAssertNil(ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: 10, oldDurationSec: 9,
                                                         renderedDurationSec: 9, timeMap: nil).timeMap)
+        // a second "Save to original" on a revertible one still reverts to the recording
+        let again = ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: 10, oldDurationSec: 4,
+                                                       renderedDurationSec: 3, timeMap: m,
+                                                       existing: update.timeMap)
+        XCTAssertNil(again.timeMap?.revertsTo)
     }
 
-    /// "Replace original": a plain start trim moves the offset and stores no map, as before.
-    /// A speed change or joined parts move the offset to the earliest kept footage AND store a
-    /// map with that shift taken out, so the two never shift the same clip twice.
-    func testReplaceOriginalMovesTheOffsetAndStoresAMapOnlyWhenNeeded() {
+    /// "Replace original" moves the offset to the earliest kept footage and ALWAYS stores a
+    /// not-revertible record: the identity for a plain start trim or no change, a real map for a
+    /// speed change or joined parts. The offset's shift is taken out of the map, so the two never
+    /// shift the same clip twice.
+    func testReplaceOriginalMovesTheOffsetAndAlwaysStoresANotRevertibleRecord() {
         let plain = ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 10, renderedDurationSec: 4,
                                                      timeMap: map([part(0, from: 2, to: 6)]))
-        XCTAssertEqual(plain, .init(offsetSec: 12, durationSec: 4, timeMap: nil))
-        XCTAssertEqual(ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 10, renderedDurationSec: 9, timeMap: nil),
-                       .init(offsetSec: 10, durationSec: 9, timeMap: nil))
+        XCTAssertEqual(plain.offsetSec, 12)
+        XCTAssertEqual(plain.durationSec, 4)
+        XCTAssertEqual(plain.timeMap, .identity(durationSec: 4, isRevertible: false))
+        XCTAssertEqual(plain.timeMap?.isIdentity, true)
+        XCTAssertEqual(ClipCaptureClock(offsetSec: plain.offsetSec, timeMap: plain.timeMap)
+            .captureTime(renditionTime: 1), 13, "the identity record changes no time")
+        let untouched = ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 10, renderedDurationSec: 9, timeMap: nil)
+        XCTAssertEqual(untouched.offsetSec, 10)
+        XCTAssertEqual(untouched.timeMap, .identity(durationSec: 9, isRevertible: false))
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: plain.timeMap), .nothingToRevert)
 
         let before = ClipCaptureClock(offsetSec: 10, timeMap: map([part(0, from: 2, to: 6, speed: 2)]))
         let fast = ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 10, renderedDurationSec: 2,
@@ -224,17 +238,54 @@ final class BakedClipHRTimeTests: XCTestCase {
         let replaced = ClipBakePlan.replacedMediaUpdate(oldOffsetSec: 10, renderedDurationSec: 3, timeMap: carried)
         XCTAssertEqual(replaced.offsetSec, 12)
         XCTAssertEqual(replaced.timeMap?.segments, [segment(0, 0, 2)])
+        XCTAssertNil(replaced.timeMap?.revertsTo, "the old asset is gone, with what it could revert to")
     }
 
-    /// A found revert drops a "Save to original" map; a "Replace original" map has no original
-    /// to go back to and stays.
-    func testARevertDropsARevertibleMapOnly() {
-        let m = map([part(0, from: 2)])
-        XCTAssertNil(ClipBakePlan.revertedTimeMap(m))
-        XCTAssertNil(ClipBakePlan.revertedTimeMap(nil))
-        var kept = try? XCTUnwrap(m)
-        kept?.isRevertible = false
-        XCTAssertEqual(ClipBakePlan.revertedTimeMap(kept), kept)
+    /// The coordinator's case: 60 s replaced at 2× (a 30 s video), then "Save to original" with
+    /// 5 s trimmed off, then "Revert to Original". Photos goes back to the REPLACED video, so the
+    /// row goes back to that video's record: 30 s that read 60 s of heart rate, not 30.
+    func testARevertOverAReplacedClipGoesBackToTheReplacedRecord() throws {
+        let replaced = try XCTUnwrap(ClipBakePlan.replacedMediaUpdate(
+            oldOffsetSec: 10, renderedDurationSec: 30, timeMap: map([part(0, to: 60, speed: 2)])).timeMap)
+        XCTAssertEqual(replaced.segments, [segment(0, 0, 2)])
+
+        let part5 = part(0, from: 5)
+        let composed = ClipBakePlan.timeMap(parts: [part5], sourceDurations: [part5.id: 30], transitions: [],
+                                            existing: replaced)
+        assertMap(composed, [segment(0, 10, 2)], length: 25)
+        let saved = try XCTUnwrap(ClipBakePlan.revertibleMediaUpdate(
+            oldOffsetSec: 10, oldDurationSec: 30, renderedDurationSec: 25,
+            timeMap: composed, existing: replaced).timeMap)
+        XCTAssertTrue(saved.isRevertible)
+        XCTAssertEqual(saved.revertsTo, replaced.timing)
+        XCTAssertEqual(saved.revertedMap, replaced)
+
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: saved), .backToReplaced(replaced))
+        let window = ClipCaptureClock(offsetSec: 10, timeMap: saved.revertedMap)
+            .captureWindow(renditionStart: 0, renditionEnd: 30)
+        XCTAssertEqual(window.span, 60)
+
+        // a second "Save to original" on top still reverts to the replaced video
+        let again = try XCTUnwrap(ClipBakePlan.revertibleMediaUpdate(
+            oldOffsetSec: 10, oldDurationSec: 25, renderedDurationSec: 25, timeMap: composed,
+            existing: saved).timeMap)
+        XCTAssertEqual(again.revertedMap, replaced)
+        // a "Save to original" that changes no timing over a replaced PLAIN clip stores the
+        // identity, so the row keeps saying what a revert goes back to
+        let plain = BakedTimeMap.identity(durationSec: 4, isRevertible: false)
+        let untimed = try XCTUnwrap(ClipBakePlan.revertibleMediaUpdate(
+            oldOffsetSec: 12, oldDurationSec: 4, renderedDurationSec: 4, timeMap: nil, existing: plain).timeMap)
+        XCTAssertTrue(untimed.isIdentity)
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: untimed), .backToReplaced(plain))
+    }
+
+    /// What "no edited rendition" means for a baked row is read from its record.
+    func testWhatAFoundRevertMeansIsReadFromTheRecord() {
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: map([part(0, from: 2)])), .backToRecording)
+        // no record: a "Save to original" with no timing change, or a clip baked before prompt 305
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: nil), .backToRecording)
+        XCTAssertEqual(ClipBakePlan.revertFinding(map: map([part(0, from: 2)], isRevertible: false)),
+                       .nothingToRevert)
     }
 
     func testTheMapIsStoredAsJSONAndAnUnreadableValueIsNoMap() throws {
@@ -244,6 +295,13 @@ final class BakedClipHRTimeTests: XCTestCase {
         XCTAssertNil(BakedTimeMap.decode(Data("not json".utf8)))
         let empty = BakedTimeMap(segments: [], renditionDurationSec: 0)
         XCTAssertNil(BakedTimeMap.decode(empty.encoded), "a map with no segments says nothing")
+        // a value stored without `revertsTo` (the key is optional) still decodes
+        let bare = Data(#"{"segments":[{"renditionStartSec":0,"sourceStartSec":2,"speed":1}],"renditionDurationSec":4,"isRevertible":true}"#.utf8)
+        XCTAssertEqual(BakedTimeMap.decode(bare),
+                       BakedTimeMap(segments: [segment(0, 2)], renditionDurationSec: 4, isRevertible: true))
+        var withBase = m
+        withBase.revertsTo = BakedTimeMap.identity(durationSec: 9, isRevertible: false).timing
+        XCTAssertEqual(BakedTimeMap.decode(withBase.encoded), withBase)
 
         let media = SessionMedia(sessionID: UUID(), localIdentifier: "A", kind: .video, offsetSec: 10)
         XCTAssertNil(media.bakeTimeMapData)
@@ -342,9 +400,8 @@ final class BakedClipHRTimeTests: XCTestCase {
     }
 
     /// The feed draws NO live overlay on a baked clip (prompt 117), so it needs no map there, and
-    /// "Share with heart rate" shares it raw. Pinned: a map does not change that. A clip that
-    /// carries a map and is not marked baked (a "Replace original" video whose flag was cleared)
-    /// is drawn, and reads through the map.
+    /// "Share with heart rate" shares it raw. Pinned: a map does not change that. A row that
+    /// carries a map without the flag is drawn, and reads through the map.
     func testTheFeedIgnoresABakedClipAndReadsTheMapOtherwise() throws {
         let m = map([part(0, from: 2, to: 6)])
         let media = SessionMedia(sessionID: UUID(), localIdentifier: "A", kind: .video,
@@ -366,6 +423,29 @@ final class BakedClipHRTimeTests: XCTestCase {
         notBaked.timeMap = nil
         let plain = try XCTUnwrap(ClipHROverlay.make(clip: notBaked, hrSeries: ramp, maxHR: 190, restHR: 60))
         XCTAssertEqual(plain.values.samples.first?.bpm, 110)
+    }
+
+    /// The festival set screen lists a tagged row with its flag and its map: the viewer stands
+    /// down on a baked clip, and the set reel is told when the first baked frame was filmed.
+    @MainActor
+    func testTheFestivalSetScreenCarriesTheFlagAndTheMap() {
+        let media = SessionMedia(sessionID: UUID(), localIdentifier: "A", kind: .video,
+                                 offsetSec: 10, durationSec: 4)
+        media.bakeTimeMap = map([part(0, from: 2, to: 6)])
+        media.isBaked = true
+        let row = FestivalSetDetailView.ClipRow(media, isAuto: true)
+        XCTAssertTrue(row.mediaInput.isBaked)
+        XCTAssertEqual(row.mediaInput.timeMap, media.bakeTimeMap)
+        XCTAssertEqual(row.mediaInput, { var m = MediaInput.from(media); m.aspect = row.aspect; return m }())
+        XCTAssertNil(ClipHROverlay.make(clip: row.mediaInput, hrSeries: ramp, maxHR: 190, restHR: 60))
+        XCTAssertEqual(row.reelClip.offsetSec, 12)
+        XCTAssertEqual(row.reelClip.durationSec, 4)
+
+        let plain = FestivalSetDetailView.ClipRow(mediaID: UUID(), sessionID: UUID(), localIdentifier: "B",
+                                                  isVideo: true, offsetSec: 30, durationSec: 5,
+                                                  aspect: nil, isAuto: false)
+        XCTAssertFalse(plain.mediaInput.isBaked)
+        XCTAssertEqual(plain.reelClip.offsetSec, 30)
     }
 
     // MARK: View model (in-memory store, stand-in baker)
@@ -447,8 +527,12 @@ final class BakedClipHRTimeTests: XCTestCase {
     /// A finished session with the ramp as its heart rate, and one video "A" of 9 s filmed 10 s
     /// into it. The project's one clip keeps 2…6 of it (`speed` 1 unless given). The stand-in
     /// render is a real 1 s video; the stand-in length reader says what `lengths` holds.
+    ///
+    /// `scoped`: the session has a second video "B" and the Studio is opened on "A" only ("Edit
+    /// this clip"), so a bake keeps the project-wide items and records them on the clip.
     @MainActor
-    private func makeFixture(speed: Double = 1) throws -> Fixture {
+    private func makeFixture(speed: Double = 1, assetLength: Double = 9, trimStart: Double = 2,
+                             trimEnd: Double? = 6, scoped: Bool = false) throws -> Fixture {
         let container = try ModelContainer(
             for: Schema(SnappetSchema.models),
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
@@ -457,24 +541,33 @@ final class BakedClipHRTimeTests: XCTestCase {
                                      hrSeries: ramp, maxHR: 190, restHR: 60)
         let project = StudioProject(sessionID: session.id, title: "Bake")
         let media = SessionMedia(sessionID: session.id, localIdentifier: "A", kind: .video,
-                                 offsetSec: 10, durationSec: 9)
+                                 offsetSec: 10, durationSec: assetLength)
         let clip = TimelineClip(sessionMediaID: media.id, localIdentifier: "A", isPhoto: false,
-                                order: 0, trimStart: 2, trimEnd: 6, speed: speed)
+                                order: 0, trimStart: trimStart, trimEnd: trimEnd, speed: speed)
         project.clips = [clip]
         container.mainContext.insert(session)
         container.mainContext.insert(project)
         container.mainContext.insert(media)
+        if scoped {
+            let other = SessionMedia(sessionID: session.id, localIdentifier: "B", kind: .video,
+                                     offsetSec: 40, durationSec: 5)
+            container.mainContext.insert(other)
+            project.clips = [clip, TimelineClip(sessionMediaID: other.id, localIdentifier: "B",
+                                                isPhoto: false, order: 1)]
+        }
         try container.mainContext.save()
-        let lengths = Lengths(["A": 9])
-        let vm = try makeViewModel(project, container, lengths)
+        let lengths = Lengths(["A": assetLength, "B": 5])
+        let vm = try makeViewModel(project, container, lengths, visible: scoped ? [media.id] : nil)
         return Fixture(vm: vm, project: project, clip: clip, media: media, lengths: lengths, container: container)
     }
 
     @MainActor
     private func makeViewModel(_ project: StudioProject, _ container: ModelContainer,
-                               _ lengths: Lengths) throws -> StudioEditorViewModel {
+                               _ lengths: Lengths, visible: Set<UUID>? = nil) throws -> StudioEditorViewModel {
         let vm = StudioEditorViewModel(project: project, context: container.mainContext,
-                                       availability: Availability())
+                                       visibleClipMediaIDs: visible, availability: Availability())
+        // No test asks Photos: until a test says otherwise the baked video is still there.
+        vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: true, currentDuration: nil) }
         vm.sourceDurationLoader = { lengths.byAsset[$0] }
         let rendered = try shortVideo(seconds: 1)
         addTeardownBlock { try? FileManager.default.removeItem(at: rendered) }
@@ -624,10 +717,11 @@ final class BakedClipHRTimeTests: XCTestCase {
         XCTAssertEqual(f.vm.previewHR.samples.last?.bpm, 116)
     }
 
-    /// "Replace original" of the same clip: the offset moves and no map is needed. With a speed
-    /// change the offset moves AND a map is stored; the tile reads the same seconds either way.
+    /// "Replace original": the offset moves and the row gets a not-revertible record, the
+    /// identity for a plain trim and a real map for a speed change. The tile reads the same
+    /// seconds either way.
     @MainActor
-    func testReplaceOriginalMovesTheOffsetAndKeepsAMapForASpeedChange() async throws {
+    func testReplaceOriginalMovesTheOffsetAndStoresItsRecord() async throws {
         let plain = try makeFixture()
         defer { withExtendedLifetime(plain.container) {} }
         await plain.vm.onAppear()
@@ -635,7 +729,8 @@ final class BakedClipHRTimeTests: XCTestCase {
         await plain.vm.bake(replaceOriginal: true, service: FakeBaker())
         await plain.vm.previewBuildsFinished()
         XCTAssertEqual(plain.media.offsetSec, 12)
-        XCTAssertNil(plain.media.bakeTimeMapData)
+        XCTAssertEqual(plain.media.bakeTimeMap?.isIdentity, true)
+        XCTAssertEqual(plain.media.bakeTimeMap?.isRevertible, false)
         try addTileWithoutLeadOrTail(plain.vm)
         XCTAssertEqual(exportedTiles(plain.vm).first?.samples.first?.bpm, 112)
 
@@ -652,12 +747,159 @@ final class BakedClipHRTimeTests: XCTestCase {
         let tile = try XCTUnwrap(exportedTiles(fast.vm).first)
         XCTAssertEqual(tile.samples.first?.bpm, 112)
         XCTAssertEqual(tile.samples.last?.bpm, 116)
+    }
 
-        // the new asset has no edited rendition, which is what a revert looks like: its map stays
-        fast.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 2) }
-        _ = await fast.vm.reconcileBakedFlags()?.value
-        XCTAssertEqual(fast.media.bakeTimeMap?.segments, [segment(0, 0, 2)])
-        XCTAssertEqual(fast.media.offsetSec, 12)
+    /// The bug the review confirmed. A replaced asset has no edited rendition, which is what a
+    /// revert looks like. With its record the clip STAYS baked when the Studio asks Photos again:
+    /// the flag, the clip's `baked` record (the HR tile is in its pixels), the record itself, the
+    /// offset and the length are all as the bake left them, so the feed draws no live overlay,
+    /// "Share with heart rate" stays raw and the Studio draws no second tile. Plain trim and 2×.
+    @MainActor
+    func testAReplacedClipStaysBakedWhenTheStudioAsksPhotosAgain() async throws {
+        for speed in [1.0, 2.0] {
+            let f = try makeFixture(speed: speed, scoped: true)
+            defer { withExtendedLifetime(f.container) {} }
+            await f.vm.onAppear()
+            f.vm.toggleHROverlay()                      // a project-wide tile, burned by the bake
+            f.lengths.byAsset["NEW"] = 4 / speed
+            await f.vm.bake(replaceOriginal: true, service: FakeBaker())
+            XCTAssertEqual(f.vm.bakeState, .saved(replaced: true))
+            await f.vm.previewBuildsFinished()
+            XCTAssertTrue(f.media.isBaked)
+            XCTAssertEqual(f.vm.clips.first?.baked?.hrTile, true)
+            XCTAssertNotNil(f.vm.hrTile, "the other clip still uses the tile")
+            XCTAssertNil(f.vm.canvasHRTile)
+            let record = try XCTUnwrap(f.media.bakeTimeMap)
+            XCTAssertFalse(record.isRevertible)
+            XCTAssertEqual(record.isIdentity, speed == 1)
+            let length = f.media.durationSec
+
+            // the Studio is opened again; Photos reports no edited rendition for the new asset
+            let reopened = try makeViewModel(f.project, f.container, f.lengths, visible: [f.media.id])
+            reopened.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 77) }
+            await reopened.onAppear()
+            _ = await reopened.reconcileBakedFlags()?.value
+            await reopened.previewBuildsFinished()
+
+            XCTAssertTrue(f.media.isBaked, "a replaced clip is not a reverted clip")
+            XCTAssertEqual(f.media.bakeTimeMap, record)
+            XCTAssertEqual(f.media.offsetSec, 12)
+            XCTAssertEqual(f.media.durationSec, length, "nothing was reverted: the length stays too")
+            XCTAssertEqual(reopened.clips.first?.baked?.hrTile, true, "the clip's baked record stays")
+            XCTAssertNil(reopened.canvasHRTile, "no second tile in the Studio")
+            XCTAssertTrue(reopened.clipHRContent().isEmpty, "and none in an export")
+            let input = MediaInput.from(f.media)
+            XCTAssertNil(ClipHROverlay.make(clip: input, hrSeries: ramp, maxHR: 190, restHR: 60))
+            XCTAssertEqual(ClipSharePlan.offer(for: input, payload: nil), .raw)
+            let stored = try XCTUnwrap(ModelContext(f.container).fetch(
+                FetchDescriptor<SessionMedia>()).first { $0.localIdentifier == "NEW" })
+            XCTAssertEqual(stored.isBakedRaw, true)
+        }
+    }
+
+    /// A clip replaced BEFORE prompt 305 has the flag and no record. Nothing tells it from a
+    /// reverted "Save to original", so it is still un-flagged at the next check, as before.
+    @MainActor
+    func testAClipReplacedBeforeTheRecordExistedIsStillReadAsReverted() async throws {
+        let f = try makeFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        f.media.isBaked = true                          // as an older build left it
+        try f.container.mainContext.save()
+        await f.vm.onAppear()
+        f.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 9) }
+        _ = await f.vm.reconcileBakedFlags()?.value
+        XCTAssertFalse(f.media.isBaked)
+        XCTAssertNil(f.media.bakeTimeMapData)
+    }
+
+    /// "Save to original" over a replaced 2× clip, then "Revert to Original": the asset plays
+    /// the replaced video again, so the row is still baked and has that video's record back.
+    @MainActor
+    func testARevertOverAReplacedClipRestoresItsRecordInTheStudio() async throws {
+        let f = try makeFixture(speed: 2)
+        defer { withExtendedLifetime(f.container) {} }
+        await f.vm.onAppear()
+        f.lengths.byAsset["NEW"] = 2
+        await f.vm.bake(replaceOriginal: true, service: FakeBaker())
+        await f.vm.previewBuildsFinished()
+        let replaced = try XCTUnwrap(f.media.bakeTimeMap)
+        XCTAssertEqual(replaced.segments, [segment(0, 0, 2)])
+
+        // trim 0.5 s off the replaced video and save it to the original
+        f.vm.acknowledgeBake()
+        f.vm.select(try XCTUnwrap(f.vm.clips.first?.id))
+        f.vm.trimSelected(startSeconds: 0.5, endSeconds: nil)
+        await f.vm.previewBuildsFinished()
+        f.lengths.byAsset["NEW"] = 1.5
+        await f.vm.bake(replaceOriginal: false, service: FakeBaker())
+        XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
+        await f.vm.previewBuildsFinished()
+        XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 1, 2)])
+        XCTAssertEqual(f.media.bakeTimeMap?.isRevertible, true)
+        XCTAssertEqual(f.media.bakeTimeMap?.revertsTo, replaced.timing)
+        XCTAssertEqual(f.media.offsetSec, 12)
+
+        // "Revert to Original" in Photos: the 2 s replaced video is back
+        f.lengths.byAsset["NEW"] = 2
+        f.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 2) }
+        _ = await f.vm.reconcileBakedFlags()?.value
+        await f.vm.previewBuildsFinished()
+        XCTAssertTrue(f.media.isBaked)
+        XCTAssertEqual(f.media.bakeTimeMap, replaced)
+        XCTAssertEqual(f.media.durationSec, 2)
+        XCTAssertEqual(f.vm.totalDuration, 2, "the clip's length was read again")
+        try addTileWithoutLeadOrTail(f.vm)
+        let tile = try XCTUnwrap(exportedTiles(f.vm).first)
+        XCTAssertEqual(tile.samples.first?.bpm, 112)
+        XCTAssertEqual(tile.samples.last?.bpm, 116, "2 s of 2× video read 4 s of heart rate again")
+    }
+
+    /// A bake asks Photos again before it trusts the row's map. Bake a 20 s start trim; the user
+    /// reverts in Photos WITHOUT reopening the Studio; trim 5 s and bake again. The stored source
+    /// start is 5, not 25: the first bake's map is not composed into the second.
+    @MainActor
+    func testABakeAsksPhotosBeforeItComposesTheRowsMap() async throws {
+        let f = try makeFixture(assetLength: 60, trimStart: 20, trimEnd: nil)
+        defer { withExtendedLifetime(f.container) {} }
+        await f.vm.onAppear()
+        f.lengths.byAsset["A"] = 40
+        await f.vm.bake(replaceOriginal: false, service: FakeBaker())
+        await f.vm.previewBuildsFinished()
+        XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 20)])
+        XCTAssertEqual(f.vm.totalDuration, 40)
+
+        // reverted in Photos; the Studio stays open
+        f.lengths.byAsset["A"] = 60
+        f.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 60) }
+        f.vm.acknowledgeBake()
+        f.vm.select(try XCTUnwrap(f.vm.clips.first?.id))
+        f.vm.trimSelected(startSeconds: 5, endSeconds: nil)
+        await f.vm.previewBuildsFinished()
+        await f.vm.bake(replaceOriginal: false, service: FakeBaker())
+        XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
+        await f.vm.previewBuildsFinished()
+
+        XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 5)])
+        XCTAssertEqual(f.media.bakeTimeMap?.renditionDurationSec ?? -1, 55, accuracy: 1e-6,
+                       "the bake was laid out with the reverted video's length, read again")
+        XCTAssertNil(f.media.bakeTimeMap?.revertsTo)
+        XCTAssertTrue(f.media.isBaked)
+        XCTAssertEqual(f.media.offsetSec, 10)
+
+        // the same second bake with the first still in place composes: 20 + 5
+        let g = try makeFixture(assetLength: 60, trimStart: 20, trimEnd: nil)
+        defer { withExtendedLifetime(g.container) {} }
+        await g.vm.onAppear()
+        g.lengths.byAsset["A"] = 40
+        await g.vm.bake(replaceOriginal: false, service: FakeBaker())
+        await g.vm.previewBuildsFinished()
+        g.vm.acknowledgeBake()
+        g.vm.select(try XCTUnwrap(g.vm.clips.first?.id))
+        g.vm.trimSelected(startSeconds: 5, endSeconds: nil)
+        await g.vm.previewBuildsFinished()
+        await g.vm.bake(replaceOriginal: false, service: FakeBaker())
+        await g.vm.previewBuildsFinished()
+        XCTAssertEqual(g.media.bakeTimeMap?.segments, [segment(0, 25)])
     }
 
     /// The map is written with the flag and the length, before the one save. A save that fails

@@ -13151,3 +13151,51 @@ platform-free and unchanged, and the one resolver of `PLAN.md` P4 takes it over.
 of prompt 303. `reconcileBakedFlags()` returns its task so a test can wait for it. The length of
 the current video is now read for every baked row, not only for a reverted one: one more
 `PHAsset` fetch per baked row, off the main actor.
+
+## 2026-11-25 — A replaced clip always carries a "nothing to revert" record (prompt 305, review)
+
+Corrects two statements in the prompt-305 entries above: "an identity map is not stored" now
+holds for "Save to original" only, and "'Replace original' stores a map only for what a moved
+offset cannot say" is replaced by "always".
+
+The revert probe asks whether the asset has an edited rendition. A "Replace original" asset is a
+new video and never has one, so since prompt 117 every replaced clip was read as reverted at the
+next Studio open: `isBaked` and the clip's `baked` record were cleared and the burned tile was
+drawn over. The fix needs something stored that says "this asset IS the bake". No second field:
+the row's `BakedTimeMap` is that record. `replacedMediaUpdate` always writes one with
+`isRevertible = false`; for a plain trim it is the identity over the rendered length, which
+changes no time, so `ClipCaptureClock` is still the only timing rule. `ClipBakePlan.revertFinding`
+turns a row's record into what "no edited rendition" means, and a not-revertible record means
+nothing changes.
+
+A `BakeRecord { kind, map? }` wrapper was the other option. It would have changed the stored
+JSON and the backup key for one extra case that an identity map already expresses.
+
+**Clips replaced before this change** have the flag and no record, like a "Save to original"
+with no timing change. They are still un-flagged at the next open. Telling them apart from dates
+was dropped as unsound (reasons in the prompt file): a wrong "replaced" keeps a truly reverted
+clip flagged for good.
+
+## 2026-11-25 — A revert over a replaced clip goes back to the replaced record (prompt 305, review)
+
+Photos keeps one original per asset. For a replaced clip that original is the replaced video,
+so a "Revert to Original" after a later "Save to original" returns to it, not to the recording.
+The later bake's map therefore carries the replaced video's timing as `revertsTo` (a plain
+`Timing`, because a struct cannot hold an optional of itself), through any number of stacked
+revertible bakes. On a found revert the row gets that record back, stays baked, and takes the
+asset's length. A "Save to original" with no timing change over a replaced clip stores an
+identity map so that `revertsTo` has somewhere to live.
+
+The Studio clip's `baked` record (which project-wide items are in the pixels) is the union of
+both bakes and cannot be split; it is kept, which errs toward hiding an item rather than drawing
+one twice.
+
+## 2026-11-25 — A bake asks Photos before it composes the row's map (prompt 305, review)
+
+Revert detection ran only when the Studio opened. A revert made in Photos with the Studio still
+open left the row's map in place, and the next bake composed it into the new one (20 s + 5 s
+stored 25). `bake()` now awaits the check before it reads its snapshot and tests its guard again
+afterwards, so a second call during the wait cannot start a second render. The check also runs
+when the app becomes active with the Studio open; it fetches nothing when the session has no
+baked row, and does nothing while a render runs. After a found revert the clip's length is read
+again and the composer forgets the opened asset.

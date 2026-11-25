@@ -1730,6 +1730,14 @@ final class StudioEditorViewModel {
     /// project at the baked video and leave the rows on the old one.
     func bake(replaceOriginal: Bool, service: any ClipBaking = ClipBakeService()) async {
         guard state.canExport,
+              ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips) != nil
+        else { return }
+        // A row's time map is composed into this bake's map, so it is trusted only after Photos
+        // was asked NOW (prompt 305): a "Revert to Original" made since the Studio opened would
+        // otherwise leave a stale map in the new one. Awaited before the snapshot is read; the
+        // guard is checked again after it, so two bakes cannot both get through.
+        await reconcileBakedRows()
+        guard state.canExport,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
         // Read ONCE, before the first await: the snapshot the render is made from is also the one
@@ -1775,8 +1783,8 @@ final class StudioEditorViewModel {
                 let newID = try await service.replaceOriginal(renderedURL: url, oldLocalIdentifier: target)
                 changedAssets.insert(newID)
                 for m in rows {
-                    // The offset moves to the earliest kept footage; a map is stored only for
-                    // what a moved offset cannot say (`ClipBakePlan.replacedMediaUpdate`).
+                    // The offset moves to the earliest kept footage, and the row always gets a
+                    // not-revertible record (`ClipBakePlan.replacedMediaUpdate`).
                     let map = ClipBakePlan.timeMap(parts: bakedClips, sourceDurations: bakedDurations,
                                                    transitions: bakedTransitions,
                                                    existing: m.bakeTimeMap, isRevertible: false)
@@ -1809,7 +1817,8 @@ final class StudioEditorViewModel {
                     let update = ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: m.offsetSec,
                                                                     oldDurationSec: m.durationSec,
                                                                     renderedDurationSec: renderedDur,
-                                                                    timeMap: map)
+                                                                    timeMap: map,
+                                                                    existing: m.bakeTimeMap)
                     m.offsetSec = update.offsetSec
                     m.durationSec = update.durationSec
                     m.bakeTimeMap = update.timeMap
@@ -1862,61 +1871,94 @@ final class StudioEditorViewModel {
     /// The Photos probes run OFF the main actor (one fetch + resource enumeration per baked row —
     /// this fires on the Studio's already-busy onAppear); the clears apply back on main.
     ///
+    /// Called when the Studio opens and when the app comes back to the foreground with the Studio
+    /// open (the user may have been in Photos). `bake()` awaits the same check itself.
     /// Returns the task so a test can wait for it; the app ignores it.
     @discardableResult
     func reconcileBakedFlags() -> Task<Void, Never>? {
+        guard hasBakedRows else { return nil }
+        return Task { [weak self] in await self?.reconcileBakedRows() }
+    }
+
+    private func bakedRows() -> [SessionMedia] {
         let sid = project.sessionID
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
+        return (try? context.fetch(FetchDescriptor<SessionMedia>(
             predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
-        guard !rows.isEmpty else { return nil }
+    }
+    private var hasBakedRows: Bool { !bakedRows().isEmpty }
+
+    /// The check itself. What "no edited rendition" means for a row is read from its bake record
+    /// (`ClipBakePlan.revertFinding`, prompt 305): a "Replace original" asset has nothing to
+    /// revert and is left alone; a "Save to original" over a replaced video goes back to that
+    /// video's record; anything else goes back to the recording.
+    private func reconcileBakedRows() async {
+        let rows = bakedRows()
+        guard !rows.isEmpty else { return }
         let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
         let probe = bakedAssetProbe ?? { localIdentifier in
             BakedAssetProbe(
                 hasEditedRendition: ClipBakeService.hasEditedRendition(localIdentifier: localIdentifier),
                 currentDuration: ClipBakeService.currentDuration(localIdentifier: localIdentifier))
         }
-        return Task { [weak self] in
-            // For a reverted asset, also the length of the video it plays again (the original).
-            let found: [UUID: Double?] = await Task.detached(priority: .utility) {
-                var out: [UUID: Double?] = [:]
-                for row in probes {
-                    let answer = probe(row.localIdentifier)
-                    if answer.hasEditedRendition == false { out[row.id] = answer.currentDuration }
-                }
-                return out
-            }.value
-            let reverted = Array(found.keys)
-            // A bake in flight replaces the project when it ends; leave everything for the next
-            // open rather than have the clearing below overwritten.
-            guard let self, !reverted.isEmpty, !self.isBaking else { return }
-            let revertedRows = rows.filter { reverted.contains($0.id) }
-            for m in revertedRows {
+        // For an asset with no edited rendition, also the length of the video it plays now.
+        let found: [UUID: Double?] = await Task.detached(priority: .utility) {
+            var out: [UUID: Double?] = [:]
+            for row in probes {
+                let answer = probe(row.localIdentifier)
+                if answer.hasEditedRendition == false { out[row.id] = answer.currentDuration }
+            }
+            return out
+        }.value
+        // A bake in flight replaces the project when it ends, and an export renders the project
+        // as it is; leave everything for the next check.
+        guard !found.isEmpty, canEdit else { return }
+        var changed: [SessionMedia] = []        // the asset plays another video than recorded
+        var backToRecording: [SessionMedia] = []
+        for m in rows where found[m.id] != nil {
+            switch ClipBakePlan.revertFinding(map: m.bakeTimeMap) {
+            case .nothingToRevert:
+                continue                        // the asset IS the bake: flag, record and map stay
+            case .backToReplaced(let replaced):
+                m.bakeTimeMap = replaced        // still a baked video: the flag stays
+                changed.append(m)
+            case .backToRecording:
+                // The asset plays the original recording again: the map goes with the flag.
                 m.isBaked = false
-                // The bake recorded the rendered length; the original's is back (prompt 303).
-                m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
-                                                              asset: found[m.id] ?? nil)
-                // The asset plays the original recording again: its time map goes with the
-                // flag, in the same save (prompt 305).
-                m.bakeTimeMap = ClipBakePlan.revertedTimeMap(m.bakeTimeMap)
+                m.bakeTimeMap = nil
+                changed.append(m)
+                backToRecording.append(m)
             }
-            self.mediaClocks = [:]
-            self.mediaClocksByLocalID = [:]
-            self.loadMediaOffsets()
-            // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
-            // go and the project's items draw over it again (prompt 295). Like a bake, this is
-            // an undo barrier: an older step would bring the record back.
-            let cleared = ClipBakePlan.clearingBakeRecords(
-                self.undo.current, mediaIDs: Set(revertedRows.map(\.id)),
-                localIdentifiers: Set(revertedRows.map(\.localIdentifier)))
-            let recordsCleared = cleared != self.undo.current
-            if recordsCleared {
-                self.undo = UndoStack(cleared)
-                cleared.apply(to: self.project)
-            }
-            self.project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
-            self.saveStore()
-            if recordsCleared { await self.rebuildPreview() }
+            // The bake recorded the rendered length; the earlier video's is back (prompt 303).
+            m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
+                                                          asset: found[m.id] ?? nil)
         }
+        guard !changed.isEmpty else { return }
+        mediaClocks = [:]
+        mediaClocksByLocalID = [:]
+        loadMediaOffsets()
+        // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
+        // go and the project's items draw over it again (prompt 295). Like a bake, this is
+        // an undo barrier: an older step would bring the record back.
+        let cleared = ClipBakePlan.clearingBakeRecords(
+            undo.current, mediaIDs: Set(backToRecording.map(\.id)),
+            localIdentifiers: Set(backToRecording.map(\.localIdentifier)))
+        let recordsCleared = cleared != undo.current
+        if recordsCleared {
+            undo = UndoStack(cleared)
+            cleared.apply(to: project)
+        }
+        project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
+        saveStore()
+        // The asset's video changed under its identifier: the length read earlier and the
+        // composer's opened asset are stale, as after a bake.
+        let assets = Set(changed.map(\.localIdentifier))
+        let clipIDs = Set(snapshot.clips.filter { assets.contains($0.localIdentifier) }.map(\.id))
+        let stale = clipIDs.contains { sourceDurations[$0] != nil }
+        if stale {
+            await composer.forget(localIdentifiers: assets)
+            await loadSourceInfo(refreshing: clipIDs)
+        }
+        if recordsCleared || stale { await rebuildPreview() }
     }
 
     // MARK: Export (device-only render)
