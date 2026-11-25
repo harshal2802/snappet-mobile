@@ -32,8 +32,43 @@ final class StudioComposer: Sendable {
         private var store: [String: Box<AVAsset>] = [:]
         func get(_ id: String) -> Box<AVAsset>? { store[id] }
         func set(_ id: String, _ box: Box<AVAsset>) { store[id] = box }
+        func remove(_ ids: Set<String>) { for id in ids { store[id] = nil } }
     }
     private let assetCache = AssetCache()
+
+    /// Forget the opened assets for these Photos identifiers, so the next preview or export opens
+    /// them again. A "Save to original" bake changes an asset's video under the SAME identifier;
+    /// without this the Studio kept showing the video from before the bake until it was reopened
+    /// (prompt 303).
+    func forget(localIdentifiers: Set<String>) async {
+        await assetCache.remove(localIdentifiers)
+    }
+
+    /// Whether an opened asset is kept for this identifier, and a way to put one there. Used by
+    /// the tests of `forget` (the simulator has no Photos videos to open).
+    func hasOpened(localIdentifier: String) async -> Bool {
+        await assetCache.get(localIdentifier) != nil
+    }
+    func remember(url: URL, localIdentifier: String) async {
+        await assetCache.set(localIdentifier, Box(AVURLAsset(url: url)))
+    }
+
+    /// The heart-rate tiles the export draws, one per clip that has heart-rate content. The
+    /// tile's values run over the clip's whole slot; it is SHOWN over the stretch the clip owns,
+    /// so two clips' tiles are never drawn on top of each other during a transition (the plan's
+    /// rule, prompt 303). A clip that owns no stretch gets no tile.
+    static func placedHR(clips: [StudioRenderPlan.PlacedMain],
+                         clipHRByID: [UUID: StudioClipHRContent]) -> [PlacedClipHR] {
+        clips.compactMap { placed in
+            guard let content = clipHRByID[placed.clip.id],
+                  StudioOverlays.tileIsShown((start: placed.ownedStartSec, end: placed.ownedEndSec))
+            else { return nil }
+            return PlacedClipHR(startSec: placed.startSec, durationSec: placed.durationSec,
+                                samples: content.samples, tile: content.tile,
+                                visibleStartSec: placed.ownedStartSec,
+                                visibleEndSec: placed.ownedEndSec)
+        }
+    }
 
     enum ComposerError: LocalizedError {
         case noRenderableClips, exportFailed(String)
@@ -257,11 +292,7 @@ final class StudioComposer: Sendable {
         // Text, climb tags and the HR tile: the Core Animation tool draws them over the
         // compositor's frames. Export only — `AVPlayerItem` rejects a composition that has it.
         if !forPlayback {
-            let placedHR: [PlacedClipHR] = plan.clips.compactMap { placed in
-                guard let content = clipHRByID[placed.clip.id] else { return nil }
-                return PlacedClipHR(startSec: placed.startSec, durationSec: placed.durationSec,
-                                    samples: content.samples, tile: content.tile)
-            }
+            let placedHR = Self.placedHR(clips: plan.clips, clipHRByID: clipHRByID)
             videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
                 hrSamples: hrSamples, hrTile: hrTile, clipHR: placedHR)

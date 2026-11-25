@@ -17,8 +17,16 @@ import Photos
 //
 // Device-only (Photos + a real asset); the Studio's export render itself comes from `StudioComposer`.
 
+/// The two Photos writes of a bake. A protocol only so the view model's bake can be tested with a
+/// stand-in (prompt 303): the real writes need a device and a real asset.
 @MainActor
-final class ClipBakeService {
+protocol ClipBaking {
+    func saveToOriginal(renderedURL: URL, localIdentifier: String, projectID: UUID) async throws
+    func replaceOriginal(renderedURL: URL, oldLocalIdentifier: String) async throws -> String
+}
+
+@MainActor
+final class ClipBakeService: ClipBaking {
 
     enum BakeError: LocalizedError {
         case notAuthorized
@@ -167,5 +175,11 @@ final class ClipBakeService {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
         else { return nil }
         return PHAssetResource.assetResources(for: asset).contains { $0.type == .fullSizeVideo }
+    }
+
+    /// The length of the video the asset plays now (its current version). `nil` when the asset
+    /// can't be found. Read after a revert, when the original video is the current one again.
+    nonisolated static func currentDuration(localIdentifier: String) -> Double? {
+        PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject?.duration
     }
 }

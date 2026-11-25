@@ -106,6 +106,65 @@ enum StudioGeometry {
             .map(\.endSec).max() ?? 0
     }
 
+    // MARK: - Source lengths (prompt 303)
+
+    /// The source lengths the TIMELINE is laid out with: the asset's real length where it has been
+    /// read, else `recorded` (the length Snappet stored when the video was added). `recorded`
+    /// returns `nil` for a clip that must not fall back — the caller passes a value only for a
+    /// clip whose video is not on this phone, so nothing changes for a clip that can be read.
+    /// Without it a never-trimmed clip in iCloud is 0 s long (`clipOutputDuration`).
+    static func timelineSourceDurations(clips: [TimelineClip], resolved: [UUID: Double],
+                                        recorded: (TimelineClip) -> Double?) -> [UUID: Double] {
+        var out = resolved
+        for clip in clips where !clip.isPhoto && out[clip.id] == nil {
+            if let length = recorded(clip), length.isFinite, length > 0 { out[clip.id] = length }
+        }
+        return out
+    }
+
+    /// The source length a trim is measured against: the asset's real length, else the recorded
+    /// one, else the clip's own trimmed end (it is inside the source). `nil` = not known, and a
+    /// trim is refused: clamping to an unknown length stored `trimEnd = 0`, which stayed after the
+    /// video was downloaded.
+    static func trimSourceLength(_ clip: TimelineClip, resolved: Double?, recorded: Double?) -> Double? {
+        guard !clip.isPhoto else { return nil }
+        for candidate in [resolved, recorded, clip.trimEnd] {
+            if let length = candidate, length.isFinite, length > 0 { return length }
+        }
+        return nil
+    }
+
+    // MARK: - Which clip a moment belongs to (prompt 303)
+
+    /// The stretch of the output each placed clip OWNS: its slot, except that the overlap of a
+    /// transition is split at its middle — the outgoing clip owns the first half, the incoming
+    /// clip the second. The windows are back to back wherever two clips overlap (no moment has two
+    /// owners, none has no owner). Used for whatever belongs to one clip at a time: the heart-rate
+    /// tile in the export, and the clip "under the playhead" in the editor.
+    static func ownedWindows(_ placed: [PlacedClip]) -> [(start: Double, end: Double)] {
+        var out = placed.map { (start: $0.startSec, end: $0.endSec) }
+        for i in placed.indices.dropLast() where placed[i + 1].startSec < placed[i].endSec {
+            let middle = (placed[i + 1].startSec + placed[i].endSec) / 2
+            out[i].end = middle
+            out[i + 1].start = middle
+        }
+        // A clip shorter than its two transitions: the two middles cross, so it owns nothing.
+        // With transitions of different lengths the clip before would then own past the point
+        // where the clip after starts to own. The two meet in the middle of the crossed stretch.
+        for i in out.indices where out[i].start > out[i].end {
+            let meet = (out[i].start + out[i].end) / 2
+            out[i] = (start: meet, end: meet)
+            if i > 0 { out[i - 1].end = meet }
+            if i + 1 < out.count { out[i + 1].start = meet }
+        }
+        return out.map { (start: $0.start, end: max($0.start, $0.end)) }
+    }
+
+    /// The index of the clip that owns output time `t` (`ownedWindows`), or `nil` when no clip does.
+    static func ownerIndex(at t: Double, in placed: [PlacedClip]) -> Int? {
+        ownedWindows(placed).firstIndex { t >= $0.start && t < $0.end }
+    }
+
     // MARK: - Overlay windows against the end of the timeline (prompt 297)
 
     /// The shortest on-screen window an overlay can have (seconds) — the lane bar can't collapse

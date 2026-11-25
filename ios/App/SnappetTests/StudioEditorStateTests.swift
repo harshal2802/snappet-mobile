@@ -198,6 +198,36 @@ final class StudioEditorStateTests: XCTestCase {
         XCTAssertFalse(StudioTransport.restartsFromTop(position: 12, duration: 20))
     }
 
+    /// A tick from the player's clock counts only when the latest seek has finished (prompt
+    /// 303). After "play to the end" seeks back to 0, a late tick still carrying the end time is
+    /// ignored; so is a tick from a rebuilt preview's new item before it has sought back.
+    func testAClockTickThatPredatesTheLatestSeekIsIgnored() {
+        var gate = StudioSeekGate()
+        XCTAssertTrue(gate.acceptsTick)                         // nothing sought yet: follow the clock
+
+        let toStart = gate.begin()                              // played to the end → seek(to: 0)
+        XCTAssertFalse(gate.acceptsTick)                        // the late tick with the end time
+        gate.finish(toStart)
+        XCTAssertTrue(gate.acceptsTick)
+
+        // two seeks in a row (a scrub): the first one ending does not open the gate
+        let first = gate.begin(), second = gate.begin()
+        gate.finish(first)
+        XCTAssertFalse(gate.acceptsTick)
+        gate.finish(second)
+        XCTAssertTrue(gate.acceptsTick)
+        gate.finish(first)                                      // an old report changes nothing
+        XCTAssertTrue(gate.acceptsTick)
+
+        // a number that was never handed out cannot open a later seek's gate
+        gate.finish(999)
+        _ = gate.begin()
+        XCTAssertFalse(gate.acceptsTick)
+        // the player went away with a seek in flight: nothing is waiting any more
+        gate.reset()
+        XCTAssertTrue(gate.acceptsTick)
+    }
+
     // MARK: Selection and presentation (pure)
 
     func testSelectionIsOneValue() {

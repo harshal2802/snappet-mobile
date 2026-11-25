@@ -206,7 +206,10 @@ enum StudioProjectEditor {
 
         var first = clip; first.trimEnd = cutSource
         var second = clip
-        second.id = UUID(); second.trimStart = cutSource; second.trimEnd = trimEnd
+        // The second half ends where the clip ended. A clip with no stored end keeps none: the
+        // length used above may be an estimate (the recorded length of a video that is not on
+        // this phone), and a stored estimate would stay after the real length is read (prompt 303).
+        second.id = UUID(); second.trimStart = cutSource; second.trimEnd = clip.trimEnd
         second.scaleKeyframes = []        // keyframes don't carry meaningfully across a split
 
         var seq = StudioGeometry.ordered(s.clips)

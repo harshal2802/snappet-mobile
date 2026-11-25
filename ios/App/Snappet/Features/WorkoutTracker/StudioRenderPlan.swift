@@ -127,6 +127,12 @@ enum StudioRenderPlan {
         let audioFadeIn: ClosedRange<Double>?
         /// Audio falls from `volume` to 0 over this stretch (the transition out of the clip).
         let audioFadeOut: ClosedRange<Double>?
+        /// The stretch this clip OWNS (`StudioGeometry.ownedWindows`): its slot, with each
+        /// transition split at its middle. Whatever is drawn for one clip at a time (its
+        /// heart-rate tile) is shown over this stretch, so two clips' items never overlap and
+        /// there is no moment without one (prompt 303).
+        let ownedStartSec: Double
+        let ownedEndSec: Double
 
         var durationSec: Double { endSec - startSec }
     }
@@ -184,25 +190,22 @@ enum StudioRenderPlan {
         }
 
         // Tracks: a clip goes on the first track that is free when it starts.
+        let owned = StudioGeometry.ownedWindows(placed)
         var trackEnds: [Double] = []
         var mains: [PlacedMain] = []
         var indexInPlaced: [Int] = []            // mains[n] is placed[indexInPlaced[n]]
         for (i, p) in placed.enumerated() where p.durationSec > epsilon {
             let track = trackEnds.firstIndex(where: { p.startSec >= $0 - 1e-9 }) ?? trackEnds.count
             if track == trackEnds.count { trackEnds.append(p.endSec) } else { trackEnds[track] = p.endSec }
-            let fadeIn = i > 0 ? phaseAfter[i - 1].map { $0.startSec ... $0.endSec } : nil
-            var fadeOut = phaseAfter[i].map { $0.startSec ... $0.endSec }
-            if let a = fadeIn, let b = fadeOut, b.lowerBound < a.upperBound {
-                // A clip shorter than its two transitions together: the fades may not overlap.
-                fadeOut = b.upperBound - a.upperBound > epsilon ? a.upperBound ... b.upperBound : nil
-            }
+            let fades = audioFades(entering: i > 0 ? phaseAfter[i - 1] : nil, leaving: phaseAfter[i])
             let speed = StudioGeometry.clampSpeed(p.clip.speed)
             mains.append(PlacedMain(clip: p.clip, trackIndex: track,
                                     startSec: p.startSec, endSec: p.endSec,
                                     sourceStartSec: p.clip.trimStart,
                                     sourceDurationSec: p.durationSec * speed,
                                     volume: min(1, max(0, p.clip.volume ?? 1)),
-                                    audioFadeIn: fadeIn, audioFadeOut: fadeOut))
+                                    audioFadeIn: fades.fadeIn, audioFadeOut: fades.fadeOut,
+                                    ownedStartSec: owned[i].start, ownedEndSec: owned[i].end))
             indexInPlaced.append(i)
         }
 
@@ -262,6 +265,21 @@ enum StudioRenderPlan {
 
         return Plan(canvas: canvas, background: background, totalDuration: total,
                     clips: mains, pips: pips, segments: segments, mainTrackCount: trackEnds.count)
+    }
+
+    // MARK: Audio fades
+
+    /// A clip's audio fades: up over the transition into it, down over the transition out of it.
+    /// A clip shorter than its two transitions together has them overlap; the shared part is then
+    /// split in the middle, so the clip still rises and then falls to silence — it never ends at
+    /// full volume (prompt 303).
+    static func audioFades(entering: TransitionPhase?, leaving: TransitionPhase?)
+        -> (fadeIn: ClosedRange<Double>?, fadeOut: ClosedRange<Double>?) {
+        let fadeIn = entering.map { $0.startSec ... max($0.startSec, $0.endSec) }
+        let fadeOut = leaving.map { $0.startSec ... max($0.startSec, $0.endSec) }
+        guard let a = fadeIn, let b = fadeOut, b.lowerBound < a.upperBound else { return (fadeIn, fadeOut) }
+        let middle = min(b.upperBound, max(a.lowerBound, (b.lowerBound + a.upperBound) / 2))
+        return (a.lowerBound ... middle, middle ... b.upperBound)
     }
 
     // MARK: Per-layer geometry

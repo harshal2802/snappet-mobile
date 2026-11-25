@@ -105,19 +105,21 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
     /// this check existed (a wrong "missing" would block export of a good clip).
     private static func localStatus(of asset: PHAsset) async -> StudioAssetStatus {
         guard asset.mediaType == .video else { return .available }
-        return await withCheckedContinuation { continuation in
+        let box = AssetBox(asset)
+        // Photos may never call back; after the limit the clip counts as available (prompt 303).
+        let answer = await StudioFirstAnswer.wait(
+            seconds: StudioAvailabilityProbe.timeoutSec,
+            otherwise: StudioAvailabilityProbe.Answer.noAnswer) { answer in
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = false
             options.deliveryMode = .highQualityFormat
-            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
+            let id = PHImageManager.default().requestAVAsset(forVideo: box.value, options: options) { avAsset, _, info in
                 let inCloud = (info?[PHImageResultIsInCloudKey] as? Bool) ?? false
-                if avAsset != nil {
-                    continuation.resume(returning: .available)
-                } else {
-                    continuation.resume(returning: inCloud ? .inCloud : .available)
-                }
+                answer(avAsset != nil ? .onPhone : (inCloud ? .inCloud : .noReason))
             }
+            return { PHImageManager.default().cancelImageRequest(id) }
         }
+        return StudioAvailabilityProbe.status(answer)
     }
     #endif
 
@@ -167,6 +169,35 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
             }
             if let id { PHImageManager.default().cancelImageRequest(id) }
             continuation?.resume(throwing: CancellationError())
+        }
+    }
+}
+
+/// One answer from a callback API, or a fallback when it does not come in time (prompt 303).
+/// The callback and the time limit can arrive on any thread and in any order; the caller is
+/// resumed once, with whichever came first. No Photos here, so the unit tests run it.
+enum StudioFirstAnswer {
+    /// `start` begins the request and is given the function to call with its answer. It may
+    /// return a way to cancel the request, which is called when the time limit wins.
+    static func wait<T: Sendable>(
+        seconds: Double, otherwise fallback: T,
+        _ start: @Sendable (@escaping @Sendable (T) -> Void) -> (@Sendable () -> Void)?
+    ) async -> T {
+        await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
+            let pending = OSAllocatedUnfairLock<CheckedContinuation<T, Never>?>(initialState: continuation)
+            let take: @Sendable () -> CheckedContinuation<T, Never>? = {
+                pending.withLock { waiting in
+                    defer { waiting = nil }
+                    return waiting
+                }
+            }
+            let cancel = start { answer in take()?.resume(returning: answer) }
+            Task {
+                try? await Task.sleep(for: .seconds(max(0, seconds)))
+                guard let waiting = take() else { return }
+                cancel?()
+                waiting.resume(returning: fallback)
+            }
         }
     }
 }

@@ -70,6 +70,11 @@ enum StudioBakeState: Equatable, Sendable {
             + "still show the old edits. Keep the Studio open and make any change: Snappet will "
             + "try to save again."
     }
+
+    /// A bake is refused before anything is written when the video's own records cannot be read
+    /// (prompt 303): the bake would re-point the project and leave the records behind.
+    static let recordsUnreadableMessage = "Snappet couldn't read this video's record, so nothing "
+        + "was changed. Close the Studio, open it again and try once more."
 }
 
 // MARK: - Transport
@@ -109,6 +114,34 @@ enum StudioTransport {
     static func restartsFromTop(position: Double, duration: Double) -> Bool {
         position >= duration - 0.05
     }
+}
+
+/// Which player-clock ticks may move the playhead (prompt 303). A seek is not instant: until the
+/// player has finished it, the periodic observer still reports times from before it — the end of
+/// the video after "play to the end" has sought back to 0, or 0 from a rebuilt preview's new item
+/// before it has sought to where the playhead was. Each seek gets a number; a tick counts only
+/// when the latest seek has finished.
+struct StudioSeekGate: Equatable, Sendable {
+    private(set) var latest = 0
+    private(set) var finished = 0
+
+    /// A seek was asked of the player. Returns its number, to hand back to `finish`.
+    mutating func begin() -> Int {
+        latest += 1
+        return latest
+    }
+
+    /// The player finished (or dropped) seek number `generation`. An older seek ending after a
+    /// newer one began does not open the gate.
+    mutating func finish(_ generation: Int) {
+        finished = max(finished, min(generation, latest))
+    }
+
+    /// The player is gone: no seek is waiting any more.
+    mutating func reset() { finished = latest }
+
+    /// The player's clock may move the playhead: no seek is still in flight.
+    var acceptsTick: Bool { finished >= latest }
 }
 
 // MARK: - Presentation
@@ -216,8 +249,9 @@ struct StudioEditorState: Equatable {
         case mediaSourcesChanged([StudioMediaPlan.Source])
         case previewWithoutMissing
         case showMissingOptions
-        case downloadBegan(String)
-        case downloadProgressed(Double)
+        /// `request` numbers the download; its progress reports carry the same number (prompt 303).
+        case downloadBegan(String, request: Int)
+        case downloadProgressed(Double, request: Int)
         case downloadFinished(String)
         case downloadFailed(String)
         case downloadCancelled
@@ -262,6 +296,20 @@ struct StudioEditorState: Equatable {
         if case .saved(let replaced) = bake { return .finished(.savedToOriginal(replaced: replaced)) }
         return .ready
     }
+
+    /// The empty preview area says "Building preview…": the first preview is not made yet, or a
+    /// later one is being made. Keyed on the phase (prompt 303) — in the opening window, before
+    /// the first build has begun, `isBuildingPreview` is still false and the area used to say
+    /// the preview could not be made.
+    var showsBuildingPreview: Bool {
+        if case .loading = phase { return true }
+        return isBuildingPreview
+    }
+
+    /// A preview may be built: the first availability result is in (prompt 303). Before it,
+    /// nothing is known about where the videos are, and the composer would download an iCloud
+    /// clip without a word. The Studio's opening builds the preview right after the result.
+    var canBuildPreview: Bool { media.isChecked }
 
     /// A bake is in flight (prompt 294).
     var isBaking: Bool { bake == .baking }
@@ -367,6 +415,9 @@ struct StudioEditorState: Equatable {
         case .bakeSavedProjectNotUpdated(let replaced):
             guard isBaking else { return self }
             s.bake = .savedProjectNotUpdated(replaced: replaced)
+            // The bake's own alert says the project was not saved; the save banner would say it
+            // a second time (prompt 303).
+            s.saveFailure = nil
         case .bakeAcknowledged:
             guard !isBaking else { return self }
             s.bake = .idle
@@ -379,10 +430,10 @@ struct StudioEditorState: Equatable {
             s.media = media.previewingWithoutMissing()
         case .showMissingOptions:
             s.media = media.showingOptions()
-        case .downloadBegan(let localIdentifier):
-            s.media = media.downloadBegan(localIdentifier)
-        case .downloadProgressed(let fraction):
-            s.media = media.downloadProgressed(fraction)
+        case .downloadBegan(let localIdentifier, let request):
+            s.media = media.downloadBegan(localIdentifier, request: request)
+        case .downloadProgressed(let fraction, let request):
+            s.media = media.downloadProgressed(fraction, request: request)
         case .downloadFinished(let localIdentifier):
             s.media = media.downloadFinished(localIdentifier)
         case .downloadFailed(let message):
