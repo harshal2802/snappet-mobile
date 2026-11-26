@@ -293,6 +293,9 @@ final class StudioComposer: Sendable {
         // compositor's frames. Export only — `AVPlayerItem` rejects a composition that has it.
         if !forPlayback {
             let placedHR = Self.placedHR(clips: plan.clips, clipHRByID: clipHRByID)
+            #if DEBUG
+            StudioHRTimingDebug.shared.exportPlaced(placedHR)   // read by the UI test of prompt 306
+            #endif
             videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
                 hrSamples: hrSamples, hrTile: hrTile, clipHR: placedHR)
@@ -460,6 +463,15 @@ final class StudioComposer: Sendable {
 
     private func avAsset(forLocalIdentifier id: String) async -> AVAsset? {
         if let cached = await assetCache.get(id) { return cached.value }
+        #if DEBUG
+        // Test-only (prompt 306): the seeded `uitest-generated://` clips play a video made in
+        // code, so the Studio previews and exports on the simulator. No Photos identifier has
+        // that form.
+        if let generated = await StudioHRTimingSeed.asset(forLocalIdentifier: id) {
+            await assetCache.set(id, Box(generated))
+            return generated
+        }
+        #endif
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
         guard let phAsset = assets.firstObject else { return nil }
         let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in

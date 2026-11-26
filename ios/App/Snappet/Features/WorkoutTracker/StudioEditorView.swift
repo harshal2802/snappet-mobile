@@ -60,6 +60,10 @@ struct StudioEditorView: View {
         // A bake cannot be cancelled, so it also blocks closing. An export can be closed, which
         // cancels it (prompt 298).
         .interactiveDismissDisabled(!vm.state.canClose)
+        #if DEBUG
+        // Invisible, and only on a launch with the heart-rate timing seed (prompt 306).
+        .background(alignment: .topLeading) { StudioHRTimingDebugView(vm: vm) }
+        #endif
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)

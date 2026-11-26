@@ -12,7 +12,18 @@ enum UITestStore {
     static let markerIdentifier = "uiTest.freshStore"
 
     /// Every launch argument that means "use a fresh in-memory store".
-    static let freshStoreArguments: [String] = [
+    static let freshStoreArguments: [String] = baseArguments + debugOnlyArguments
+
+    /// Seeds that exist in DEBUG builds only (their code is not in a release build).
+    private static var debugOnlyArguments: [String] {
+        #if DEBUG
+        return [StudioHRTimingSeed.argument]
+        #else
+        return []
+        #endif
+    }
+
+    private static let baseArguments: [String] = [
         "-uiTestFreshStore",
         StudioDemoSeed.argument,
         RecapClipSeed.argument,

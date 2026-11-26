@@ -103,7 +103,7 @@ AREAS = {
     "studio": {   # the Studio's render path; its golden frames are unit tests, these are the screens (prompt 304)
         "paths": [f"{WT}/Studio*", f"{APP}/Services/Studio*", f"{APP}/Features/Settings/StudioSelfCheck*",
                   "ios/App/SnappetTests/GoldenFrames/*"],
-        "classes": ["StudioSelfCheckUITests", "LiveWorkoutStudioWalkthroughTests"],
+        "classes": ["StudioSelfCheckUITests", "StudioHRTimingUITests", "LiveWorkoutStudioWalkthroughTests"],
     },
     "kilter": {
         "paths": [f"{APP}/Features/Kilter/*", f"{APP}/Services/Kilter*", "ios/App/Shared/Kilter*"],

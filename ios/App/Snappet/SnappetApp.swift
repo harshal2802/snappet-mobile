@@ -197,6 +197,10 @@ struct SnappetApp: App {
             RacketHRSeed.seedIfRequested(into: container.mainContext)
         }
         RunningWorkoutSeed.seedIfRequested(into: container.mainContext)   // prompt 279; no-op without its argument
+        #if DEBUG
+        // `-uiTestSeedStudioHRTiming` (prompt 306): a ramp heart rate and three clips, two of them baked.
+        StudioHRTimingSeed.seedIfRequested(into: container.mainContext)   // no-op without its argument
+        #endif
         if seedRacketVideos {
             RacketVideoSeed.seedIfRequested(into: container.mainContext)
         }

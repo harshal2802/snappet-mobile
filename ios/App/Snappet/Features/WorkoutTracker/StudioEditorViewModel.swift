@@ -2015,12 +2015,19 @@ final class StudioEditorViewModel {
         guard !rows.isEmpty else { return .done(.unchanged) }
         let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
         let probe = bakedAssetProbe ?? { localIdentifier in
-            BakedAssetProbe(
+            let said = BakedAssetProbe(
                 hasEditedRendition: ClipBakeService.hasEditedRendition(localIdentifier: localIdentifier),
                 currentDuration: ClipBakeService.currentDuration(localIdentifier: localIdentifier))
+            #if DEBUG
+            StudioHRTimingDebug.shared.probed(localIdentifier, said)   // read by the UI test of prompt 306
+            #endif
+            return said
         }
         reconcileAsked = true
         let askedAt = renderGeneration
+        #if DEBUG
+        let askedOn = Date()
+        #endif
         // For an asset with no edited rendition, also the length of the video it plays now.
         // Photos may not answer (prompt 303's wait): a render that waits for this check is not
         // held for ever. No answer counts as "nothing changed", and the check is owed.
@@ -2036,6 +2043,11 @@ final class StudioEditorViewModel {
             }
             return { work.cancel() }
         }
+        #if DEBUG
+        StudioHRTimingDebug.shared.checked(rows: rows.count, answered: answer != nil,
+                                           reverted: answer?.count ?? 0,
+                                           seconds: Date().timeIntervalSince(askedOn))
+        #endif
         guard let found = answer else {
             reconcileOwed = true
             return .timedOut

@@ -358,7 +358,10 @@ only when the scope being opened would otherwise be empty). **A baked clip keeps
 timing** (prompt 305): the optional `SessionMedia.bakeTimeMapData` records how the baked video's time
 maps back to the recording (start trim, speed, joined parts), and every heart-rate reader gets a clip's
 capture time from `ClipCaptureClock` (`offsetSec` + the map), so an HR tile added after "Save to
-original" is on the right seconds; not yet run on a phone. **Resizable base video**: an
+original" is on the right seconds; not yet run on a phone. Checked in the running editor on the
+simulator (prompt 306, `StudioHRTimingUITests`): the DEBUG-only seed `-uiTestSeedStudioHRTiming` gives
+the Studio a generated video, a ramp heart rate and rows as a bake writes them, and the preview tile
+and the export read the mapped seconds; the Photos write itself is still device-only. **Resizable base video**: an
 optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
 a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
 export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a
