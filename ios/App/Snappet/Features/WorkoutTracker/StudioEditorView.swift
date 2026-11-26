@@ -89,8 +89,14 @@ struct StudioEditorView: View {
         .onDisappear { vm.studioClosed() }
         // Back from another app, which may have been Photos: ask again whether a baked video
         // was reverted there (prompt 305). Nothing is asked when the session has no baked clip.
+        // Both signals are observed: inside a full-screen cover the scene phase may not be
+        // delivered, and the notification is. Two calls for one return share one check.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { vm.reconcileBakedFlags() }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification)) { _ in
+            vm.reconcileBakedFlags()
         }
         .sheet(item: toolBinding) { tool in
             StudioToolSheet(tool: tool, vm: vm)

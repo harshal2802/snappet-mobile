@@ -13199,3 +13199,34 @@ afterwards, so a second call during the wait cannot start a second render. The c
 when the app becomes active with the Studio open; it fetches nothing when the session has no
 baked row, and does nothing while a render runs. After a found revert the clip's length is read
 again and the composer forgets the opened asset.
+
+## 2026-11-25 — A render waits for the revert check in a phase of its own, and stops if a clip changed (prompt 305, second review)
+
+Between the save tap and the bake's start the editor asked Photos with nothing locked: the Studio
+could be closed (the bake then wrote to Photos with nobody to tell), an export tapped in the
+window dropped the bake, and a found revert let the bake carry on with trims set against the
+video that was gone. `StudioEditorState` now has a `checking(kind)` phase: no edit, no close, no
+other render. When the check changed any clip the render does not start, and the lane's own
+failure alert says "This clip was reverted in Photos. Check it and save again." (export: "export
+again"). Stopping was chosen over carrying on because the user has not seen the clip the render
+would be made from. The phase is entered only when the session has a baked video, so everything
+else exports at once as before. "Export as new video" goes through the same check: it used to
+render heart rate through a stale map after a revert.
+
+## 2026-11-25 — One revert check at a time, never under a render (prompt 305, second review)
+
+The check was started from four places and could run twice at once. It is one task now; every
+caller gets the task in flight and its answer (did a clip change). If it finds a revert while a
+bake or an export renders it changes nothing and is run again when the render ends
+(`reconcileOwed`); before, that finding was dropped. No render can begin under the check's last
+part, because a render waits for the check in flight. The Studio also listens for
+`UIApplication.didBecomeActiveNotification`: inside a full-screen cover the scene phase may not
+arrive. That this fires on a phone is owed on device.
+
+## 2026-11-25 — A reverted clip is asked about before it is opened (prompt 305, second review)
+
+After "Revert to Original" the current video may be in iCloud only, and the composer downloads
+such a clip without a word. The check asks the availability service about the changed assets
+first, so the "Download clip" panel of prompt 302 stands and the clip has its recorded length
+until it is here. Before the Studio's first availability result the check reports nothing: that
+first check covers every clip, and no preview is built before it.

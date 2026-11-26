@@ -1732,11 +1732,21 @@ final class StudioEditorViewModel {
         guard state.canExport,
               ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips) != nil
         else { return }
+        pause()                 // the preview does not play under a render
         // A row's time map is composed into this bake's map, so it is trusted only after Photos
         // was asked NOW (prompt 305): a "Revert to Original" made since the Studio opened would
-        // otherwise leave a stale map in the new one. Awaited before the snapshot is read; the
-        // guard is checked again after it, so two bakes cannot both get through.
-        await reconcileBakedRows()
+        // otherwise leave a stale map in the new one. The editor is in its "checking" phase
+        // from the tap (no edit, no close, no other render). If the check changed a clip the
+        // bake STOPS with a message: the preview and the trims on screen were made against
+        // the video that is gone.
+        if let check = reconcileBakedFlags() {
+            send(.checkBegan(.bake))
+            guard await check.value == false else {
+                send(.checkFoundRevert)
+                return
+            }
+            send(.checkPassed)
+        }
         guard state.canExport,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
@@ -1755,8 +1765,8 @@ final class StudioEditorViewModel {
         let clipHR = clipHRContent()
         let hrTileDrawn = clipHR.isEmpty ? resolvedSessionTile() != nil
                                          : clipHR.values.contains { $0.tile != nil }
-        pause()                 // the preview does not play under a render
         send(.bakeBegan)
+        defer { runOwedReconcile() }   // a check that landed under this render was put off
         let sid = project.sessionID
         let rows: [SessionMedia]
         do {
@@ -1871,29 +1881,50 @@ final class StudioEditorViewModel {
     /// The Photos probes run OFF the main actor (one fetch + resource enumeration per baked row —
     /// this fires on the Studio's already-busy onAppear); the clears apply back on main.
     ///
-    /// Called when the Studio opens and when the app comes back to the foreground with the Studio
-    /// open (the user may have been in Photos). `bake()` awaits the same check itself.
-    /// Returns the task so a test can wait for it; the app ignores it.
+    /// ONE check runs at a time (prompt 305). The Studio's opening, the app coming back to the
+    /// foreground, `bake()` and `startExport()` all call this; while a check is in flight every
+    /// caller gets the same task. The task's value says whether the check changed any clip.
+    /// `nil` when the session has no baked video (nothing to ask Photos about).
     @discardableResult
-    func reconcileBakedFlags() -> Task<Void, Never>? {
-        guard hasBakedRows else { return nil }
-        return Task { [weak self] in await self?.reconcileBakedRows() }
+    func reconcileBakedFlags() -> Task<Bool, Never>? {
+        if let reconcileTask { return reconcileTask }
+        let sid = project.sessionID
+        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
+        guard !rows.isEmpty else { return nil }
+        let task = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            let changed = await self.reconcile(rows)
+            self.reconcileTask = nil
+            return changed
+        }
+        reconcileTask = task
+        return task
+    }
+    /// The check in flight.
+    @ObservationIgnored private var reconcileTask: Task<Bool, Never>?
+    /// A check found a reverted clip while a render ran and changed nothing. It runs again when
+    /// the render ends (`runOwedReconcile`).
+    @ObservationIgnored private(set) var reconcileOwed = false
+
+    /// Returns when no check is in flight. For tests.
+    func reconcileFinished() async {
+        while let task = reconcileTask { _ = await task.value }
     }
 
-    private func bakedRows() -> [SessionMedia] {
-        let sid = project.sessionID
-        return (try? context.fetch(FetchDescriptor<SessionMedia>(
-            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
+    /// A render ended: run the check that was put off while it ran.
+    private func runOwedReconcile() {
+        guard reconcileOwed else { return }
+        reconcileOwed = false
+        reconcileBakedFlags()
     }
-    private var hasBakedRows: Bool { !bakedRows().isEmpty }
 
     /// The check itself. What "no edited rendition" means for a row is read from its bake record
     /// (`ClipBakePlan.revertFinding`, prompt 305): a "Replace original" asset has nothing to
     /// revert and is left alone; a "Save to original" over a replaced video goes back to that
     /// video's record; anything else goes back to the recording.
-    private func reconcileBakedRows() async {
-        let rows = bakedRows()
-        guard !rows.isEmpty else { return }
+    /// Returns whether any clip changed.
+    private func reconcile(_ rows: [SessionMedia]) async -> Bool {
         let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
         let probe = bakedAssetProbe ?? { localIdentifier in
             BakedAssetProbe(
@@ -1909,9 +1940,15 @@ final class StudioEditorViewModel {
             }
             return out
         }.value
-        // A bake in flight replaces the project when it ends, and an export renders the project
-        // as it is; leave everything for the next check.
-        guard !found.isEmpty, canEdit else { return }
+        guard !found.isEmpty else { return false }
+        // Nothing below runs under a render: a bake replaces the project when it ends, an
+        // export renders the project and the opened assets as they are. The check is owed and
+        // runs again when the render ends. (A render cannot START below this line: `bake()` and
+        // `startExport()` wait for the check in flight.)
+        guard !state.isRendering else {
+            reconcileOwed = true
+            return false
+        }
         var changed: [SessionMedia] = []        // the asset plays another video than recorded
         var backToRecording: [SessionMedia] = []
         for m in rows where found[m.id] != nil {
@@ -1932,7 +1969,7 @@ final class StudioEditorViewModel {
             m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
                                                           asset: found[m.id] ?? nil)
         }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else { return false }
         mediaClocks = [:]
         mediaClocksByLocalID = [:]
         loadMediaOffsets()
@@ -1954,11 +1991,28 @@ final class StudioEditorViewModel {
         let assets = Set(changed.map(\.localIdentifier))
         let clipIDs = Set(snapshot.clips.filter { assets.contains($0.localIdentifier) }.map(\.id))
         let stale = clipIDs.contains { sourceDurations[$0] != nil }
+        // Where the video is NOW, before anything opens it (prompts 302/303): after a revert the
+        // current version may be in iCloud only, and the composer would download it without a
+        // word. With the new status the clip is read and previewed only if it is on this phone;
+        // otherwise the "Download clip" panel stands, as for any other clip.
+        // (Before the Studio's first availability result nothing is reported here: that check
+        // asks about every clip, and no preview is built before it.)
+        if state.media.isChecked {
+            let statuses = await availability.statuses(for: Array(assets))
+            send(.mediaChecked(sources: mediaSources, statuses: statuses))
+        }
         if stale {
+            // Until the real length is read again the clip has its recorded one, which the
+            // lines above just set to the reverted video's.
+            for id in clipIDs { sourceDurations[id] = nil }
+            for asset in assets { sourceAspects[asset] = nil }
             await composer.forget(localIdentifiers: assets)
             await loadSourceInfo(refreshing: clipIDs)
+        } else {
+            send(.mediaSourcesChanged(mediaSources))
         }
         if recordsCleared || stale { await rebuildPreview() }
+        return true
     }
 
     // MARK: Export (device-only render)
@@ -1969,17 +2023,44 @@ final class StudioEditorViewModel {
 
     /// Start "Export as new video". Refused while either lane renders, and until the first preview
     /// has loaded. Editing is locked for its whole length (prompt 301).
+    ///
+    /// When the session has a baked video, Photos is asked about it first (prompt 305), as
+    /// before a bake: a "Revert to Original" made while the app was in the background must not
+    /// be rendered through the bake's time map. The editor is in its "checking" phase from the
+    /// tap, and a check that changed a clip stops the export with a message.
     func startExport() {
         guard state.canExport else { return }
         pause()                 // the preview does not play under a render
-        send(.exportBegan)      // also deletes the last export's file
-        exportTask = Task { [weak self] in await self?.runExport() }
+        guard let check = reconcileBakedFlags() else {
+            send(.exportBegan)  // also deletes the last export's file
+            exportTask = Task { [weak self] in await self?.runExport() }
+            return
+        }
+        send(.checkBegan(.export))
+        exportTask = Task { [weak self] in
+            let reverted = await check.value
+            guard let self else { return }
+            guard !reverted else {
+                self.exportTask = nil
+                self.send(.checkFoundRevert)
+                return
+            }
+            self.send(.checkPassed)
+            // The Studio was closed while Photos was asked.
+            guard !Task.isCancelled, self.state.canExport else {
+                self.exportTask = nil
+                return
+            }
+            self.send(.exportBegan)
+            await self.runExport()
+        }
     }
 
     private func runExport() async {
         defer {
             exportTask = nil
             send(.exportTaskEnded)
+            runOwedReconcile()   // a check that landed under this render was put off
         }
         do {
             // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples in the

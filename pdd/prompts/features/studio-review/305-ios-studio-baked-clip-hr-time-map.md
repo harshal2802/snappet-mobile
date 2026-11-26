@@ -119,6 +119,35 @@ behind `bakedAssetProbe` (`nil` in the app), so the revert path can be tested.
    read again and the composer forgets the opened asset, as after a bake. The check does nothing
    while a bake or an export renders.
 
+### Second review follow-ups (same PR, third commit)
+
+1. **One check at a time.** `reconcileBakedFlags()` holds the check in flight; the Studio's
+   opening, the return to the foreground, `bake()` and `startExport()` all get the same task, and
+   its value says whether any clip changed. The rows are fetched once. It returns `nil` when the
+   session has no baked video.
+2. **A "checking" phase** in the pure `StudioEditorState` (`checkBegan(kind)`, `checkPassed`,
+   `checkFoundRevert`). From the save or export tap until Photos has answered: no edit, no
+   close, no other render. It is entered only when the session has a baked video, so an export
+   of a session with none starts at once, as before.
+3. **A check that changed a clip stops the render.** The preview and the trims on screen were
+   made against the video that is gone, so the bake does not carry on with them. The lane's own
+   failure alert says "This clip was reverted in Photos. Check it and save again." (export:
+   "… and export again."). The next tap has no baked row to ask about, or asks again.
+4. **An export asks Photos first too**, through the same check, phase and stop rule. Before, an
+   export right after a revert in Photos burned heart rate through the stale map.
+5. **Nothing of the check runs under a render.** A check that finds a revert while a bake or an
+   export renders changes nothing, is remembered (`reconcileOwed`) and runs again when the render
+   ends. A render cannot start under the check's last part (forget, read the length, rebuild the
+   preview), because every render waits for the check in flight.
+6. **Availability before anything is opened.** After a revert the video that is current again
+   may be in iCloud only. The check asks the availability service about the changed assets
+   before the composer forgets them and before a length is read or a preview built. A clip that
+   is not on this phone gets the "Download clip" panel (prompt 302) and its recorded length, as
+   any other clip; nothing is downloaded without a word.
+7. **Back from Photos inside a full-screen cover.** The Studio also observes
+   `UIApplication.didBecomeActiveNotification`, because the scene phase may not be delivered
+   inside a cover. Both signals for one return share one check.
+
 ### Clips replaced before this change
 
 They have `isBaked` and no record, exactly like a "Save to original" that changed no timing.
@@ -215,18 +244,31 @@ second it came from.
   stays baked when the Studio asks Photos again: flag, `baked` record, map, offset and length
   stay, no tile in the Studio or an export, no feed overlay, raw share. A clip flagged with no
   record is still un-flagged. A revert over a replaced clip restores its record and the clip's
-  length. A bake after an unseen revert stores source start 5, not 25; the same bake with the
-  first still in place stores 25. The festival set row carries the flag and the map. A failing
+  length. A bake after an unseen revert: the first tap stops with the message, writes nothing to
+  Photos and clears the stale map; the next save stores source start 5, not 25; the same bake
+  with the first still in place stores 25. While a bake waits for Photos (the stand-in probe is
+  held): close, export, a second bake and an edit are refused, and one bake comes out. An export
+  waits for the check, stops with its message on a revert, and starts at once when nothing is
+  baked. A check under a held export changes nothing, builds no preview, is owed, and runs when
+  the export ends (the export's result stays). Three checks asked for at once are one task and
+  one question to Photos. A reverted clip that is in iCloud only: the panel stands, its length
+  is not read, it has its recorded length, and a save tap does nothing. An asset Photos does not
+  know (the stand-in's default, as the app's probe answers on a simulator) clears nothing and
+  blocks neither lane. `timeMap` with no parts drops an identity record and keeps a real map.
+  The festival set row carries the flag and the map, read through the functions `openViewer`
+  and `reelSource` call (`viewerInputs`, `reelClips`). A failing
   save: the flag, the length and
   the map are all on the row when the save is tried, nothing reaches the store, and the next save
   that works stores the three together.
 
 `SnappetBackupTests`: the map survives a backup and a restore; the same file without the key
 restores with no map. `ClipBakePlanTests`: `testEarliestTrimStart` is replaced by the same case
-through the map.
+through the map. `StudioEditorStateTests`: the checking phase, pure (locks, what cannot begin
+inside it, both endings for both lanes, when it cannot begin).
 
-Each of these fails if the map is ignored. The full unit suite was run. The UI suite was not: no
-screen and no identifier changed.
+Each of the map tests fails if the map is ignored. The full unit suite was run. For the third
+commit the editor's states changed, so `LiveWorkoutStudioWalkthroughTests` and `ClipsPostUITests`
+were run too. No test asks the real Photos library: the probe is a stand-in everywhere.
 
 ## Owed on device
 
@@ -248,7 +290,18 @@ Nothing here was run on a phone. Each step needs a session with recorded heart r
 9. "Replace original", then "Save to original" with a further trim, then "Revert to Original"
    in Photos: the clip is the replaced video again and is still BAKED.
 10. "Save to original", leave the Studio open, revert in Photos, come back, trim and "Save to
-    original" again: the tile is on the right seconds.
+    original" again: the first tap says "This clip was reverted in Photos. Check it and save
+    again." and saves nothing; the clip has its full length; the second save works and the
+    tile is on the right seconds.
+11. "Save to original" with a burned text or HR tile, leave the Studio open, "Revert to
+    Original" in Photos, come back and do NOT save: without closing the Studio the clip has its
+    full length again and the project's items are drawn over it again (the check ran on the
+    return, inside the full-screen cover).
+12. The same as 11 with "Optimise iPhone Storage" on and the original in iCloud only: the
+    "Download clip" panel appears; nothing downloads until it is asked for.
+13. The same as 11, but tap "Export as new video" right after coming back: either the message
+    "This clip was reverted in Photos. Check it and export again." appears, or the export
+    starts from the reverted clip. It never renders heart rate from the baked timing.
 7. Back up, restore on the same phone, open a baked clip in the Studio: the tile is unchanged.
 8. Install over a store from the build before this one: every clip is there and nothing about
    clips baked earlier has changed.

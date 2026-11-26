@@ -374,9 +374,19 @@ struct FestivalSetDetailView: View {
             predicate: #Predicate { $0.id == id })))?.first
     }
 
+    /// What the viewer is handed for this screen's clips: each row's own `mediaInput`, so the
+    /// baked flag and the time map go with it (prompt 305). Pure, and what the test reads.
+    static func viewerInputs(_ rows: [ClipRow]) -> [MediaInput] { rows.map(\.mediaInput) }
+
+    /// What the set's reel is made from: the rows of its own session, each as its `reelClip`
+    /// (the capture time of its first frame, not the bare offset — prompt 305).
+    static func reelClips(_ rows: [ClipRow], sessionID: UUID) -> [SessionHighlightInput.Clip] {
+        rows.filter { $0.sessionID == sessionID }.map(\.reelClip)
+    }
+
     private func openViewer(at index: Int) {
         guard let session = chartSession else { return }
-        let clips = clipRows.map(\.mediaInput)
+        let clips = Self.viewerInputs(clipRows)
         viewer = ViewerState(clips: clips, startIndex: index,
                              series: session.hrSeries,
                              maxHR: session.maxHR ?? 190, restHR: session.restHR)
@@ -386,7 +396,7 @@ struct FestivalSetDetailView: View {
     /// FROM that session, the set window boosted, posting back as "Artist · Stage".
     private func reelSource() -> ReelSource? {
         guard let session = chartSession else { return nil }
-        let clips = clipRows.filter { $0.sessionID == session.id }.map(\.reelClip)
+        let clips = Self.reelClips(clipRows, sessionID: session.id)
         guard !clips.isEmpty else { return nil }
         return ReelSource.festivalSet(set, session: session, clips: clips)
     }
