@@ -13508,10 +13508,8 @@ follows the chip) would have undone prompt 115 on the feed, share and Studio.
 footage: no edge readings, no hold, no HR window. Against the viewer opened from the same row:
 "♥ **93**" in the list, AVG **99** in the viewer (the ramp clip above); sparse samples (151 the only
 one inside): "♥ **151**", AVG **136**. It now asks the resolver as the viewer does: **99**, **136**. A list that
-shows a number the next screen contradicts was judged worse than either rule. One exception: where
-the viewer's reading is a held one (the clip's whole window lies outside the recording, e.g.
-filmed 20 s after the heart rate ended; the viewer draws it dashed) the list prints **no number**,
-as before, because a bare "♥ 210" has no way to say it is not a measurement.
+shows a number the next screen contradicts was judged worse than either rule. One exception, see
+"A bare number is printed only for a measurement" below.
 
 ## 2026-11-26 — A photo is read 10 s either side of its moment (prompt 309)
 
@@ -13567,8 +13565,20 @@ resolver was asked two different questions. Prompt 304's clip trimmed 1.2…6.1 
 **172**; activity list "♥ **145**". All are **151 / 159** now. `ClipStudioEdit.byMedia` is the one
 lookup, done once per list (never per cell), opening only the projects of sessions with media in
 the list. Consequence, intended: on those surfaces a trimmed clip now also plays its kept range,
-posters at its first kept frame and shows "Edited", as it did in the Clips feed. A baked clip or a
-posted reel carries no edit, as before.
+and its still is its first kept frame (`posterTime` = the kept range's start on the Recap carousel,
+the media browser, the activity tile and the festival thumb; the poster cache is keyed by
+identifier and time). No "Edited" chip was added there. A baked clip or a posted reel carries no
+edit, as before.
+
+Who pays for the lookup (a project's clips are the largest thing stored on it): the Clips feed as
+before; Recap one session's project per card on screen, through `ClipStudioEditCache`, re-read
+only when that project's `updatedAt` moved, and the projects are deliberately NOT in
+`feedSignature()` so a Studio save does not recompose the feed; an activity page the projects of
+the sessions that have a clip of that activity (`ActivityMediaStore.clips`); a caller that only
+counts clips none (`ActivityMediaStore.snapshot` carries no edits). Chosen over "refresh Recap on
+return from the Studio" because it needs no notion of where the user came from. The activity pages,
+which load once, compare `ClipStudioEdit.stamp` when they come back on screen and reload if the
+Studio saved.
 
 ## 2026-11-26 — One limit outside the recording: 90 s from the footage, both sides (prompt 309)
 
@@ -13590,6 +13600,35 @@ resolver now leaves the copy out of the aggregates (`countedOnce`; the drawn lin
 and a window with one or two readings is left alone). Feed, share and Studio, prompt 304's clip
 with defaults (recording ends inside the tail): AVG **145** becomes **146**. Activity fixtures:
 **120** becomes **128** (132, 140, 150, 90) and a photo **109** becomes **114**. Dense series
-usually round to the same beat. Not done: a time-weighted mean, which is the honest statistic for
+usually round to the same beat. The repeat is the same reading at the same time, and it is dropped
+once from the window's samples BEFORE the footage is cut out of them for "Clip only", and from the
+cut again: the first version dropped it only after the cut, so "Clip only" with a lead-in or tail
+still counted it twice (samples every 2 s from 2 s into the clip, 100…140: **116.7** becomes
+**120**; at the end, 160…166: **163.6** becomes **163**). A reel's AVG counts the same way
+(**117** becomes **120** for that clip). Not done: a time-weighted mean, which is the honest statistic for
 uneven samples (sparse fixture: plain 136, time-weighted about 134); it is `WorkoutHRStats`'s
 definition for whole sessions too, so it is a wider decision.
+
+## 2026-11-26 — A bare number is printed only for a measurement (prompt 309)
+
+One rule for every surface that prints a heart rate with no chart beside it (the activity row, the
+caption in the activity viewer, the Recap poster chip): a number only when at least one recorded
+sample lies in the clip's window (`ClipHRSummary.printable`). The tile may show a held reading,
+because it draws it dashed. Before this the three disagreed: the activity row hid a held value, the
+chip printed it, the tile showed it. Ramp 0…300 s, clip 10 s, default window: 30 s before the
+session start tile 63 / row 63 / chip 65·63; 45 s before, tile 60 dashed / nothing / nothing; 3 s
+after the last sample 210 / 210 / 210·210; 30 s after, tile 210 dashed / nothing / nothing (the
+chip showed **210 / 210**); 120 s after, nothing anywhere. The rule is "a recorded sample in the
+window", not "the window touches the recording", so a short window between two samples far apart
+(very sparse data, "Clip only" with no lead-in or tail) also prints nothing where the chip printed
+the drawn-between value (**135** in `FeedMediaTests`); the tile shows it dashed.
+
+## 2026-11-26 — A reel's preview and export read heart rate from the same placements (prompt 309)
+
+`ReelHeartRate.track(plan:placements:totalDuration:input:)` is the one call for both, each with
+the placements and length of the composition it plays or burns. The preview had still been timed
+from the plan: with a segment left out it showed the wrong clip's bpm and scaled the playhead by
+the plan's length. The exporter's renderable rule (a photo, or a video longer than 0.1 s) is one
+predicate, `ReelHeartRate.isRenderable`, and a placement carries its segment's index in the plan,
+so a 0.05 s sliver before a 2 s segment of the same clip, or a failed first of two segments of one
+clip, cannot shift the readings.

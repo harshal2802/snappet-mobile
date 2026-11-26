@@ -47,6 +47,8 @@ struct ActivityDashboardView: View {
     @State private var mergeRequest: MergeRequest?
     /// Bumped after a rename / merge rewrote history, so the page reloads.
     @State private var revision = 0
+    /// The Studio's state when the page was loaded: moved when the page comes back = load again.
+    @State private var editStamp: ClipStudioEdit.Stamp?
     @State private var tabChosen = false
     @Query private var entries: [LibraryEntry]
     /// A Kilter board climb's logs as activity history (prompt 189) — `nil` for every other activity.
@@ -141,7 +143,11 @@ struct ActivityDashboardView: View {
             LibraryMergeSheet(target: req.target, candidates: req.candidates) { merge($0) }
         }
         .task(id: "\(key.exerciseId)|\(key.nameKey)|\(revision)") {
-            var media = ActivityMediaStore.snapshot(context: context)
+            // The clips of this activity carry their Studio edits (prompt 309); only the sessions
+            // that have such a clip get their project opened.
+            editStamp = ClipStudioEdit.stamp(context: context)
+            var media = ActivityMediaStore.clips(for: key, kilterClimbUUID: isBoardClimb ? key.nameKey : nil,
+                                                 history: history, context: context)
             if isBoardClimb {
                 let board = loadBoardHistory(media: media)
                 boardHistory = board.history
@@ -161,6 +167,9 @@ struct ActivityDashboardView: View {
             if !tabChosen { tabChosen = true; if dashboard == nil { tab = .about } }
             if !tabs.contains(tab) { tab = tabs.first ?? .about }
             loaded = true
+        }
+        .onAppear {
+            if let editStamp, ClipStudioEdit.stamp(context: context) != editStamp { revision += 1 }
         }
         .fullScreenCover(item: $viewing) { req in
             ActivityClipViewer(clips: req.clips, startIndex: req.start,

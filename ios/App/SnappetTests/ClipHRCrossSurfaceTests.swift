@@ -150,17 +150,22 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
         let projects = try context.fetch(FetchDescriptor<StudioProject>())
         let session = try XCTUnwrap(context.fetch(FetchDescriptor<WorkoutSession>()).first)
         let row = try XCTUnwrap(rows.first)
-        // The Clips feed (`ClipsFeedView.makeSnapshot`).
-        let clipsFeed = MediaInput.from(row, edit: ClipStudioEdit.byMedia(projects: projects, media: rows)[row.id])
-        // Recap (`FeedView.cardMedia`, `CardDetailView`).
-        let index = FeedMediaIndex(kilterSessions: [], workoutSessions: [session], kilterLogs: [],
-                                   allMedia: rows, studioProjects: projects)
-        let recap = try XCTUnwrap(FeedMediaResolver(index: index).mediaInputs(for: session.id).first)
-        // The activity pages and the Kilter library.
-        let activity = try XCTUnwrap(ActivityMediaStore.snapshot(context: context).first)
-        // The festival set screen (`FestivalSetDetailView.load`).
-        let festival = FestivalSetDetailView.ClipRow(
-            row, isAuto: false, edit: ClipStudioEdit.byMedia(context: context, media: rows)[row.id]).mediaInput
+        // Each surface's OWN function is called here, not a copy of what it does: take the edit
+        // lookup out of any of them and the tests below fail.
+        // The Clips feed: what `ClipsFeedView.makeSnapshot` builds its snapshot from.
+        let clipsFeed = try XCTUnwrap(MediaInput.bySession(rows, projects: projects)[session.id]?.first)
+        // Recap: the resolver `FeedView.cardMedia` and `CardDetailView` make for a card.
+        let index = FeedMediaIndex(kilterSessions: [], workoutSessions: [session], kilterLogs: [], allMedia: rows)
+        let recap = try XCTUnwrap(
+            FeedMediaResolver(index: index, sessionID: session.id, projects: projects, cache: ClipStudioEditCache())
+                .mediaInputs(for: session.id).first)
+        // The activity pages and the Kilter library: the rows a page that shows clips loads.
+        let activity = try XCTUnwrap(
+            ActivityMediaStore.withEdits(ActivityMediaStore.snapshot(context: context), sessions: [session.id],
+                                         context: context).first)
+        // The festival set screen: the rows `FestivalSetDetailView.load` lists.
+        let festival = try XCTUnwrap(
+            FestivalSetDetailView.rows([(media: row, isAuto: false)], context: context).first).mediaInput
         return Surfaces(studio: h, session: session, clipsFeed: clipsFeed, recap: recap,
                         activity: activity, festival: festival)
     }
@@ -404,18 +409,17 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
             let chip = FeedMedia.clipHR(for: s.recap, hrSeries: f.series, maxHR: f.maxHR)
             XCTAssertEqual(feed != nil, held, "feed: \(what)")
             XCTAssertEqual(share(s.clipsFeed, f) != nil, held, "share: \(what)")
-            XCTAssertEqual(chip.peakBpm != nil, held, "chip: \(what)")
+            XCTAssertNil(chip.peakBpm, "chip: \(what)")
             XCTAssertEqual(viewer(s.activity.mediaInput, f) != nil, held, "activity viewer: \(what)")
             XCTAssertEqual(viewer(s.festival, f) != nil, held, "festival viewer: \(what)")
             XCTAssertEqual(s.studio.exported() != nil, held, "studio export: \(what)")
             XCTAssertEqual(s.studio.preview(at: 1).bpm != nil, held, "studio preview: \(what)")
             XCTAssertEqual(reel(s, f).track.hasData, held, "reel: \(what)")
-            // A held reading is the nearest recorded sample, drawn dashed; the activity list,
-            // which has no dashed line to say so, prints no number for it.
+            // A held reading is the nearest recorded sample, drawn dashed; the chip and the
+            // activity list, which have no dashed line to say so, print no number for it.
             if held, let feed {
                 XCTAssertEqual(feed.payload.values.staticValue(.avgHR, fallbackHex: "")?.value, "210", what)
                 XCTAssertTrue(feed.payload.values.isSparseChart, what)
-                XCTAssertEqual(chip.avgBpm, 210, what)
             }
             XCTAssertNil(ActivityMediaIndex.averageBPM(for: s.activity, hrSeries: f.series), "activity: \(what)")
             withExtendedLifetime(s.studio.container) {}
@@ -430,8 +434,7 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
             let chip = FeedMedia.clipHR(for: media, hrSeries: Self.ramp, maxHR: 190)
             XCTAssertEqual(feed != nil, held, "feed: \(what)")
             XCTAssertEqual(share(media, f) != nil, held, "share: \(what)")
-            XCTAssertEqual(chip.peakBpm != nil, held, "chip: \(what)")
-            if held { XCTAssertEqual(chip.avgBpm, 60, what) }
+            XCTAssertNil(chip.peakBpm, "chip: \(what)")
             let activity = ActivityMediaInput(id: UUID(), sessionID: UUID(), assignedExerciseID: nil,
                                               assignedSetIndex: nil, kindRaw: "video", offsetSec: offset,
                                               durationSec: 10, localIdentifier: "B")
@@ -448,8 +451,11 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
             MediaInput(id: UUID(), kind: "photo", offsetSec: offset, durationSec: nil, exerciseId: nil,
                        setIndex: nil, climbUUID: nil, localIdentifier: "P")
         }
-        XCTAssertNotNil(FeedMedia.clipHR(for: photo(390), hrSeries: Self.ramp, maxHR: 190).peakBpm)
-        XCTAssertNil(FeedMedia.clipHR(for: photo(391), hrSeries: Self.ramp, maxHR: 190).peakBpm)
+        XCTAssertNotNil(ClipHROverlay.summary(clip: photo(390), hrSeries: Self.ramp))
+        XCTAssertNil(ClipHROverlay.summary(clip: photo(391), hrSeries: Self.ramp))
+        // Its chip prints a number only with a recorded sample in the photo's 10 s either side.
+        XCTAssertNotNil(FeedMedia.clipHR(for: photo(305), hrSeries: Self.ramp, maxHR: 190).peakBpm)
+        XCTAssertNil(FeedMedia.clipHR(for: photo(390), hrSeries: Self.ramp, maxHR: 190).peakBpm)
     }
 
     /// Each recorded sample counts once in the average, at both ends: a window that reaches past
@@ -754,7 +760,7 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
             XCTAssertEqual(source.heartRateSessions.first?.maxHR, 190)
         }
 
-        // What the reel editor asks for (`ReelViewModel.heartRateTrack`, `export`).
+        // What the reel editor asks for (`ReelViewModel.buildPreview`, `export`).
         let workout = SessionHighlightInput.makeWorkout(hrSeries: Self.ramp, clips: clips, duration: 300,
                                                         sport: nil, category: nil, restHR: 60, maxHR: 190)
         let auto = session.heartRate(for: workout, usesManualMedia: false)
@@ -796,5 +802,219 @@ final class ClipHRCrossSurfaceTests: XCTestCase {
         XCTAssertTrue(ReelExporter.placedScorebugs(plan: plan, placements: Self.placements(plan),
                                                    totalDuration: plan.totalDuration,
                                                    overlay: ReelExporter.HROverlay(heartRate: none)).isEmpty)
+    }
+
+    // MARK: Review of the second commit
+
+    /// "Clip only" with a lead-in and a tail, where the recording starts or ends INSIDE the
+    /// footage: the sample at the edge is counted once. (It was counted twice: the repeat came
+    /// in with the window's samples and stayed when the footage was cut out of them.)
+    func testClipOnlyCountsASampleAtTheEdgeOnceAtBothEnds() throws {
+        func average(_ series: [HRPoint]) throws -> (number: Double, tile: String?) {
+            let options = ClipHROptions(leadSec: 5, tailSec: 30, scope: .clip, maxHR: 190, restHR: 60)
+            let clock = ClipCaptureClock(offsetSec: 60)
+            let summary = try XCTUnwrap(ClipHeartRate.summary(series: series, clock: clock, renditionStart: 0,
+                                                              renditionEnd: 10, options: options))
+            let hr = try XCTUnwrap(ClipHeartRate.resolve(series: series, clock: clock, renditionStart: 0,
+                                                         renditionEnd: 10, options: options).data)
+            return (summary.averageBpm, hr.values.staticValue(.avgHR, fallbackHex: "")?.value)
+        }
+        // Recorded from 62 s, every 2 s: 100, 110, 120, 130, 140 … The clip is 60…70 s.
+        let start = try average(stride(from: 62.0, through: 120, by: 2).map { HRPoint(t: $0, bpm: 100 + ($0 - 62) * 5) })
+        XCTAssertEqual(start.number, 120, accuracy: 1e-9, "100, 110, 120, 130, 140 (it was 116.7)")
+        XCTAssertEqual(start.tile, "120")
+        // Recorded up to 66 s, every 2 s: … 160, 162, 164, 166.
+        let end = try average(stride(from: 0.0, through: 66, by: 2).map { HRPoint(t: $0, bpm: 100 + $0) })
+        XCTAssertEqual(end.number, 163, accuracy: 1e-9, "160, 162, 164, 166 (it was 163.6)")
+        XCTAssertEqual(end.tile, "163")
+    }
+
+    /// The same in a reel: AVG over a clip at the start of its session's recording.
+    func testAReelCountsASampleAtTheEdgeOnce() throws {
+        let series = stride(from: 62.0, through: 120, by: 2).map { HRSample(t: $0, bpm: 100 + ($0 - 62) * 5) }
+        let media = [item("A", at: 60)]
+        let workout = Workout(activity: .strength, duration: 300, hr: series, restBpm: 60, maxBpm: 190, media: media)
+        let track = ReelHeartRate.track(plan: Self.fullLengthPlan(media), input: .oneSession(workout))
+        XCTAssertEqual(track.runs.first?.values.staticValue(.avgHR, fallbackHex: "")?.value, "120", "it was 117")
+    }
+
+    /// The table of the prompt file: a clip 10 s long against a recording of 0…300 s (the ramp),
+    /// with the default HR window (5 s before, 30 s after). A surface with no chart (the
+    /// activity row, the caption in its viewer, the Recap chip) prints a number only when a
+    /// recorded sample lies in the clip's window; the tile, which draws a held reading dashed,
+    /// may show one.
+    func testASurfaceWithNoChartPrintsANumberOnlyForARecordedSample() throws {
+        struct Row {
+            var what: String
+            var offset: Double
+            var printed: Int?          // the activity row, the viewer's caption, the chip's average
+            var chipPeak: Int?
+            var tile: String?          // AVG on the tile
+            var dashed = false
+        }
+        let table = [
+            Row(what: "inside the recording", offset: 60, printed: 99, chipPeak: 110, tile: "99"),
+            Row(what: "starts 30 s before the session", offset: -30, printed: 63, chipPeak: 65, tile: "63"),
+            Row(what: "starts 45 s before the session", offset: -45, printed: nil, chipPeak: nil, tile: "60", dashed: true),
+            Row(what: "starts 3 s after the last sample", offset: 303, printed: 210, chipPeak: 210, tile: "210"),
+            Row(what: "starts 30 s after the last sample", offset: 330, printed: nil, chipPeak: nil, tile: "210", dashed: true),
+            Row(what: "starts 120 s after the last sample", offset: 420, printed: nil, chipPeak: nil, tile: nil),
+        ]
+        for row in table {
+            let media = MediaInput(id: UUID(), kind: "video", offsetSec: row.offset, durationSec: 10, exerciseId: nil,
+                                   setIndex: nil, climbUUID: nil, localIdentifier: "T")
+            let activity = ActivityMediaInput(id: UUID(), sessionID: UUID(), assignedExerciseID: nil,
+                                              assignedSetIndex: nil, kindRaw: "video", offsetSec: row.offset,
+                                              durationSec: 10, localIdentifier: "T")
+            // The activity row; the caption in `ActivityClipViewer` prints this same value.
+            XCTAssertEqual(ActivityMediaIndex.averageBPM(for: activity, hrSeries: Self.ramp), row.printed,
+                           "activity row: \(row.what)")
+            let chip = FeedMedia.clipHR(for: media, hrSeries: Self.ramp, maxHR: 190)
+            XCTAssertEqual(chip.avgBpm, row.printed, "chip average: \(row.what)")
+            XCTAssertEqual(chip.peakBpm, row.chipPeak, "chip peak: \(row.what)")
+            XCTAssertEqual(chip.zoneRaw == nil, row.printed == nil, "chip colour: \(row.what)")
+            let payload = ClipHROverlay.make(clip: media, hrSeries: Self.ramp, maxHR: 190, restHR: 60,
+                                             tile: scorebug(60))
+            XCTAssertEqual(payload?.values.staticValue(.avgHR, fallbackHex: "")?.value, row.tile, "tile: \(row.what)")
+            if row.dashed { XCTAssertEqual(payload?.values.isSparseChart, true, "dashed: \(row.what)") }
+        }
+    }
+
+    /// The reel editor's preview reads its scorebug from where the composition it PLAYS has each
+    /// segment, and from that composition's length: with a segment the exporter left out, the
+    /// playhead's fraction is a fraction of 20 s, not of the plan's 30 s.
+    func testThePreviewScorebugIsTimedFromTheCompositionItPlays() throws {
+        let media = [item("ONE", at: 20), item("TWO", at: 100), item("THREE", at: 220)]
+        let workout = Workout(activity: .strength, duration: 300,
+                              hr: Self.ramp.map { HRSample(t: $0.t, bpm: $0.bpm) }, restBpm: 60, maxBpm: 190, media: media)
+        let plan = Self.fullLengthPlan(media)
+        let placements: [ActivityProgressReel.Placement] = [
+            .init(mediaItemId: "ONE", startSec: 0, durationSec: 10, segmentIndex: 0),
+            .init(mediaItemId: "THREE", startSec: 10, durationSec: 10, segmentIndex: 2),
+        ]
+        // What `ReelViewModel.buildPreview` keeps, and what `previewHRTile(atReelFraction:)` reads.
+        let track = ReelHeartRate.track(plan: plan, placements: placements, totalDuration: 20,
+                                        input: .oneSession(workout))
+        XCTAssertEqual(track.totalDuration, 20)
+        // 0.6 of the player is 12 s: 2 s into THREE, session second 222, 171 bpm.
+        let at = try XCTUnwrap(track.run(atFraction: 0.6))
+        XCTAssertEqual(try XCTUnwrap(at.run.values.bpm(atFraction: at.fraction)), 171, accuracy: 1.0)
+        // Timed from the plan it was 0.6 of 30 s = 18 s: 8 s into TWO, 114 bpm.
+        let planned = ReelHeartRate.track(plan: plan, input: .oneSession(workout))
+        let before = try XCTUnwrap(planned.run(atFraction: 0.6))
+        XCTAssertEqual(try XCTUnwrap(before.run.values.bpm(atFraction: before.fraction)), 114, accuracy: 1.0)
+        // The export burns from the same call.
+        let burned = ReelExporter.placedScorebugs(plan: plan, placements: placements, totalDuration: 20,
+                                                  overlay: ReelExporter.HROverlay(heartRate: .oneSession(workout)))
+        XCTAssertEqual(burned.first?.samples.count, track.runs.first?.samples.count)
+    }
+
+    /// The exporter leaves out a video segment of 0.1 s or less. A placement is matched to the
+    /// segment the exporter really placed: the 2 s one, not the 0.05 s one before it from the
+    /// same clip.
+    func testAPlacementIsNotMatchedToASegmentTooShortToRender() throws {
+        let media = [item("X", at: 60, seconds: 30)]
+        let highlights = [
+            Highlight(id: "a", mediaItemId: "X", kind: .high, atOffset: 60, clipStart: 60, clipEnd: 60.05, score: 1),
+            Highlight(id: "b", mediaItemId: "X", kind: .high, atOffset: 73, clipStart: 72, clipEnd: 74, score: 1),
+        ]
+        let plan = ReelPlanner(targetDuration: nil).plan(highlights: highlights, media: media)
+        XCTAssertEqual(plan.segments.map(ReelHeartRate.isRenderable), [false, true])
+        guard plan.segments.count == 2 else { return }
+        for index in [nil, 1] as [Int?] {
+            let slots = ReelHeartRate.slots(plan: plan, placements: [
+                .init(mediaItemId: "X", startSec: 0, durationSec: 2, segmentIndex: index),
+            ])
+            XCTAssertEqual(slots.count, 1)
+            XCTAssertEqual(slots.first?.startWithinMedia ?? 0, 12, accuracy: 1e-6, "segment index \(String(describing: index))")
+        }
+        let workout = Workout(activity: .strength, duration: 300,
+                              hr: Self.ramp.map { HRSample(t: $0.t, bpm: $0.bpm) }, restBpm: 60, maxBpm: 190, media: media)
+        let track = ReelHeartRate.track(plan: plan, placements: [
+            .init(mediaItemId: "X", startSec: 0, durationSec: 2, segmentIndex: 1),
+        ], totalDuration: 2, input: .oneSession(workout))
+        // 1 s in is session second 73: 96.5 bpm (the 0.05 s segment is second 60: 90 bpm).
+        XCTAssertEqual(try XCTUnwrap(bpm(track, at: 1)), 96.5, accuracy: 0.6)
+    }
+
+    /// Two segments of ONE clip, the first failed to load: the placement says which segment it
+    /// is, so the second one's heart rate is not read from the first one's seconds.
+    func testAPlacementSaysWhichSegmentOfAClipItIs() throws {
+        let media = [item("X", at: 60, seconds: 30)]
+        let highlights = [
+            Highlight(id: "a", mediaItemId: "X", kind: .high, atOffset: 63, clipStart: 62, clipEnd: 64, score: 1),
+            Highlight(id: "b", mediaItemId: "X", kind: .high, atOffset: 81, clipStart: 80, clipEnd: 82, score: 1),
+        ]
+        let plan = ReelPlanner(targetDuration: nil).plan(highlights: highlights, media: media)
+        XCTAssertEqual(plan.segments.count, 2)
+        guard plan.segments.count == 2 else { return }
+        let slots = ReelHeartRate.slots(plan: plan, placements: [
+            .init(mediaItemId: "X", startSec: 0, durationSec: 2, segmentIndex: 1),
+        ])
+        XCTAssertEqual(slots.first?.startWithinMedia ?? 0, 20, accuracy: 1e-6)
+    }
+
+    /// Who pays for the Studio projects (their clips are the largest thing stored on them):
+    /// a caller that only counts clips opens none; a page opens the projects of the sessions it
+    /// shows; Recap opens one session's project when its card is drawn and again only when that
+    /// project changed. And a page can tell that the Studio saved since it loaded.
+    @MainActor
+    func testOnlyTheSessionsShownHaveTheirProjectOpened() async throws {
+        let f = try XCTUnwrap(Self.fixtures().first { $0.name == "trimmed in the Studio" })
+        let s = try await surfaces(f, footageOnly: false)
+        let context = s.studio.container.mainContext
+        let rows = try context.fetch(FetchDescriptor<SessionMedia>())
+        let projects = try context.fetch(FetchDescriptor<StudioProject>())
+        let row = try XCTUnwrap(rows.first), project = try XCTUnwrap(projects.first)
+
+        // Counting clips (`SessionDetailView`, `FreeformPlayerView`): no edit is looked up.
+        XCTAssertNil(ActivityMediaStore.snapshot(context: context).first?.edit)
+
+        // A board climb's page: the sessions with a clip of THAT climb.
+        row.assignedClimbUUID = "CLIMB"
+        try context.save()
+        let anyKey = ActivityKey(exerciseId: "x", nameKey: "")
+        XCTAssertEqual(ActivityMediaStore.clips(for: anyKey, kilterClimbUUID: "CLIMB", history: [],
+                                                context: context).first?.edit?.trimStart, 4)
+        XCTAssertNil(ActivityMediaStore.clips(for: anyKey, kilterClimbUUID: "OTHER", history: [],
+                                              context: context).first?.edit)
+        // A gym activity's page: the sessions with a clip tagged to THAT activity.
+        let bench = SessionExercise(exerciseId: "bench", targetSets: 0, targetReps: "", targetRestSeconds: 0, sets: [])
+        s.session.exercises = [bench]
+        row.assignedClimbUUID = nil
+        row.assignedExerciseID = bench.id
+        try context.save()
+        let benchKey = ActivityKey(exerciseId: "bench", nameKey: "")
+        let page = ActivityMediaStore.clips(for: benchKey, history: [s.session], context: context)
+        XCTAssertEqual(page.first?.edit?.trimStart, 4)
+        XCTAssertNil(ActivityMediaStore.clips(for: ActivityKey(exerciseId: "squat", nameKey: ""),
+                                              history: [s.session], context: context).first?.edit)
+        // The still next to the clip is its first kept frame, on every surface that shows one.
+        let clip = ActivityClip(media: try XCTUnwrap(page.first), sessionID: s.session.id,
+                                sessionDate: s.session.startedAt, setIndex: nil, setSummary: nil, avgBPM: nil)
+        XCTAssertEqual(clip.posterTime, 4, accuracy: 1e-9)
+        for media in [s.clipsFeed, s.recap, s.festival] {
+            XCTAssertEqual(ClipHROverlay.playedRange(media).start, 4, accuracy: 1e-9)
+        }
+
+        // Recap: one project, opened once, and again only when it changed.
+        let index = FeedMediaIndex(kilterSessions: [], workoutSessions: [s.session], kilterLogs: [], allMedia: rows)
+        let cache = ClipStudioEditCache()
+        func recap(_ sid: UUID) -> MediaInput? {
+            FeedMediaResolver(index: index, sessionID: sid, projects: projects, cache: cache)
+                .mediaInputs(for: s.session.id).first
+        }
+        XCTAssertEqual(recap(s.session.id)?.edit?.trimStart, 4)
+        XCTAssertEqual(recap(s.session.id)?.edit?.trimStart, 4)
+        XCTAssertEqual(cache.opened, 1)
+        XCTAssertNil(recap(UUID())?.edit, "another card's resolver does not read this session's edits")
+        XCTAssertEqual(cache.opened, 1)
+        let stamp = ClipStudioEdit.stamp(context: context)
+        project.updatedAt = project.updatedAt.addingTimeInterval(60)
+        try context.save()
+        XCTAssertNotEqual(ClipStudioEdit.stamp(context: context), stamp, "a page can tell the Studio saved")
+        XCTAssertEqual(recap(s.session.id)?.edit?.trimStart, 4)
+        XCTAssertEqual(cache.opened, 2)
+        withExtendedLifetime(s.studio.container) {}
     }
 }

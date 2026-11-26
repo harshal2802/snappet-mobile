@@ -294,6 +294,8 @@ final class ClipHRCharacterizationTests: XCTestCase {
             "peak=175 avg=173 zone=5",
         "chip.beforeSession":
             "peak=65 avg=63 zone=1",
+        "chip.edgeHold":
+            "peak=210 avg=210 zone=5",
         "chip.goldenDefault":
             "peak=162 avg=151 zone=4",
         "chip.goldenTrimmedClipScope":
@@ -344,11 +346,37 @@ final class ClipHRCharacterizationTests: XCTestCase {
         for c in Self.cases {
             let payload = ClipHROverlay.make(clip: c.media, hrSeries: c.series, maxHR: c.maxHR, restHR: c.restHR)
             let chip = FeedMedia.clipHR(for: c.media, hrSeries: c.series, maxHR: c.maxHR)
+            // No recorded sample in the clip's window: the chip prints nothing (the tile may).
+            if ClipHROverlay.summary(clip: c.media, hrSeries: c.series)?.hasRecordedSample == false {
+                XCTAssertNil(chip.peakBpm, c.name)
+                continue
+            }
             XCTAssertEqual(chip.peakBpm.map(String.init),
                            payload?.values.staticValue(.maxHR, fallbackHex: "")?.value, c.name)
             XCTAssertEqual(chip.avgBpm.map(String.init),
                            payload?.values.staticValue(.avgHR, fallbackHex: "")?.value, c.name)
         }
+    }
+
+    /// A guard against a quiet edit of `recorded`: the feed, share and Studio records, hashed
+    /// (FNV-1a over "key=value" lines, keys sorted), asserted here a second time.
+    ///
+    /// CHANGING THIS NUMBER MEANS A NUMBER ON THE FEED, IN A SHARED VIDEO OR IN THE STUDIO
+    /// CHANGED. That needs an entry in `pdd/context/decisions.md` with the value before and
+    /// after, and the old value added to `changedBy309` (or its successor) above. Do not update
+    /// it to make a test pass.
+    static let signedOffChecksum = "385deadc28f2293f"
+
+    func testTheFeedShareAndStudioRecordsAreTheOnesSignedOff() {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for key in Self.recorded.keys.sorted() where ["feed.", "share.", "studioVM."].contains(where: key.hasPrefix) {
+            for byte in "\(key)=\(Self.recorded[key] ?? "")\n".utf8 {
+                hash ^= UInt64(byte)
+                hash = hash &* 0x0000_0100_0000_01b3
+            }
+        }
+        XCTAssertEqual(String(hash, radix: 16), Self.signedOffChecksum,
+                       "a feed, share or Studio record changed: see the comment on signedOffChecksum")
     }
 
     static let recorded: [String: String] = [
@@ -461,7 +489,7 @@ final class ClipHRCharacterizationTests: XCTestCase {
         "chip.bakedStartTrim":
             "peak=190 avg=179 zone=5",
         "chip.edgeHold":
-            "peak=210 avg=210 zone=5",
+            "peak=nil avg=nil zone=nil",
         "chip.goldenDefault":
             "peak=172 avg=146 zone=5",
         "chip.goldenTrimmedClipScope":

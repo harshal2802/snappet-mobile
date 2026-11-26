@@ -296,7 +296,8 @@ struct FestivalSetDetailView: View {
 
     private func clipCell(_ row: ClipRow) -> some View {
         ZStack(alignment: .topLeading) {
-            FestivalClipThumb(localIdentifier: row.localIdentifier, isVideo: row.isVideo)
+            FestivalClipThumb(localIdentifier: row.localIdentifier, isVideo: row.isVideo,
+                              posterTime: ClipHROverlay.playedRange(row.mediaInput).start)
                 .frame(width: 84, height: 106)
             if row.isAuto {
                 Text("✦ Auto")
@@ -364,15 +365,21 @@ struct FestivalSetDetailView: View {
         let tagged = resolvedTags.compactMap { tag in
             mediaRow(id: tag.mediaID).map { (media: $0, isAuto: tag.source == .auto) }
         }
-        // Each clip's Studio edit, looked up once for the screen (prompt 309).
-        let edits = ClipStudioEdit.byMedia(context: context, media: tagged.map(\.media))
-        let rows = tagged.map { ClipRow($0.media, isAuto: $0.isAuto, edit: edits[$0.media.id]) }
+        let rows = Self.rows(tagged, context: context)
         clipRows = rows.sorted {
             let a = sessionStart[$0.sessionID] ?? .distantPast
             let b = sessionStart[$1.sessionID] ?? .distantPast
             let at = a.addingTimeInterval($0.offsetSec), bt = b.addingTimeInterval($1.offsetSec)
             return at != bt ? at < bt : $0.mediaID.uuidString < $1.mediaID.uuidString
         }
+    }
+
+    /// The screen's clip rows for its tagged media, each with its Studio edit, looked up once
+    /// for the screen (prompt 309). What `load` lists, and what the test reads.
+    @MainActor
+    static func rows(_ tagged: [(media: SessionMedia, isAuto: Bool)], context: ModelContext) -> [ClipRow] {
+        let edits = ClipStudioEdit.byMedia(context: context, media: tagged.map(\.media))
+        return tagged.map { ClipRow($0.media, isAuto: $0.isAuto, edit: edits[$0.media.id]) }
     }
 
     private func mediaRow(id: UUID) -> SessionMedia? {

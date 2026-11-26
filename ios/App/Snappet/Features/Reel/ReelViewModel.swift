@@ -345,27 +345,25 @@ final class ReelViewModel {
         let plan = model.reelPlan(for: plannedHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
-            let (composition, videoComposition) = try await exporter.makeComposition(
-                for: plan, renderAspect: format.aspect)
+            let built = try await exporter.makePlacedComposition(for: plan, renderAspect: format.aspect)
+            let composition = built.composition, videoComposition = built.videoComposition
             let item = AVPlayerItem(asset: composition)
             // Same orientation/fit normalization the export uses, so preview matches the saved reel
             // (and mixed-orientation clips render upright instead of sideways).
             item.videoComposition = videoComposition
             lastPlan = plan
             timelineMap = ReelTimelineMap(plan: plan)
-            previewTrack = heartRateTrack(for: plan, workout: wk)
+            // The scorebug is timed from where THIS composition has each segment (a segment the
+            // exporter left out moves the rest up), and from its length: what the player plays.
+            previewTrack = ReelHeartRate.track(
+                plan: plan, placements: built.placements, totalDuration: composition.duration.seconds,
+                input: source.heartRate(for: wk, usesManualMedia: usesManualMedia))
             previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil
             previewError = (error as? LocalizedError)?.errorDescription
                 ?? "This reel has no video to preview yet."
         }
-    }
-
-    /// The reel's heart rate for `plan` (prompt 309): each clip's own readings, in reel time,
-    /// from the one resolver. The ONE call for the preview's scorebug and the export's.
-    private func heartRateTrack(for plan: ReelPlan, workout wk: Workout) -> ReelHeartRate.Track {
-        ReelHeartRate.track(plan: plan, input: source.heartRate(for: wk, usesManualMedia: usesManualMedia))
     }
 
     /// The live preview scorebug (reel editor redesign) with the playhead `reelFraction` (0…1)
@@ -377,8 +375,7 @@ final class ReelViewModel {
     /// an in-app player.)
     func previewHRTile(atReelFraction reelFraction: Double)
         -> (tile: HRTile, values: HROverlayValues, fraction: Double)? {
-        guard overlayEnabled, let track = previewTrack, let map = timelineMap, map.totalDuration > 0,
-              let at = track.run(at: min(1, max(0, reelFraction)) * map.totalDuration) else { return nil }
+        guard overlayEnabled, let at = previewTrack?.run(atFraction: reelFraction) else { return nil }
         // `wouldDraw` is the renderability gate (the same one the burn runs) — the view draws
         // the HRTile itself, exactly like the feed poster does.
         // The user's Clips overlay default (prompt 163), falling back to the built-in scorebug when it

@@ -68,9 +68,9 @@ final class ReelExporter: Sendable {
     }
 
     func makePlacedComposition(for plan: ReelPlan, renderAspect: Double? = nil) async throws -> PlacedComposition {
-        let renderable = plan.segments.filter {
-            ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
-        }
+        // The one renderable rule (`ReelHeartRate.isRenderable`), with each segment's place in
+        // the plan kept so a placement can say which segment it is.
+        let renderable = plan.segments.enumerated().filter { ReelHeartRate.isRenderable($0.element) }
         guard !renderable.isEmpty else { throw ExportError.noVideoSegments }
 
         let composition = AVMutableComposition()
@@ -89,7 +89,7 @@ final class ReelExporter: Sendable {
         var placements: [ActivityProgressReel.Placement] = []
 
         // Iterate segments IN ORDER so photos interleave with videos correctly.
-        for seg in renderable {
+        for (segmentIndex, seg) in renderable {
             if seg.kind == .photo {
                 // Render the still to a Ken-Burns clip, then insert it like a video.
                 guard let url = await photoRenderer.renderClip(assetId: seg.mediaItemId,
@@ -102,7 +102,7 @@ final class ReelExporter: Sendable {
                     try vTrack?.insertTimeRange(range, of: src, at: cursor)
                     layouts.append(await layout(for: src, start: cursor))
                     placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
-                                            durationSec: dur.seconds))
+                                            durationSec: dur.seconds, segmentIndex: segmentIndex))
                     cursor = cursor + dur
                     inserted += 1
                 } catch { continue }   // skip a bad photo clip, keep the reel
@@ -123,7 +123,7 @@ final class ReelExporter: Sendable {
                     try? track?.insertTimeRange(range, of: srcA, at: cursor)
                 }
                 placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
-                                        durationSec: range.duration.seconds))
+                                        durationSec: range.duration.seconds, segmentIndex: segmentIndex))
                 cursor = cursor + range.duration
                 inserted += 1
             }
@@ -242,7 +242,7 @@ final class ReelExporter: Sendable {
     /// each segment), never from the plan.
     static func placedScorebugs(plan: ReelPlan, placements: [ActivityProgressReel.Placement],
                                 totalDuration: Double, overlay: HROverlay) -> [PlacedClipHR] {
-        let track = ReelHeartRate.track(slots: ReelHeartRate.slots(plan: plan, placements: placements),
+        let track = ReelHeartRate.track(plan: plan, placements: placements,
                                         totalDuration: totalDuration, input: overlay.heartRate)
         return track.runs.compactMap { run in
             // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).

@@ -372,8 +372,11 @@ everywhere, and a reel's scorebug reads each clip's own heart rate while it is o
 session stretched over the reel), from the clip's own session, with no scorebug over a clip that has none
 (`ReelHeartRate`: sessions, runs, placements). A clip's Studio edit (`ClipStudioEdit.byMedia`, one lookup
 per list) reaches Recap, the activity pages, the Kilter library and the festival set screen as well as the
-Clips feed. Footage more than 90 s outside the recording on either side has no heart rate, and a recorded
-sample counts once in AVG. `ClipHRCrossSurfaceTests` compares the surfaces with each other. **Resizable base video**: an
+Clips feed, with the still at the first kept frame; only the projects of the sessions shown are opened
+(Recap per card through `ClipStudioEditCache`, not in the feed's signature). Footage more than 90 s outside
+the recording on either side has no heart rate, a recorded sample counts once in AVG, and a surface with no
+chart (activity row, Recap chip) prints a number only when a recorded sample lies in the clip's window. The
+reel preview and the export read the scorebug from the same placements. `ClipHRCrossSurfaceTests` compares the surfaces with each other. **Resizable base video**: an
 optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
 a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
 export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a

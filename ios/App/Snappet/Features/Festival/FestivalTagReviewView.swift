@@ -467,6 +467,9 @@ struct FestivalTagReviewView: View {
 struct FestivalClipThumb: View {
     let localIdentifier: String?
     var isVideo = true
+    /// Seconds into the video the still is taken at: the first kept frame of a clip trimmed in
+    /// the Studio (prompt 309). 0 = Photos' own thumbnail, as before.
+    var posterTime: Double = 0
 
     @State private var image: UIImage?
 
@@ -488,10 +491,15 @@ struct FestivalClipThumb: View {
             }
         }
         .frame(width: 46, height: 58)
-        .task(id: localIdentifier) {
+        .task(id: "\(localIdentifier ?? "")-\(Int(posterTime * 100))") {
             guard let localIdentifier else { return }
-            image = await AssetPosterLoader.poster(localIdentifier: localIdentifier,
-                                                   pointSize: CGSize(width: 46, height: 58))
+            let size = CGSize(width: 46, height: 58)
+            let loaded = isVideo && posterTime > 0.01
+                ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size,
+                                                         at: posterTime)
+                : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }

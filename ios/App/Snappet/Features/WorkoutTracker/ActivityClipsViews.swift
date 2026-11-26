@@ -27,15 +27,55 @@ extension ActivityMediaInput {
     }
 }
 
+extension ActivityClip {
+    /// Seconds into the video its still is taken at: the first kept frame (0 = never trimmed).
+    var posterTime: Double {
+        media.kindRaw == "video" ? ClipHROverlay.playedRange(media.mediaInput).start : 0
+    }
+}
+
 enum ActivityMediaStore {
     /// Every tagged media row as value snapshots — one fetch, so callers never hold `@Query` observation
-    /// of the whole media table inside the (1 Hz re-rendering) live player.
+    /// of the whole media table inside the (1 Hz re-rendering) live player. No Studio edits: the
+    /// callers that only COUNT clips (the session detail, the live player's chips) must not pay
+    /// for opening the projects. A page that shows clips adds them with `withEdits`.
     @MainActor
     static func snapshot(context: ModelContext) -> [ActivityMediaInput] {
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
-        // Each clip's Studio edit, looked up once for the whole snapshot (prompt 309).
-        let edits = ClipStudioEdit.byMedia(context: context, media: rows)
-        return rows.map { ActivityMediaInput.from($0, edit: edits[$0.id]) }
+        ((try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []).map { ActivityMediaInput.from($0) }
+    }
+
+    /// `media` with each clip's Studio edit (prompt 309), for the clips of `sessions` only: the
+    /// sessions a page is about to show. Only those sessions' projects are opened.
+    @MainActor
+    static func withEdits(_ media: [ActivityMediaInput], sessions: Set<UUID>,
+                          context: ModelContext) -> [ActivityMediaInput] {
+        guard !sessions.isEmpty else { return media }
+        let projects = (try? context.fetch(FetchDescriptor<StudioProject>())) ?? []
+        guard projects.contains(where: { sessions.contains($0.sessionID) }) else { return media }
+        let shown = media.filter { sessions.contains($0.sessionID) }
+        let edits = ClipStudioEdit.byMedia(
+            projects: projects,
+            mediaIDByLocalID: Dictionary(shown.map { ($0.localIdentifier, $0.id) }, uniquingKeysWith: { a, _ in a }),
+            sessionIDs: sessions)
+        guard !edits.isEmpty else { return media }
+        return media.map { row in
+            guard let edit = edits[row.id] else { return row }
+            var row = row
+            row.edit = edit
+            return row
+        }
+    }
+
+    /// The same for one activity's clips page (a gym activity, or a board climb).
+    @MainActor
+    static func clips(for key: ActivityKey, kilterClimbUUID: String? = nil, history: [WorkoutSession],
+                      excludingSession: UUID? = nil, context: ModelContext) -> [ActivityMediaInput] {
+        let media = snapshot(context: context)
+        let sessions = kilterClimbUUID.map { uuid in
+            Set(media.filter { $0.assignedClimbUUID == uuid && !$0.isReel }.map(\.sessionID))
+        } ?? ActivityMediaIndex.clipSessionIDs(for: key, history: history, media: media,
+                                               excludingSession: excludingSession)
+        return withEdits(media, sessions: sessions, context: context)
     }
 }
 
@@ -129,6 +169,9 @@ struct ActivityClipsContent: View {
     @State private var groups: [ActivitySessionGroup] = []
     @State private var untagged = 0
     @State private var loaded = false
+    /// The Studio's state when the clips were loaded (prompt 309): if it has moved when the page
+    /// comes back on screen, the clips are loaded again so a new trim or HR window shows.
+    @State private var editStamp: ClipStudioEdit.Stamp?
     @State private var viewing: CarouselViewerBox?
     /// FIRST / PR per session (prompt 180) and the Timeline / PRs filter.
     @State private var badges: [UUID: ActivityProgressReel.Badge] = [:]
@@ -197,23 +240,38 @@ struct ActivityClipsContent: View {
         .onChange(of: reelScope) { _, scope in if scope != nil { onReel() } }
         .task {
             guard !loaded else { return }
-            let media = ActivityMediaStore.snapshot(context: context)
-            if let uuid = kilterClimbUUID {
-                loadKilter(uuid, media: media)
-                loaded = true
-                return
-            }
-            hrSources = ClipHRSource.map(history)
-            groups = ActivityMediaIndex.groups(for: target.key, history: history, media: media,
-                                               excludingSession: excludingSession, unit: unit,
-                                               distanceUnit: distanceUnit)
-            untagged = ActivityMediaIndex.untaggedCount(for: target.key, history: history, media: media,
-                                                        excludingSession: excludingSession)
-            if let dashboard = ActivityDashboard.make(key: target.key, history: history, media: media, unit: unit) {
-                badges = ActivityProgressReel.badges(dashboard)
-            }
-            loaded = true
+            load()
         }
+        // Back on screen (a tab switch, a pop back to this page) or back from the viewer: if the
+        // Studio saved anything meanwhile, load again. Two small fetches when it did not.
+        .onAppear { reloadIfTheStudioSaved() }
+        .onChange(of: viewing == nil) { _, closed in if closed { reloadIfTheStudioSaved() } }
+    }
+
+    private func reloadIfTheStudioSaved() {
+        guard loaded, ClipStudioEdit.stamp(context: context) != editStamp else { return }
+        load()
+    }
+
+    private func load() {
+        editStamp = ClipStudioEdit.stamp(context: context)
+        let media = ActivityMediaStore.clips(for: target.key, kilterClimbUUID: kilterClimbUUID, history: history,
+                                             excludingSession: excludingSession, context: context)
+        if let uuid = kilterClimbUUID {
+            loadKilter(uuid, media: media)
+            loaded = true
+            return
+        }
+        hrSources = ClipHRSource.map(history)
+        groups = ActivityMediaIndex.groups(for: target.key, history: history, media: media,
+                                           excludingSession: excludingSession, unit: unit,
+                                           distanceUnit: distanceUnit)
+        untagged = ActivityMediaIndex.untaggedCount(for: target.key, history: history, media: media,
+                                                    excludingSession: excludingSession)
+        if let dashboard = ActivityDashboard.make(key: target.key, history: history, media: media, unit: unit) {
+            badges = ActivityProgressReel.badges(dashboard)
+        }
+        loaded = true
     }
 
     /// A board climb's clips: its board sessions + its logs (for each session's "V5 · Sent · 40°" stamp).
@@ -291,8 +349,11 @@ struct ActivityClipTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
+            // A clip trimmed in the Studio shows its first KEPT frame (prompt 309); only such a
+            // clip pays for the exact frame, the rest keep the cheap Photos thumbnail.
             ClipThumbnail(localIdentifier: clip.media.localIdentifier, kind: clip.media.kindRaw,
-                          size: CGSize(width: 76, height: 100), exactFrame: false)
+                          size: CGSize(width: 76, height: 100), posterTime: clip.posterTime,
+                          exactFrame: clip.posterTime > 0.01)
                 .overlay(alignment: .topLeading) {
                     if let badge {
                         Text(badge.label).font(.system(size: 9, weight: .semibold))

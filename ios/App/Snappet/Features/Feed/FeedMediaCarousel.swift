@@ -123,8 +123,11 @@ private struct FeedClipPoster: View {
     let zoneRaw: Int?
 
     var body: some View {
+        // A clip trimmed in the Studio shows its first KEPT frame: what plays when it is opened
+        // and what the chip's numbers are about (prompt 309).
         ClipThumbnail(localIdentifier: clip.localIdentifier, kind: clip.kind,
-                      size: CGSize(width: 320, height: 200))
+                      size: CGSize(width: 320, height: 200),
+                      posterTime: ClipHROverlay.playedRange(clip).start)
             .overlay(alignment: .bottomLeading) {
                 Text(name).font(.caption2.weight(.semibold)).foregroundStyle(.white)
                     .lineLimit(1).padding(.horizontal, 7).padding(.vertical, 3)

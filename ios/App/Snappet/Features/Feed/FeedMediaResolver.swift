@@ -24,17 +24,11 @@ struct FeedMediaIndex {
     var kilterByID: [UUID: KilterSession] = [:]
     var workoutByID: [UUID: WorkoutSession] = [:]
     var logsBySession: [UUID: [KilterLogEntry]] = [:]
-    /// Each clip's Studio edit by media id (prompt 309), so Recap's poster chip and viewer read
-    /// the clip as the Clips feed does. Built once with the index, not per card.
-    var editsByMedia: [UUID: ClipStudioEdit] = [:]
-
     init() {}
 
     @MainActor
     init(kilterSessions: [KilterSession], workoutSessions: [WorkoutSession],
-         kilterLogs: [KilterLogEntry], allMedia: [SessionMedia],
-         studioProjects: [StudioProject]) {
-        self.editsByMedia = ClipStudioEdit.byMedia(projects: studioProjects, media: allMedia)
+         kilterLogs: [KilterLogEntry], allMedia: [SessionMedia]) {
         var media: [UUID: [SessionMedia]] = [:]
         for m in allMedia { media[m.sessionID, default: []].append(m) }
         var logs: [UUID: [KilterLogEntry]] = [:]
@@ -50,12 +44,25 @@ struct FeedMediaIndex {
 @MainActor
 struct FeedMediaResolver {
     let index: FeedMediaIndex
+    /// The Studio edits of the ONE session this resolver was made for (prompt 309), by media id.
+    private let sessionID: UUID
+    private let edits: [UUID: ClipStudioEdit]
 
-    init(index: FeedMediaIndex) { self.index = index }
+    /// A resolver for one card's session. Its clips carry their Studio edits (trim, HR window,
+    /// scope), so Recap's poster chip and viewer read a clip as the Clips feed does. Only that
+    /// session's project is opened; with a `cache` (the feed) only when it changed.
+    init(index: FeedMediaIndex, sessionID: UUID, projects: [StudioProject],
+         cache: ClipStudioEditCache? = nil) {
+        self.index = index
+        self.sessionID = sessionID
+        let media = index.mediaBySession[sessionID] ?? []
+        self.edits = cache?.edits(forSession: sessionID, projects: projects, media: media)
+            ?? ClipStudioEdit.byMedia(projects: projects, media: media)
+    }
 
     /// A session's media as the viewer and the poster chip get them: each with its Studio edit.
     func mediaInputs(for sid: UUID) -> [MediaInput] {
-        (index.mediaBySession[sid] ?? []).map { MediaInput.from($0, edit: index.editsByMedia[$0.id]) }
+        (index.mediaBySession[sid] ?? []).map { MediaInput.from($0, edit: sid == sessionID ? edits[$0.id] : nil) }
     }
 
     func hrSeries(for sid: UUID) -> [HRPoint] {

@@ -64,10 +64,16 @@ struct ClipHR: Sendable {
     /// The text, colours and chart every tile is drawn from.
     let values: HROverlayValues
 
-    /// `true` when the whole window lies outside the recorded heart rate (within the clamp
-    /// tolerance of it): the readings are the nearest recorded sample, held, not measurements.
-    /// The tile draws such a window dashed (`HROverlayValues.isSparseChart`).
-    let isHeld: Bool
+    /// `false` when no recorded sample lies in the window: the readings are the nearest recorded
+    /// sample held (a window just outside the recording), or a straight line between two samples
+    /// either side of it, not measurements. The tile draws such a window dashed
+    /// (`HROverlayValues.isSparseChart`) and may show it; a surface with no chart prints no
+    /// number for it (`ClipHRSummary.hasRecordedSample`).
+    let hasRecordedSample: Bool
+
+    /// The footage's readings in rendition time with each recorded sample once: what a reel's
+    /// AVG and PEAK count (`ClipHeartRate.countedOnce`).
+    var countedRenditionSamples: [HRPoint] { ClipHeartRate.countedOnce(renditionSamples) }
 
     /// The footage's samples in **rendition time**: `t` is seconds into the video the asset plays
     /// now, from `renditionStartSec` to `renditionEndSec`. The footage's stretch of the session
@@ -114,10 +120,15 @@ struct ClipHRSummary: Sendable, Equatable {
     var peakBpm: Double
     /// The plain mean of the readings over the options' scope.
     var averageBpm: Double
-    /// `true` when the whole window lies outside the recorded heart rate: the numbers are the
-    /// nearest sample, held (see `ClipHR.isHeld`). A surface that prints a bare number with no
-    /// dashed line to say so leaves it out (`ActivityMediaIndex.averageBPM`).
-    var isHeld: Bool = false
+    /// `false` when no recorded sample lies in the clip's window: the numbers are a held or a
+    /// drawn-between reading, not a measurement (see `ClipHR.hasRecordedSample`).
+    var hasRecordedSample: Bool = true
+
+    /// The summary a surface WITH NO CHART prints (the activity row and the caption in its
+    /// viewer, the Recap poster chip): a number only when a recorded sample lies in the clip's
+    /// window. The tile, which draws a dashed line for a held reading, may show one; a bare
+    /// "♥ 132" has no way to say it is not a measurement. One rule for all of them.
+    var printable: ClipHRSummary? { hasRecordedSample ? self : nil }
 
     /// Whole beats, rounded the one way every surface rounds.
     var peak: Int { ClipHeartRate.rounded(peakBpm) }
@@ -177,14 +188,17 @@ enum ClipHRResult: Sendable {
 /// - **Outside the recording**: footage more than `clampTolerance` (90 s) before the first
 ///   recorded sample or after the last one, measured from the footage's nearest edge, has no
 ///   data, on either side; the lead-in and the tail do not move this limit. Nearer than that, a
-///   window that reaches no recorded sample shows the nearest one, held (`isHeld`).
+///   window that reaches no recorded sample shows the nearest one, held. A window with no
+///   recorded sample in it (`hasRecordedSample == false`) is shown by the tile, dashed, and by
+///   no surface that prints a bare number (`ClipHRSummary.printable`).
 /// - **The reading at a moment**: straight-line interpolation in the window's display series
 ///   (`HRChartGeometry.displaySeries`: a 0.5 s grid, smoothed over 2 s). Never "hold the last
 ///   sample".
 /// - **Peak and average**: the highest reading and the plain mean of the readings in the scope
 ///   (the whole window, or the footage for `.clip`), from `WorkoutHRStats`. Each recorded sample
-///   counts once: where the scope reaches past the first or the last recorded sample, the edge
-///   reading is a copy of that sample and is left out of the count.
+///   counts once: where a window reaches past the first or the last recorded sample the slicer's
+///   edge reading is that sample again, at the same time; such a repeat is dropped once
+///   (`countedOnce`), before the footage is cut out of the window, and again after.
 /// - **Rounding**: to the nearest whole beat, halves away from zero.
 /// - **Zone**: `HeartRateZone.forBpm` against `options.maxHR`, or 190 when the session has none.
 enum ClipHeartRate {
@@ -204,7 +218,7 @@ enum ClipHeartRate {
                             renditionEndSec: max(renditionStart, renditionEnd),
                             values: values(samples: slice.samples, window: slice.window, options: options,
                                            scoped: slice.scoped, counted: slice.counted),
-                            isHeld: slice.isHeld))
+                            hasRecordedSample: slice.hasRecordedSample))
     }
 
     /// The peak and the average `resolve` gives, without building the chart. `nil` = no data.
@@ -215,7 +229,8 @@ enum ClipHeartRate {
                           renditionEnd: renditionEnd, options: options)
         guard let stats = WorkoutHRStats.make(from: slice.counted ?? slice.scoped?.samples ?? slice.samples)
         else { return nil }
-        return ClipHRSummary(peakBpm: stats.maxBpm, averageBpm: stats.avgBpm, isHeld: slice.isHeld)
+        return ClipHRSummary(peakBpm: stats.maxBpm, averageBpm: stats.avgBpm,
+                             hasRecordedSample: slice.hasRecordedSample)
     }
 
     /// The window a clip's heart rate is read over: the footage's capture window from the clock,
@@ -238,6 +253,20 @@ enum ClipHeartRate {
                counted: nil)
     }
 
+    /// `samples` with each reading at one time once. `HRWindowSlicer` reads a window's edge off
+    /// the series; where the window reaches past the first or the last recorded sample that
+    /// reading IS the sample, returned at the sample's own time, so the sample is in the slice
+    /// twice. The line is not changed by it; an average is.
+    static func countedOnce(_ samples: [HRPoint]) -> [HRPoint] {
+        var out: [HRPoint] = []
+        out.reserveCapacity(samples.count)
+        for point in samples {
+            if let last = out.last, abs(point.t - last.t) < 1e-6, point.bpm == last.bpm { continue }
+            out.append(point)
+        }
+        return out
+    }
+
     /// A reading as a whole number of beats.
     static func rounded(_ bpm: Double) -> Int { Int(bpm.rounded()) }
 
@@ -251,9 +280,9 @@ enum ClipHeartRate {
         /// The footage's part of them, when the scope is the footage and the window is wider.
         var scoped: (samples: [HRPoint], span: Double)? = nil
         /// The readings the peak and the average count, when that is not all of the scope's
-        /// samples (an edge reading that copies a recorded sample is left out). `nil` = all.
+        /// samples (an edge reading that repeats a recorded sample is left out). `nil` = all.
         var counted: [HRPoint]? = nil
-        var isHeld = false
+        var hasRecordedSample = false
     }
 
     private static func values(samples: [HRPoint], window: HRClipWindow?, options: ClipHROptions,
@@ -280,56 +309,49 @@ enum ClipHeartRate {
         let ext = window(clock: clock, renditionStart: renditionStart, renditionEnd: renditionEnd,
                          leadSec: options.leadSec, tailSec: options.tailSec)
         var out = Slice(start: ext.start, window: ext.window)
-        guard let recorded = recordedBounds(series) else { return out }
-
-        // Outside the recording: one limit, on both sides, from the footage's nearest edge.
         let footage = clock.captureWindow(renditionStart: renditionStart, renditionEnd: renditionEnd)
         let footageEnd = footage.start + max(0, footage.span)
+        // The window as asked for, before the slicer's clamps (footage filmed before the session
+        // starts before second 0).
+        let askedFrom = min(ext.start, footage.start)
+        let askedTo = footageEnd + ext.window.tailSec
+        guard let recorded = recorded(series, from: askedFrom, to: askedTo) else { return out }
+
+        // Outside the recording: one limit, on both sides, from the footage's nearest edge.
         if footage.start > recorded.last + options.clampTolerance
             || footageEnd < recorded.first - options.clampTolerance { return out }
 
         out.samples = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
                                            clampTolerance: options.clampTolerance)
         guard !out.samples.isEmpty else { return out }
-        // The slicer's own window, in session seconds (it cannot start before the session).
-        let base = max(0, ext.start)
-        let span = max(0.001, ext.window.spanSec)
-        // No recorded sample in the window as asked for (before the slicer's clamps): what it
-        // returned is the nearest sample, held.
-        out.isHeld = ext.start > recorded.last || footageEnd + ext.window.tailSec < recorded.first
+        out.hasRecordedSample = recorded.anyInside
+        // Each recorded sample once: repeats are dropped from the window's samples BEFORE the
+        // footage is cut out of them (the cut would otherwise carry the repeat inside), and from
+        // the cut again (it makes its own edge readings).
+        let once = countedOnce(out.samples)
         if let scoped = scoped(samples: out.samples, window: ext.window, scope: options.scope) {
             out.scoped = scoped
-            out.counted = countedOnce(scoped.samples, from: base + ext.window.leadSec,
-                                      to: base + ext.window.leadSec + ext.window.footageSec, recorded: recorded)
-        } else {
-            out.counted = countedOnce(out.samples, from: base, to: base + span, recorded: recorded)
+            out.counted = self.scoped(samples: once, window: ext.window, scope: options.scope)
+                .map { countedOnce($0.samples) }
+        } else if once.count != out.samples.count {
+            out.counted = once
         }
         return out
     }
 
-    /// The first and the last recorded second of a series.
-    private static func recordedBounds(_ series: [HRPoint]) -> (first: Double, last: Double)? {
+    /// The first and the last recorded second of a series, and whether a recorded sample lies
+    /// in `from … to`. One pass.
+    private static func recorded(_ series: [HRPoint], from: Double, to: Double)
+        -> (first: Double, last: Double, anyInside: Bool)? {
         guard var first = series.first?.t else { return nil }
         var last = first
+        var anyInside = false
         for point in series {
             if point.t < first { first = point.t }
             if point.t > last { last = point.t }
+            if point.t >= from, point.t <= to { anyInside = true }
         }
-        return (first, last)
-    }
-
-    /// `samples` (a slice over the session seconds `from … to`) without the edge readings that
-    /// only repeat a recorded sample: where the slice starts before the first recorded sample its
-    /// first reading is a copy of that sample, which is also in the slice at its own time; the
-    /// same at the end. `nil` when nothing is repeated.
-    private static func countedOnce(_ samples: [HRPoint], from: Double, to: Double,
-                                    recorded: (first: Double, last: Double)) -> [HRPoint]? {
-        var out = samples
-        // Two readings are always kept: time in a zone needs a stretch of time, and a lone sample
-        // repeated is the same mean.
-        if recorded.first > from, recorded.first < to, out.count > 2 { out.removeFirst() }
-        if recorded.last < to, recorded.last > from, out.count > 2 { out.removeLast() }
-        return out.count == samples.count ? nil : out
+        return (first, last, anyInside)
     }
 
     /// The footage's part of the window, when the scope is the footage and the window is wider.

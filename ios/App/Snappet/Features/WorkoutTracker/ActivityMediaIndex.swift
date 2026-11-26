@@ -145,6 +145,23 @@ enum ActivityMediaIndex {
         return groups.sorted { $0.date > $1.date }
     }
 
+    /// The sessions `groups(for:)` would list: the ones with a clip tagged to the activity.
+    /// Cheap (no heart rate is read), so a caller can look up Studio edits for just these
+    /// sessions before it builds the groups (prompt 309).
+    static func clipSessionIDs(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
+                               excludingSession: UUID? = nil, identity: ActivityIdentity? = nil) -> Set<UUID> {
+        let ids = identity ?? ActivityIdentity(sessions: history)
+        let tagged = Dictionary(grouping: media.filter { !$0.isReel && $0.assignedExerciseID != nil },
+                                by: \.sessionID)
+        var out: Set<UUID> = []
+        for session in history where session.id != excludingSession {
+            guard let rows = tagged[session.id] else { continue }
+            let entityIDs = Set(session.exercises.filter { ids.matches(key, $0) }.map(\.id))
+            if rows.contains(where: { $0.assignedExerciseID.map(entityIDs.contains) ?? false }) { out.insert(session.id) }
+        }
+        return out
+    }
+
     /// Clips in the General bucket (no exercise) of the sessions that DID include the activity — the
     /// "these might be yours too, tag them" nudge. Reels excluded.
     static func untaggedCount(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
@@ -161,16 +178,15 @@ enum ActivityMediaIndex {
     /// asks (`ClipHROverlay.summary` over the clip as the viewer gets it). A photo: 10 s either
     /// side of its moment. `nil` when there is no heart rate near the clip.
     ///
-    /// Also `nil` when the clip's whole window lies outside the recording (`isHeld`): the viewer
-    /// shows the nearest sample there with a dashed line that says it is not a measurement, and
-    /// a bare "♥ 132" has no way to say so.
+    /// Also `nil` when no recorded sample lies in the clip's window (`ClipHRSummary.printable`,
+    /// the one rule for every surface with no chart): the viewer's tile shows a held reading
+    /// there with a dashed line that says it is not a measurement, and a bare "♥ 132" has no way
+    /// to say so. The caption inside the viewer prints this same value.
     ///
     /// Before prompt 309 this was the mean of the recorded samples strictly inside the footage,
     /// so a clip between two sparse samples had no number while its viewer showed one.
     static func averageBPM(for m: ActivityMediaInput, hrSeries: [HRPoint]) -> Int? {
-        guard let summary = ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries),
-              !summary.isHeld else { return nil }
-        return summary.average
+        ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries)?.printable?.average
     }
 
     // MARK: - Private

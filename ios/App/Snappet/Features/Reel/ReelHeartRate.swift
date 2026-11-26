@@ -78,19 +78,39 @@ enum ReelHeartRate {
         }
     }
 
-    /// The plan's segments where the exporter actually PUT them (`ReelExporter.PlacedComposition`).
-    /// A segment whose asset failed to load is skipped by the exporter and everything after it
-    /// moves up, so the burned scorebug is timed from the placements, as the captions are, not
-    /// from the plan. Placements are in plan order; each is matched to the next plan segment of
-    /// the same media item.
+    /// Whether the reel maker puts a planned segment in the composition at all: a photo always,
+    /// a video only when it is longer than 0.1 s. The ONE rule: `ReelExporter` builds from the
+    /// segments that pass it, and the heart rate is matched against the same ones.
+    static func isRenderable(_ segment: ReelPlan.Segment) -> Bool {
+        segment.kind == .photo || (segment.kind == .video && segment.duration > 0.1)
+    }
+
+    /// The plan's segments where the composition actually HAS them
+    /// (`ReelExporter.PlacedComposition`). A segment that is not renderable, or whose asset
+    /// failed to load, is left out by the exporter and everything after it moves up, so the
+    /// scorebug (the preview's and the burned one) is timed from the placements, as the captions
+    /// are, not from the plan.
+    ///
+    /// Each placement says which plan segment it is (`segmentIndex`). One that does not (an
+    /// older caller) is matched to the next renderable plan segment of the same media item.
     static func slots(plan: ReelPlan, placements: [ActivityProgressReel.Placement]) -> [Slot] {
-        var remaining = plan.segments[...]
+        var next = 0
         var out: [Slot] = []
         for placement in placements {
-            guard let index = remaining.firstIndex(where: { $0.mediaItemId == placement.mediaItemId })
-            else { continue }
-            out.append(slot(remaining[index], start: placement.startSec, duration: placement.durationSec))
-            remaining = remaining[(index + 1)...]
+            let index: Int
+            if let given = placement.segmentIndex, plan.segments.indices.contains(given),
+               plan.segments[given].mediaItemId == placement.mediaItemId {
+                index = given
+            } else if let found = plan.segments.indices.first(where: {
+                $0 >= next && isRenderable(plan.segments[$0])
+                    && plan.segments[$0].mediaItemId == placement.mediaItemId
+            }) {
+                index = found
+            } else {
+                continue
+            }
+            out.append(slot(plan.segments[index], start: placement.startSec, duration: placement.durationSec))
+            next = index + 1
         }
         return out
     }
@@ -129,6 +149,14 @@ enum ReelHeartRate {
 
         static let none = Track(runs: [], totalDuration: 0)
 
+        /// The run playing at `fraction` (0…1) of the reel. The reel's length is the track's own
+        /// (`totalDuration`: the composition's, for a track made from placements), so the
+        /// playhead's fraction of the player is the same fraction here.
+        func run(atFraction fraction: Double) -> (run: Run, fraction: Double)? {
+            guard totalDuration > 0 else { return nil }
+            return run(at: min(1, max(0, fraction)) * totalDuration)
+        }
+
         /// The run playing at `time` seconds into the reel, and how far through it the playhead
         /// is (0…1). `nil` while a segment without heart rate plays: the scorebug is hidden.
         func run(at time: Double) -> (run: Run, fraction: Double)? {
@@ -153,7 +181,15 @@ enum ReelHeartRate {
                                 timeMap: timeMap)
     }
 
-    /// The preview's heart rate: the plan as planned.
+    /// The reel's heart rate where the composition has each segment: the ONE call for the
+    /// editor's preview and for the export, each with the placements and the length of the
+    /// composition it plays or burns.
+    static func track(plan: ReelPlan, placements: [ActivityProgressReel.Placement],
+                      totalDuration: Double, input: Input) -> Track {
+        track(slots: slots(plan: plan, placements: placements), totalDuration: totalDuration, input: input)
+    }
+
+    /// The plan as planned, every segment in place (no composition yet; the tests' shorthand).
     static func track(plan: ReelPlan, input: Input) -> Track {
         let slots = slots(plan: plan)
         return track(slots: slots, totalDuration: slots.last.map { $0.start + $0.duration } ?? 0, input: input)
@@ -176,7 +212,7 @@ enum ReelHeartRate {
 
         // 2. Every reading of one session in the reel: what its AVG and PEAK are over.
         var counted: [Int: [HRPoint]] = [:]
-        for piece in pieces { append(piece.samples, to: &counted[piece.sessionIndex, default: []]) }
+        for piece in pieces { append(piece.counted, to: &counted[piece.sessionIndex, default: []]) }
 
         // 3. Neighbouring pieces of one session make a run.
         var runs: [Run] = []
@@ -222,6 +258,9 @@ enum ReelHeartRate {
         /// Reel-time readings, and the series the line and the live number are read from.
         var samples: [HRPoint]
         var chart: [HRPoint]
+        /// The readings AVG and PEAK count: `samples` with each recorded sample once (a clip at
+        /// the edge of its session's recording has the edge sample twice in `samples`).
+        var counted: [HRPoint]
     }
 
     private static func piece(slot: Slot, item: MediaItem, sessionIndex: Int, session: Session,
@@ -238,7 +277,8 @@ enum ReelHeartRate {
             // A photo is one moment: its reading, held for as long as the photo is shown.
             let bpm = hr.samples.first?.bpm ?? 0
             let held = [HRPoint(t: slot.start, bpm: bpm), HRPoint(t: end, bpm: bpm)]
-            return Piece(start: slot.start, end: end, sessionIndex: sessionIndex, samples: held, chart: held)
+            return Piece(start: slot.start, end: end, sessionIndex: sessionIndex, samples: held, chart: held,
+                         counted: held)
         }
         // Seconds of the video → seconds of the reel (the slot is this stretch of the video).
         let scale = slot.duration / (to - from)
@@ -246,7 +286,8 @@ enum ReelHeartRate {
             points.map { HRPoint(t: slot.start + ($0.t - from) * scale, bpm: $0.bpm) }
         }
         return Piece(start: slot.start, end: end, sessionIndex: sessionIndex,
-                     samples: placed(hr.renditionSamples), chart: placed(hr.renditionChartSamples))
+                     samples: placed(hr.renditionSamples), chart: placed(hr.renditionChartSamples),
+                     counted: placed(hr.countedRenditionSamples))
     }
 
     /// Two readings never share a time: the first reading of a segment sits just after the last

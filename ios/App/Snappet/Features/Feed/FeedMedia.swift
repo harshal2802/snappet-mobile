@@ -83,12 +83,14 @@ enum FeedMedia {
     /// the clip's overlay shows, from `ClipHeartRate`, the one resolver (prompt 309), asked exactly
     /// as the overlay asks (`ClipHROverlay.summary`): the kept footage, read where its frames were
     /// filmed, over the clip's own HR window. All `nil` when there is no heart rate near the clip
-    /// (the name-tag-only path). The zone is the peak's, against `maxHR`.
+    /// (the name-tag-only path), and when no recorded sample lies in the clip's window: a chip
+    /// has no dashed line to say a number is a held one (`ClipHRSummary.printable`, the rule the
+    /// activity pages follow too). The zone is the peak's, against `maxHR`.
     ///
     /// Before prompt 309 the chip was worked out here over the footage alone, so it could show
     /// "peak 95" on a poster whose viewer then showed "PEAK 110".
     static func clipHR(for clip: MediaInput, hrSeries: [HRPoint], maxHR: Double) -> MediaClipHR {
-        guard let summary = ClipHROverlay.summary(clip: clip, hrSeries: hrSeries) else {
+        guard let summary = ClipHROverlay.summary(clip: clip, hrSeries: hrSeries)?.printable else {
             return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil)
         }
         return MediaClipHR(peakBpm: summary.peak, avgBpm: summary.average,

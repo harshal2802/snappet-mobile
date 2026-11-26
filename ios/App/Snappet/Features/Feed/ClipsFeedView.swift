@@ -649,9 +649,7 @@ struct ClipsFeedView: View {
         // largest composite blob on StudioProject and this runs per rebuild on the MainActor — the
         // same scoping rule FeedSnapshot.hr documents. First-project-wins per media id (a session has
         // one StudioProject today; the merge rule just makes that assumption explicit).
-        let edits = ClipStudioEdit.byMedia(projects: studioProjects, media: allMedia)
-        var bySession: [UUID: [MediaInput]] = [:]
-        for m in allMedia { bySession[m.sessionID, default: []].append(MediaInput.from(m, edit: edits[m.id])) }
+        let bySession = MediaInput.bySession(allMedia, projects: studioProjects)
 
         // climbUUID → name/grade/angle, snapshotted from the logs (latest log wins).
         var climbMeta: [String: ClipFeedClimbMeta] = [:]

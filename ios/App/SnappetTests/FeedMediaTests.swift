@@ -147,7 +147,13 @@ final class FeedMediaTests: XCTestCase {
         XCTAssertEqual(window.map(\.t), [0, 2])
         XCTAssertEqual(window.first?.bpm ?? 0, 133, accuracy: 0.01)   // interp 130→190 at (33-30)/60
         XCTAssertEqual(window.last?.bpm ?? 0, 135, accuracy: 0.01)    // interp at (35-30)/60
-        XCTAssertEqual(chip(offsetSec: 33, durationSec: 2, hrSeries: sparse, footageOnly: true).peakBpm, 135)
+        // The chip is a bare number with no dashed line: it prints one only when a recorded
+        // sample lies in the clip's HR window (prompt 309, `ClipHRSummary.printable`). Over the
+        // footage alone (33…35 s) there is none, so no chip (it printed 135, a reading drawn
+        // between the samples at 30 s and 90 s); the tile still shows the window above, dashed.
+        // Over the default window (28…65 s) the sample at 30 s is inside: peak 165 at 65 s.
+        XCTAssertNil(chip(offsetSec: 33, durationSec: 2, hrSeries: sparse, footageOnly: true).peakBpm)
+        XCTAssertEqual(chip(offsetSec: 33, durationSec: 2, hrSeries: sparse, footageOnly: false).peakBpm, 165)
     }
 
     func testWindowEmptyOnlyWhenFartherThanTheEdgeClampPad() {
