@@ -13443,3 +13443,26 @@ read: there the app knows it does not know, the user can act (close and reopen),
 unchecked export could burn heart rate through a stale map, so neither lane starts and the
 alert says so. A Studio dismissed from code during the check starts nothing and shows nothing.
 Fifth test seam in the view model: `bakedRowsLoader` (a test makes the fetch throw).
+
+## 2026-11-26 — The Studio opens a generated video for seeded clips, in DEBUG builds only (prompt 306)
+
+The Studio had no preview and no export on the simulator: its sessions carry made-up Photos
+identifiers, and `StudioComposer` opens videos through Photos only. To check heart-rate timing in
+the running editor, `StudioComposer.avAsset` now asks `StudioHRTimingSeed` first, inside
+`#if DEBUG`. The seed answers only identifiers of the form `uitest-generated://studio-hr-timing/…`
+with a video drawn in code (prompt 304's fixture, played ten times). Chosen over the existing
+`uitest-bundled://` scheme because no bundled clip is long enough and three rows must not share
+one identifier; chosen over a stand-in render because the point is the real player and the real
+export. A release build has none of it: the seed, its launch argument, the composer's branch and
+the read-out are all compiled out (`UITestStore.freshStoreArguments` adds the argument in DEBUG).
+
+The read-out (`StudioHRTimingDebugView`, `StudioHRTimingDebug`) is six invisible accessibility
+elements over the Studio, present only on a launch with the seed argument. It exists because the
+screen shows whole seconds and whole bpm, and because what an export was given is not on screen
+at all. The bpm it reports is computed from the same values and fraction the tile is drawn
+from, and the UI test also requires the tile's own number to be that bpm rounded. Three one-line
+recording calls sit in app code (`StudioComposer.assemble`, and twice in the baked-clip check);
+each does nothing unless the seed argument is present.
+
+The UI test is one test with one launch. Three tests were tried first: a launch and the way to
+the session cost about 55 s each, which put the class over four minutes.

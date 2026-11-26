@@ -19,7 +19,8 @@ final class UITestStoreTests: XCTestCase {
         let seeds = ["-uiTestSeedStudioDemo", "-uiTestSeedRecapClip", "-uiTestSeedRoutineHistory",
                      "-uiTestSeedActivityClips", "-uiTestSeedRacketHR", "-uiTestSeedRacketVideos",
                      "-uiTestSeedFestivalLineup", "-uiTestSeedFestivalNight", "-uiTestSeedFestivalPlan",
-                     "-uiTestSeedRunningWorkout", "-uiTestSeedRunningWorkoutOld"]
+                     "-uiTestSeedRunningWorkout", "-uiTestSeedRunningWorkoutOld",
+                     "-uiTestSeedStudioHRTiming"]
         for seed in seeds {
             XCTAssertTrue(UITestStore.isFreshStore([seed]), seed)
         }

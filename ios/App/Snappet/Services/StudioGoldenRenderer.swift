@@ -350,7 +350,8 @@ enum StudioGoldenRenderer {
     }
 
     /// The file, or the file's picture played `times` times back to back.
-    private static func looped(_ url: URL, seconds: Double, times: Int) async throws -> AVAsset {
+    /// Not private: the heart-rate timing seed plays the fixture ten times (prompt 306).
+    static func looped(_ url: URL, seconds: Double, times: Int) async throws -> AVAsset {
         let asset = AVURLAsset(url: url)
         guard times > 1, let video = try await asset.loadTracks(withMediaType: .video).first else { return asset }
         let range = CMTimeRange(start: .zero, duration: CMTime(seconds: seconds, preferredTimescale: 600))
