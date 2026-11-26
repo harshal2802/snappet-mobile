@@ -41,6 +41,7 @@ extension ReelSource {
                                media: SessionHighlightInput.mediaItems(from: effective))
             })
         if let boost { source.boostWindows = [boost] }
+        source.timeMaps = SessionHighlightInput.timeMaps(of: clips)
         source.postSessionID = session.id
         source.postTitle = "\(set.artist) · \(set.stage)"
         return source
@@ -84,6 +85,8 @@ extension ReelSource {
                         maxBpm: stitched.workout.maxBpm, media: stitched.workout.media)
             })
         source.boostWindows = stitched.boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: inputs.flatMap(\.clips))
+        source.heartRateSessions = stitched.heartRate
         source.trimToHighlights = true
         source.postSessionID = latest.id
         source.postTitle = "\(name) — Highlights"

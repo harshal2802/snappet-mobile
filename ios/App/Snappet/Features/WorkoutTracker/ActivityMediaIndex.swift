@@ -64,6 +64,9 @@ struct ActivityMediaInput: Sendable, Equatable {
     var assignedClimbUUID: String? = nil
     /// The asset's `SessionMedia.bakeTimeMap` (prompt 305); `nil` for a clip with no map.
     var timeMap: BakedTimeMap? = nil
+    /// The clip's Studio edit (prompt 309): its trim, HR window and scope, so the number next to
+    /// the clip and its viewer read it as the Clips feed does. `nil` = never edited.
+    var edit: ClipStudioEdit? = nil
 }
 
 /// One clip of an activity, stamped with the set it was filmed during and the heart rate around it —
@@ -94,9 +97,6 @@ struct ActivitySessionGroup: Identifiable, Sendable, Equatable {
 /// tagged to an activity, grouped by session, newest first. Foundation only — no SwiftData, Photos or
 /// UI — so it runs in `SnappetTests` with no device.
 enum ActivityMediaIndex {
-
-    /// Seconds either side of a photo's instant that count as "its" heart rate.
-    static let photoHRWindowSec: Double = 10
 
     /// Every activity's clip count across `history`, skipping `excludingSession` (the live session —
     /// its own clips are already on the page's media shelf). Feeds the pager's "▶ N past clips" chip.
@@ -145,6 +145,23 @@ enum ActivityMediaIndex {
         return groups.sorted { $0.date > $1.date }
     }
 
+    /// The sessions `groups(for:)` would list: the ones with a clip tagged to the activity.
+    /// Cheap (no heart rate is read), so a caller can look up Studio edits for just these
+    /// sessions before it builds the groups (prompt 309).
+    static func clipSessionIDs(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
+                               excludingSession: UUID? = nil, identity: ActivityIdentity? = nil) -> Set<UUID> {
+        let ids = identity ?? ActivityIdentity(sessions: history)
+        let tagged = Dictionary(grouping: media.filter { !$0.isReel && $0.assignedExerciseID != nil },
+                                by: \.sessionID)
+        var out: Set<UUID> = []
+        for session in history where session.id != excludingSession {
+            guard let rows = tagged[session.id] else { continue }
+            let entityIDs = Set(session.exercises.filter { ids.matches(key, $0) }.map(\.id))
+            if rows.contains(where: { $0.assignedExerciseID.map(entityIDs.contains) ?? false }) { out.insert(session.id) }
+        }
+        return out
+    }
+
     /// Clips in the General bucket (no exercise) of the sessions that DID include the activity — the
     /// "these might be yours too, tag them" nudge. Reels excluded.
     static func untaggedCount(for key: ActivityKey, history: [WorkoutSession], media: [ActivityMediaInput],
@@ -156,18 +173,20 @@ enum ActivityMediaIndex {
         return media.filter { !$0.isReel && $0.assignedExerciseID == nil && sessionIDs.contains($0.sessionID) }.count
     }
 
-    /// Mean BPM over a clip: a video's `[offset, offset + duration]`, a photo's `± photoHRWindowSec`.
-    /// `nil` when no HR sample falls inside. A video's window comes from `ClipCaptureClock`
-    /// (prompt 305), so a baked clip is read where its frames were filmed.
+    /// The average printed next to a clip on the activity pages ("♥ 132"): the AVG its viewer's
+    /// overlay shows, from `ClipHeartRate`, the one resolver (prompt 309), asked as the overlay
+    /// asks (`ClipHROverlay.summary` over the clip as the viewer gets it). A photo: 10 s either
+    /// side of its moment. `nil` when there is no heart rate near the clip.
+    ///
+    /// Also `nil` when no recorded sample lies in the clip's window (`ClipHRSummary.printable`,
+    /// the one rule for every surface with no chart): the viewer's tile shows a held reading
+    /// there with a dashed line that says it is not a measurement, and a bare "♥ 132" has no way
+    /// to say so. The caption inside the viewer prints this same value.
+    ///
+    /// Before prompt 309 this was the mean of the recorded samples strictly inside the footage,
+    /// so a clip between two sparse samples had no number while its viewer showed one.
     static func averageBPM(for m: ActivityMediaInput, hrSeries: [HRPoint]) -> Int? {
-        let video = ClipCaptureClock(offsetSec: m.offsetSec, timeMap: m.timeMap)
-            .captureWindow(renditionStart: 0, renditionEnd: max(1, m.durationSec ?? 1))
-        let (start, end): (Double, Double) = m.kindRaw == "video"
-            ? (video.start, video.start + video.span)
-            : (m.offsetSec - photoHRWindowSec, m.offsetSec + photoHRWindowSec)
-        let inWindow = hrSeries.filter { $0.t >= start && $0.t <= end }.map(\.bpm)
-        guard !inWindow.isEmpty else { return nil }
-        return Int((inWindow.reduce(0, +) / Double(inWindow.count)).rounded())
+        ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries)?.printable?.average
     }
 
     // MARK: - Private

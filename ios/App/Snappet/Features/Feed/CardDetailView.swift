@@ -18,6 +18,7 @@ struct CardDetailView: View {
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
     @Query private var allMedia: [SessionMedia]
+    @Query private var studioProjects: [StudioProject]
     @Query private var feedReactions: [FeedReaction]
     @Query private var feedSaveItems: [FeedSaveItem]
     @State private var showingShare = false
@@ -70,7 +71,7 @@ struct CardDetailView: View {
         case .kilterSession(let id), .workoutSession(let id): sid = id
         case .none: return nil
         }
-        return mediaResolver.clipContext(for: sid, card: card)
+        return mediaResolver(for: sid).clipContext(for: sid, card: card)
     }
 
     // MARK: Kilter
@@ -177,8 +178,8 @@ struct CardDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("feed.mediaButton")
                 .sheet(isPresented: $showingMedia) {
-                    let resolver = mediaResolver
-                    MediaBrowserView(media: media.map { MediaInput.from($0) },
+                    let resolver = mediaResolver(for: sid)
+                    MediaBrowserView(media: resolver.mediaInputs(for: sid),
                                      hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                                      nameFor: resolver.nameResolver(for: sid),
                                      card: card, clipContext: clipContext)
@@ -189,10 +190,11 @@ struct CardDetailView: View {
 
     /// Snapshots the @Query'd @Models into plain values for the viewer/exporter — shared with FeedView.
     /// Detail renders a single card, so a per-access index build is fine (no shared FeedMemo here).
-    private var mediaResolver: FeedMediaResolver {
+    /// Only this card's session's Studio project is opened for its clips' edits (prompt 309).
+    private func mediaResolver(for sid: UUID) -> FeedMediaResolver {
         FeedMediaResolver(index: FeedMediaIndex(
             kilterSessions: kilterSessions, workoutSessions: workoutSessions,
-            kilterLogs: kilterLogs, allMedia: allMedia))
+            kilterLogs: kilterLogs, allMedia: allMedia), sessionID: sid, projects: studioProjects)
     }
 
     private var openInModuleButton: some View {

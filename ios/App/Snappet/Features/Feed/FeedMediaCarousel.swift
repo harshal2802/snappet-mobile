@@ -108,8 +108,7 @@ struct FeedMediaCarousel: View {
     }
 
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
-        FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR,
-                         timeMap: m.timeMap)
+        FeedMedia.clipHR(for: m, hrSeries: hrSeries, maxHR: maxHR)
     }
 
     private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
@@ -124,8 +123,11 @@ private struct FeedClipPoster: View {
     let zoneRaw: Int?
 
     var body: some View {
+        // A clip trimmed in the Studio shows its first KEPT frame: what plays when it is opened
+        // and what the chip's numbers are about (prompt 309).
         ClipThumbnail(localIdentifier: clip.localIdentifier, kind: clip.kind,
-                      size: CGSize(width: 320, height: 200))
+                      size: CGSize(width: 320, height: 200),
+                      posterTime: ClipHROverlay.playedRange(clip).start)
             .overlay(alignment: .bottomLeading) {
                 Text(name).font(.caption2.weight(.semibold)).foregroundStyle(.white)
                     .lineLimit(1).padding(.horizontal, 7).padding(.vertical, 3)

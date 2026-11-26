@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - @Model -> plain-value bridges for FeedComposer (F0)
 //
@@ -51,6 +52,108 @@ extension MediaInput {
                    climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier,
                    aspect: m.aspectRatio, edit: (m.isBaked || m.isReel) ? nil : edit,
                    isBaked: m.isBaked, reelTitle: m.reelTitle, timeMap: m.bakeTimeMap)
+    }
+}
+
+extension ClipStudioEdit {
+    /// Every clip's Studio edit, keyed by `SessionMedia.id`, for a whole LIST of media rows at
+    /// once (prompt 309). Every surface that shows a clip or a number next to one stamps the
+    /// edit on its `MediaInput` from this, so the kept range, the HR window and the "Clip only"
+    /// scope set in the Studio are the same in the Clips feed, Recap, the activity pages, the
+    /// Kilter library and the festival set screen. One pass over the projects per list, never
+    /// per cell: `StudioProject.clips` is the largest blob on the project, so only the projects
+    /// of sessions that have media in `media` are opened. First project wins per media id (a
+    /// session has one today).
+    @MainActor
+    static func byMedia(projects: [StudioProject], media: [SessionMedia]) -> [UUID: ClipStudioEdit] {
+        guard !projects.isEmpty, !media.isEmpty else { return [:] }
+        return byMedia(projects: projects,
+                       mediaIDByLocalID: Dictionary(media.map { ($0.localIdentifier, $0.id) },
+                                                    uniquingKeysWith: { a, _ in a }),
+                       sessionIDs: Set(media.map(\.sessionID)))
+    }
+
+    /// The same from plain values: only the projects of `sessionIDs` are opened.
+    @MainActor
+    static func byMedia(projects: [StudioProject], mediaIDByLocalID: [String: UUID],
+                        sessionIDs: Set<UUID>) -> [UUID: ClipStudioEdit] {
+        var edits: [UUID: ClipStudioEdit] = [:]
+        for p in projects where sessionIDs.contains(p.sessionID) {
+            edits.merge(byMedia(clips: p.clips, mediaIDByLocalID: mediaIDByLocalID)) { a, _ in a }
+        }
+        return edits
+    }
+
+    /// The same, for a surface that holds no `@Query` of the projects: one fetch.
+    @MainActor
+    static func byMedia(context: ModelContext, media: [SessionMedia]) -> [UUID: ClipStudioEdit] {
+        guard !media.isEmpty else { return [:] }
+        let projects = (try? context.fetch(FetchDescriptor<StudioProject>())) ?? []
+        return byMedia(projects: projects, media: media)
+    }
+
+    /// When the Studio last saved anything: how many projects there are and the newest change.
+    /// Two small fetches (a count, and one row), no project opened. A screen that loaded its
+    /// clips once compares this when it comes back on screen and reloads only if it moved.
+    struct Stamp: Equatable, Sendable {
+        var count: Int
+        var newest: Date?
+    }
+
+    @MainActor
+    static func stamp(context: ModelContext) -> Stamp {
+        var newest = FetchDescriptor<StudioProject>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        newest.fetchLimit = 1
+        return Stamp(count: (try? context.fetchCount(FetchDescriptor<StudioProject>())) ?? 0,
+                     newest: (try? context.fetch(newest))?.first?.updatedAt)
+    }
+}
+
+extension MediaInput {
+    /// Every media row as the Clips feed shows it, by session: each with its Studio edit
+    /// (prompt 309). The feed's snapshot is built from this and nothing else, so a test of this
+    /// function is a test of what the feed is handed.
+    @MainActor
+    static func bySession(_ media: [SessionMedia], projects: [StudioProject]) -> [UUID: [MediaInput]] {
+        let edits = ClipStudioEdit.byMedia(projects: projects, media: media)
+        var out: [UUID: [MediaInput]] = [:]
+        for m in media { out[m.sessionID, default: []].append(MediaInput.from(m, edit: edits[m.id])) }
+        return out
+    }
+}
+
+/// One session's clip edits at a time, kept until that session's project changes (prompt 309).
+/// Recap asks per CARD ON SCREEN, so a Studio save re-reads one project's clips (the one that
+/// changed) the next time its card is drawn, and nothing else: the cards and the media index are
+/// not recomposed for it, and a project whose card was never scrolled to is never opened.
+@MainActor
+final class ClipStudioEditCache {
+    private struct Entry {
+        var updatedAt: Date
+        var mediaCount: Int
+        var edits: [UUID: ClipStudioEdit]
+    }
+    private var entries: [UUID: Entry] = [:]
+    private var projectsKey: ClipStudioEdit.Stamp?
+    private var projectBySession: [UUID: StudioProject] = [:]
+    /// How many times a project's clips were opened (the tests read this).
+    private(set) var opened = 0
+
+    /// `projects` newest first (the feed's `@Query` order). `media` = that session's rows.
+    func edits(forSession sid: UUID, projects: [StudioProject], media: [SessionMedia]) -> [UUID: ClipStudioEdit] {
+        let key = ClipStudioEdit.Stamp(count: projects.count, newest: projects.first?.updatedAt)
+        if key != projectsKey {
+            projectsKey = key
+            projectBySession = Dictionary(projects.map { ($0.sessionID, $0) }, uniquingKeysWith: { a, _ in a })
+        }
+        guard let project = projectBySession[sid], !media.isEmpty else { return [:] }
+        if let hit = entries[sid], hit.updatedAt == project.updatedAt, hit.mediaCount == media.count {
+            return hit.edits
+        }
+        opened += 1
+        let edits = ClipStudioEdit.byMedia(projects: [project], media: media)
+        entries[sid] = Entry(updatedAt: project.updatedAt, mediaCount: media.count, edits: edits)
+        return edits
     }
 }
 

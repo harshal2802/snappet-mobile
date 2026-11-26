@@ -42,6 +42,15 @@ enum ClipExportCoordinator {
         return false
     }
 
+    /// What Animate's burned scorebug is read from: the session's series with ITS max and rest
+    /// (the context's, not the planner workout's), and the clips' bake time maps. Pure.
+    static func heartRate(context: Context, workout: Workout) -> ReelHeartRate.Input {
+        ReelHeartRate.Input(media: workout.media,
+                            sessions: [ReelHeartRate.Session(series: context.hrSeries,
+                                                             maxHR: context.maxHR, restHR: context.restHR)],
+                            timeMaps: SessionHighlightInput.timeMaps(of: context.clips))
+    }
+
     /// Run the real pipeline: bridge → engine (UNCHANGED) → `ReelPlanner` → `ReelExporter.export`
     /// (with the editor HR overlay) → save to Photos. Records the share intent. Returns the outcome.
     @MainActor
@@ -80,9 +89,8 @@ enum ClipExportCoordinator {
         do {
             let url = try await exporter.export(
                 plan,
-                hrOverlay: ReelExporter.HROverlay(hrSeries: context.hrSeries,
-                                                  maxHR: context.maxHR,
-                                                  restHR: context.restHR,
+                // The scorebug reads each clip's own heart rate (prompt 309, `ReelHeartRate`).
+                hrOverlay: ReelExporter.HROverlay(heartRate: heartRate(context: context, workout: workout),
                                                   clipName: context.clipName))
             if Task.isCancelled { return .cancelled }
             if RecapClipSeed.isActive {

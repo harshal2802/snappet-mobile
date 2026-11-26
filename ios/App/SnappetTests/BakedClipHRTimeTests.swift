@@ -328,7 +328,9 @@ final class BakedClipHRTimeTests: XCTestCase {
         let studio = StudioHRPlacement.captureWindow(offset: 10, trimStart: 2, trimEnd: 6, sourceDuration: 9)
         XCTAssertEqual(studio.start, 12)
         XCTAssertEqual(studio.span, 4)
-        XCTAssertEqual(FeedMedia.clipHRWindow(offsetSec: 10, durationSec: 4, hrSeries: ramp).first?.bpm, 110)
+        let footage = ClipHeartRate.resolve(series: ramp, clock: clock, renditionStart: 0, renditionEnd: 4,
+                                            options: .footageOnly).data
+        XCTAssertEqual(footage?.samples.first?.bpm, 110)
     }
 
     /// The Studio's window builder (preview tile, HR-window sliders, export) with a map.
@@ -385,17 +387,26 @@ final class BakedClipHRTimeTests: XCTestCase {
     /// The poster's peak / average chip and the activity pages' average.
     func testThePosterChipAndTheActivityAverageReadThroughTheMap() {
         let m = map([part(0, from: 2, to: 6)])
-        let chip = FeedMedia.clipHR(offsetSec: 10, durationSec: 4, hrSeries: ramp, maxHR: 190, timeMap: m)
+        // Footage only (a clip whose Studio edit has no lead-in and no tail), so the numbers name
+        // the footage's seconds. Prompt 309: the chip is the resolver's, over the clip's HR window.
+        var clip = MediaInput(id: UUID(), kind: "video", offsetSec: 10, durationSec: 4, exerciseId: nil,
+                              setIndex: nil, climbUUID: nil, localIdentifier: "A",
+                              edit: ClipStudioEdit(hrLeadSec: 0, hrTailSec: 0), timeMap: m)
+        let chip = FeedMedia.clipHR(for: clip, hrSeries: ramp, maxHR: 190)
         XCTAssertEqual(chip.peakBpm, 116)
         XCTAssertEqual(chip.avgBpm, 114)
-        XCTAssertEqual(FeedMedia.clipHR(offsetSec: 10, durationSec: 4, hrSeries: ramp, maxHR: 190).peakBpm, 114)
+        clip.timeMap = nil
+        XCTAssertEqual(FeedMedia.clipHR(for: clip, hrSeries: ramp, maxHR: 190).peakBpm, 114)
 
         var input = ActivityMediaInput(id: UUID(), sessionID: UUID(), assignedExerciseID: nil,
                                        assignedSetIndex: nil, kindRaw: "video", offsetSec: 10,
                                        durationSec: 4, localIdentifier: "A")
-        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: input, hrSeries: ramp), 112)
+        // The activity pages' average is over the clip's own HR window (5 s before the footage,
+        // 30 s after; prompt 309): 5…44 s without the map, 7…46 s with it. (112 and 114 before,
+        // over the footage alone.)
+        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: input, hrSeries: ramp), 125)
         input.timeMap = m
-        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: input, hrSeries: ramp), 114)
+        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: input, hrSeries: ramp), 127)
         XCTAssertEqual(input.mediaInput.timeMap, m, "the viewer's value carries the map on")
     }
 

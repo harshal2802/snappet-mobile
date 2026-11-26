@@ -83,6 +83,10 @@ enum ActivityProgressReel {
         let mediaItemId: String
         let startSec: Double
         let durationSec: Double
+        /// Which segment of the plan this is (its index in `ReelPlan.segments`), so a reader that
+        /// needs the segment itself (the reel's heart rate, prompt 309) does not have to guess
+        /// it from the media id when one item is in the plan twice. `nil` = not known.
+        var segmentIndex: Int? = nil
     }
 
     /// Timed text overlays for the burned captions — one per placed segment that has a caption, shown for the

@@ -68,9 +68,9 @@ final class ReelExporter: Sendable {
     }
 
     func makePlacedComposition(for plan: ReelPlan, renderAspect: Double? = nil) async throws -> PlacedComposition {
-        let renderable = plan.segments.filter {
-            ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
-        }
+        // The one renderable rule (`ReelHeartRate.isRenderable`), with each segment's place in
+        // the plan kept so a placement can say which segment it is.
+        let renderable = plan.segments.enumerated().filter { ReelHeartRate.isRenderable($0.element) }
         guard !renderable.isEmpty else { throw ExportError.noVideoSegments }
 
         let composition = AVMutableComposition()
@@ -89,7 +89,7 @@ final class ReelExporter: Sendable {
         var placements: [ActivityProgressReel.Placement] = []
 
         // Iterate segments IN ORDER so photos interleave with videos correctly.
-        for seg in renderable {
+        for (segmentIndex, seg) in renderable {
             if seg.kind == .photo {
                 // Render the still to a Ken-Burns clip, then insert it like a video.
                 guard let url = await photoRenderer.renderClip(assetId: seg.mediaItemId,
@@ -102,7 +102,7 @@ final class ReelExporter: Sendable {
                     try vTrack?.insertTimeRange(range, of: src, at: cursor)
                     layouts.append(await layout(for: src, start: cursor))
                     placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
-                                            durationSec: dur.seconds))
+                                            durationSec: dur.seconds, segmentIndex: segmentIndex))
                     cursor = cursor + dur
                     inserted += 1
                 } catch { continue }   // skip a bad photo clip, keep the reel
@@ -123,7 +123,7 @@ final class ReelExporter: Sendable {
                     try? track?.insertTimeRange(range, of: srcA, at: cursor)
                 }
                 placements.append(.init(mediaItemId: seg.mediaItemId, startSec: cursor.seconds,
-                                        durationSec: range.duration.seconds))
+                                        durationSec: range.duration.seconds, segmentIndex: segmentIndex))
                 cursor = cursor + range.duration
                 inserted += 1
             }
@@ -218,9 +218,12 @@ final class ReelExporter: Sendable {
     /// keeps a single source of truth — the recap-feed "Animate" clip matches the studio's scorebug.
     /// `Sendable` value-type snapshot so it crosses into the AVFoundation export with no `@Model`.
     struct HROverlay: Sendable {
-        var hrSeries: [HRPoint]
-        var maxHR: Double?
-        var restHR: Double?
+        /// What the reel's heart rate is read from (prompt 309): the media, each session's own
+        /// series and the baked clips' time maps. The exporter builds the track itself, from
+        /// where it actually put each segment (`ReelHeartRate.slots(plan:placements:)`), so a
+        /// segment that failed to load does not shift the readings of the ones after it.
+        /// (It was the whole session's series, stretched over the reel.)
+        var heartRate: ReelHeartRate.Input
         var clipName: String? = nil
         /// The tile to burn — the user's Clips overlay default (prompt 163). `nil` keeps the built-in
         /// `.feedClipScorebug`, as does a tile that would draw nothing with this session's data.
@@ -229,6 +232,26 @@ final class ReelExporter: Sendable {
 
     func export(_ plan: ReelPlan) async throws -> URL {
         try await export(plan, hrOverlay: nil)
+    }
+
+    /// The scorebugs to burn, one for each stretch of the reel that has heart rate
+    /// (`ReelHeartRate.Run`), each shown only while that stretch plays. Pure. A reel of one
+    /// session whose clips all have heart rate gives ONE, over the whole reel, as before prompt
+    /// 309; a clip with no heart rate has none over it, so nothing is drawn while it plays and
+    /// no line is smoothed into or out of it. Timed from `placements` (where the exporter put
+    /// each segment), never from the plan.
+    static func placedScorebugs(plan: ReelPlan, placements: [ActivityProgressReel.Placement],
+                                totalDuration: Double, overlay: HROverlay) -> [PlacedClipHR] {
+        let track = ReelHeartRate.track(plan: plan, placements: placements,
+                                        totalDuration: totalDuration, input: overlay.heartRate)
+        return track.runs.compactMap { run in
+            // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
+            let tile = overlay.tile.flatMap { run.values.resolveTile($0) }
+                ?? run.values.resolveTile(.feedClipScorebug(restHR: run.restHR))
+            return tile.map {
+                PlacedClipHR(startSec: run.start, durationSec: run.duration, samples: run.samples, tile: $0)
+            }
+        }
     }
 
     /// Export, optionally burning a scorebug HR overlay over the stitched reel. When `hrOverlay != nil`,
@@ -263,21 +286,14 @@ final class ReelExporter: Sendable {
         if let mvc = videoComposition as? AVMutableVideoComposition {
             let captionOverlays = ActivityProgressReel.captionOverlays(placements: built.placements,
                                                                        captions: captions)
-            var tile: ResolvedHRTile?
-            if let hrOverlay {
-                let values = HROverlayValues(samples: hrOverlay.hrSeries,
-                                             durationSec: composition.duration.seconds,
-                                             maxHR: hrOverlay.maxHR,
-                                             restHR: hrOverlay.restHR)
-                // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
-                tile = hrOverlay.tile.flatMap({ values.resolveTile($0) })
-                    ?? values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR))
-            }
-            if tile != nil || !captionOverlays.isEmpty,
+            let scorebugs = hrOverlay.map {
+                Self.placedScorebugs(plan: plan, placements: built.placements,
+                                     totalDuration: composition.duration.seconds, overlay: $0)
+            } ?? []
+            if !scorebugs.isEmpty || !captionOverlays.isEmpty,
                let tool = StudioOverlays.makeAnimationTool(
                     overlays: captionOverlays, canvas: mvc.renderSize,
-                    totalDuration: composition.duration.seconds,
-                    hrSamples: hrOverlay?.hrSeries ?? [], hrTile: tile) {
+                    totalDuration: composition.duration.seconds, clipHR: scorebugs) {
                 mvc.animationTool = tool
                 exportVideoComposition = mvc
             }

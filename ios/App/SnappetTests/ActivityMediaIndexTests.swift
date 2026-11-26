@@ -135,8 +135,18 @@ final class ActivityMediaIndexTests: XCTestCase {
     func testAverageBPMOverVideoWindowAndAroundPhoto() {
         let hr = [HRPoint(t: 5, bpm: 100), HRPoint(t: 30, bpm: 140), HRPoint(t: 35, bpm: 150), HRPoint(t: 60, bpm: 90)]
         let s = session([], daysAgo: 0)
-        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: clip(s, nil, at: 30, duration: 10), hrSeries: hr), 145)
-        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: clip(s, nil, at: 12, kind: "photo", duration: nil), hrSeries: hr), 100)
+        // Prompt 309: the average is the one the clip's viewer shows as AVG, over the clip's own HR
+        // window (25…70 s here): the edge reading at 25 s (132) and the samples 140, 150 and 90.
+        // The recording ends at 60 s, inside the window: the reading at the window's end is that
+        // last sample again and is not counted a second time (it was, giving 120, until each
+        // recorded sample was made to count once). Before prompt 309 it was 145: the two samples
+        // inside the footage.
+        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: clip(s, nil, at: 30, duration: 10), hrSeries: hr), 128)
+        // A photo: 10 s either side (2…22 s): the sample at 5 s and the edge reading at 22 s
+        // (127). The recording starts at 5 s, inside the window: the reading at the window's
+        // start is that first sample again and is not counted twice (it was: 109). Before prompt
+        // 309 it was 100: the one sample inside.
+        XCTAssertEqual(ActivityMediaIndex.averageBPM(for: clip(s, nil, at: 12, kind: "photo", duration: nil), hrSeries: hr), 114)
         XCTAssertNil(ActivityMediaIndex.averageBPM(for: clip(s, nil, at: 200), hrSeries: hr))
     }
 }

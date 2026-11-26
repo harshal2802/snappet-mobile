@@ -7,8 +7,8 @@ import HighlightEngine
 // week — gym, Kilter, Apple-Watch import — is stitched onto ONE synthetic timeline (HR series and
 // media offsets shifted by the running span), producing a single engine `Workout` the ENTIRE
 // existing reel pipeline consumes unchanged: HighlightEngine ranks moments across the whole week,
-// `ReelViewModel`/`ReelView` edit it, `ReelExporter` burns the week's stitched HR curve as the
-// glass scorebug. PURE — Foundation + engine value types only — unit-tested in
+// `ReelViewModel`/`ReelView` edit it, and `ReelExporter` burns the glass scorebug with each clip's
+// heart rate read from its own session (`ReelHeartRate`, prompt 309). PURE — Foundation + engine value types only — unit-tested in
 // `WeeklyHighlightsTests` with no simulator.
 
 enum WeeklyHighlights {
@@ -66,8 +66,14 @@ enum WeeklyHighlights {
     /// offsets, and boost windows all shift by the running sum of the previous sessions' spans.
     /// Sessions are ordered chronologically, so the reel cuts Monday → Sunday. Returns `nil` when
     /// no session brings any usable media.
+    ///
+    /// `heartRate` is each session's OWN series, max and rest, with its place on the stitched
+    /// timeline and its media (prompt 309): the reel's scorebug reads a clip from its own
+    /// session only. The stitched `workout.hr` is for the planner's scoring; reading a clip's
+    /// heart rate from it would hold one session's last sample over the next session's clips.
     static func stitchedWorkout(sessions: [SessionInput]) -> (workout: Workout,
-                                                              boostWindows: [ClosedRange<Double>])? {
+                                                              boostWindows: [ClosedRange<Double>],
+                                                              heartRate: [ReelHeartRate.Session])? {
         let ordered = sessions.sorted { $0.startedAt < $1.startedAt }
         var hr: [HRSample] = []
         var media: [MediaItem] = []
@@ -75,6 +81,7 @@ enum WeeklyHighlights {
         var shift = 0.0
         var restBpm: Double?
         var maxBpm: Double?
+        var heartRate: [ReelHeartRate.Session] = []
 
         for s in ordered {
             // Reuse the session→engine bridge (drop-no-duration + default-duration policy) and
@@ -89,6 +96,9 @@ enum WeeklyHighlights {
             boosts.append(contentsOf: s.boostWindows.map {
                 ($0.lowerBound + shift)...($0.upperBound + shift)
             })
+            heartRate.append(ReelHeartRate.Session(originSec: shift, series: s.hrSeries,
+                                                   maxHR: s.maxHR, restHR: s.restHR,
+                                                   mediaIDs: Set(wk.media.map(\.id))))
             if let r = s.restHR { restBpm = min(restBpm ?? r, r) }
             if let m = s.maxHR { maxBpm = max(maxBpm ?? m, m) }
             shift += span(of: s, workout: wk)
@@ -104,7 +114,7 @@ enum WeeklyHighlights {
             restBpm: restBpm,
             maxBpm: maxBpm,
             media: media)
-        return (workout, boosts)
+        return (workout, boosts, heartRate)
     }
 
     /// A session's width on the stitched timeline: its duration, stretched to cover any HR sample
@@ -127,6 +137,8 @@ extension ReelSource {
         var source = ReelSource(id: id, activity: stitched.workout.activity, title: title, start: start,
                                 makeWorkout: { _, _ in stitched.workout })
         source.boostWindows = stitched.boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: sessions.flatMap(\.clips))
+        source.heartRateSessions = stitched.heartRate
         source.trimToHighlights = trimToHighlights
         source.postSessionID = latest.id
         source.postTitle = postTitle
@@ -149,6 +161,8 @@ extension ReelSource {
             // The stitched snapshot IS the input — manual picks don't apply to a week cut.
             makeWorkout: { _, _ in stitched.workout })
         source.boostWindows = stitched.boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: sessions.flatMap(\.clips))
+        source.heartRateSessions = stitched.heartRate
         source.trimToHighlights = true
         source.postSessionID = latest.id
         source.postTitle = "Your Week — Highlights"

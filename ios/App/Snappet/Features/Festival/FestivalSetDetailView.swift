@@ -46,11 +46,14 @@ struct FestivalSetDetailView: View {
         /// clip and heart rate is read where the frames were filmed.
         var isBaked: Bool = false
         var timeMap: BakedTimeMap? = nil
+        /// The clip's Studio edit (prompt 309), so the viewer reads it as the Clips feed does.
+        var edit: ClipStudioEdit? = nil
         var id: UUID { mediaID }
 
         init(mediaID: UUID, sessionID: UUID, localIdentifier: String, isVideo: Bool,
              offsetSec: Double, durationSec: Double?, aspect: Double?, isAuto: Bool,
-             isBaked: Bool = false, timeMap: BakedTimeMap? = nil) {
+             isBaked: Bool = false, timeMap: BakedTimeMap? = nil, edit: ClipStudioEdit? = nil) {
+            self.edit = edit
             self.mediaID = mediaID; self.sessionID = sessionID
             self.localIdentifier = localIdentifier; self.isVideo = isVideo
             self.offsetSec = offsetSec; self.durationSec = durationSec
@@ -59,12 +62,13 @@ struct FestivalSetDetailView: View {
         }
 
         /// One tagged media row as this screen lists it.
-        @MainActor init(_ media: SessionMedia, isAuto: Bool) {
+        @MainActor init(_ media: SessionMedia, isAuto: Bool, edit: ClipStudioEdit? = nil) {
             self.init(mediaID: media.id, sessionID: media.sessionID,
                       localIdentifier: media.localIdentifier, isVideo: media.kind == .video,
                       offsetSec: media.offsetSec, durationSec: media.durationSec,
                       aspect: media.aspectRatio, isAuto: isAuto,
-                      isBaked: media.isBaked, timeMap: media.bakeTimeMap)
+                      isBaked: media.isBaked, timeMap: media.bakeTimeMap,
+                      edit: (media.isBaked || media.isReel) ? nil : edit)
         }
 
         var captureClock: ClipCaptureClock { ClipCaptureClock(offsetSec: offsetSec, timeMap: timeMap) }
@@ -74,14 +78,15 @@ struct FestivalSetDetailView: View {
             MediaInput(id: mediaID, kind: isVideo ? "video" : "photo",
                        offsetSec: offsetSec, durationSec: durationSec,
                        exerciseId: nil, setIndex: nil, climbUUID: nil,
-                       localIdentifier: localIdentifier, aspect: aspect,
+                       localIdentifier: localIdentifier, aspect: aspect, edit: edit,
                        isBaked: isBaked, timeMap: timeMap)
         }
 
         /// The reel maker's clip: it starts when the first frame of the current video was filmed.
         var reelClip: SessionHighlightInput.Clip {
             SessionHighlightInput.Clip(localIdentifier: localIdentifier, isVideo: isVideo,
-                                       offsetSec: captureClock.captureStartSec, durationSec: durationSec)
+                                       offsetSec: captureClock.captureStartSec, durationSec: durationSec,
+                                       timeMap: timeMap)
         }
     }
 
@@ -291,7 +296,8 @@ struct FestivalSetDetailView: View {
 
     private func clipCell(_ row: ClipRow) -> some View {
         ZStack(alignment: .topLeading) {
-            FestivalClipThumb(localIdentifier: row.localIdentifier, isVideo: row.isVideo)
+            FestivalClipThumb(localIdentifier: row.localIdentifier, isVideo: row.isVideo,
+                              posterTime: ClipHROverlay.playedRange(row.mediaInput).start)
                 .frame(width: 84, height: 106)
             if row.isAuto {
                 Text("✦ Auto")
@@ -356,17 +362,24 @@ struct FestivalSetDetailView: View {
         }
         let sessionStart = Dictionary(sessions.map { ($0.id, $0.startedAt) },
                                       uniquingKeysWith: { a, _ in a })
-        var rows: [ClipRow] = []
-        for tag in resolvedTags {
-            guard let media = mediaRow(id: tag.mediaID) else { continue }
-            rows.append(ClipRow(media, isAuto: tag.source == .auto))
+        let tagged = resolvedTags.compactMap { tag in
+            mediaRow(id: tag.mediaID).map { (media: $0, isAuto: tag.source == .auto) }
         }
+        let rows = Self.rows(tagged, context: context)
         clipRows = rows.sorted {
             let a = sessionStart[$0.sessionID] ?? .distantPast
             let b = sessionStart[$1.sessionID] ?? .distantPast
             let at = a.addingTimeInterval($0.offsetSec), bt = b.addingTimeInterval($1.offsetSec)
             return at != bt ? at < bt : $0.mediaID.uuidString < $1.mediaID.uuidString
         }
+    }
+
+    /// The screen's clip rows for its tagged media, each with its Studio edit, looked up once
+    /// for the screen (prompt 309). What `load` lists, and what the test reads.
+    @MainActor
+    static func rows(_ tagged: [(media: SessionMedia, isAuto: Bool)], context: ModelContext) -> [ClipRow] {
+        let edits = ClipStudioEdit.byMedia(context: context, media: tagged.map(\.media))
+        return tagged.map { ClipRow($0.media, isAuto: $0.isAuto, edit: edits[$0.media.id]) }
     }
 
     private func mediaRow(id: UUID) -> SessionMedia? {

@@ -43,6 +43,12 @@ struct FeedView: View {
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
     @Query private var allMedia: [SessionMedia]
+    /// The Studio projects, for each clip's edit (prompt 309): the poster chip and the viewer
+    /// read a clip's trim, HR window and scope as the Clips feed does. NOT part of
+    /// `feedSignature()`: a Studio save does not recompose the feed. The edits are read per card
+    /// on screen through `editCache`, which opens a project only when that project changed.
+    @Query(sort: \StudioProject.updatedAt, order: .reverse) private var studioProjects: [StudioProject]
+    @State private var editCache = ClipStudioEditCache()
     // F2 batched membership: hoist the reaction/save corpus to ONE query each (was 2 FetchDescriptors
     // PER card in FeedReactionStrip.task). @Model-backed, so both auto-refresh on any toggle.
     @Query private var feedReactions: [FeedReaction]
@@ -383,8 +389,9 @@ struct FeedView: View {
         let index = memo.index                       // settled by composed() earlier this eval
         let media = index.mediaBySession[sid] ?? []  // O(1) instead of allMedia.filter
         guard !media.isEmpty else { return nil }
-        let resolver = FeedMediaResolver(index: index)
-        return FeedCardMedia(clips: media.map { MediaInput.from($0) },
+        let resolver = FeedMediaResolver(index: index, sessionID: sid, projects: studioProjects,
+                                         cache: editCache)
+        return FeedCardMedia(clips: resolver.mediaInputs(for: sid),
                              hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                              nameFor: resolver.nameResolver(for: sid),
                              clipContext: resolver.clipContext(for: sid, card: card))

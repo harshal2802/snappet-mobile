@@ -103,8 +103,7 @@ struct MediaBrowserView: View {
     }
 
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
-        FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR,
-                         timeMap: m.timeMap)
+        FeedMedia.clipHR(for: m, hrSeries: hrSeries, maxHR: maxHR)
     }
 
     private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
@@ -112,7 +111,8 @@ struct MediaBrowserView: View {
     private func tile(_ m: MediaInput) -> some View {
         let hr = clipHR(m)
         return ZStack(alignment: .topTrailing) {
-            ClipThumbnail(localIdentifier: m.localIdentifier, kind: m.kind, size: CGSize(width: 104, height: 138))
+            ClipThumbnail(localIdentifier: m.localIdentifier, kind: m.kind, size: CGSize(width: 104, height: 138),
+                          posterTime: ClipHROverlay.playedRange(m).start)   // the first kept frame (prompt 309)
                 .overlay(alignment: .bottomLeading) {
                     Text(tagName(m)).font(.caption2.weight(.semibold)).foregroundStyle(.white)
                         .lineLimit(1).padding(.horizontal, 6).padding(.vertical, 3)

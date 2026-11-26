@@ -52,10 +52,21 @@ struct HROverlayValues {
     /// these samples instead of `samples` — the `.clip` metrics scope passes the footage-only slice
     /// while the chart still draws the full window. `statsDurationSec` is that slice's span (defaults
     /// to `durationSec`). The chart / live readings / sparse styling always follow `samples`.
+    ///
+    /// `chartSamples` (prompt 309): a display series that is already resolved, used as it is. Only
+    /// the reel maker passes one (`ReelHeartRate`): each clip's own display series laid end to end,
+    /// which must not be smoothed again across a cut. `nil` = made from `samples`, as always.
+    ///
+    /// `countedSamples` (prompt 309): the readings the peak, the average and the time in zones
+    /// count, when that is not every sample of the scope. `ClipHeartRate` passes it where the
+    /// scope reaches past the first or last recorded sample: the edge reading there is a copy of
+    /// that sample and must not be counted a second time. `nil` = the scope's samples.
     init(samples: [HRPoint], durationSec: Double, maxHR: Double?, restHR: Double?,
          kcal: Double? = nil, hrv: HRVMetrics = .empty,
          window: HRClipWindow? = nil,
-         statsSamples: [HRPoint]? = nil, statsDurationSec: Double? = nil) {
+         statsSamples: [HRPoint]? = nil, statsDurationSec: Double? = nil,
+         chartSamples: [HRPoint]? = nil,
+         countedSamples: [HRPoint]? = nil) {
         self.samples = samples
         self.durationSec = durationSec
         self.maxHR = maxHR
@@ -64,8 +75,9 @@ struct HROverlayValues {
         self.hrv = hrv
         self.window = window
         let scoped = statsSamples ?? samples
-        self.stats = WorkoutHRStats.make(from: scoped, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
-        self.chartSamples = HRChartGeometry.displaySeries(samples)
+        self.stats = WorkoutHRStats.make(from: countedSamples ?? scoped,
+                                         maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
+        self.chartSamples = chartSamples ?? HRChartGeometry.displaySeries(samples)
         self.cadence = HRCadence.summarize(samples)
         self.effort = ClimbEffort.make(
             from: scoped.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },

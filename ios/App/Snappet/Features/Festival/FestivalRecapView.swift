@@ -220,11 +220,7 @@ struct FestivalRecapView: View {
             let sid = row.id
             let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
                 predicate: #Predicate { $0.sessionID == sid }))) ?? []
-            bySession[sid] = media.filter { !$0.isReel }.map {
-                SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
-                                           isVideo: $0.kind == .video,
-                                           offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
-            }
+            bySession[sid] = media.filter { !$0.isReel }.map(SessionHighlightInput.Clip.from)
         }
         clipsBySession = bySession
     }
