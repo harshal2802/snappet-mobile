@@ -97,7 +97,7 @@ struct WeeklyReelHostView: View {
             rows.map {
                 SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
                                            isVideo: $0.kind == .video,
-                                           offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                                           offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
             }
         }
 

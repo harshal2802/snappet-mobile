@@ -12,14 +12,15 @@ extension ActivityMediaInput {
         ActivityMediaInput(id: m.id, sessionID: m.sessionID, assignedExerciseID: m.assignedExerciseID,
                            assignedSetIndex: m.assignedSetIndex, kindRaw: m.kindRaw, offsetSec: m.offsetSec,
                            durationSec: m.durationSec, localIdentifier: m.localIdentifier,
-                           isReel: m.isReel, isBaked: m.isBaked, assignedClimbUUID: m.assignedClimbUUID)
+                           isReel: m.isReel, isBaked: m.isBaked, assignedClimbUUID: m.assignedClimbUUID,
+                           timeMap: m.bakeTimeMap)
     }
 
     /// The feed's media value, so the viewer reuses `ClipMediaSurface` + `ClipHROverlay` unchanged.
     var mediaInput: MediaInput {
         MediaInput(id: id, kind: kindRaw, offsetSec: offsetSec, durationSec: durationSec,
                    exerciseId: assignedExerciseID, setIndex: assignedSetIndex, climbUUID: nil,
-                   localIdentifier: localIdentifier, isBaked: isBaked)
+                   localIdentifier: localIdentifier, isBaked: isBaked, timeMap: timeMap)
     }
 }
 

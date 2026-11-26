@@ -47,32 +47,158 @@ enum ClipBakePlan {
         }
     }
 
-    /// The `SessionMedia` field updates a destructive bake applies: the replacement asset IS the
-    /// rendered composition, so its capture offset moves to where the kept footage started
-    /// (`oldOffset + earliest trimStart`) and its duration becomes the rendered length. One pure rule
-    /// so the session detail, the feed, and the HR windows stay time-aligned after the swap.
+    // MARK: What a bake writes on the `SessionMedia` rows (prompts 117, 303, 305)
+
+    /// The row values a bake writes. `timeMap` is always written, also when it is `nil`.
+    struct MediaUpdate: Equatable, Sendable {
+        var offsetSec: Double
+        var durationSec: Double?
+        var timeMap: BakedTimeMap?
+    }
+
+    /// How the video a bake renders maps back to the ORIGINAL recording (prompt 305), or `nil`
+    /// when it is that recording second for second (nothing trimmed at the start, speed 1, no
+    /// footage left out between parts). Whether a `nil` is stored as `nil` or as an identity
+    /// record is decided by `revertibleMediaUpdate` / `replacedMediaUpdate`, not here.
+    ///
+    /// `parts` are the clips the bake rendered (the same snapshot the render was made from), with
+    /// the source lengths and transitions the composer was given. Each part becomes one segment
+    /// over the stretch of the output it OWNS (`StudioGeometry.ownedWindows`):
+    /// - a start trim sets the segment's source start; a speed change sets its speed;
+    /// - two split parts give two segments, and the footage left out between them is the jump in
+    ///   source time from one to the next;
+    /// - a transition between two parts shows both for its length. It is split at its middle, the
+    ///   rule the HR tile and the playhead already use: the outgoing part gives the times for the
+    ///   first half, the incoming part for the second. A part that owns nothing has no segment.
+    ///
+    /// `existing` is the map the asset already carries: the bake rendered the asset's CURRENT
+    /// video, so the parts' trims are times in the earlier rendition. The result is the two maps
+    /// composed (a second 2× on top of a first 2× is 4×; a second start trim is found through the
+    /// first map), still measured from the original recording.
+    static func timeMap(parts: [TimelineClip], sourceDurations: [UUID: Double],
+                        transitions: [StudioTransition], existing: BakedTimeMap? = nil,
+                        isRevertible: Bool = true) -> BakedTimeMap? {
+        let placed = StudioGeometry.timeline(clips: parts.filter { !$0.isPhoto },
+                                             sourceDurations: sourceDurations, transitions: transitions)
+        let owned = StudioGeometry.ownedWindows(placed)
+        var segments: [BakedTimeMap.Segment] = []
+        var total = 0.0
+        for (p, w) in zip(placed, owned) where w.end - w.start > BakedTimeMap.tolerance {
+            let speed = StudioGeometry.clampSpeed(p.clip.speed)
+            // Where this stretch starts in the video that was rendered FROM.
+            let assetStart = max(0, p.clip.trimStart) + (w.start - p.startSec) * speed
+            let assetEnd = assetStart + (w.end - w.start) * speed
+            total = max(total, w.end)
+            guard let existing else {
+                segments.append(.init(renditionStartSec: w.start, sourceStartSec: assetStart, speed: speed))
+                continue
+            }
+            for piece in existing.sourcePieces(from: assetStart, to: assetEnd) {
+                segments.append(.init(renditionStartSec: w.start + (piece.renditionStart - assetStart) / speed,
+                                      sourceStartSec: piece.sourceStart,
+                                      speed: speed * piece.speed))
+            }
+        }
+        guard !segments.isEmpty else {
+            return existing.flatMap {
+                $0.isIdentity ? nil : BakedTimeMap(segments: $0.segments,
+                                                   renditionDurationSec: $0.renditionDurationSec,
+                                                   isRevertible: isRevertible)
+            }
+        }
+        let map = BakedTimeMap(segments: segments, renditionDurationSec: total,
+                               isRevertible: isRevertible).joiningContinuousSegments()
+        return map.isIdentity ? nil : map
+    }
+
+    /// The `SessionMedia` field updates a destructive bake applies in the plain case: the
+    /// replacement asset IS the rendered composition, so its capture offset moves to where the
+    /// kept footage started (`oldOffset + earliest kept source time`) and its duration becomes the
+    /// rendered length. `replacedMediaUpdate` is what the bake calls; it uses this for the offset.
     static func mediaUpdate(oldOffsetSec: Double, earliestTrimStart: Double,
                             renderedDurationSec: Double?) -> (offsetSec: Double, durationSec: Double?) {
         (max(0, oldOffsetSec + max(0, earliestTrimStart)), renderedDurationSec)
     }
 
-    /// The `SessionMedia` field updates a "Save to original" bake applies (prompt 303). The
+    /// What "Replace original" writes (prompt 305). `timeMap` is `ClipBakePlan.timeMap` for the
+    /// bake, measured from the recording the old offset describes.
+    ///
+    /// The offset moves forward to the earliest footage the new video holds, as it always did,
+    /// and that shift is taken out of the map (`movingSource`), so one shift is never in both.
+    ///
+    /// A map is ALWAYS stored, marked not revertible: it is the row's record that this asset IS
+    /// the bake. The new asset has no edited rendition, which is exactly what the revert probe
+    /// looks for, so without the record the next Studio open took the clip for reverted and
+    /// cleared `isBaked`. For a plain start trim (or no timing change) the stored map is the
+    /// identity over the rendered length; it changes no time.
+    static func replacedMediaUpdate(oldOffsetSec: Double, renderedDurationSec: Double?,
+                                    timeMap: BakedTimeMap?) -> MediaUpdate {
+        let shift = max(0, timeMap?.earliestSourceSec ?? 0)
+        let moved = mediaUpdate(oldOffsetSec: oldOffsetSec, earliestTrimStart: shift,
+                                renderedDurationSec: renderedDurationSec)
+        let rendered = renderedDurationSec.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        var kept = timeMap?.movingSource(earlierBy: shift)
+            ?? .identity(durationSec: rendered ?? 0, isRevertible: false)
+        kept.isRevertible = false
+        kept.revertsTo = nil            // the old asset, and whatever it could revert to, is gone
+        return MediaUpdate(offsetSec: moved.offsetSec, durationSec: moved.durationSec, timeMap: kept)
+    }
+
+    /// The `SessionMedia` field updates a "Save to original" bake applies (prompts 303, 305). The
     /// length becomes the rendered length: it is what the asset now plays, and it is the
     /// timeline's fallback when the video is later not on this phone. The capture offset does
     /// NOT move, unlike `mediaUpdate`: the asset still holds the original video, "Revert to
     /// Original" in Photos brings it back, and the offset from before the bake is the only
-    /// record of when that original starts. A rendered length that could not be read keeps the
-    /// recorded one.
+    /// record of when that original starts. What the bake did to the timing is `timeMap`
+    /// (`ClipBakePlan.timeMap`), stored beside the offset. A rendered length that could not be
+    /// read keeps the recorded one.
+    ///
+    /// `existing` is the map the row carried before this bake. When the asset under the bake is
+    /// a replaced video (`existing.revertBase`), a Photos revert goes back to THAT video, not to
+    /// the recording: its timing is kept inside the new map as `revertsTo`, and the new map is
+    /// stored even when it is the identity. Otherwise a bake that changes no timing stores `nil`.
     static func revertibleMediaUpdate(oldOffsetSec: Double, oldDurationSec: Double?,
-                                      renderedDurationSec: Double?) -> (offsetSec: Double, durationSec: Double?) {
+                                      renderedDurationSec: Double?,
+                                      timeMap: BakedTimeMap? = nil,
+                                      existing: BakedTimeMap? = nil) -> MediaUpdate {
         let rendered = renderedDurationSec.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
-        return (oldOffsetSec, rendered ?? oldDurationSec)
+        let length = rendered ?? oldDurationSec
+        var kept = timeMap
+        if let base = existing?.revertBase {
+            kept = kept ?? .identity(durationSec: length ?? 0, isRevertible: true)
+            kept?.revertsTo = base
+        } else {
+            kept?.revertsTo = nil
+        }
+        kept?.isRevertible = true
+        return MediaUpdate(offsetSec: oldOffsetSec, durationSec: length, timeMap: kept)
     }
 
     /// The recorded length after "Revert to Original" was found: the asset's own length (the
     /// original video is back), or the recorded one when the asset's could not be read.
     static func revertedDuration(recorded: Double?, asset: Double?) -> Double? {
         asset.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? recorded
+    }
+
+    /// What the revert probe's "this asset has no edited rendition" means for a baked row
+    /// (prompt 305).
+    enum RevertFinding: Equatable, Sendable {
+        /// The asset IS the bake ("Replace original"): nothing was reverted, nothing changes.
+        case nothingToRevert
+        /// A "Save to original" over a replaced video was reverted: the asset plays the replaced
+        /// video again. The row stays baked, with that video's map and length.
+        case backToReplaced(BakedTimeMap)
+        /// The asset plays the recording again: the flag, the map and the clip's `baked` record go.
+        case backToRecording
+    }
+
+    /// Read a baked row's map as the answer to "no edited rendition was found". A row with no
+    /// map (a "Save to original" that changed no timing, or any clip baked before prompt 305,
+    /// replaced ones included) is `backToRecording`, as it always was.
+    static func revertFinding(map: BakedTimeMap?) -> RevertFinding {
+        guard let map else { return .backToRecording }
+        guard map.isRevertible else { return .nothingToRevert }
+        return map.revertedMap.map(RevertFinding.backToReplaced) ?? .backToRecording
     }
 
     /// Re-point a project's timeline at the replacement asset (destructive bake): neutralize the
@@ -234,12 +360,5 @@ enum ClipBakePlan {
             }
         }
         return out
-    }
-
-    /// The earliest kept `trimStart` across the parts of one asset (0 when untrimmed) — the amount
-    /// the replacement asset's capture offset shifts forward by.
-    static func earliestTrimStart(clips: [TimelineClip], localIdentifier: String) -> Double {
-        clips.filter { !$0.isPhoto && $0.localIdentifier == localIdentifier }
-            .map { max(0, $0.trimStart) }.min() ?? 0
     }
 }

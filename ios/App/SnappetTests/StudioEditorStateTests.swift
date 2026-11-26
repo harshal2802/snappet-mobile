@@ -52,6 +52,82 @@ final class StudioEditorStateTests: XCTestCase {
         XCTAssertTrue(s.canPlay)
     }
 
+    /// The check before a render (prompt 305): locked from the tap, and what it finds decides.
+    func testTheCheckBeforeARenderLocksEditingClosingAndRendering() {
+        for kind in [StudioEditorState.RenderKind.bake, .export] {
+            let s = loaded.reducing(.checkBegan(kind))
+            XCTAssertEqual(s.phase, .checking(kind))
+            XCTAssertTrue(s.isChecking)
+            XCTAssertFalse(s.canEdit)
+            XCTAssertFalse(s.canPlay)
+            XCTAssertFalse(s.canExport)
+            XCTAssertFalse(s.canClose)
+            XCTAssertFalse(s.isRendering, "nothing renders yet")
+            XCTAssertEqual(s.lockReason, "Checking this video in Photos")
+            // no render and no second check starts inside it
+            XCTAssertEqual(s.reducing(.exportBegan), s)
+            XCTAssertEqual(s.reducing(.bakeBegan), s)
+            XCTAssertEqual(s.reducing(.checkBegan(kind == .bake ? .export : .bake)), s)
+
+            let passed = s.reducing(.checkPassed)
+            XCTAssertEqual(passed, loaded)
+            XCTAssertTrue(passed.canExport)
+
+            let stopped = s.reducing(.checkFoundRevert)
+            XCTAssertFalse(stopped.isChecking)
+            XCTAssertFalse(stopped.isRendering)
+            XCTAssertTrue(stopped.canEdit)
+            XCTAssertTrue(stopped.canClose)
+            switch kind {
+            case .bake:
+                XCTAssertEqual(stopped.bake, .failed("This clip was reverted in Photos. Check it and save again."))
+                XCTAssertEqual(stopped.export, .idle)
+                XCTAssertEqual(stopped.reducing(.bakeAcknowledged), loaded)
+            case .export:
+                XCTAssertEqual(stopped.export, .failed("This clip was reverted in Photos. Check it and export again."))
+                XCTAssertEqual(stopped.bake, .idle)
+                XCTAssertEqual(stopped.reducing(.exportFailureAcknowledged), loaded)
+            }
+        }
+        // a check cannot begin before the first load, under a render, or with a clip missing
+        XCTAssertFalse(StudioEditorState().reducing(.checkBegan(.bake)).isChecking)
+        XCTAssertFalse(loaded.reducing(.exportBegan).reducing(.checkBegan(.bake)).isChecking)
+        XCTAssertFalse(loaded.reducing(.bakeBegan).reducing(.checkBegan(.export)).isChecking)
+        // and a finding with no check in flight says nothing
+        XCTAssertEqual(loaded.reducing(.checkFoundRevert), loaded)
+    }
+
+    /// Events that can arrive while Photos is asked, and the refusal that needs no check.
+    func testStrayEventsAroundTheCheck() {
+        let checking = loaded.reducing(.checkBegan(.bake))
+        // the Studio is gone: the check is for nothing
+        let closed = checking.reducing(.studioClosed)
+        XCTAssertFalse(closed.isChecking)
+        XCTAssertEqual(closed.bake, .idle)
+        XCTAssertEqual(closed.reducing(.checkFoundRevert), closed, "no message for a closed Studio")
+        XCTAssertEqual(closed.reducing(.checkPassed), closed)
+        // no export runs, so a cancel changes nothing
+        XCTAssertEqual(checking.reducing(.exportCancelled), checking)
+        XCTAssertEqual(loaded.reducing(.checkBegan(.export)).reducing(.exportCancelled).phase, .checking(.export))
+        // a "passed" with no check in flight
+        XCTAssertEqual(loaded.reducing(.checkPassed), loaded)
+        XCTAssertEqual(loaded.reducing(.exportBegan).reducing(.checkPassed), loaded.reducing(.exportBegan))
+
+        // a render that cannot begin says why in its own lane
+        let noBake = loaded.reducing(.renderRefused(.bake, "why"))
+        XCTAssertEqual(noBake.bake, .failed("why"))
+        XCTAssertEqual(noBake.export, .idle)
+        XCTAssertFalse(noBake.isRendering)
+        let noExport = loaded.reducing(.renderRefused(.export, "why"))
+        XCTAssertEqual(noExport.export, .failed("why"))
+        XCTAssertEqual(noExport.bake, .idle)
+        XCTAssertFalse(noExport.isRendering)
+        // and nothing is said over a render or a check that runs
+        XCTAssertEqual(checking.reducing(.renderRefused(.export, "why")), checking)
+        let exporting = loaded.reducing(.exportBegan)
+        XCTAssertEqual(exporting.reducing(.renderRefused(.bake, "why")), exporting)
+    }
+
     func testAnExportLocksEditingAndPlayingButNotClosing() {
         let s = loaded.reducing(.exportBegan)
         XCTAssertEqual(s.phase, .rendering(.export(progress: 0)))

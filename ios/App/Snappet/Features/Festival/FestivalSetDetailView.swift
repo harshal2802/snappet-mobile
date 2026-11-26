@@ -42,7 +42,47 @@ struct FestivalSetDetailView: View {
         var durationSec: Double?
         var aspect: Double?
         var isAuto: Bool
+        /// The row's bake flag and time map (prompt 305), so the viewer stands down on a baked
+        /// clip and heart rate is read where the frames were filmed.
+        var isBaked: Bool = false
+        var timeMap: BakedTimeMap? = nil
         var id: UUID { mediaID }
+
+        init(mediaID: UUID, sessionID: UUID, localIdentifier: String, isVideo: Bool,
+             offsetSec: Double, durationSec: Double?, aspect: Double?, isAuto: Bool,
+             isBaked: Bool = false, timeMap: BakedTimeMap? = nil) {
+            self.mediaID = mediaID; self.sessionID = sessionID
+            self.localIdentifier = localIdentifier; self.isVideo = isVideo
+            self.offsetSec = offsetSec; self.durationSec = durationSec
+            self.aspect = aspect; self.isAuto = isAuto
+            self.isBaked = isBaked; self.timeMap = timeMap
+        }
+
+        /// One tagged media row as this screen lists it.
+        @MainActor init(_ media: SessionMedia, isAuto: Bool) {
+            self.init(mediaID: media.id, sessionID: media.sessionID,
+                      localIdentifier: media.localIdentifier, isVideo: media.kind == .video,
+                      offsetSec: media.offsetSec, durationSec: media.durationSec,
+                      aspect: media.aspectRatio, isAuto: isAuto,
+                      isBaked: media.isBaked, timeMap: media.bakeTimeMap)
+        }
+
+        var captureClock: ClipCaptureClock { ClipCaptureClock(offsetSec: offsetSec, timeMap: timeMap) }
+
+        /// The fullscreen viewer's value: the same fields `MediaInput.from` carries.
+        var mediaInput: MediaInput {
+            MediaInput(id: mediaID, kind: isVideo ? "video" : "photo",
+                       offsetSec: offsetSec, durationSec: durationSec,
+                       exerciseId: nil, setIndex: nil, climbUUID: nil,
+                       localIdentifier: localIdentifier, aspect: aspect,
+                       isBaked: isBaked, timeMap: timeMap)
+        }
+
+        /// The reel maker's clip: it starts when the first frame of the current video was filmed.
+        var reelClip: SessionHighlightInput.Clip {
+            SessionHighlightInput.Clip(localIdentifier: localIdentifier, isVideo: isVideo,
+                                       offsetSec: captureClock.captureStartSec, durationSec: durationSec)
+        }
     }
 
     struct ViewerState: Identifiable {
@@ -319,12 +359,7 @@ struct FestivalSetDetailView: View {
         var rows: [ClipRow] = []
         for tag in resolvedTags {
             guard let media = mediaRow(id: tag.mediaID) else { continue }
-            rows.append(ClipRow(mediaID: media.id, sessionID: media.sessionID,
-                                localIdentifier: media.localIdentifier,
-                                isVideo: media.kind == .video,
-                                offsetSec: media.offsetSec, durationSec: media.durationSec,
-                                aspect: media.aspectRatio,
-                                isAuto: tag.source == .auto))
+            rows.append(ClipRow(media, isAuto: tag.source == .auto))
         }
         clipRows = rows.sorted {
             let a = sessionStart[$0.sessionID] ?? .distantPast
@@ -339,14 +374,19 @@ struct FestivalSetDetailView: View {
             predicate: #Predicate { $0.id == id })))?.first
     }
 
+    /// What the viewer is handed for this screen's clips: each row's own `mediaInput`, so the
+    /// baked flag and the time map go with it (prompt 305). Pure, and what the test reads.
+    static func viewerInputs(_ rows: [ClipRow]) -> [MediaInput] { rows.map(\.mediaInput) }
+
+    /// What the set's reel is made from: the rows of its own session, each as its `reelClip`
+    /// (the capture time of its first frame, not the bare offset — prompt 305).
+    static func reelClips(_ rows: [ClipRow], sessionID: UUID) -> [SessionHighlightInput.Clip] {
+        rows.filter { $0.sessionID == sessionID }.map(\.reelClip)
+    }
+
     private func openViewer(at index: Int) {
         guard let session = chartSession else { return }
-        let clips = clipRows.map {
-            MediaInput(id: $0.mediaID, kind: $0.isVideo ? "video" : "photo",
-                       offsetSec: $0.offsetSec, durationSec: $0.durationSec,
-                       exerciseId: nil, setIndex: nil, climbUUID: nil,
-                       localIdentifier: $0.localIdentifier, aspect: $0.aspect)
-        }
+        let clips = Self.viewerInputs(clipRows)
         viewer = ViewerState(clips: clips, startIndex: index,
                              series: session.hrSeries,
                              maxHR: session.maxHR ?? 190, restHR: session.restHR)
@@ -356,11 +396,7 @@ struct FestivalSetDetailView: View {
     /// FROM that session, the set window boosted, posting back as "Artist · Stage".
     private func reelSource() -> ReelSource? {
         guard let session = chartSession else { return nil }
-        let clips = clipRows.filter { $0.sessionID == session.id }.map {
-            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
-                                       isVideo: $0.isVideo,
-                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
-        }
+        let clips = Self.reelClips(clipRows, sessionID: session.id)
         guard !clips.isEmpty else { return nil }
         return ReelSource.festivalSet(set, session: session, clips: clips)
     }

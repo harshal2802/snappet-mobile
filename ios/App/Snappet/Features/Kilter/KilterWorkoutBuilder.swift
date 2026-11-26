@@ -43,7 +43,7 @@ extension KilterWorkoutBuilder.Clip {
         KilterWorkoutBuilder.Clip(
             localIdentifier: media.localIdentifier,
             isVideo: media.kind == .video,
-            offsetSec: media.offsetSec,
+            offsetSec: media.reelStartSec,
             durationSec: media.durationSec)
     }
 }

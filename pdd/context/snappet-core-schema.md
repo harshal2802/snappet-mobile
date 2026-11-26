@@ -45,6 +45,20 @@ drill's block / rest mark `index`); crash recovery closes `RacketRecordingLog.ru
 `endSec` and, for a record-everything log, `endedAt`. A record-everything drill may continue its log (more runs, parts
 and marks on the same `startedAt`).
 
+## App-side clip records (not Snappet Core)
+
+`SessionMedia` is a SwiftData model of the app, not a Snappet Core entity. It changes by additive Optionals only (no
+versioned schema, no migration plan), and the phone must never get a build that lacks a field the store already has.
+
+| Field | Type | Since | Meaning |
+|---|---|---|---|
+| `offsetSec` | `Double` | B1 | When source time 0 of the recording was filmed, in seconds from the session's start. "Replace original" moves it to the earliest kept footage; "Save to original" never moves it. |
+| `durationSec` | `Double?` | B1 | The length of the video the asset plays now (the rendered length after a bake; the asset's own again after a revert). |
+| `isBakedRaw` | `Bool?` | prompt 117 | A Studio bake wrote the edit into the asset. `nil` = false. |
+| `bakeTimeMapData` | `Data?` | prompt 305 | JSON `BakedTimeMap`: ordered segments `(renditionStartSec, sourceStartSec, speed)`, `renditionDurationSec`, `isRevertible`, optional `revertsTo` (`segments` + `renditionDurationSec`). How the baked video's time maps back to the recording `offsetSec` describes, and the row's bake record. `nil` = they are the same (never baked, reverted, a "Save to original" with no timing change, or baked before prompt 305). `isRevertible == false` = "Replace original": the asset IS the bake, always stored (the identity for a plain trim), never cleared by revert detection. `revertsTo` = the replaced video's timing under a later "Save to original"; a found revert puts it back. Written with `isBakedRaw` by a bake; a revertible one with no `revertsTo` is cleared with the flag on a found revert. Read only through `ClipCaptureClock` (`capture time = offsetSec + map.sourceTime(t)`). In the backup as `sessionMedia[].bakeTimeMap` (a nested value; absent in older files). |
+
+See `decisions.md` (prompt 305).
+
 ## When the schema changes
 
 1. Change it in the **web repo** first; bump `schemaVersion`.

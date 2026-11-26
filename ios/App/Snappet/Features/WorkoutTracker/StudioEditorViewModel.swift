@@ -28,6 +28,15 @@ final class StudioEditorViewModel {
     /// Makes the rendered file for a bake or an export. `nil` (always, in the app) renders with
     /// the composer; a test sets it, because the composer needs real Photos videos.
     @ObservationIgnored var renderOverride: (@MainActor () async throws -> URL)?
+    /// What Photos says about a baked asset, for revert detection. `nil` (always, in the app)
+    /// asks Photos (`ClipBakeService`); a test sets it, because the simulator has no baked asset
+    /// to revert (prompt 305).
+    @ObservationIgnored var bakedAssetProbe: (@Sendable (String) -> BakedAssetProbe)?
+    /// Test seam: stands in for the fetch of the session's baked rows (a test makes it throw).
+    @ObservationIgnored var bakedRowsLoader: (@MainActor () throws -> [SessionMedia])?
+    /// How long a check waits for Photos (prompt 305). Photos may not answer; after this the
+    /// check counts as "nothing changed" and is owed. A test shortens it.
+    @ObservationIgnored var bakedProbeTimeoutSec: Double = 4
     /// Moves the player to a player time and calls back when it is there. `nil` (always, in the
     /// app) seeks the preview player; `useStandInPlayer` sets it for a test.
     @ObservationIgnored private var playerSeek: (@MainActor (Double, @escaping @MainActor () -> Void) -> Void)?
@@ -89,11 +98,12 @@ final class StudioEditorViewModel {
     private(set) var sourceAspects: [String: CGFloat] = [:]
     /// The session's heart-rate samples (for the HR chart overlay), loaded on appear from the FK.
     private(set) var hrSeries: [HRPoint] = []
-    /// `SessionMedia.id` → capture `offsetSec`, loaded once, so each clip's HR can be sliced to the
-    /// moment it was filmed (keyed by media id, not clip id, so a split clip inherits its offset).
-    private var mediaOffsets: [UUID: Double] = [:]
-    /// The `localIdentifier` → `offsetSec` fallback for clips whose `sessionMediaID` link was lost.
-    private var mediaOffsetsByLocalID: [String: Double] = [:]
+    /// `SessionMedia.id` → its capture clock (`offsetSec` and, for a baked asset, `bakeTimeMap`:
+    /// prompt 305), loaded once, so each clip's HR can be sliced to the moment it was filmed
+    /// (keyed by media id, not clip id, so a split clip inherits it).
+    private var mediaClocks: [UUID: ClipCaptureClock] = [:]
+    /// The `localIdentifier` → clock fallback for clips whose `sessionMediaID` link was lost.
+    private var mediaClocksByLocalID: [String: ClipCaptureClock] = [:]
     /// The user's HR profile (set by the view via `loadOverlayContext`) — needed to resolve per-clip
     /// calorie/HRV badges over each clip's own window.
     private var hrProfile: UserHRProfile?
@@ -616,24 +626,26 @@ final class StudioEditorViewModel {
     /// and by the denormalized PHAsset `localIdentifier` — the fallback that heals clips whose media
     /// link was lost (they used to silently fall through to the whole-session HR burn).
     private func loadMediaOffsets() {
-        guard mediaOffsets.isEmpty else { return }
+        guard mediaClocks.isEmpty else { return }
         let sid = project.sessionID
         let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
             predicate: #Predicate { $0.sessionID == sid }))) ?? []
-        mediaOffsets = Dictionary(media.map { ($0.id, $0.offsetSec) }, uniquingKeysWith: { a, _ in a })
-        mediaOffsetsByLocalID = Dictionary(media.map { ($0.localIdentifier, $0.offsetSec) },
-                                           uniquingKeysWith: { a, _ in a })
+        mediaClocks = Dictionary(media.map { ($0.id, $0.captureClock) }, uniquingKeysWith: { a, _ in a })
+        mediaClocksByLocalID = Dictionary(media.map { ($0.localIdentifier, $0.captureClock) },
+                                          uniquingKeysWith: { a, _ in a })
         let lengths = media.compactMap { m in m.durationSec.map { (m.id, m.localIdentifier, $0) } }
         recordedDurations = Dictionary(lengths.map { ($0.0, $0.2) }, uniquingKeysWith: { a, _ in a })
         recordedDurationsByLocalID = Dictionary(lengths.map { ($0.1, $0.2) }, uniquingKeysWith: { a, _ in a })
     }
 
-    /// A clip's capture offset (seconds from session start) via its backing `SessionMedia`, falling
-    /// back to the `localIdentifier` map for an unlinked clip — routed through the pure, tested rule
-    /// (`StudioHRPlacement.resolveOffset`) so the shipping policy IS the tested one.
-    private func captureOffset(of clip: TimelineClip) -> Double? {
-        StudioHRPlacement.resolveOffset(of: clip, byMediaID: mediaOffsets,
-                                        byLocalID: mediaOffsetsByLocalID)
+    /// A clip's capture clock (its `SessionMedia` row's offset from session start and, for a
+    /// baked asset, its time map: prompt 305), falling back to the `localIdentifier` map for an
+    /// unlinked clip — routed through the pure, tested rule (`StudioHRPlacement.resolveClock`) so
+    /// the shipping policy IS the tested one. Every heart-rate window in the Studio (preview
+    /// tile, HR-window sliders, export) starts from this.
+    private func captureClock(of clip: TimelineClip) -> ClipCaptureClock? {
+        StudioHRPlacement.resolveClock(of: clip, byMediaID: mediaClocks,
+                                       byLocalID: mediaClocksByLocalID)
     }
     /// True when the session has enough HR data to draw a chart.
     var hasHRData: Bool { hrSeries.count >= 2 }
@@ -1330,12 +1342,13 @@ final class StudioEditorViewModel {
     /// change is what the user is looking at. `nil` when there's no targetable video clip with a
     /// resolvable capture offset.
     var hrWindowInfo: HRWindowEditorInfo? {
-        guard let clip = placedClipUnderPlayhead()?.clip, let offset = captureOffset(of: clip) else { return nil }
-        let ext = StudioHRPlacement.extendedWindow(offset: offset, trimStart: clip.trimStart,
+        guard let clip = placedClipUnderPlayhead()?.clip, let clock = captureClock(of: clip) else { return nil }
+        let ext = StudioHRPlacement.extendedWindow(offset: clock.offsetSec, trimStart: clip.trimStart,
                                                    trimEnd: clip.trimEnd,
                                                    sourceDuration: timelineDurations[clip.id],
                                                    leadSec: clip.hrWindowLeadSec,
-                                                   tailSec: clip.hrWindowTailSec)
+                                                   tailSec: clip.hrWindowTailSec,
+                                                   timeMap: clock.timeMap)
         let coverageEnd = hrSeries.last?.t ?? 0
         let footageEnd = ext.start + ext.window.leadSec + ext.window.footageSec
         return HRWindowEditorInfo(
@@ -1441,18 +1454,22 @@ final class StudioEditorViewModel {
     /// video clip's capture window (`StudioHRPlacement` + `HRWindowSlicer`) plus that clip's resolved
     /// HR stat tile. Empty (→ composer falls back to the session-wide tile) when there's no HR, no media
     /// offsets, or no tile. The composer places each entry at the clip's output slot.
-    private func clipHRContent() -> [UUID: StudioClipHRContent] {
+    /// Internal (not private) so a test can hand it to `StudioComposer.placedHR`, as the export does.
+    func clipHRContent() -> [UUID: StudioClipHRContent] {
         guard !hrSeries.isEmpty else { return [:] }
         // A clip baked with a tile gets no entry (prompt 295): the tile is in its pixels.
         let videoClips = visibleSnapshotClips.filter { !$0.isPhoto && !ClipBakePlan.hidesHRTile(over: $0) }
-        let offsets = Dictionary(uniqueKeysWithValues: videoClips.compactMap { c in
-            captureOffset(of: c).map { (c.id, $0) }
+        let clocks = Dictionary(uniqueKeysWithValues: videoClips.compactMap { c in
+            captureClock(of: c).map { (c.id, $0) }
         })
+        let offsets = clocks.mapValues(\.offsetSec)
         guard !offsets.isEmpty else { return [:] }
         // Each clip's EXTENDED window (prompt 115): footage widened by its lead-in/tail, so the burned
         // chart shows the effort's after-story while the dot sweeps only the on-camera span.
+        // A baked asset's time map (prompt 305) goes with its offset: both from one clock.
         let sampled = StudioHRPlacement.sampleExtended(clips: videoClips, offsets: offsets,
-                                                       sourceDurations: sourceDurations, series: hrSeries)
+                                                       sourceDurations: sourceDurations, series: hrSeries,
+                                                       timeMaps: clocks.compactMapValues(\.timeMap))
         guard !sampled.isEmpty else { return [:] }
         // One composite tile per clip, resolved over the clip's own capture window. No tile → no per-clip
         // HR content (legacy free-floating badges were removed once everything migrates to a tile).
@@ -1525,15 +1542,16 @@ final class StudioEditorViewModel {
     /// to its own extended window, with the clip-local playhead time + duration so the dot tracks
     /// within the footage span. Falls back to the whole-session series for a clip with no media link.
     var previewHR: PreviewHR {
-        guard let p = placedClipUnderPlayhead(), let offset = captureOffset(of: p.clip) else {
+        guard let p = placedClipUnderPlayhead(), let clock = captureClock(of: p.clip) else {
             return PreviewHR(samples: hrSeries, currentTime: currentTime,
                              totalDuration: max(0.01, totalDuration), window: nil, scope: .default)
         }
-        let ext = StudioHRPlacement.extendedWindow(offset: offset, trimStart: p.clip.trimStart,
+        let ext = StudioHRPlacement.extendedWindow(offset: clock.offsetSec, trimStart: p.clip.trimStart,
                                                    trimEnd: p.clip.trimEnd,
                                                    sourceDuration: timelineDurations[p.clip.id],
                                                    leadSec: p.clip.hrWindowLeadSec,
-                                                   tailSec: p.clip.hrWindowTailSec)
+                                                   tailSec: p.clip.hrWindowTailSec,
+                                                   timeMap: clock.timeMap)
         let samples = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
         return PreviewHR(samples: samples, currentTime: currentTime - p.startSec,
                          totalDuration: max(0.01, p.durationSec), window: ext.window,
@@ -1670,7 +1688,7 @@ final class StudioEditorViewModel {
         guard let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return false }
         // Not offered while a clip is not on this phone (prompt 302): the render would leave it out.
-        return mediaOffsetsByLocalID[target] != nil && state.media.allAvailable
+        return mediaClocksByLocalID[target] != nil && state.media.allAvailable
     }
 
     /// A render is already in flight (either lane) — the Export menu disables so two full
@@ -1717,6 +1735,38 @@ final class StudioEditorViewModel {
     /// project at the baked video and leave the rows on the old one.
     func bake(replaceOriginal: Bool, service: any ClipBaking = ClipBakeService()) async {
         guard state.canExport,
+              ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips) != nil
+        else { return }
+        pause()                 // the preview does not play under a render
+        // A row's time map is composed into this bake's map, so it is trusted only after Photos
+        // was asked NOW (prompt 305): a "Revert to Original" made since the Studio opened would
+        // otherwise leave a stale map in the new one. The editor is in its "checking" phase
+        // from the tap (no edit, no close, no other render). If the check changed a clip the
+        // bake STOPS with a message: the preview and the trims on screen were made against
+        // the video that is gone.
+        let visit = closeCount
+        switch startBakedCheck() {
+        case .nothingBaked:
+            break
+        case .unreadable:
+            send(.renderRefused(.bake, StudioBakeState.recordsUnreadableMessage))
+            return
+        case .running(let check):
+            send(.checkBegan(.bake))
+            let outcome = await check.value
+            // The Studio was closed while Photos was asked (a dismiss from code; the user's
+            // own close is locked): nothing is baked for a Studio that is gone.
+            guard closeCount == visit else {
+                send(.checkPassed)
+                return
+            }
+            guard outcome != .changedInProject else {
+                send(.checkFoundRevert)
+                return
+            }
+            send(.checkPassed)
+        }
+        guard state.canExport,
               let target = ClipBakePlan.bakeTarget(visible: visibleSnapshotClips, all: snapshot.clips)
         else { return }
         // Read ONCE, before the first await: the snapshot the render is made from is also the one
@@ -1724,13 +1774,22 @@ final class StudioEditorViewModel {
         // current; holding it here means the result never depends on that.
         let base = undo.current
         let bakedClips = visibleSnapshotClips
+        // How the rendered video's time maps back to the asset's CURRENT video (prompt 305), from
+        // the same clips, lengths and transitions the render is made from. Composed with each
+        // row's own map below.
+        let bakedDurations = sourceDurations
+        let bakedTransitions = base.transitions
         // Whether this render draws an HR tile, for the clip's `baked` record (prompt 295). The
         // same two inputs `renderComposition` hands the composer, read before the first await.
         let clipHR = clipHRContent()
         let hrTileDrawn = clipHR.isEmpty ? resolvedSessionTile() != nil
                                          : clipHR.values.contains { $0.tile != nil }
-        pause()                 // the preview does not play under a render
         send(.bakeBegan)
+        renderGeneration += 1
+        defer {
+            renderGeneration += 1
+            runOwedReconcile()         // a check that landed under this render was put off
+        }
         let sid = project.sessionID
         let rows: [SessionMedia]
         do {
@@ -1755,42 +1814,53 @@ final class StudioEditorViewModel {
                 // Re-point ONLY after the service confirms deletion — a cancelled iOS dialog throws
                 // `deletionCancelled` and the app's records stay on the (surviving) original.
                 let newID = try await service.replaceOriginal(renderedURL: url, oldLocalIdentifier: target)
-                let trimStart = ClipBakePlan.earliestTrimStart(clips: bakedClips,
-                                                               localIdentifier: target)
                 changedAssets.insert(newID)
                 for m in rows {
-                    let update = ClipBakePlan.mediaUpdate(oldOffsetSec: m.offsetSec,
-                                                          earliestTrimStart: trimStart,
-                                                          renderedDurationSec: renderedDur)
+                    // The offset moves to the earliest kept footage, and the row always gets a
+                    // not-revertible record (`ClipBakePlan.replacedMediaUpdate`).
+                    let map = ClipBakePlan.timeMap(parts: bakedClips, sourceDurations: bakedDurations,
+                                                   transitions: bakedTransitions,
+                                                   existing: m.bakeTimeMap, isRevertible: false)
+                    let update = ClipBakePlan.replacedMediaUpdate(oldOffsetSec: m.offsetSec,
+                                                                  renderedDurationSec: renderedDur,
+                                                                  timeMap: map)
                     m.localIdentifier = newID
                     m.offsetSec = update.offsetSec
                     m.durationSec = update.durationSec
+                    m.bakeTimeMap = update.timeMap
                     m.aspectRatio = nil        // the render canvas can differ — lazily re-resolved
                     m.isBaked = true
                 }
                 flattened = ClipBakePlan.flattened(base, target: target, replacedBy: newID,
                                                    hrTileDrawn: hrTileDrawn)
-                // The offset caches key by media id AND localIdentifier — both changed; reload lazily.
-                mediaOffsets = [:]
-                mediaOffsetsByLocalID = [:]
+                // The clock caches key by media id AND localIdentifier — both changed; reload.
+                mediaClocks = [:]
+                mediaClocksByLocalID = [:]
                 loadMediaOffsets()
             } else {
                 try await service.saveToOriginal(renderedURL: url, localIdentifier: target,
                                                  projectID: project.id)
                 for m in rows {
                     // The length is the rendered one; the capture offset stays, because Photos
-                    // can bring the original back (`ClipBakePlan.revertibleMediaUpdate`).
+                    // can bring the original back. What the bake did to the timing is the time
+                    // map, written with the other values (`ClipBakePlan.revertibleMediaUpdate`).
+                    let map = ClipBakePlan.timeMap(parts: bakedClips, sourceDurations: bakedDurations,
+                                                   transitions: bakedTransitions,
+                                                   existing: m.bakeTimeMap)
                     let update = ClipBakePlan.revertibleMediaUpdate(oldOffsetSec: m.offsetSec,
                                                                     oldDurationSec: m.durationSec,
-                                                                    renderedDurationSec: renderedDur)
+                                                                    renderedDurationSec: renderedDur,
+                                                                    timeMap: map,
+                                                                    existing: m.bakeTimeMap)
                     m.offsetSec = update.offsetSec
                     m.durationSec = update.durationSec
+                    m.bakeTimeMap = update.timeMap
                     m.isBaked = true
                 }
                 flattened = ClipBakePlan.flattened(base, target: target, hrTileDrawn: hrTileDrawn)
-                // The recorded lengths are cached with the offsets; read them again.
-                mediaOffsets = [:]
-                mediaOffsetsByLocalID = [:]
+                // The recorded lengths and the time maps are cached with the offsets; read them again.
+                mediaClocks = [:]
+                mediaClocksByLocalID = [:]
                 loadMediaOffsets()
             }
             // `ClipBakePlan.flattened` removed what is now in the pixels and kept what belongs to
@@ -1833,51 +1903,225 @@ final class StudioEditorViewModel {
     /// stands back up. A `nil` probe (asset unreachable — simulator, iCloud eviction) clears nothing.
     /// The Photos probes run OFF the main actor (one fetch + resource enumeration per baked row —
     /// this fires on the Studio's already-busy onAppear); the clears apply back on main.
-    func reconcileBakedFlags() {
+    ///
+    /// ONE check runs at a time (prompt 305). The Studio's opening, the app coming back to the
+    /// foreground, `bake()` and `startExport()` all call this. Every caller gets an answer that
+    /// Photos gave AFTER its call: a check that has not asked Photos yet is shared; behind one
+    /// that already has, a new check is queued (the app may have been suspended in the middle
+    /// of the question, and the revert made since). The task's value says what changed.
+    /// `nil` when the session has no baked video (nothing to ask Photos about).
+    @discardableResult
+    func reconcileBakedFlags() -> Task<BakedCheckOutcome, Never>? {
+        if case .running(let task) = startBakedCheck() { return task }
+        return nil
+    }
+
+    private enum BakedCheckStart {
+        /// The session has no baked video.
+        case nothingBaked
+        /// The baked rows could not be read.
+        case unreadable
+        case running(Task<BakedCheckOutcome, Never>)
+    }
+
+    private func bakedRows() throws -> [SessionMedia] {
+        if let bakedRowsLoader { return try bakedRowsLoader() }
         let sid = project.sessionID
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
-            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
-        guard !rows.isEmpty else { return }
-        let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
-        Task { [weak self] in
-            // For a reverted asset, also the length of the video it plays again (the original).
-            let found: [UUID: Double?] = await Task.detached(priority: .utility) {
-                var out: [UUID: Double?] = [:]
-                for probe in probes
-                where ClipBakeService.hasEditedRendition(localIdentifier: probe.localIdentifier) == false {
-                    out[probe.id] = ClipBakeService.currentDuration(localIdentifier: probe.localIdentifier)
-                }
-                return out
-            }.value
-            let reverted = Array(found.keys)
-            // A bake in flight replaces the project when it ends; leave everything for the next
-            // open rather than have the clearing below overwritten.
-            guard let self, !reverted.isEmpty, !self.isBaking else { return }
-            let revertedRows = rows.filter { reverted.contains($0.id) }
-            for m in revertedRows {
-                m.isBaked = false
-                // The bake recorded the rendered length; the original's is back (prompt 303).
-                m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
-                                                              asset: found[m.id] ?? nil)
-            }
-            self.mediaOffsets = [:]
-            self.mediaOffsetsByLocalID = [:]
-            self.loadMediaOffsets()
-            // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
-            // go and the project's items draw over it again (prompt 295). Like a bake, this is
-            // an undo barrier: an older step would bring the record back.
-            let cleared = ClipBakePlan.clearingBakeRecords(
-                self.undo.current, mediaIDs: Set(revertedRows.map(\.id)),
-                localIdentifiers: Set(revertedRows.map(\.localIdentifier)))
-            let recordsCleared = cleared != self.undo.current
-            if recordsCleared {
-                self.undo = UndoStack(cleared)
-                cleared.apply(to: self.project)
-            }
-            self.project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
-            self.saveStore()
-            if recordsCleared { await self.rebuildPreview() }
+        return try context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))
+    }
+
+    private func startBakedCheck() -> BakedCheckStart {
+        // A check that has not asked Photos yet will ask after this call: share it.
+        if let reconcileTask, !reconcileAsked { return .running(reconcileTask) }
+        let rows: [SessionMedia]
+        do {
+            rows = try bakedRows()
+        } catch {
+            Self.log.error("baked rows unreadable: \(error.localizedDescription, privacy: .public)")
+            return .unreadable
         }
+        guard !rows.isEmpty else { return .nothingBaked }
+        // A check that has already asked is not trusted for this call: this one runs after it.
+        let previous = reconcileTask
+        reconcileNumber += 1
+        let number = reconcileNumber
+        reconcileAsked = false
+        let task = Task { [weak self] () -> BakedCheckOutcome in
+            if let previous { _ = await previous.value }
+            guard let self else { return .unchanged }
+            // The check before this one may have changed the rows: read them again.
+            let current = previous == nil ? rows : ((try? self.bakedRows()) ?? [])
+            let result = await self.reconcile(current)
+            if self.reconcileNumber == number {
+                self.reconcileTask = nil
+                self.reconcileAsked = false
+            }
+            switch result {
+            case .done(let outcome):
+                return outcome
+            case .timedOut:
+                return .unchanged
+            case .putOff:
+                // The render it was put off for has ended in the meantime: nobody else will
+                // run it.
+                if !self.state.isRendering { self.runOwedReconcile() }
+                return .unchanged
+            }
+        }
+        reconcileTask = task
+        return .running(task)
+    }
+    /// The newest check (in flight, or queued behind one).
+    @ObservationIgnored private var reconcileTask: Task<BakedCheckOutcome, Never>?
+    @ObservationIgnored private var reconcileNumber = 0
+    /// The newest check has put its question to Photos.
+    @ObservationIgnored private var reconcileAsked = false
+    /// A check could not be applied (a render ran, or Photos did not answer in time). It runs
+    /// again when a render ends (`runOwedReconcile`).
+    @ObservationIgnored private(set) var reconcileOwed = false
+    /// Counts every start and every end of a render. A check notes it when it asks Photos: an
+    /// answer taken on one side of a render's start or end is not applied on the other (a bake
+    /// that ended in between gave the asset a new edited video).
+    @ObservationIgnored private var renderGeneration = 0
+    /// Counts `studioClosed()`. A render that waited for a check does not start after it.
+    @ObservationIgnored private var closeCount = 0
+
+    /// Returns when no check is in flight. For tests.
+    func reconcileFinished() async {
+        while let task = reconcileTask { _ = await task.value }
+    }
+
+    /// A render ended: run the check that was put off while it ran.
+    private func runOwedReconcile() {
+        guard reconcileOwed else { return }
+        reconcileOwed = false
+        reconcileBakedFlags()
+    }
+
+    private enum BakedCheckResult {
+        case done(BakedCheckOutcome)
+        /// Not applied because of a render; owed.
+        case putOff
+        /// Photos did not answer in time; owed.
+        case timedOut
+    }
+
+    /// The check itself. What "no edited rendition" means for a row is read from its bake record
+    /// (`ClipBakePlan.revertFinding`, prompt 305): a "Replace original" asset has nothing to
+    /// revert and is left alone; a "Save to original" over a replaced video goes back to that
+    /// video's record; anything else goes back to the recording.
+    private func reconcile(_ rows: [SessionMedia]) async -> BakedCheckResult {
+        guard !rows.isEmpty else { return .done(.unchanged) }
+        let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
+        let probe = bakedAssetProbe ?? { localIdentifier in
+            BakedAssetProbe(
+                hasEditedRendition: ClipBakeService.hasEditedRendition(localIdentifier: localIdentifier),
+                currentDuration: ClipBakeService.currentDuration(localIdentifier: localIdentifier))
+        }
+        reconcileAsked = true
+        let askedAt = renderGeneration
+        // For an asset with no edited rendition, also the length of the video it plays now.
+        // Photos may not answer (prompt 303's wait): a render that waits for this check is not
+        // held for ever. No answer counts as "nothing changed", and the check is owed.
+        let noAnswer: [UUID: Double?]? = nil
+        let answer = await StudioFirstAnswer.wait(seconds: bakedProbeTimeoutSec, otherwise: noAnswer) { answer in
+            let work = Task.detached(priority: .utility) {
+                var out: [UUID: Double?] = [:]
+                for row in probes {
+                    let said = probe(row.localIdentifier)
+                    if said.hasEditedRendition == false { out[row.id] = said.currentDuration }
+                }
+                answer(out)
+            }
+            return { work.cancel() }
+        }
+        guard let found = answer else {
+            reconcileOwed = true
+            return .timedOut
+        }
+        guard !found.isEmpty else { return .done(.unchanged) }
+        // Nothing below runs under a render: a bake replaces the project when it ends, an
+        // export renders the project and the opened assets as they are. And an answer from the
+        // other side of a render's start or end is not applied at all. Either way the check is
+        // owed and asks again. (A render cannot START below this line: `bake()` and
+        // `startExport()` wait for the check in flight.)
+        guard !state.isRendering, renderGeneration == askedAt else {
+            reconcileOwed = true
+            return .putOff
+        }
+        reconcileOwed = false
+        var changed: [SessionMedia] = []        // the asset plays another video than recorded
+        var backToRecording: [SessionMedia] = []
+        for m in rows where found[m.id] != nil {
+            switch ClipBakePlan.revertFinding(map: m.bakeTimeMap) {
+            case .nothingToRevert:
+                continue                        // the asset IS the bake: flag, record and map stay
+            case .backToReplaced(let replaced):
+                m.bakeTimeMap = replaced        // still a baked video: the flag stays
+                changed.append(m)
+            case .backToRecording:
+                // The asset plays the original recording again: the map goes with the flag.
+                m.isBaked = false
+                m.bakeTimeMap = nil
+                changed.append(m)
+                backToRecording.append(m)
+            }
+            // The bake recorded the rendered length; the earlier video's is back (prompt 303).
+            m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
+                                                          asset: found[m.id] ?? nil)
+        }
+        guard !changed.isEmpty else { return .done(.unchanged) }
+        mediaClocks = [:]
+        mediaClocksByLocalID = [:]
+        loadMediaOffsets()
+        // The reverted asset's pixels carry nothing any more, so its clips' `baked` records
+        // go and the project's items draw over it again (prompt 295). Like a bake, this is
+        // an undo barrier: an older step would bring the record back.
+        let cleared = ClipBakePlan.clearingBakeRecords(
+            undo.current, mediaIDs: Set(backToRecording.map(\.id)),
+            localIdentifiers: Set(backToRecording.map(\.localIdentifier)))
+        let recordsCleared = cleared != undo.current
+        if recordsCleared {
+            undo = UndoStack(cleared)
+            cleared.apply(to: project)
+        }
+        project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
+        saveStore()
+        // The asset's video changed under its identifier: the length read earlier and the
+        // composer's opened asset are stale, as after a bake.
+        let assets = Set(changed.map(\.localIdentifier))
+        let clipIDs = Set(snapshot.clips.filter { assets.contains($0.localIdentifier) }.map(\.id))
+        // Does this project use a changed video — as a clip (in the opened scope or not) or as
+        // a picture-in-picture source? Only then is a waiting render stopped; a row of another
+        // project in the same session is put right without a word.
+        let usedMedia = Set(snapshot.clips.map { $0.sessionMediaID as UUID? })
+        let usedAssets = Set(snapshot.clips.map(\.localIdentifier))
+            .union(snapshot.overlays.filter { $0.kind == .video }.map(\.content))
+        let inProject = changed.contains { usedMedia.contains($0.id) || usedAssets.contains($0.localIdentifier) }
+        let stale = clipIDs.contains { sourceDurations[$0] != nil }
+        // Where the video is NOW, before anything opens it (prompts 302/303): after a revert the
+        // current version may be in iCloud only, and the composer would download it without a
+        // word. With the new status the clip is read and previewed only if it is on this phone;
+        // otherwise the "Download clip" panel stands, as for any other clip.
+        // (Before the Studio's first availability result nothing is reported here: that check
+        // asks about every clip, and no preview is built before it.)
+        if state.media.isChecked, inProject {
+            let statuses = await availability.statuses(for: Array(assets.intersection(usedAssets)))
+            send(.mediaChecked(sources: mediaSources, statuses: statuses))
+        }
+        if stale {
+            // Until the real length is read again the clip has its recorded one, which the
+            // lines above just set to the reverted video's.
+            for id in clipIDs { sourceDurations[id] = nil }
+            for asset in assets { sourceAspects[asset] = nil }
+            await composer.forget(localIdentifiers: assets)
+            await loadSourceInfo(refreshing: clipIDs)
+        } else {
+            send(.mediaSourcesChanged(mediaSources))
+        }
+        if recordsCleared || stale { await rebuildPreview() }
+        return .done(inProject ? .changedInProject : .changedElsewhere)
     }
 
     // MARK: Export (device-only render)
@@ -1888,17 +2132,62 @@ final class StudioEditorViewModel {
 
     /// Start "Export as new video". Refused while either lane renders, and until the first preview
     /// has loaded. Editing is locked for its whole length (prompt 301).
+    ///
+    /// When the session has a baked video, Photos is asked about it first (prompt 305), as
+    /// before a bake: a "Revert to Original" made while the app was in the background must not
+    /// be rendered through the bake's time map. The editor is in its "checking" phase from the
+    /// tap, and a check that changed a clip stops the export with a message.
     func startExport() {
         guard state.canExport else { return }
         pause()                 // the preview does not play under a render
-        send(.exportBegan)      // also deletes the last export's file
-        exportTask = Task { [weak self] in await self?.runExport() }
+        let check: Task<BakedCheckOutcome, Never>
+        switch startBakedCheck() {
+        case .nothingBaked:
+            send(.exportBegan)  // also deletes the last export's file
+            renderGeneration += 1
+            exportTask = Task { [weak self] in await self?.runExport() }
+            return
+        case .unreadable:
+            // Without the rows nothing says whether a clip was reverted; exporting anyway
+            // could burn heart rate through a stale map.
+            send(.renderRefused(.export, StudioBakeState.recordsUnreadableMessage))
+            return
+        case .running(let task):
+            check = task
+        }
+        let visit = closeCount
+        send(.checkBegan(.export))
+        exportTask = Task { [weak self] in
+            let outcome = await check.value
+            guard let self else { return }
+            // The Studio was closed while Photos was asked: no message, no export.
+            guard !Task.isCancelled, self.closeCount == visit else {
+                self.exportTask = nil
+                self.send(.checkPassed)
+                return
+            }
+            guard outcome != .changedInProject else {
+                self.exportTask = nil
+                self.send(.checkFoundRevert)
+                return
+            }
+            self.send(.checkPassed)
+            guard self.state.canExport else {
+                self.exportTask = nil
+                return
+            }
+            self.send(.exportBegan)
+            self.renderGeneration += 1
+            await self.runExport()
+        }
     }
 
     private func runExport() async {
         defer {
             exportTask = nil
             send(.exportTaskEnded)
+            renderGeneration += 1
+            runOwedReconcile()   // a check that landed under this render was put off
         }
         do {
             // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples in the
@@ -1938,6 +2227,7 @@ final class StudioEditorViewModel {
     /// The Studio closed: stop a running export and delete the exported file. A bake is not
     /// touched (it cannot be cancelled, and it deletes its own temp file).
     func studioClosed() {
+        closeCount += 1         // a bake or an export that waits for Photos does not start
         exportTask?.cancel()
         send(.studioClosed)
         cancelClipDownload()

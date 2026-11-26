@@ -13,6 +13,7 @@ struct StudioEditorView: View {
     @State private var vm: StudioEditorViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
     /// The ONE sheet / dialog open over the editor (prompt 301) — a tool sheet, the text-style
     /// sheet, a text alert, the music importer, the PiP chooser, the destructive-bake confirm
     /// (prompt 117) or the share sheet. They exclude each other, so they are one value, not a Bool
@@ -86,6 +87,17 @@ struct StudioEditorView: View {
         // Leaving the Studio stops a running export and deletes its files (prompt 298). A sheet
         // shown over the Studio does not fire this.
         .onDisappear { vm.studioClosed() }
+        // Back from another app, which may have been Photos: ask again whether a baked video
+        // was reverted there (prompt 305). Nothing is asked when the session has no baked clip.
+        // Both signals are observed: inside a full-screen cover the scene phase may not be
+        // delivered, and the notification is. Two calls for one return share one check.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { vm.reconcileBakedFlags() }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification)) { _ in
+            vm.reconcileBakedFlags()
+        }
         .sheet(item: toolBinding) { tool in
             StudioToolSheet(tool: tool, vm: vm)
                 .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
@@ -178,13 +190,22 @@ struct StudioEditorView: View {
 
     /// The one line shown while editing is locked ("Editing is locked while exporting").
     private func lockedNotice(_ reason: String) -> some View {
-        Label(reason, systemImage: "lock.fill")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.85))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(Color(white: 0.12))
-            .accessibilityIdentifier("studioLockedNotice")
+        HStack(spacing: 8) {
+            // Photos is being asked before a render (prompt 305): show that something runs.
+            if vm.state.isChecking {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                    .accessibilityHidden(true)
+            }
+            Label(reason, systemImage: "lock.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .accessibilityIdentifier("studioLockedNotice")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.12))
     }
 
     private var exportFailedBinding: Binding<Bool> {

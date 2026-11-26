@@ -153,7 +153,7 @@ extension ReelSource {
         let baseClips = media.filter { !$0.isReel }.map {
             SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
                                        isVideo: $0.kind == .video,
-                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                                       offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
         }
         let boostWindows = WorkoutHRStats.peakEffortWindows(
             for: session.exercises, sessionStart: session.startedAt,

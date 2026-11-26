@@ -174,6 +174,20 @@ enum StudioEditorSheet: Equatable, Sendable {
     }
 }
 
+/// What the check of the baked videos against Photos did (prompt 305).
+enum BakedCheckOutcome: Equatable, Sendable {
+    /// No row changed (also: Photos did not answer in time, or the check was put off).
+    case unchanged
+    /// A reverted video was found, and this project does not use it. Its row was put right;
+    /// a render of this project is not affected.
+    case changedElsewhere
+    /// A video this project uses was reverted: its row, the clip's length and the preview
+    /// changed. A render the user asked for before seeing that does not start.
+    case changedInProject
+
+    var changedAny: Bool { self != .unchanged }
+}
+
 // MARK: - Editor state
 
 struct StudioEditorState: Equatable {
@@ -184,6 +198,21 @@ struct StudioEditorState: Equatable {
         case export(progress: Double)
         /// "Save to original" / "Replace original". No progress is known.
         case bake
+    }
+
+    /// The render the user asked for. Photos is asked about the baked clips before it starts.
+    enum RenderKind: Equatable, Sendable {
+        case export, bake
+
+        /// Photos was asked before the render and a baked clip had been reverted there (prompt
+        /// 305): the render does not start, because the preview and the trims on screen were
+        /// made against the video that is gone. Shown by the lane's own failure alert.
+        var revertedInPhotosMessage: String {
+            switch self {
+            case .bake: return "This clip was reverted in Photos. Check it and save again."
+            case .export: return "This clip was reverted in Photos. Check it and export again."
+            }
+        }
     }
 
     /// What a finished render left.
@@ -200,6 +229,11 @@ struct StudioEditorState: Equatable {
         case loading
         /// Everything is allowed.
         case ready
+        /// The user asked for a render and Photos is being asked whether a baked clip was
+        /// reverted (prompt 305). Editing, closing and starting another render are locked from
+        /// the tap: what the check finds can change the clips, and the render must be made from
+        /// what the user saw.
+        case checking(RenderKind)
         /// A render runs: editing is locked.
         case rendering(RenderLane)
         /// A render ended and its result is on screen.
@@ -221,6 +255,18 @@ struct StudioEditorState: Equatable {
         /// There is no player: the preview could not be made, or its item failed while playing.
         case previewUnavailable(message: String?)
         case playerStatusChanged(StudioPlayerStatus)
+
+        // The check before a render (prompt 305)
+        /// The user asked for a render and Photos has to be asked first.
+        case checkBegan(RenderKind)
+        /// Nothing was reverted: the render may begin.
+        case checkPassed
+        /// A baked clip was reverted in Photos: the render does not begin, and the lane's
+        /// failure alert says why.
+        case checkFoundRevert
+        /// The render was asked for and cannot begin, for the reason given (the baked videos'
+        /// records could not be read). Nothing was rendered; the lane's failure alert says why.
+        case renderRefused(RenderKind, String)
 
         // Export lane
         case exportBegan
@@ -265,6 +311,8 @@ struct StudioEditorState: Equatable {
     var selection: StudioSelection = .none
     var export: ExportShareState = .idle
     var bake: StudioBakeState = .idle
+    /// The render that waits for the answer from Photos (prompt 305), or `nil`.
+    var checkingFor: RenderKind?
     /// The export's task is still alive. A cancelled export is idle at once, but its session may
     /// still be stopping (prompt 298); no other render may start until it has.
     var exportTaskRunning = false
@@ -290,6 +338,7 @@ struct StudioEditorState: Equatable {
     var phase: Phase {
         if bake == .baking { return .rendering(.bake) }
         if case .exporting(let progress) = export { return .rendering(.export(progress: progress)) }
+        if let kind = checkingFor { return .checking(kind) }
         if let panel = media.panel { return .clipMissing(panel) }
         if !previewLoaded { return .loading }
         if let url = export.exportedURL { return .finished(.exported(url)) }
@@ -320,10 +369,16 @@ struct StudioEditorState: Equatable {
         return isBaking || exportTaskRunning
     }
 
-    /// The project may be changed. Locked while either lane renders.
+    /// Photos is being asked before a render (prompt 305).
+    var isChecking: Bool { checkingFor != nil }
+
+    /// The project may be changed. Locked while either lane renders, and while Photos is asked
+    /// before a render.
     var canEdit: Bool {
-        if case .rendering = phase { return false }
-        return true
+        switch phase {
+        case .rendering, .checking: return false
+        case .loading, .ready, .finished, .clipMissing: return true
+        }
     }
 
     /// The preview can be played: there is a player, no render is running, and no missing clip
@@ -335,20 +390,23 @@ struct StudioEditorState: Equatable {
 
     /// A render may start: the first load is done, no render is in flight, and every clip the
     /// video needs is on this phone.
-    var canExport: Bool { previewLoaded && !isRendering && media.allAvailable }
+    var canExport: Bool { previewLoaded && !isRendering && !isChecking && media.allAvailable }
 
     /// Why Export is off although nothing is rendering ("Export needs all clips").
     var exportBlockedReason: String? { media.exportBlockedReason }
 
     /// The Studio may be closed. A bake cannot be cancelled, so it blocks closing; closing during
     /// an export is allowed and cancels it (prompt 298).
-    var canClose: Bool { !isBaking }
+    /// The check before a render blocks it too (prompt 305): a bake that the check lets through
+    /// writes to Photos, and nobody would see its result.
+    var canClose: Bool { !isBaking && !isChecking }
 
     /// The one line shown while editing is locked.
     var lockReason: String? {
         switch phase {
         case .rendering(.export): return "Editing is locked while exporting"
         case .rendering(.bake): return "Editing is locked while saving to the original"
+        case .checking: return "Checking this video in Photos"
         case .loading, .ready, .finished, .clipMissing: return nil
         }
     }
@@ -380,6 +438,25 @@ struct StudioEditorState: Equatable {
         case .playerStatusChanged(let status):
             s.player = s.hasPlayer ? status : .paused
 
+        case .checkBegan(let kind):
+            guard canExport else { return self }
+            s.checkingFor = kind
+        case .checkPassed:
+            s.checkingFor = nil
+        case .checkFoundRevert:
+            guard let kind = checkingFor else { return self }
+            s.checkingFor = nil
+            switch kind {
+            case .bake: s.bake = .failed(kind.revertedInPhotosMessage)
+            case .export: s.export = export.failed(kind.revertedInPhotosMessage)
+            }
+        case .renderRefused(let kind, let message):
+            guard canExport else { return self }
+            switch kind {
+            case .bake: s.bake = .failed(message)
+            case .export: s.export = export.failed(message)
+            }
+
         case .exportBegan:
             guard canExport else { return self }
             s.export = export.beginningExport()
@@ -402,6 +479,9 @@ struct StudioEditorState: Equatable {
             s.export = export.failureAcknowledged()
         case .studioClosed:
             s.export = .idle
+            // Nothing may start for a Studio that is gone; the view model drops the render the
+            // check was for.
+            s.checkingFor = nil
 
         case .bakeBegan:
             guard canExport else { return self }

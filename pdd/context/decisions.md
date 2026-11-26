@@ -13262,3 +13262,184 @@ they write a file with the code the Studio uses. Nothing about what is drawn cha
 
 All the check's code in the app (`StudioGoldenCompare`, `StudioGoldenScenes`,
 `StudioSelfCheck`, `StudioGoldenRenderer`, `StudioSelfCheckView`) is inside `#if DEBUG`.
+
+## 2026-11-25 — A baked clip carries a time map; the capture offset still does not move (prompt 305)
+
+Supersedes the cost stated in "'Save to original' records the rendered length and keeps the
+capture offset (prompt 303)" above: that entry's reason for not moving the offset stands, and its
+"needs a stored pre-bake offset" is answered differently. Storing the old offset would have fixed
+a start trim only. A baked speed change and baked joined parts are wrong in the same way, and no
+single offset can describe them.
+
+`SessionMedia.bakeTimeMapData` (optional, JSON `BakedTimeMap`) records how the video the asset
+plays now maps back to the recording: ordered segments `(renditionStartSec, sourceStartSec,
+speed)`, the planned length, and `isRevertible`. `nil` = the asset plays the recording.
+
+How it combines with `offsetSec` is one line in one place, `ClipCaptureClock`:
+`capture time = offsetSec + (map?.sourceTime(t) ?? t)`. `offsetSec` is when source time 0 was
+filmed; the map turns a time in the current video into source time. Every heart-rate reader
+calls it (the list is in the prompt file). A reader that adds a trim to `offsetSec` by hand is a
+bug.
+
+- **"Save to original" never moves `offsetSec`.** A revert only has to drop the map; the offset
+  was never wrong.
+- **An identity map is not stored.** A bake with no start trim, speed 1 and nothing left out
+  writes `nil`, so "has a map" means "the timing differs".
+- **A transition between two baked parts is split at its middle** (`StudioGeometry.ownedWindows`,
+  the rule from prompt 303 for the HR tile and the playhead). Both parts are on screen for its
+  length; the outgoing one gives the times for the first half.
+- **The heart-rate window of joined parts is one stretch**, from the earliest frame to the
+  latest, including the seconds left out. A chart is one stretch of the session, and the effort
+  between two kept parts belongs in it. The dot's pace inside that window is even, so it is
+  approximate after a join.
+- **A second bake composes.** The bake renders the asset's current video, so its trims are times
+  in the first rendition; the stored map is the two composed and is still measured from the
+  original recording. A clip baked before this field existed has no first map; its second bake
+  is stored as if it were the first.
+- **Clips baked before this change keep their behaviour.** The trim left the project with the
+  bake and cannot be rebuilt.
+
+## 2026-11-25 — "Replace original" stores a map only for what a moved offset cannot say (prompt 305)
+
+"Replace original" keeps moving `offsetSec` to the earliest kept footage (the new asset is a
+recording that starts later, and the feed orders clips by it). For a plain start trim that is the
+whole story and no map is stored, as before. With a speed change, joined parts, or a map carried
+over from an earlier "Save to original", the offset alone is wrong, so the map is stored as well
+(`ClipBakePlan.replacedMediaUpdate`).
+
+To keep one shift out of both values, the offset's shift (`BakedTimeMap.earliestSourceSec`) is
+subtracted from every segment of the stored map (`movingSource`). The capture times before and
+after are equal; a test compares them.
+
+Such a map has `isRevertible = false`. The revert probe asks "does the asset have an edited
+rendition?", and a replaced asset never has one, so it reads as reverted the next time the Studio
+opens. That clears `isBaked` on a replaced clip today (not changed here; noted in the prompt
+file). It must not clear the map: there is no original to go back to, and without the map a 2×
+replaced clip reads half of its effort. `ClipBakePlan.revertedTimeMap` keeps it, and
+`ClipHROverlay.make` passes the map on, so the live overlay such a clip then gets is on the right
+seconds.
+
+## 2026-11-25 — The reel maker is told the baked clip's first frame, nothing more (prompt 305)
+
+`HighlightEngine`'s `MediaItem` is a start and a length. Rows now hand it
+`SessionMedia.reelStartSec` (the capture time of the first frame of the current video) instead
+of `offsetSec`. That is exact for a baked start trim and equal to `offsetSec` for every clip
+with no map. A baked speed change or joined parts cannot be expressed there; the engine stays
+platform-free and unchanged, and the one resolver of `PLAN.md` P4 takes it over.
+
+## 2026-11-25 — A fourth test seam in the Studio view model: the revert probe (prompt 305)
+
+`bakedAssetProbe` stands in for the two Photos questions of revert detection
+(`ClipBakeService.hasEditedRendition`, `currentDuration`), `nil` in the app like the three seams
+of prompt 303. `reconcileBakedFlags()` returns its task so a test can wait for it. The length of
+the current video is now read for every baked row, not only for a reverted one: one more
+`PHAsset` fetch per baked row, off the main actor.
+
+## 2026-11-25 — A replaced clip always carries a "nothing to revert" record (prompt 305, review)
+
+Corrects two statements in the prompt-305 entries above: "an identity map is not stored" now
+holds for "Save to original" only, and "'Replace original' stores a map only for what a moved
+offset cannot say" is replaced by "always".
+
+The revert probe asks whether the asset has an edited rendition. A "Replace original" asset is a
+new video and never has one, so since prompt 117 every replaced clip was read as reverted at the
+next Studio open: `isBaked` and the clip's `baked` record were cleared and the burned tile was
+drawn over. The fix needs something stored that says "this asset IS the bake". No second field:
+the row's `BakedTimeMap` is that record. `replacedMediaUpdate` always writes one with
+`isRevertible = false`; for a plain trim it is the identity over the rendered length, which
+changes no time, so `ClipCaptureClock` is still the only timing rule. `ClipBakePlan.revertFinding`
+turns a row's record into what "no edited rendition" means, and a not-revertible record means
+nothing changes.
+
+A `BakeRecord { kind, map? }` wrapper was the other option. It would have changed the stored
+JSON and the backup key for one extra case that an identity map already expresses.
+
+**Clips replaced before this change** have the flag and no record, like a "Save to original"
+with no timing change. They are still un-flagged at the next open. Telling them apart from dates
+was dropped as unsound (reasons in the prompt file): a wrong "replaced" keeps a truly reverted
+clip flagged for good.
+
+## 2026-11-25 — A revert over a replaced clip goes back to the replaced record (prompt 305, review)
+
+Photos keeps one original per asset. For a replaced clip that original is the replaced video,
+so a "Revert to Original" after a later "Save to original" returns to it, not to the recording.
+The later bake's map therefore carries the replaced video's timing as `revertsTo` (a plain
+`Timing`, because a struct cannot hold an optional of itself), through any number of stacked
+revertible bakes. On a found revert the row gets that record back, stays baked, and takes the
+asset's length. A "Save to original" with no timing change over a replaced clip stores an
+identity map so that `revertsTo` has somewhere to live.
+
+The Studio clip's `baked` record (which project-wide items are in the pixels) is the union of
+both bakes and cannot be split; it is kept, which errs toward hiding an item rather than drawing
+one twice.
+
+## 2026-11-25 — A bake asks Photos before it composes the row's map (prompt 305, review)
+
+Revert detection ran only when the Studio opened. A revert made in Photos with the Studio still
+open left the row's map in place, and the next bake composed it into the new one (20 s + 5 s
+stored 25). `bake()` now awaits the check before it reads its snapshot and tests its guard again
+afterwards, so a second call during the wait cannot start a second render. The check also runs
+when the app becomes active with the Studio open; it fetches nothing when the session has no
+baked row, and does nothing while a render runs. After a found revert the clip's length is read
+again and the composer forgets the opened asset.
+
+## 2026-11-25 — A render waits for the revert check in a phase of its own, and stops if a clip changed (prompt 305, second review)
+
+Between the save tap and the bake's start the editor asked Photos with nothing locked: the Studio
+could be closed (the bake then wrote to Photos with nobody to tell), an export tapped in the
+window dropped the bake, and a found revert let the bake carry on with trims set against the
+video that was gone. `StudioEditorState` now has a `checking(kind)` phase: no edit, no close, no
+other render. When the check changed any clip the render does not start, and the lane's own
+failure alert says "This clip was reverted in Photos. Check it and save again." (export: "export
+again"). Stopping was chosen over carrying on because the user has not seen the clip the render
+would be made from. The phase is entered only when the session has a baked video, so everything
+else exports at once as before. "Export as new video" goes through the same check: it used to
+render heart rate through a stale map after a revert.
+
+## 2026-11-25 — One revert check at a time, never under a render (prompt 305, second review)
+
+The check was started from four places and could run twice at once. It is one task now; every
+caller gets the task in flight and its answer (did a clip change). If it finds a revert while a
+bake or an export renders it changes nothing and is run again when the render ends
+(`reconcileOwed`); before, that finding was dropped. No render can begin under the check's last
+part, because a render waits for the check in flight. The Studio also listens for
+`UIApplication.didBecomeActiveNotification`: inside a full-screen cover the scene phase may not
+arrive. That this fires on a phone is owed on device.
+
+## 2026-11-25 — A reverted clip is asked about before it is opened (prompt 305, second review)
+
+After "Revert to Original" the current video may be in iCloud only, and the composer downloads
+such a clip without a word. The check asks the availability service about the changed assets
+first, so the "Download clip" panel of prompt 302 stands and the clip has its recorded length
+until it is here. Before the Studio's first availability result the check reports nothing: that
+first check covers every clip, and no preview is built before it.
+
+## 2026-11-25 — A check answers for calls made before it asked, not after (prompt 305, third review)
+
+One check at a time was kept, but sharing a check that had already asked Photos was wrong: iOS
+can suspend the app in the middle of the question, the user reverts, comes back and taps save,
+and the save would take the old answer. A caller now shares a check only if it has not asked
+yet; otherwise its own check is queued behind the running one and reads the rows again. The same
+reasoning for renders: a check notes a render count when it asks, and an answer that arrives on
+the other side of a render's start or end is dropped and asked again. A bake that ended in
+between gave the asset a new edited video, and the old "no edited video" would un-flag it.
+
+## 2026-11-25 — Only a reverted video the project uses stops a render (prompt 305, third review)
+
+The check covers every baked row of the session, and a session can hold videos this project does
+not use. Stopping a save because of one of those told the user about a clip they cannot see
+here. The check now answers `unchanged`, `changedElsewhere` or `changedInProject`, and only the
+last stops a bake or an export. "Uses" means a clip of the project, in the opened scope or not,
+or a picture-in-picture source. The other rows are still put right.
+
+## 2026-11-25 — The check before a render has a time limit and fails open; unreadable rows fail closed (prompt 305, third review)
+
+Photos may not answer, and the checking phase locks closing. After 4 s
+(`bakedProbeTimeoutSec`, with prompt 303's `StudioFirstAnswer`) the check counts as "nothing
+changed": the render goes on exactly as it did before this PR, and the check is owed. Failing
+open was chosen because the alternative is a Studio that cannot be closed or a save that cannot
+be made because of a question about a rare case. The other direction for rows that cannot be
+read: there the app knows it does not know, the user can act (close and reopen), and an
+unchecked export could burn heart rate through a stale map, so neither lane starts and the
+alert says so. A Studio dismissed from code during the check starts nothing and shows nothing.
+Fifth test seam in the view model: `bakedRowsLoader` (a test makes the fetch throw).
