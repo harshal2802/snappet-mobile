@@ -13632,3 +13632,16 @@ the plan's length. The exporter's renderable rule (a photo, or a video longer th
 predicate, `ReelHeartRate.isRenderable`, and a placement carries its segment's index in the plan,
 so a 0.05 s sliver before a 2 s segment of the same clip, or a failed first of two segments of one
 clip, cannot shift the readings.
+
+## 2026-11-26 — The overlay reference is committed as captured, with the sticker frame marked wrong (prompt 307)
+
+The phone capture of 2026-11-26 (iPhone 13 Pro Max, iOS 27.2.1, `studio-v2` at `25a7d0c8`) is
+committed unchanged in `ios/App/SnappetTests/GoldenFrames/OverlayReference/`: 11 frames and
+`manifest.json` (the twelfth file; prompt 304 always wrote 12). Text, the climb tag and the
+heart-rate tile are right. Both stickers were burned as solid black boxes, a bug in the export that
+users' videos share. The frame is kept, because it is the true record of the old export, and listed
+in `StudioOverlayReference.knownWrongFrames` so a comparison skips it; prompt 308 fixes the export
+and a new capture replaces it. Not done: holding the commit until the fix, because the other ten
+frames are what prompts 310 and 311 need and they are correct now. The reference lives under
+`GoldenFrames` (already out of the test bundle and out of the Debug app's copy), so `project.yml`
+does not change.
