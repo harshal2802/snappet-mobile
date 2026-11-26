@@ -148,6 +148,33 @@ behind `bakedAssetProbe` (`nil` in the app), so the revert path can be tested.
    `UIApplication.didBecomeActiveNotification`, because the scene phase may not be delivered
    inside a cover. Both signals for one return share one check.
 
+### Third review follow-ups (same PR, fourth commit)
+
+1. **An answer from after the call.** A check that has already put its question to Photos is
+   not shared with a later caller: the app may have been suspended in the middle of it and the
+   revert made since. The later caller's check is queued behind it (still one question open at
+   a time) and reads the rows again. Calls made before the question is put still share one
+   check.
+2. **Only this project's videos stop a render.** The check says what changed:
+   `BakedCheckOutcome` = `unchanged`, `changedElsewhere`, `changedInProject`. A render stops
+   only for `changedInProject`: a changed row whose video is a clip of the project (in the
+   opened scope or not) or a picture-in-picture source. Other rows of the session are put right
+   without a word and without a preview rebuild.
+3. **A Studio closed from code** while a bake or an export waits for Photos: `studioClosed()`
+   is counted, the state leaves the checking phase, and the waiting render does not start and
+   shows no message.
+4. **Rows that cannot be read.** If the fetch of the baked rows fails, neither lane starts:
+   the lane's alert has the message a bake already used ("Snappet couldn't read this video's
+   record, so nothing was changed. …"). Before, an export went ahead unchecked.
+5. **An answer does not cross a render's start or end.** The check notes a render count when it
+   asks. If a render began or ended before the answer came, the answer is dropped and Photos is
+   asked again (a bake that ended in between gave the asset a new edited video, and "no edited
+   video" from before it would un-flag the fresh bake).
+6. **Photos may not answer.** The question waits `bakedProbeTimeoutSec` (4 s, through prompt
+   303's `StudioFirstAnswer`). After that the check counts as "nothing changed": the render goes
+   on as it would have before this PR, and the check is owed (it runs when a render ends; it
+   is not asked in a loop). The lock notice shows a small spinner while Photos is asked.
+
 ### Clips replaced before this change
 
 They have `isBaked` and no record, exactly like a "Save to original" that changed no timing.
@@ -256,7 +283,16 @@ second it came from.
   know (the stand-in's default, as the app's probe answers on a simulator) clears nothing and
   blocks neither lane. `timeMap` with no parts drops an identity record and keeps a real map.
   The festival set row carries the flag and the map, read through the functions `openViewer`
-  and `reelSource` call (`viewerInputs`, `reelClips`). A failing
+  and `reelSource` call (`viewerInputs`, `reelClips`).
+- fourth commit: a bake that joins a check which already asked gets a second question and
+  stops; a call after the question queues, calls before it share, one question open at a time;
+  a reverted video the project does not use stops neither lane and rebuilds no preview; a
+  Studio closed during the check bakes and exports nothing, for either answer; unreadable rows
+  refuse both lanes; an answer taken under an export and delivered after it is not applied;
+  a check under a bake runs when the bake ends; no answer within the wait lets the bake and the
+  export go on and leaves the check owed; a bake stopped on an iCloud-only reverted clip ends
+  in the panel with close allowed. Pure: `studioClosed`, `exportCancelled` and a stray
+  `checkPassed` around the check, and `renderRefused`. A failing
   save: the flag, the length and
   the map are all on the row when the save is tried, nothing reaches the store, and the next save
   that works stores the three together.
@@ -268,7 +304,8 @@ inside it, both endings for both lanes, when it cannot begin).
 
 Each of the map tests fails if the map is ignored. The full unit suite was run. For the third
 commit the editor's states changed, so `LiveWorkoutStudioWalkthroughTests` and `ClipsPostUITests`
-were run too. No test asks the real Photos library: the probe is a stand-in everywhere.
+were run too (fourth commit: `LiveWorkoutStudioWalkthroughTests`). No test asks the real
+Photos library: the probe is a stand-in everywhere.
 
 ## Owed on device
 

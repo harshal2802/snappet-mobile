@@ -32,6 +32,11 @@ final class StudioEditorViewModel {
     /// asks Photos (`ClipBakeService`); a test sets it, because the simulator has no baked asset
     /// to revert (prompt 305).
     @ObservationIgnored var bakedAssetProbe: (@Sendable (String) -> BakedAssetProbe)?
+    /// Test seam: stands in for the fetch of the session's baked rows (a test makes it throw).
+    @ObservationIgnored var bakedRowsLoader: (@MainActor () throws -> [SessionMedia])?
+    /// How long a check waits for Photos (prompt 305). Photos may not answer; after this the
+    /// check counts as "nothing changed" and is owed. A test shortens it.
+    @ObservationIgnored var bakedProbeTimeoutSec: Double = 4
     /// Moves the player to a player time and calls back when it is there. `nil` (always, in the
     /// app) seeks the preview player; `useStandInPlayer` sets it for a test.
     @ObservationIgnored private var playerSeek: (@MainActor (Double, @escaping @MainActor () -> Void) -> Void)?
@@ -1739,9 +1744,23 @@ final class StudioEditorViewModel {
         // from the tap (no edit, no close, no other render). If the check changed a clip the
         // bake STOPS with a message: the preview and the trims on screen were made against
         // the video that is gone.
-        if let check = reconcileBakedFlags() {
+        let visit = closeCount
+        switch startBakedCheck() {
+        case .nothingBaked:
+            break
+        case .unreadable:
+            send(.renderRefused(.bake, StudioBakeState.recordsUnreadableMessage))
+            return
+        case .running(let check):
             send(.checkBegan(.bake))
-            guard await check.value == false else {
+            let outcome = await check.value
+            // The Studio was closed while Photos was asked (a dismiss from code; the user's
+            // own close is locked): nothing is baked for a Studio that is gone.
+            guard closeCount == visit else {
+                send(.checkPassed)
+                return
+            }
+            guard outcome != .changedInProject else {
                 send(.checkFoundRevert)
                 return
             }
@@ -1766,7 +1785,11 @@ final class StudioEditorViewModel {
         let hrTileDrawn = clipHR.isEmpty ? resolvedSessionTile() != nil
                                          : clipHR.values.contains { $0.tile != nil }
         send(.bakeBegan)
-        defer { runOwedReconcile() }   // a check that landed under this render was put off
+        renderGeneration += 1
+        defer {
+            renderGeneration += 1
+            runOwedReconcile()         // a check that landed under this render was put off
+        }
         let sid = project.sessionID
         let rows: [SessionMedia]
         do {
@@ -1882,30 +1905,87 @@ final class StudioEditorViewModel {
     /// this fires on the Studio's already-busy onAppear); the clears apply back on main.
     ///
     /// ONE check runs at a time (prompt 305). The Studio's opening, the app coming back to the
-    /// foreground, `bake()` and `startExport()` all call this; while a check is in flight every
-    /// caller gets the same task. The task's value says whether the check changed any clip.
+    /// foreground, `bake()` and `startExport()` all call this. Every caller gets an answer that
+    /// Photos gave AFTER its call: a check that has not asked Photos yet is shared; behind one
+    /// that already has, a new check is queued (the app may have been suspended in the middle
+    /// of the question, and the revert made since). The task's value says what changed.
     /// `nil` when the session has no baked video (nothing to ask Photos about).
     @discardableResult
-    func reconcileBakedFlags() -> Task<Bool, Never>? {
-        if let reconcileTask { return reconcileTask }
+    func reconcileBakedFlags() -> Task<BakedCheckOutcome, Never>? {
+        if case .running(let task) = startBakedCheck() { return task }
+        return nil
+    }
+
+    private enum BakedCheckStart {
+        /// The session has no baked video.
+        case nothingBaked
+        /// The baked rows could not be read.
+        case unreadable
+        case running(Task<BakedCheckOutcome, Never>)
+    }
+
+    private func bakedRows() throws -> [SessionMedia] {
+        if let bakedRowsLoader { return try bakedRowsLoader() }
         let sid = project.sessionID
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
-            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
-        guard !rows.isEmpty else { return nil }
-        let task = Task { [weak self] () -> Bool in
-            guard let self else { return false }
-            let changed = await self.reconcile(rows)
-            self.reconcileTask = nil
-            return changed
+        return try context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))
+    }
+
+    private func startBakedCheck() -> BakedCheckStart {
+        // A check that has not asked Photos yet will ask after this call: share it.
+        if let reconcileTask, !reconcileAsked { return .running(reconcileTask) }
+        let rows: [SessionMedia]
+        do {
+            rows = try bakedRows()
+        } catch {
+            Self.log.error("baked rows unreadable: \(error.localizedDescription, privacy: .public)")
+            return .unreadable
+        }
+        guard !rows.isEmpty else { return .nothingBaked }
+        // A check that has already asked is not trusted for this call: this one runs after it.
+        let previous = reconcileTask
+        reconcileNumber += 1
+        let number = reconcileNumber
+        reconcileAsked = false
+        let task = Task { [weak self] () -> BakedCheckOutcome in
+            if let previous { _ = await previous.value }
+            guard let self else { return .unchanged }
+            // The check before this one may have changed the rows: read them again.
+            let current = previous == nil ? rows : ((try? self.bakedRows()) ?? [])
+            let result = await self.reconcile(current)
+            if self.reconcileNumber == number {
+                self.reconcileTask = nil
+                self.reconcileAsked = false
+            }
+            switch result {
+            case .done(let outcome):
+                return outcome
+            case .timedOut:
+                return .unchanged
+            case .putOff:
+                // The render it was put off for has ended in the meantime: nobody else will
+                // run it.
+                if !self.state.isRendering { self.runOwedReconcile() }
+                return .unchanged
+            }
         }
         reconcileTask = task
-        return task
+        return .running(task)
     }
-    /// The check in flight.
-    @ObservationIgnored private var reconcileTask: Task<Bool, Never>?
-    /// A check found a reverted clip while a render ran and changed nothing. It runs again when
-    /// the render ends (`runOwedReconcile`).
+    /// The newest check (in flight, or queued behind one).
+    @ObservationIgnored private var reconcileTask: Task<BakedCheckOutcome, Never>?
+    @ObservationIgnored private var reconcileNumber = 0
+    /// The newest check has put its question to Photos.
+    @ObservationIgnored private var reconcileAsked = false
+    /// A check could not be applied (a render ran, or Photos did not answer in time). It runs
+    /// again when a render ends (`runOwedReconcile`).
     @ObservationIgnored private(set) var reconcileOwed = false
+    /// Counts every start and every end of a render. A check notes it when it asks Photos: an
+    /// answer taken on one side of a render's start or end is not applied on the other (a bake
+    /// that ended in between gave the asset a new edited video).
+    @ObservationIgnored private var renderGeneration = 0
+    /// Counts `studioClosed()`. A render that waited for a check does not start after it.
+    @ObservationIgnored private var closeCount = 0
 
     /// Returns when no check is in flight. For tests.
     func reconcileFinished() async {
@@ -1919,36 +1999,58 @@ final class StudioEditorViewModel {
         reconcileBakedFlags()
     }
 
+    private enum BakedCheckResult {
+        case done(BakedCheckOutcome)
+        /// Not applied because of a render; owed.
+        case putOff
+        /// Photos did not answer in time; owed.
+        case timedOut
+    }
+
     /// The check itself. What "no edited rendition" means for a row is read from its bake record
     /// (`ClipBakePlan.revertFinding`, prompt 305): a "Replace original" asset has nothing to
     /// revert and is left alone; a "Save to original" over a replaced video goes back to that
     /// video's record; anything else goes back to the recording.
-    /// Returns whether any clip changed.
-    private func reconcile(_ rows: [SessionMedia]) async -> Bool {
+    private func reconcile(_ rows: [SessionMedia]) async -> BakedCheckResult {
+        guard !rows.isEmpty else { return .done(.unchanged) }
         let probes = rows.map { (id: $0.id, localIdentifier: $0.localIdentifier) }
         let probe = bakedAssetProbe ?? { localIdentifier in
             BakedAssetProbe(
                 hasEditedRendition: ClipBakeService.hasEditedRendition(localIdentifier: localIdentifier),
                 currentDuration: ClipBakeService.currentDuration(localIdentifier: localIdentifier))
         }
+        reconcileAsked = true
+        let askedAt = renderGeneration
         // For an asset with no edited rendition, also the length of the video it plays now.
-        let found: [UUID: Double?] = await Task.detached(priority: .utility) {
-            var out: [UUID: Double?] = [:]
-            for row in probes {
-                let answer = probe(row.localIdentifier)
-                if answer.hasEditedRendition == false { out[row.id] = answer.currentDuration }
+        // Photos may not answer (prompt 303's wait): a render that waits for this check is not
+        // held for ever. No answer counts as "nothing changed", and the check is owed.
+        let noAnswer: [UUID: Double?]? = nil
+        let answer = await StudioFirstAnswer.wait(seconds: bakedProbeTimeoutSec, otherwise: noAnswer) { answer in
+            let work = Task.detached(priority: .utility) {
+                var out: [UUID: Double?] = [:]
+                for row in probes {
+                    let said = probe(row.localIdentifier)
+                    if said.hasEditedRendition == false { out[row.id] = said.currentDuration }
+                }
+                answer(out)
             }
-            return out
-        }.value
-        guard !found.isEmpty else { return false }
-        // Nothing below runs under a render: a bake replaces the project when it ends, an
-        // export renders the project and the opened assets as they are. The check is owed and
-        // runs again when the render ends. (A render cannot START below this line: `bake()` and
-        // `startExport()` wait for the check in flight.)
-        guard !state.isRendering else {
-            reconcileOwed = true
-            return false
+            return { work.cancel() }
         }
+        guard let found = answer else {
+            reconcileOwed = true
+            return .timedOut
+        }
+        guard !found.isEmpty else { return .done(.unchanged) }
+        // Nothing below runs under a render: a bake replaces the project when it ends, an
+        // export renders the project and the opened assets as they are. And an answer from the
+        // other side of a render's start or end is not applied at all. Either way the check is
+        // owed and asks again. (A render cannot START below this line: `bake()` and
+        // `startExport()` wait for the check in flight.)
+        guard !state.isRendering, renderGeneration == askedAt else {
+            reconcileOwed = true
+            return .putOff
+        }
+        reconcileOwed = false
         var changed: [SessionMedia] = []        // the asset plays another video than recorded
         var backToRecording: [SessionMedia] = []
         for m in rows where found[m.id] != nil {
@@ -1969,7 +2071,7 @@ final class StudioEditorViewModel {
             m.durationSec = ClipBakePlan.revertedDuration(recorded: m.durationSec,
                                                           asset: found[m.id] ?? nil)
         }
-        guard !changed.isEmpty else { return false }
+        guard !changed.isEmpty else { return .done(.unchanged) }
         mediaClocks = [:]
         mediaClocksByLocalID = [:]
         loadMediaOffsets()
@@ -1990,6 +2092,13 @@ final class StudioEditorViewModel {
         // composer's opened asset are stale, as after a bake.
         let assets = Set(changed.map(\.localIdentifier))
         let clipIDs = Set(snapshot.clips.filter { assets.contains($0.localIdentifier) }.map(\.id))
+        // Does this project use a changed video — as a clip (in the opened scope or not) or as
+        // a picture-in-picture source? Only then is a waiting render stopped; a row of another
+        // project in the same session is put right without a word.
+        let usedMedia = Set(snapshot.clips.map { $0.sessionMediaID as UUID? })
+        let usedAssets = Set(snapshot.clips.map(\.localIdentifier))
+            .union(snapshot.overlays.filter { $0.kind == .video }.map(\.content))
+        let inProject = changed.contains { usedMedia.contains($0.id) || usedAssets.contains($0.localIdentifier) }
         let stale = clipIDs.contains { sourceDurations[$0] != nil }
         // Where the video is NOW, before anything opens it (prompts 302/303): after a revert the
         // current version may be in iCloud only, and the composer would download it without a
@@ -1997,8 +2106,8 @@ final class StudioEditorViewModel {
         // otherwise the "Download clip" panel stands, as for any other clip.
         // (Before the Studio's first availability result nothing is reported here: that check
         // asks about every clip, and no preview is built before it.)
-        if state.media.isChecked {
-            let statuses = await availability.statuses(for: Array(assets))
+        if state.media.isChecked, inProject {
+            let statuses = await availability.statuses(for: Array(assets.intersection(usedAssets)))
             send(.mediaChecked(sources: mediaSources, statuses: statuses))
         }
         if stale {
@@ -2012,7 +2121,7 @@ final class StudioEditorViewModel {
             send(.mediaSourcesChanged(mediaSources))
         }
         if recordsCleared || stale { await rebuildPreview() }
-        return true
+        return .done(inProject ? .changedInProject : .changedElsewhere)
     }
 
     // MARK: Export (device-only render)
@@ -2031,27 +2140,44 @@ final class StudioEditorViewModel {
     func startExport() {
         guard state.canExport else { return }
         pause()                 // the preview does not play under a render
-        guard let check = reconcileBakedFlags() else {
+        let check: Task<BakedCheckOutcome, Never>
+        switch startBakedCheck() {
+        case .nothingBaked:
             send(.exportBegan)  // also deletes the last export's file
+            renderGeneration += 1
             exportTask = Task { [weak self] in await self?.runExport() }
             return
+        case .unreadable:
+            // Without the rows nothing says whether a clip was reverted; exporting anyway
+            // could burn heart rate through a stale map.
+            send(.renderRefused(.export, StudioBakeState.recordsUnreadableMessage))
+            return
+        case .running(let task):
+            check = task
         }
+        let visit = closeCount
         send(.checkBegan(.export))
         exportTask = Task { [weak self] in
-            let reverted = await check.value
+            let outcome = await check.value
             guard let self else { return }
-            guard !reverted else {
+            // The Studio was closed while Photos was asked: no message, no export.
+            guard !Task.isCancelled, self.closeCount == visit else {
+                self.exportTask = nil
+                self.send(.checkPassed)
+                return
+            }
+            guard outcome != .changedInProject else {
                 self.exportTask = nil
                 self.send(.checkFoundRevert)
                 return
             }
             self.send(.checkPassed)
-            // The Studio was closed while Photos was asked.
-            guard !Task.isCancelled, self.state.canExport else {
+            guard self.state.canExport else {
                 self.exportTask = nil
                 return
             }
             self.send(.exportBegan)
+            self.renderGeneration += 1
             await self.runExport()
         }
     }
@@ -2060,6 +2186,7 @@ final class StudioEditorViewModel {
         defer {
             exportTask = nil
             send(.exportTaskEnded)
+            renderGeneration += 1
             runOwedReconcile()   // a check that landed under this render was put off
         }
         do {
@@ -2100,6 +2227,7 @@ final class StudioEditorViewModel {
     /// The Studio closed: stop a running export and delete the exported file. A bake is not
     /// touched (it cannot be cancelled, and it deletes its own temp file).
     func studioClosed() {
+        closeCount += 1         // a bake or an export that waits for Photos does not start
         exportTask?.cancel()
         send(.studioClosed)
         cancelClipDownload()

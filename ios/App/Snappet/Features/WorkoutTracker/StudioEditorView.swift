@@ -190,13 +190,22 @@ struct StudioEditorView: View {
 
     /// The one line shown while editing is locked ("Editing is locked while exporting").
     private func lockedNotice(_ reason: String) -> some View {
-        Label(reason, systemImage: "lock.fill")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.85))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(Color(white: 0.12))
-            .accessibilityIdentifier("studioLockedNotice")
+        HStack(spacing: 8) {
+            // Photos is being asked before a render (prompt 305): show that something runs.
+            if vm.state.isChecking {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                    .accessibilityHidden(true)
+            }
+            Label(reason, systemImage: "lock.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .accessibilityIdentifier("studioLockedNotice")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.12))
     }
 
     private var exportFailedBinding: Binding<Bool> {

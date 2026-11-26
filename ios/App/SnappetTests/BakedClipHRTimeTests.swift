@@ -516,24 +516,47 @@ final class BakedClipHRTimeTests: XCTestCase {
         private var answer: BakedAssetProbe
         private var held: Bool
         private var count = 0
+        private var waiting = 0
+        private var active = 0
+        private var mostActive = 0
         init(_ answer: BakedAssetProbe, held: Bool = false) {
             self.answer = answer
             self.held = held
         }
-        var calls: Int { lock.lock(); defer { lock.unlock() }; return count }
-        func set(_ answer: BakedAssetProbe) { lock.lock(); self.answer = answer; lock.unlock() }
-        /// Hold the next question until `release()`.
-        func hold() { lock.lock(); held = true; lock.unlock() }
+        var calls: Int { lock.withLock { count } }
+        /// The most questions that were open at the same time.
+        var mostAtOnce: Int { lock.withLock { mostActive } }
+        func set(_ answer: BakedAssetProbe) { lock.withLock { self.answer = answer } }
+        /// Hold the next questions until `release()`.
+        func hold() { lock.withLock { held = true } }
+        /// Let every held question go; later ones are not held.
         func release() {
-            lock.lock(); let wasHeld = held; held = false; lock.unlock()
-            if wasHeld { gate.signal() }
+            let n: Int = lock.withLock {
+                held = false
+                defer { waiting = 0 }
+                return waiting
+            }
+            for _ in 0..<n { gate.signal() }
         }
+        /// The answer is the one Photos has when it is ASKED, also if the question is held.
         func ask(_ localIdentifier: String) -> BakedAssetProbe {
-            lock.lock(); count += 1; let wait = held; lock.unlock()
+            let (said, wait): (BakedAssetProbe, Bool) = lock.withLock {
+                count += 1
+                active += 1
+                mostActive = max(mostActive, active)
+                if held { waiting += 1 }
+                return (answer, held)
+            }
             if wait { gate.wait() }
-            lock.lock(); defer { lock.unlock() }
-            return answer
+            lock.withLock { active -= 1 }
+            return said
         }
+    }
+
+    /// Counts the renders.
+    @MainActor
+    private final class Renders {
+        var count = 0
     }
 
     /// A render a test can hold open.
@@ -1147,7 +1170,7 @@ final class BakedClipHRTimeTests: XCTestCase {
         f.lengths.byAsset["A"] = 9
         probe.set(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9))
         let underRender = await f.vm.reconcileBakedFlags()?.value
-        XCTAssertEqual(underRender, false, "nothing changed")
+        XCTAssertEqual(underRender, .unchanged, "nothing changed")
         XCTAssertTrue(f.vm.reconcileOwed)
         XCTAssertTrue(f.media.isBaked)
         XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 2)])
@@ -1168,27 +1191,305 @@ final class BakedClipHRTimeTests: XCTestCase {
         f.vm.shareSheetDismissed()
     }
 
-    /// The scene phase and the notification both report one return to the app; the Studio's
-    /// opening may still be asking. However many ask at once, Photos is asked once.
+    /// The scene phase and the notification both report one return to the app: two calls before
+    /// Photos was asked are one check. A call AFTER the question was put gets a check of its
+    /// own, queued behind the first; Photos never has two questions open.
     @MainActor
-    func testChecksAskedForAtTheSameTimeAreOneCheck() async throws {
+    func testChecksAskedForAtTheSameTimeAreOneCheckAndALaterOneQueues() async throws {
         let f = try await makeBakedFixture()
         defer { withExtendedLifetime(f.container) {} }
-        let probe = Probe(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9), held: true)
-        f.lengths.byAsset["A"] = 9
+        let probe = Probe(Self.stillBaked, held: true)
         f.vm.bakedAssetProbe = { probe.ask($0) }
         let first = try XCTUnwrap(f.vm.reconcileBakedFlags())
         let second = try XCTUnwrap(f.vm.reconcileBakedFlags())
         XCTAssertEqual(first, second, "the same task")
         await wait(for: "Photos was asked") { probe.calls == 1 }
         let third = try XCTUnwrap(f.vm.reconcileBakedFlags())
-        XCTAssertEqual(first, third)
+        XCTAssertNotEqual(first, third, "the first answer may be older than this call")
+        let fourth = try XCTUnwrap(f.vm.reconcileBakedFlags())
+        XCTAssertEqual(third, fourth, "the queued check has not asked yet: shared")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(probe.calls, 1, "the queued check waits for the first")
         probe.release()
-        let answers = [await first.value, await second.value, await third.value]
-        XCTAssertEqual(answers, [true, true, true], "every caller hears that a clip changed")
-        XCTAssertEqual(probe.calls, 1)
+        let answers = [await first.value, await third.value]
+        XCTAssertEqual(answers, [.unchanged, .unchanged])
+        await f.vm.reconcileFinished()
+        XCTAssertEqual(probe.calls, 2)
+        XCTAssertEqual(probe.mostAtOnce, 1, "one question at a time")
+        XCTAssertTrue(f.media.isBaked)
+    }
+
+    /// The app was suspended while a check had its question out; Photos had said "still baked".
+    /// The user reverts in Photos, comes back and taps save. The bake does not take the old
+    /// answer: Photos is asked again, and the bake stops.
+    @MainActor
+    func testABakeDoesNotTrustACheckThatAskedBeforeTheTap() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let probe = Probe(Self.stillBaked, held: true)
+        f.vm.bakedAssetProbe = { probe.ask($0) }
+        let old = try XCTUnwrap(f.vm.reconcileBakedFlags())
+        await wait(for: "the old check has asked") { probe.calls == 1 }
+
+        f.lengths.byAsset["A"] = 9
+        probe.set(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9))   // the revert
+        let baker = FakeBaker()
+        let bake = Task { await f.vm.bake(replaceOriginal: false, service: baker) }
+        await wait(for: "the bake waits") { f.vm.state.phase == .checking(.bake) }
+        probe.release()
+        await bake.value
+        let oldAnswer = await old.value
+        XCTAssertEqual(oldAnswer, .unchanged)
+        XCTAssertEqual(probe.calls, 2, "Photos was asked again for the bake")
+        XCTAssertEqual(f.vm.bakeState, .failed("This clip was reverted in Photos. Check it and save again."))
+        XCTAssertTrue(baker.saved.isEmpty)
         XCTAssertFalse(f.media.isBaked)
-        XCTAssertNil(f.vm.reconcileBakedFlags(), "nothing baked is left to ask about")
+        XCTAssertNil(f.media.bakeTimeMapData)
+    }
+
+    /// The session has a baked video that this project does not use, and it was reverted. Its
+    /// row is put right; the bake of this project goes on.
+    @MainActor
+    func testARevertOfAVideoThisProjectDoesNotUseStopsNothing() async throws {
+        let reverted = BakedAssetProbe(hasEditedRendition: false, currentDuration: 30)
+        for viaBake in [false, true] {
+            let f = try makeFixture()
+            defer { withExtendedLifetime(f.container) {} }
+            let other = SessionMedia(sessionID: f.media.sessionID, localIdentifier: "C", kind: .video,
+                                     offsetSec: 50, durationSec: 20)
+            other.isBaked = true
+            other.bakeTimeMap = map([part(0, from: 10, to: 30)])
+            f.container.mainContext.insert(other)
+            try f.container.mainContext.save()
+            await f.vm.onAppear()
+            f.vm.bakedAssetProbe = { $0 == "C" ? reverted : Self.stillBaked }
+            let builds = f.vm.previewBuildCount
+            let baker = FakeBaker()
+            if viaBake {
+                f.lengths.byAsset["A"] = 4
+                await f.vm.bake(replaceOriginal: false, service: baker)
+                XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
+                XCTAssertEqual(baker.saved, ["A"])
+                XCTAssertTrue(f.media.isBaked)
+            } else {
+                let outcome = await f.vm.reconcileBakedFlags()?.value
+                XCTAssertEqual(outcome, .changedElsewhere)
+                XCTAssertEqual(f.vm.previewBuildCount, builds, "this project's preview is not rebuilt")
+                f.vm.startExport()
+                await wait(for: "the export has ended") { f.vm.exportState.exportedURL != nil && !f.vm.isRendering }
+                f.vm.shareSheetDismissed()
+            }
+            XCTAssertFalse(other.isBaked, "the other row is put right")
+            XCTAssertNil(other.bakeTimeMapData)
+            XCTAssertEqual(other.durationSec, 30)
+        }
+    }
+
+    /// The Studio is dismissed from code while a bake waits for Photos. Nothing is baked for a
+    /// Studio that is gone, whatever Photos answers.
+    @MainActor
+    func testAStudioClosedWhileABakeAsksPhotosBakesNothing() async throws {
+        for answer in [Self.stillBaked, BakedAssetProbe(hasEditedRendition: false, currentDuration: 9)] {
+            let f = try await makeBakedFixture()
+            defer { withExtendedLifetime(f.container) {} }
+            let probe = Probe(answer, held: true)
+            f.vm.bakedAssetProbe = { probe.ask($0) }
+            let baker = FakeBaker()
+            let bake = Task { await f.vm.bake(replaceOriginal: false, service: baker) }
+            await wait(for: "the bake waits") { f.vm.state.phase == .checking(.bake) && probe.calls == 1 }
+            f.vm.studioClosed()
+            XCTAssertFalse(f.vm.state.isChecking)
+            probe.release()
+            await bake.value
+            XCTAssertTrue(baker.saved.isEmpty, "nothing was written to Photos")
+            XCTAssertEqual(f.vm.bakeState, .idle, "and no message for nobody")
+            XCTAssertFalse(f.vm.isRendering)
+        }
+    }
+
+    /// The same for an export: no render, and no failure message.
+    @MainActor
+    func testAStudioClosedWhileAnExportAsksPhotosExportsNothing() async throws {
+        for answer in [Self.stillBaked, BakedAssetProbe(hasEditedRendition: false, currentDuration: 9)] {
+            let f = try await makeBakedFixture()
+            defer { withExtendedLifetime(f.container) {} }
+            let probe = Probe(answer, held: true)
+            f.vm.bakedAssetProbe = { probe.ask($0) }
+            let renders = Renders()
+            let render = try XCTUnwrap(f.vm.renderOverride)
+            f.vm.renderOverride = {
+                renders.count += 1
+                return try await render()
+            }
+            f.vm.startExport()
+            XCTAssertEqual(f.vm.state.phase, .checking(.export))
+            await wait(for: "Photos was asked") { probe.calls == 1 }
+            f.vm.studioClosed()
+            XCTAssertFalse(f.vm.state.isChecking)
+            probe.release()
+            await f.vm.reconcileFinished()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(renders.count, 0, "nothing was rendered")
+            XCTAssertEqual(f.vm.exportState, .idle, "and no message")
+            XCTAssertFalse(f.vm.isRendering)
+        }
+    }
+
+    /// The baked rows cannot be read: nothing says whether a clip was reverted, so neither lane
+    /// starts, and each says so in plain words.
+    @MainActor
+    func testARenderIsRefusedWhenTheBakedRowsCannotBeRead() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let renders = Renders()
+        let render = try XCTUnwrap(f.vm.renderOverride)
+        f.vm.renderOverride = {
+            renders.count += 1
+            return try await render()
+        }
+        f.vm.bakedRowsLoader = { throw SaveRefused() }
+
+        f.vm.startExport()
+        XCTAssertEqual(f.vm.exportState, .failed(StudioBakeState.recordsUnreadableMessage))
+        XCTAssertFalse(f.vm.isRendering)
+        XCTAssertFalse(f.vm.state.isChecking)
+        f.vm.acknowledgeExportFailure()
+
+        let baker = FakeBaker()
+        await f.vm.bake(replaceOriginal: false, service: baker)
+        XCTAssertEqual(f.vm.bakeState, .failed(StudioBakeState.recordsUnreadableMessage))
+        XCTAssertTrue(baker.saved.isEmpty)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(renders.count, 0)
+        XCTAssertNil(f.vm.reconcileBakedFlags(), "the open and foreground checks do nothing")
+        XCTAssertTrue(f.media.isBaked)
+    }
+
+    /// Photos is asked while an export renders and answers after it has ended. The answer is
+    /// from the other side of the render's end: it is not applied, and Photos is asked again.
+    @MainActor
+    func testAnAnswerTakenUnderARenderIsNotAppliedAfterIt() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let probe = Probe(Self.stillBaked)
+        f.vm.bakedAssetProbe = { probe.ask($0) }
+        let gate = RenderGate()
+        let render = try XCTUnwrap(f.vm.renderOverride)
+        f.vm.renderOverride = {
+            await gate.passed()
+            return try await render()
+        }
+        f.vm.startExport()
+        await wait(for: "the export renders") {
+            if case .rendering(.export) = f.vm.state.phase { return true } else { return false }
+        }
+        // asked under the render: "no edited video" (as it would be in the middle of a write)
+        probe.set(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9))
+        probe.hold()
+        let stale = try XCTUnwrap(f.vm.reconcileBakedFlags())
+        await wait(for: "asked under the render") { probe.calls == 2 }
+        probe.set(Self.stillBaked)                      // what Photos says from now on
+
+        gate.open()
+        await wait(for: "the export has ended") { !f.vm.isRendering }
+        probe.release()
+        let answer = await stale.value
+        XCTAssertEqual(answer, .unchanged)
+        await f.vm.reconcileFinished()
+        XCTAssertTrue(f.media.isBaked, "the answer from under the render was not applied")
+        XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 2)])
+        XCTAssertEqual(probe.calls, 3, "Photos was asked again")
+        XCTAssertFalse(f.vm.reconcileOwed)
+        f.vm.shareSheetDismissed()
+    }
+
+    /// A check that lands under a BAKE is put off too, and runs when the bake ends.
+    @MainActor
+    func testACheckUnderABakeRunsWhenTheBakeEnds() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let probe = Probe(Self.stillBaked)
+        f.vm.bakedAssetProbe = { probe.ask($0) }
+        let gate = RenderGate()
+        let render = try XCTUnwrap(f.vm.renderOverride)
+        f.vm.renderOverride = {
+            await gate.passed()
+            return try await render()
+        }
+        let baker = FakeBaker()
+        let bake = Task { await f.vm.bake(replaceOriginal: false, service: baker) }
+        await wait(for: "the bake renders") { f.vm.isBaking }
+        XCTAssertEqual(probe.calls, 1)
+
+        probe.set(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9))
+        let underBake = await f.vm.reconcileBakedFlags()?.value
+        XCTAssertEqual(underBake, .unchanged)
+        XCTAssertTrue(f.vm.reconcileOwed)
+        XCTAssertTrue(f.media.isBaked)
+        XCTAssertEqual(probe.calls, 2)
+
+        probe.set(Self.stillBaked)                      // the bake's own video is there afterwards
+        gate.open()
+        await bake.value
+        XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
+        await f.vm.reconcileFinished()
+        XCTAssertEqual(probe.calls, 3, "the check ran again when the bake ended")
+        XCTAssertFalse(f.vm.reconcileOwed)
+        XCTAssertTrue(f.media.isBaked)
+    }
+
+    /// Photos does not answer. The save is not held for ever: after the wait it goes on as it
+    /// would have without the check, and the check is owed.
+    @MainActor
+    func testACheckThatGetsNoAnswerLetsTheRenderGoOn() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let probe = Probe(BakedAssetProbe(hasEditedRendition: false, currentDuration: 9), held: true)
+        f.vm.bakedAssetProbe = { probe.ask($0) }
+        f.vm.bakedProbeTimeoutSec = 0.05
+        let baker = FakeBaker()
+        await f.vm.bake(replaceOriginal: false, service: baker)
+        XCTAssertEqual(f.vm.bakeState, .saved(replaced: false))
+        XCTAssertEqual(baker.saved, ["A"])
+        XCTAssertFalse(f.vm.state.isChecking)
+        // the owed check ran when the bake ended, and got no answer either
+        await f.vm.reconcileFinished()
+        XCTAssertEqual(probe.calls, 2)
+        XCTAssertTrue(f.vm.reconcileOwed, "still owed; it is not asked in a loop")
+        XCTAssertTrue(f.media.isBaked, "an answer that never came changes nothing")
+
+        f.vm.acknowledgeBake()
+        f.vm.startExport()
+        XCTAssertEqual(f.vm.state.phase, .checking(.export))
+        await wait(for: "the export has ended") { f.vm.exportState.exportedURL != nil && !f.vm.isRendering }
+        f.vm.shareSheetDismissed()
+        await f.vm.reconcileFinished()
+        probe.release()                                 // the late answers arrive; nothing happens
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(f.media.isBaked)
+    }
+
+    /// A bake stopped by a revert whose original is in iCloud only: the message, then the
+    /// "Download clip" panel, and the Studio can be closed.
+    @MainActor
+    func testABakeStoppedOnARevertedClipInICloudEndsInThePanel() async throws {
+        let f = try await makeBakedFixture()
+        defer { withExtendedLifetime(f.container) {} }
+        f.availability.setInCloud(["A"])
+        f.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 9) }
+        let baker = FakeBaker()
+        await f.vm.bake(replaceOriginal: false, service: baker)
+        XCTAssertEqual(f.vm.bakeState, .failed("This clip was reverted in Photos. Check it and save again."))
+        XCTAssertTrue(baker.saved.isEmpty)
+        XCTAssertFalse(f.vm.state.isChecking)
+        XCTAssertTrue(f.vm.state.canClose)
+        f.vm.acknowledgeBake()
+        guard case .clipMissing = f.vm.state.phase else {
+            return XCTFail("expected the missing-clip panel, got \(f.vm.state.phase)")
+        }
+        XCTAssertTrue(f.vm.state.canClose)
+        XCTAssertTrue(f.vm.canEdit)
+        XCTAssertFalse(f.vm.state.canExport)
     }
 
     /// After "Revert to Original" the video that is current again may be in iCloud only. The
@@ -1207,7 +1508,7 @@ final class BakedClipHRTimeTests: XCTestCase {
         f.lengths.byAsset["A"] = 9
         f.vm.bakedAssetProbe = { _ in BakedAssetProbe(hasEditedRendition: false, currentDuration: 9) }
         let changed = await f.vm.reconcileBakedFlags()?.value
-        XCTAssertEqual(changed, true)
+        XCTAssertEqual(changed, .changedInProject)
         XCTAssertFalse(f.media.isBaked)
 
         XCTAssertEqual(f.vm.mediaStatus(of: clip), .inCloud)
@@ -1236,7 +1537,7 @@ final class BakedClipHRTimeTests: XCTestCase {
         let probe = Probe(Self.unknownAsset)
         f.vm.bakedAssetProbe = { probe.ask($0) }
         let changed = await f.vm.reconcileBakedFlags()?.value
-        XCTAssertEqual(changed, false)
+        XCTAssertEqual(changed, .unchanged)
         XCTAssertTrue(f.media.isBaked)
         XCTAssertEqual(f.media.bakeTimeMap?.segments, [segment(0, 2)])
         XCTAssertFalse(f.vm.reconcileOwed)

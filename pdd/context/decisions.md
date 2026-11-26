@@ -13230,3 +13230,33 @@ such a clip without a word. The check asks the availability service about the ch
 first, so the "Download clip" panel of prompt 302 stands and the clip has its recorded length
 until it is here. Before the Studio's first availability result the check reports nothing: that
 first check covers every clip, and no preview is built before it.
+
+## 2026-11-25 — A check answers for calls made before it asked, not after (prompt 305, third review)
+
+One check at a time was kept, but sharing a check that had already asked Photos was wrong: iOS
+can suspend the app in the middle of the question, the user reverts, comes back and taps save,
+and the save would take the old answer. A caller now shares a check only if it has not asked
+yet; otherwise its own check is queued behind the running one and reads the rows again. The same
+reasoning for renders: a check notes a render count when it asks, and an answer that arrives on
+the other side of a render's start or end is dropped and asked again. A bake that ended in
+between gave the asset a new edited video, and the old "no edited video" would un-flag it.
+
+## 2026-11-25 — Only a reverted video the project uses stops a render (prompt 305, third review)
+
+The check covers every baked row of the session, and a session can hold videos this project does
+not use. Stopping a save because of one of those told the user about a clip they cannot see
+here. The check now answers `unchanged`, `changedElsewhere` or `changedInProject`, and only the
+last stops a bake or an export. "Uses" means a clip of the project, in the opened scope or not,
+or a picture-in-picture source. The other rows are still put right.
+
+## 2026-11-25 — The check before a render has a time limit and fails open; unreadable rows fail closed (prompt 305, third review)
+
+Photos may not answer, and the checking phase locks closing. After 4 s
+(`bakedProbeTimeoutSec`, with prompt 303's `StudioFirstAnswer`) the check counts as "nothing
+changed": the render goes on exactly as it did before this PR, and the check is owed. Failing
+open was chosen because the alternative is a Studio that cannot be closed or a save that cannot
+be made because of a question about a rare case. The other direction for rows that cannot be
+read: there the app knows it does not know, the user can act (close and reopen), and an
+unchecked export could burn heart rate through a stale map, so neither lane starts and the
+alert says so. A Studio dismissed from code during the check starts nothing and shows nothing.
+Fifth test seam in the view model: `bakedRowsLoader` (a test makes the fetch throw).

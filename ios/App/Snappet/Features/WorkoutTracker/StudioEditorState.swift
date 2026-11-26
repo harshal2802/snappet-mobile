@@ -174,6 +174,20 @@ enum StudioEditorSheet: Equatable, Sendable {
     }
 }
 
+/// What the check of the baked videos against Photos did (prompt 305).
+enum BakedCheckOutcome: Equatable, Sendable {
+    /// No row changed (also: Photos did not answer in time, or the check was put off).
+    case unchanged
+    /// A reverted video was found, and this project does not use it. Its row was put right;
+    /// a render of this project is not affected.
+    case changedElsewhere
+    /// A video this project uses was reverted: its row, the clip's length and the preview
+    /// changed. A render the user asked for before seeing that does not start.
+    case changedInProject
+
+    var changedAny: Bool { self != .unchanged }
+}
+
 // MARK: - Editor state
 
 struct StudioEditorState: Equatable {
@@ -250,6 +264,9 @@ struct StudioEditorState: Equatable {
         /// A baked clip was reverted in Photos: the render does not begin, and the lane's
         /// failure alert says why.
         case checkFoundRevert
+        /// The render was asked for and cannot begin, for the reason given (the baked videos'
+        /// records could not be read). Nothing was rendered; the lane's failure alert says why.
+        case renderRefused(RenderKind, String)
 
         // Export lane
         case exportBegan
@@ -433,6 +450,12 @@ struct StudioEditorState: Equatable {
             case .bake: s.bake = .failed(kind.revertedInPhotosMessage)
             case .export: s.export = export.failed(kind.revertedInPhotosMessage)
             }
+        case .renderRefused(let kind, let message):
+            guard canExport else { return self }
+            switch kind {
+            case .bake: s.bake = .failed(message)
+            case .export: s.export = export.failed(message)
+            }
 
         case .exportBegan:
             guard canExport else { return self }
@@ -456,6 +479,9 @@ struct StudioEditorState: Equatable {
             s.export = export.failureAcknowledged()
         case .studioClosed:
             s.export = .idle
+            // Nothing may start for a Studio that is gone; the view model drops the render the
+            // check was for.
+            s.checkingFor = nil
 
         case .bakeBegan:
             guard canExport else { return self }
