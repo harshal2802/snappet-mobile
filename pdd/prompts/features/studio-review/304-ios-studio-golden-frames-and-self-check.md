@@ -44,7 +44,11 @@ and then change the data model under it. Each of them needs two things that did 
   | | Region mean colour | Largest single-pixel brightness |
   |---|---|---|
   | Before | 22.3 – 23.6 off, everywhere | 27 |
-  | After | at most 5.6 (at edges between two colours; the centres of the quarters are equal) | 15 |
+  | After | flat colour −1.0 … +1.5; squares with an edge in them up to 5.1 | 15 |
+
+  The test looks at flat squares (one colour in the source, and for 8 pixels around) and edge
+  squares apart: flat ones must be within 2 a channel, edge ones within 10. A frame 3 levels
+  lighter or darker, or red up 3 with blue down 3, fails.
 
 - **Blending.** Layers are now mixed in the output's encoded values, not in Core Image's linear
   light: each layer is converted to the output space before it is laid over the others. A
@@ -58,8 +62,10 @@ and then change the data model under it. Each of them needs two things that did 
 - **HDR and wide-colour clips.** They reach the compositor already converted to SDR BT.709 by
   AVFoundation (`supportsHDRSourceFrames` and `supportsWideColorSourceFrames` stay off), so the
   same fix applies to them and nothing else about them changed. Two tests write such a clip
-  (Display P3 H.264; 10-bit HEVC with HLG) and compare the Studio's frame with a direct decode:
-  P3 is within 6.8 in a region's mean, HLG within 12.1 (two different tone-mapping routes). The
+  (Display P3 H.264; 10-bit HEVC with HLG) and compare the Studio's frame with a direct decode.
+  P3: flat colour −3.6 … +1.1. HLG: flat colour 0 … +11.2 on the export and 0 … +11.0 on the
+  preview — the Studio's frame is lighter than a direct decode, see "Found". The limits are
+  one-sided around those numbers (P3 −5.5 … +3, HLG −3 … +14.5), so 6 levels darker fails. The
   export is still SDR; HDR output is not part of this.
 
 **Every golden image changed** in the second commit of this PR, for these reasons together:
@@ -202,7 +208,9 @@ The first commit's images passed on CI unchanged.
 
 - `StudioPassThroughTests` (5): an unedited clip through the Studio's export and preview against
   the same frame decoded directly — two portrait sources, the rotated one, a Display P3 clip, an
-  HLG clip; and the tolerance itself fails a frame 18 levels brighter and one 7 levels brighter.
+  HLG clip (not skipped on the simulator; both paths); and the limits themselves fail a frame
+  18, 7 and 3 levels lighter, 3 darker, a hue shift of red +3 / blue −3, and an HDR offset moved
+  6 darker or 25 either way.
 - `StudioGoldenMutationTests` (9): a deliberately wrong render must fail against the golden
   image at the simulator's export tolerance (and at the preview's, except where noted). The
   number is the region mean difference it produces, against an allowance of 3 (export) and 6
@@ -272,6 +280,15 @@ clip changed 66 pixels of 518,400), and an SF Symbol sticker comes out as a whit
 shape, not a star. So the simulator cannot give the "before" pictures for text, tags or the
 heart-rate tile; the capture action is there to get them from a phone.
 
+**Found, not fixed: an HLG clip comes out of the Studio lighter than a direct decode of it.**
+On the simulator flat colours are 0 to 11 levels up per channel, the same on the export and the
+preview. AVFoundation converts HDR to SDR before the compositor gets the frame, and its
+built-in compositor gives the same result (checked in review, on macOS: grey 93 decoded
+directly, 104 through either compositor), so this is not the Studio's doing. The review also
+saw, **on macOS**, the preview path receive HLG frames that were not tone-mapped (grey 120
+where the export has 93). That did **not** happen on the simulator (preview and export flat
+colour within 0.2 of each other), and it is not known what a phone does: see "Owed on device".
+
 Two things that are true today and are recorded in the images as they are:
 
 - **Photo clips are not rendered.** `makeComposition` leaves them out. There is a skipped
@@ -291,7 +308,9 @@ Nothing here was run on a phone. The app compiles for a device.
 0. **A clip exported from the Studio looks like the clip.** Export an unedited clip and a reel
    with a dissolve; compare with the originals in Photos. They must not be lighter. (This is the
    fix; it was measured on the simulator only.) Also one HDR clip from the phone's camera: the
-   export is SDR and must not look washed out or dark next to the clip in Photos.
+   export is SDR and must not look washed out or dark next to the clip in Photos, and **the
+   editor's preview of that clip must look like the exported file** (on macOS the preview got
+   frames that were not tone-mapped; the simulator did not show it).
 1. **Run the check on the phone** (Debug build → Settings → Developer → Studio render check).
    Expected: 15 pass, 6 skipped. Tap **Copy report** and send it whatever the result. **The
    device limits must be tightened from the report's "measured" lines** before the device check

@@ -13116,16 +13116,25 @@ which is another curve.
 `CVBufferCopyAttachments` → `CVImageBufferCreateColorSpaceFromAttachments`) and renders with
 that; `coreMedia709` when the buffer carries no tags. The buffer's tags are left alone, so the
 file is tagged BT.709 as before. Reading the space from the buffer, not naming one, is what
-keeps this right if the output ever becomes something else. After the fix the centres of the
-fixture's colour quarters are equal in the Studio's frame and in a direct decode; a region's
-mean differs by at most 5.6, at edges between colours.
+keeps this right if the output ever becomes something else. After the fix flat colour is within
+−1.0 … +1.5 a channel of a direct decode (mean over a 16 × 16 square); squares with an edge in
+them differ by up to 5.1.
 
 **HDR and wide colour.** `supportsHDRSourceFrames` and `supportsWideColorSourceFrames` stay
 false, so AVFoundation hands the compositor SDR BT.709 frames for such clips, and the output is
 SDR BT.709. They had the same lift and have the same fix; nothing else about them changed.
 `StudioPassThroughTests` writes a Display P3 clip and a 10-bit HLG clip and compares the
-Studio's frame with a direct decode (region mean within 6.8 and 12.1; the two routes tone-map
-differently). HDR output is a separate job.
+Studio's frame with a direct decode. Flat colour: P3 −3.6 … +1.1; HLG 0 … +11.2 on the export
+and 0 … +11.0 on the preview (AVFoundation's HDR-to-SDR conversion is lighter than a direct
+decode's; its built-in compositor gives the same). The limits are one-sided around the
+measurement. On macOS a reviewer saw the preview path get HLG frames that were not tone-mapped;
+the simulator does not show it and a phone has not been checked. HDR output is a separate job.
+
+**Flat and edge squares.** The pass-through limits are split: a square whose source is one
+colour (and for 8 pixels around) must be within 2 a channel — that is the colour check, and 3
+levels or a red +3 / blue −3 tint fails it; a square with an edge gets 10, because two decoders
+and a second H.264 pass place colour differently at an edge (measured 5.1) and another Xcode
+may differ more.
 
 **The permanent check** is `StudioPassThroughTests`: no golden image, the Studio's export and
 preview of an unedited clip against the same frame of the file. A golden image cannot find this
@@ -13149,7 +13158,8 @@ average of the two clips' stored values.
 Each layer is clamped to 0…1 (`CIColorClamp`) before the conversion. A decoded frame holds
 values slightly under 0 for a fully saturated colour, a negative value does not survive the
 encoding curve, and the mix came out wrong: a pure red to pure blue dissolve had no blue at its
-middle (171, 0, 0), found by `StudioCompositorRenderTests`. The output is 8-bit SDR, so nothing
+middle — `StudioCompositorRenderTests.testExportedFileHasTheBlendTheTextAndTheMusic` read
+(171, 0, 0) from the exported file there and failed. The output is 8-bit SDR, so nothing
 that could be shown is lost by the clamp. If the compositor ever writes HDR, this clamp has to
 go with the encoded-value mix.
 

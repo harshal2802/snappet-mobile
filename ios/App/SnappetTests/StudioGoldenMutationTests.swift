@@ -79,8 +79,9 @@ final class StudioGoldenMutationTests: StudioFixtureTestCase {
     /// A dissolve that eases (smoothstep) where the plan says linear. The scene cannot say that,
     /// so the composition's instructions are rewritten: for the frame under test, each
     /// transition's time range is moved so that its progress at that instant is the eased one.
-    /// Frames 17 and 25 are a quarter and three quarters of the way through; frame 21 is the
-    /// middle, where the two curves agree, and is not checked.
+    /// Frames 17 and 25 are 0.278 and 0.722 of the way through (the nearest frames to a quarter
+    /// and three quarters); frame 21 is the middle, where the two curves agree, and is not
+    /// checked.
     func testADissolveAtTheWrongProgressIsCaught() async throws {
         if Self.isRecording { return XCTFail(Self.recordingMessage) }
         let dissolve = try scene("transition-dissolve")
