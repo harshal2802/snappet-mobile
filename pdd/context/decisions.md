@@ -13079,3 +13079,186 @@ lets the composer try, as it did before the check existed. The answer-to-status 
 (`StudioAvailabilityProbe`); the wait (`StudioFirstAnswer`) has no Photos in it and is unit
 tested; only the request itself is device code.
 
+
+## 2026-11-25 — Golden frames compare brightness per pixel and colour averaged over 8 pixels (prompt 304)
+
+The first comparison looked at R, G and B per pixel. It could not tell an encoder from a bug. A
+video file keeps brightness for every pixel and colour for every second pixel each way, so a
+frame read back from an export has a band of wrong-coloured pixels along every sharp colour
+edge: up to 158 levels off in one channel and 4 pixels wide after the `vivid` filter. A block
+drawn one frame late is also a band of very different pixels, of the same size. Measured on the
+56 golden frames (preview frame against the export's golden image): 300–2,300 pixels a frame
+were more than 24 levels off in a channel.
+
+The comparison (`StudioGoldenCompare`) now looks at the two things a file treats differently:
+
+- **brightness** (BT.709 luma), per pixel. Over the same 56 frames the largest difference
+  between preview and export is **17**.
+- **colour** (the two colour-difference values), each averaged over an 8 × 8 square. The smear
+  at an edge averages out; a wrong filter or a wrong clip does not. Largest difference: **18**.
+
+A pixel differs when either is over its limit. A frame fails when more than `maxFraction` of its
+pixels differ, or when more than `maxCellFraction` of one 16 × 16 square does (the squares overlap
+by half). The second rule is what catches a small element in the wrong place.
+
+What the colour average gives up: a change of colour only, with the same brightness, in a patch
+smaller than about 3 × 3 pixels. Nothing the Studio draws is that.
+
+## 2026-11-25 — The compositor writes with the output buffer's colour space (prompt 304)
+
+**The bug.** Since prompt 300 every Studio frame was too bright: an unedited clip came out with
+its mid-tones about 18 levels (of 255) up (grey 120 → 139; a region's mean colour 22 – 24 off
+everywhere). Core Image reads a BT.709 video buffer as `CGColorSpace.coreMedia709` (a plain
+1.961 gamma); `StudioCompositor` rendered into the output buffer with `CGColorSpace.itur_709`,
+which is another curve.
+
+**The fix.** `render` asks the output buffer what it is (`colorSpace(of:)`:
+`CVBufferCopyAttachments` → `CVImageBufferCreateColorSpaceFromAttachments`) and renders with
+that; `coreMedia709` when the buffer carries no tags. The buffer's tags are left alone, so the
+file is tagged BT.709 as before. Reading the space from the buffer, not naming one, is what
+keeps this right if the output ever becomes something else. After the fix flat colour is within
+−1.0 … +1.5 a channel of a direct decode (mean over a 16 × 16 square); squares with an edge in
+them differ by up to 5.1.
+
+**HDR and wide colour.** `supportsHDRSourceFrames` and `supportsWideColorSourceFrames` stay
+false, so AVFoundation hands the compositor SDR BT.709 frames for such clips, and the output is
+SDR BT.709. They had the same lift and have the same fix; nothing else about them changed.
+`StudioPassThroughTests` writes a Display P3 clip and a 10-bit HLG clip and compares the
+Studio's frame with a direct decode. Flat colour: P3 −3.6 … +1.1; HLG 0 … +11.2 on the export
+and 0 … +11.0 on the preview (AVFoundation's HDR-to-SDR conversion is lighter than a direct
+decode's; its built-in compositor gives the same). The limits are one-sided around the
+measurement. On macOS a reviewer saw the preview path get HLG frames that were not tone-mapped;
+the simulator does not show it and a phone has not been checked. HDR output is a separate job.
+
+**Flat and edge squares.** The pass-through limits are split: a square whose source is one
+colour (and for 8 pixels around) must be within 2 a channel — that is the colour check, and 3
+levels or a red +3 / blue −3 tint fails it; a square with an edge gets 10, because two decoders
+and a second H.264 pass place colour differently at an edge (measured 5.1) and another Xcode
+may differ more.
+
+**The permanent check** is `StudioPassThroughTests`: no golden image, the Studio's export and
+preview of an unedited clip against the same frame of the file. A golden image cannot find this
+kind of fault, because it records whatever the compositor does.
+
+## 2026-11-25 — Studio layers are mixed in encoded video values (prompt 304)
+
+A dissolve, a fade through black and a picture-in-picture's opacity mix two pictures. Core
+Image mixes in linear light by default; AVFoundation's `setOpacityRamp`, which the Studio used
+for all of them before prompt 300, mixes the encoded values. The two look different: halfway
+between a red (199, 61, 61) and a teal (62, 180, 191) linear light gives about (167, 154, 161),
+the encoded mix gives (135, 123, 131), darker and what people have always got from this app and
+from most editors.
+
+**Decision: encoded values, as before prompt 300.** `StudioCompositor.compose` converts each
+layer to the output's colour space (`matchedFromWorkingSpace(to:)`) before it is laid over the
+others and converts the finished frame back once. Filters and scaling still run in Core
+Image's linear working space. Measured: the middle frame of the dissolve scene is the plain
+average of the two clips' stored values.
+
+Each layer is clamped to 0…1 (`CIColorClamp`) before the conversion. A decoded frame holds
+values slightly under 0 for a fully saturated colour, a negative value does not survive the
+encoding curve, and the mix came out wrong: a pure red to pure blue dissolve had no blue at its
+middle — `StudioCompositorRenderTests.testExportedFileHasTheBlendTheTextAndTheMusic` read
+(171, 0, 0) from the exported file there and failed. The output is 8-bit SDR, so nothing
+that could be shown is lost by the clamp. If the compositor ever writes HDR, this clamp has to
+go with the encoded-value mix.
+
+## 2026-11-25 — Golden-frame tolerances (prompt 304)
+
+`StudioSelfCheck.tolerance(for:on:)`. Limits are brightness / averaged colour (0…255), share of
+the frame, share of one 16 × 16 square, and the mean colour of one 16 × 16 square.
+
+| Where | Limits | Why |
+|---|---|---|
+| Simulator, export | 10 / 8, 0.2 %, 6 %, mean 3 | The golden images are made this way. Two runs, in one process and in two, gave the same bytes (largest difference 0). The room is for another Mac's encoder. |
+| Simulator, preview | 24 / 22, 0.5 %, 10 %, mean 6 | The same frame without the export's H.264 pass. Measured: brightness up to 25 on single pixels of one scene (inside the frame allowance), region mean up to 4.2. |
+| Device, export | 28 / 24, 1 %, 15 %, mean 8 | **Not measured**: no phone run yet. Another encoder writes the sources and the file, another GPU draws. **Too loose to be a gate.** |
+| Device, preview | 32 / 26, 1.5 %, 20 %, mean 10 | As above. |
+
+**The region mean** was added after review: the first comparison passed a filter that was not
+applied, a wrong strength, a wrong opacity and a dissolve at the wrong progress, because none
+of them moves a single pixel past the per-pixel limits or makes an edge. The mean of each
+channel's signed difference over a 16 × 16 square (squares overlap by half) does see them, and
+encoder noise averages out of it. Measured against the golden image on the simulator's export
+(`StudioGoldenMutationTests`): warm filter dropped 14.3, cool dropped 13.4, warm at 0.7 for 1
+5.2, warm + adjust at 1 for 0.7 4.2, filter dropped under an adjust 9.1, picture-in-picture
+opacity off by a tenth 8.1 – 18.2, a dissolve with smoothstep easing 17.4 – 18.9 at a quarter
+and three quarters. The two wrong-strength cases (5.2, 4.2) are caught on the export only; the
+preview's allowance of 6 is above them. That is accepted: preview and export are drawn from the
+same instructions (a test compares them layer for layer), and the export is checked at 3.
+
+**The device limits are placeholders.** The self-check's report prints the largest measured
+value of every scene on each path; after the first phone run each device limit is set to the
+measured maximum plus a small margin. Until then a pass on a phone means "nothing gross".
+
+Every one of them still fails the two mistakes the fixture is built to show
+(`StudioSelfCheckPlanTests`): the white block one frame early or late (it moves 6 pixels a
+frame, so a strip 6 pixels wide changes brightness by about 100 — 37 % of a square), and the
+block missing. If the first phone run fails on a device limit, look at the difference pictures
+before changing a number: a limit is raised only for noise that is spread along edges.
+
+## 2026-11-25 — The golden fixture is written in code, not committed (prompt 304)
+
+The source videos for the golden frames are drawn by `StudioGoldenPattern` (four colour
+quarters, a corner mark, a white block that moves 6 pixels a frame) and written with
+`AVAssetWriter` when a test class or the self-check starts: two 180×320 clips, one 320×180, one
+320×180 with a quarter-turn `preferredTransform`, 1 s each at 30 frames a second, with a 440 Hz
+tone. (They were 2 s at first; halving them halved the suite's time and lost no case.) Fixed encoder settings (H.264, no frame reordering, a key frame every second, a fixed bit
+rate, BT.709). A test writes one source twice and requires the same decoded pixels.
+
+The pattern's colours are sRGB numbers. The writer stores the value a BT.709 file keeps for
+each (`StudioGoldenPattern.videoValue(forSRGB:)`: the sRGB curve undone, then a 1/1.961 power)
+and tags every buffer BT.709, so a decoded frame shown as sRGB has the pattern's numbers (199,
+61, 61 for 200, 60, 60). The first version wrote the sRGB numbers into untagged buffers and a
+decoded grey 120 read 131. Two more sources exist for the pass-through tests only: a Display P3
+clip and a 10-bit HEVC HLG clip.
+
+Why not commit them: a video in the repo cannot be reviewed, and a phone would need it bundled.
+Written in code, the same sources exist on the simulator and on the phone, and a test can say
+where the block must be in any frame. The cost: the sources depend on the machine's H.264
+encoder, so a new Xcode or macOS can move the goldens by a little. The tolerances above are
+the room for that; a re-record is the fix if it is more.
+
+The golden images themselves **are** committed: 66 PNGs, 464 KB in all, in
+`ios/App/SnappetTests/GoldenFrames/`. They are recorded from the **export** (a real file from
+`StudioComposer.export`), because that is what a person gets; the preview is compared with the
+same images.
+
+## 2026-11-25 — One folder of golden images, read two ways (prompt 304)
+
+The unit tests read `SnappetTests/GoldenFrames/` by path (from `#filePath`, as
+`WardrobeImageStoreRealDataTests` finds its folder), so a recording is readable at once. The
+debug self-check needs the same images on a phone, so a build script on the app target copies
+them into `Snappet.app/StudioGoldenFrames/` in a **Debug** build and removes the folder in any
+other. They are left out of the test bundle. `testTheAppBundleCarriesTheSameGoldenImages` fails
+if the app's copies are not byte-for-byte the repo's. Record mode is a marker file
+(`GoldenFrames/.record`, git-ignored), not an environment variable: `xcodebuild` does not pass
+the shell's environment to a hosted unit test. With the marker present **every** golden test
+fails — each scene test after it has written its images — so no part of a recording run is
+green. A re-record forced by a new Xcode, macOS or simulator runtime is a PR that touches no
+Studio source file. CI (Xcode 26.5, `macos-26`) and the machine the images were recorded on
+(Xcode 27.2, iOS 26.5 simulator) agreed on the first set, so there is one set of images, not one
+per runtime; if they come apart, the answer is a set per runtime, not a looser limit.
+
+## 2026-11-25 — An overlay reference is captured on a phone before the overlays move (prompt 304)
+
+Prompts 305 and 306 move text, stickers, climb tags and the heart-rate tile from the Core
+Animation tool into the compositor. To say "it looks the same" there must be pictures of how
+the tool draws them today, and the simulator cannot make them: in an offline export with the
+custom compositor the tool draws layer shapes there (a caption's highlight box, a rounded
+rectangle) but no glyphs and no symbols (a star sticker is a white rounded shape). So the debug
+self-check has **Capture overlay reference**: five fixed scenes at 540×960 through today's
+export, 11 PNG frames and a `manifest.json`, shared from the phone. The scenes, file names and
+manifest are pure (`StudioOverlayReference`) and unit-tested; the simulator only proves the
+action runs and writes the files, and the screen says the simulator's files are not a reference.
+
+## 2026-11-25 — The self-check exports through `StudioComposer.export(composition:…)` (prompt 304)
+
+`StudioComposer.export(_:)` was split in two: it builds the composition from Photos and hands
+it to a new `export(composition:videoComposition:audioMix:quality:progress:)`, which holds the
+session, the preset, the progress reports and the clean-up, unchanged. The golden tests and the
+self-check build their composition with `assemble` (no Photos) and call the second half, so
+they write a file with the code the Studio uses. Nothing about what is drawn changed.
+
+All the check's code in the app (`StudioGoldenCompare`, `StudioGoldenScenes`,
+`StudioSelfCheck`, `StudioGoldenRenderer`, `StudioSelfCheckView`) is inside `#if DEBUG`.

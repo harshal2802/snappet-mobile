@@ -41,6 +41,21 @@ struct SuiteSettingsView: View {
                     }
                     .accessibilityIdentifier("settings.backup")
                 }
+                #if DEBUG
+                // Debug builds only (prompt 304): renders the Studio's golden scenes on this device.
+                Section {
+                    NavigationLink {
+                        StudioSelfCheckView()
+                    } label: {
+                        Label("Studio render check", systemImage: "checkmark.rectangle.stack")
+                    }
+                    .accessibilityIdentifier("settings.studioSelfCheck")
+                } header: {
+                    Text("Developer")
+                } footer: {
+                    Text("Debug builds only.")
+                }
+                #endif
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

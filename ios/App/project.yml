@@ -111,6 +111,22 @@ targets:
           if [ "${CODE_SIGNING_ALLOWED}" != "NO" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
             codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" "$FW"
           fi
+      # The Studio's golden frames (prompt 304) live with the tests that record them
+      # (SnappetTests/GoldenFrames). The debug "Studio render check" screen compares what a phone
+      # renders with the SAME files, so a Debug build copies them into the app. A Release build
+      # gets none (and an old copy is removed). Runs before the app is signed.
+      - name: Copy Studio golden frames (Debug only)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/StudioGoldenFrames"
+          rm -rf "$DEST"
+          [ "${CONFIGURATION}" = "Debug" ] || exit 0
+          mkdir -p "$DEST"
+          for PNG in "${SRCROOT}/SnappetTests/GoldenFrames/"*.png; do
+            [ -f "$PNG" ] && cp "$PNG" "$DEST/"
+          done
+          exit 0
   # watchOS companion: runs HKWorkoutSession + HKLiveWorkoutBuilder and relays live HR /
   # energy to the phone over WCSession (live-workout-studio A1).
   SnappetWatch:
@@ -203,6 +219,10 @@ targets:
     platform: iOS
     sources:
       - path: SnappetTests
+        # The golden images are read from the repo by path and from the app bundle (see the
+        # "Copy Studio golden frames" script above); the test bundle needs no copy of its own.
+        excludes:
+          - "GoldenFrames"
     dependencies:
       - target: Snappet
     settings:

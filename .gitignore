@@ -78,3 +78,5 @@ docs/walkthroughs/video-studio-walkthrough-fullres.mp4
 ios/App/build/
 ios/App/fastlane/README.md
 .wardrobe-real-blobs
+# Studio golden frames (prompt 304): the record-mode marker is never committed.
+ios/App/SnappetTests/GoldenFrames/.record

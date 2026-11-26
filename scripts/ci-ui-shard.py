@@ -100,6 +100,11 @@ AREAS = {
             "RacketMixedSessionUITests",   # a racket match and lifts in one session: the workout session detail
         ],
     },
+    "studio": {   # the Studio's render path; its golden frames are unit tests, these are the screens (prompt 304)
+        "paths": [f"{WT}/Studio*", f"{APP}/Services/Studio*", f"{APP}/Features/Settings/StudioSelfCheck*",
+                  "ios/App/SnappetTests/GoldenFrames/*"],
+        "classes": ["StudioSelfCheckUITests", "LiveWorkoutStudioWalkthroughTests"],
+    },
     "kilter": {
         "paths": [f"{APP}/Features/Kilter/*", f"{APP}/Services/Kilter*", "ios/App/Shared/Kilter*"],
         "classes": ["Kilter*", "LibraryKilterUITests", "HeartRateOwnershipUITests"],
@@ -138,7 +143,7 @@ AREAS = {
         "paths": [f"{APP}/Features/Camera/*", f"{APP}/Services/CameraController.swift"],
         "classes": ["SnappetCameraUITests"],
     },
-    "settings": {"paths": [f"{APP}/Features/Settings/*"], "classes": ["AppearanceUITests"]},
+    "settings": {"paths": [f"{APP}/Features/Settings/*"], "classes": ["AppearanceUITests", "StudioSelfCheckUITests"]},
     "home": {"paths": [f"{APP}/Features/Home/*"], "classes": ["HomeLinksUITests"]},
     "shell": {   # tab bar + App Library
         "paths": [f"{APP}/Features/Shell/*", f"{APP}/Features/AppLibrary/*"],

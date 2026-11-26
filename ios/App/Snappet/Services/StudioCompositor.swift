@@ -54,6 +54,17 @@ final class StudioCompositionInstruction: NSObject, AVVideoCompositionInstructio
 /// `CIContext`. Output is SDR BT.709. HDR and wide-colour sources are converted to SDR BT.709 by
 /// AVFoundation before they arrive, because `supportsHDRSourceFrames` and
 /// `supportsWideColorSourceFrames` are left at their default of `false`.
+///
+/// **Colour (prompt 304).** Core Image reads a source frame with the colour space its pixel
+/// buffer is tagged with, and for BT.709 video that is `CGColorSpace.coreMedia709` (a plain 1.961
+/// gamma). The output frame is written with the colour space of the OUTPUT buffer's own tags —
+/// the same one, because the video composition asks for BT.709 — so a clip with no edits comes
+/// out with the pixel values it went in with. (Writing it with `CGColorSpace.itur_709`, a
+/// different curve, made every export about 18 levels brighter in the mid-tones.) Filters and
+/// adjust work in Core Image's linear working space, as they always have. Layers are then laid
+/// over one another in the output's encoded values, not in linear light: that is what
+/// AVFoundation's opacity ramps did before prompt 300, and it is what a dissolve is expected to
+/// look like (half-way, each pixel is the mean of the two clips' values).
 final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
 
     /// One context for every compositor instance (preview and export each get their own instance
@@ -66,7 +77,18 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
         return CIContext(options: options)
     }()
 
-    private static let outputColorSpace = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
+    /// BT.709 as video pixel buffers carry it. Used when an output buffer has no colour tags.
+    static let videoColorSpace = CGColorSpace(name: CGColorSpace.coreMedia709)
+        ?? CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
+
+    /// The colour space a pixel buffer's tags describe (primaries, transfer function, matrix).
+    static func colorSpace(of buffer: CVPixelBuffer) -> CGColorSpace {
+        if let attachments = CVBufferCopyAttachments(buffer, .shouldPropagate),
+           let space = CVImageBufferCreateColorSpaceFromAttachments(attachments)?.takeRetainedValue() {
+            return space
+        }
+        return videoColorSpace
+    }
 
     private let queue = DispatchQueue(label: "snappet.studio.compositor", qos: .userInitiated)
     /// Bumped by a cancel. A queued request that was started under an older value is answered
@@ -114,7 +136,8 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
             return
         }
         let size = request.renderContext.size
-        var image = compose(instruction, at: request.compositionTime.seconds) { trackID in
+        let space = colorSpace(of: output)
+        var image = compose(instruction, at: request.compositionTime.seconds, blendSpace: space) { trackID in
             request.sourceFrame(byTrackID: trackID).map { CIImage(cvPixelBuffer: $0) }
         }
         // The plan works top-left; a pixel buffer drawn by Core Image is bottom-left. Flip once,
@@ -125,8 +148,7 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
             image = image.transformed(by: CGAffineTransform(scaleX: size.width / canvas.width,
                                                             y: size.height / canvas.height))
         }
-        context.render(image, to: output, bounds: CGRect(origin: .zero, size: size),
-                       colorSpace: outputColorSpace)
+        context.render(image, to: output, bounds: CGRect(origin: .zero, size: size), colorSpace: space)
         request.finish(withComposedVideoFrame: output)
     }
 
@@ -136,8 +158,23 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
     /// (the caller flips it for a pixel buffer). `frame` returns a track's current source frame as
     /// Core Image sees it (bottom-left origin), or `nil` when the track has none at this time; a
     /// layer with no frame is left out.
+    ///
+    /// `blendSpace` is the output's colour space. Each layer is converted to its encoded values
+    /// before it is laid over the others, and the finished frame is converted back, so the
+    /// result is an ordinary colour-managed image.
     static func compose(_ instruction: StudioCompositionInstruction, at t: Double,
+                        blendSpace: CGColorSpace = videoColorSpace,
                         frame: (CMPersistentTrackID) -> CIImage?) -> CIImage {
+        // A decoded video frame can hold values a little under 0 and over 1 (a fully saturated
+        // colour, an overshoot at an edge). The output cannot show them, and a value under 0
+        // does not survive the encoding curve: it spoils the mix (a red-to-blue dissolve lost
+        // its blue). So a layer is brought into 0...1 first.
+        func encoded(_ image: CIImage) -> CIImage {
+            let inRange = image.applyingFilter("CIColorClamp", parameters: [
+                "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)])
+            return inRange.matchedFromWorkingSpace(to: blendSpace) ?? inRange
+        }
         let canvas = instruction.canvas
         let canvasRect = CGRect(origin: .zero, size: canvas)
 
@@ -153,7 +190,8 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
             return (entry.layer, image)
         }
 
-        var result = backgroundImage(instruction.background, canvas: canvasRect, behind: mains.first?.image)
+        // Black and white are the same in linear and in encoded values; only the blur needs encoding.
+        var result = encoded(backgroundImage(instruction.background, canvas: canvasRect, behind: mains.first?.image))
 
         var curtain = 0.0
         for (layer, source) in mains {
@@ -164,7 +202,7 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
                 transform = transform.concatenating(
                     StudioRenderPlan.scale(zoom, about: CGPoint(x: clip.midX, y: clip.midY)))
             }
-            var image = source.transformed(by: transform).cropped(to: layer.placement.clip)
+            var image = encoded(source.transformed(by: transform).cropped(to: layer.placement.clip))
             var opacity = 1.0
             if let phase = layer.leaving {
                 let p = phase.progress(at: t)
@@ -190,9 +228,9 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
         for entry in instruction.pips {
             let opacity = StudioRenderPlan.pipOpacity(entry.layer, at: t)
             guard opacity > 0.001, let raw = frame(entry.source.trackID) else { continue }
-            var image = upright(raw, orient: entry.source.orient)
+            var image = encoded(upright(raw, orient: entry.source.orient)
                 .transformed(by: entry.layer.transform)
-                .cropped(to: entry.layer.frame)
+                .cropped(to: entry.layer.frame))
             if abs(entry.layer.rotationDegrees) > 0.01 {
                 let f = entry.layer.frame
                 image = image.transformed(by: StudioRenderPlan.rotation(
@@ -200,7 +238,8 @@ final class StudioCompositor: NSObject, AVVideoCompositing, Sendable {
             }
             result = faded(image, opacity).composited(over: result)
         }
-        return result.cropped(to: canvasRect)
+        let finished = result.cropped(to: canvasRect)
+        return finished.matchedToWorkingSpace(from: blendSpace) ?? finished
     }
 
     /// A source frame turned upright with a top-left origin: flip Core Image's bottom-left rows,
