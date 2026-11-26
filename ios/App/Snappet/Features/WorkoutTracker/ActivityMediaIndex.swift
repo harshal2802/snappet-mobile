@@ -64,6 +64,9 @@ struct ActivityMediaInput: Sendable, Equatable {
     var assignedClimbUUID: String? = nil
     /// The asset's `SessionMedia.bakeTimeMap` (prompt 305); `nil` for a clip with no map.
     var timeMap: BakedTimeMap? = nil
+    /// The clip's Studio edit (prompt 309): its trim, HR window and scope, so the number next to
+    /// the clip and its viewer read it as the Clips feed does. `nil` = never edited.
+    var edit: ClipStudioEdit? = nil
 }
 
 /// One clip of an activity, stamped with the set it was filmed during and the heart rate around it —
@@ -158,10 +161,16 @@ enum ActivityMediaIndex {
     /// asks (`ClipHROverlay.summary` over the clip as the viewer gets it). A photo: 10 s either
     /// side of its moment. `nil` when there is no heart rate near the clip.
     ///
+    /// Also `nil` when the clip's whole window lies outside the recording (`isHeld`): the viewer
+    /// shows the nearest sample there with a dashed line that says it is not a measurement, and
+    /// a bare "♥ 132" has no way to say so.
+    ///
     /// Before prompt 309 this was the mean of the recorded samples strictly inside the footage,
     /// so a clip between two sparse samples had no number while its viewer showed one.
     static func averageBPM(for m: ActivityMediaInput, hrSeries: [HRPoint]) -> Int? {
-        ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries)?.average
+        guard let summary = ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries),
+              !summary.isHeld else { return nil }
+        return summary.average
     }
 
     // MARK: - Private

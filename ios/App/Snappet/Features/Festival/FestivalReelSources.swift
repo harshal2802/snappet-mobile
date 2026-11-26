@@ -86,6 +86,7 @@ extension ReelSource {
             })
         source.boostWindows = stitched.boostWindows
         source.timeMaps = SessionHighlightInput.timeMaps(of: inputs.flatMap(\.clips))
+        source.heartRateSessions = stitched.heartRate
         source.trimToHighlights = true
         source.postSessionID = latest.id
         source.postTitle = "\(name) — Highlights"

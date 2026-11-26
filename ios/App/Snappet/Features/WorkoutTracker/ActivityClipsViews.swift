@@ -8,19 +8,22 @@ import SwiftData
 // `ActivityMediaIndex`; this file is the thin SwiftData/Photos edge + the views.
 
 extension ActivityMediaInput {
-    static func from(_ m: SessionMedia) -> ActivityMediaInput {
+    static func from(_ m: SessionMedia, edit: ClipStudioEdit? = nil) -> ActivityMediaInput {
         ActivityMediaInput(id: m.id, sessionID: m.sessionID, assignedExerciseID: m.assignedExerciseID,
                            assignedSetIndex: m.assignedSetIndex, kindRaw: m.kindRaw, offsetSec: m.offsetSec,
                            durationSec: m.durationSec, localIdentifier: m.localIdentifier,
                            isReel: m.isReel, isBaked: m.isBaked, assignedClimbUUID: m.assignedClimbUUID,
-                           timeMap: m.bakeTimeMap)
+                           timeMap: m.bakeTimeMap, edit: edit)
     }
 
     /// The feed's media value, so the viewer reuses `ClipMediaSurface` + `ClipHROverlay` unchanged.
     var mediaInput: MediaInput {
         MediaInput(id: id, kind: kindRaw, offsetSec: offsetSec, durationSec: durationSec,
                    exerciseId: assignedExerciseID, setIndex: assignedSetIndex, climbUUID: nil,
-                   localIdentifier: localIdentifier, isBaked: isBaked, timeMap: timeMap)
+                   localIdentifier: localIdentifier,
+                   // As `MediaInput.from`: a baked clip or a reel carries its edit in the pixels.
+                   edit: (isBaked || isReel) ? nil : edit,
+                   isBaked: isBaked, timeMap: timeMap)
     }
 }
 
@@ -29,7 +32,10 @@ enum ActivityMediaStore {
     /// of the whole media table inside the (1 Hz re-rendering) live player.
     @MainActor
     static func snapshot(context: ModelContext) -> [ActivityMediaInput] {
-        ((try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []).map(ActivityMediaInput.from)
+        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
+        // Each clip's Studio edit, looked up once for the whole snapshot (prompt 309).
+        let edits = ClipStudioEdit.byMedia(context: context, media: rows)
+        return rows.map { ActivityMediaInput.from($0, edit: edits[$0.id]) }
     }
 }
 

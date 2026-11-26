@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - @Model -> plain-value bridges for FeedComposer (F0)
 //
@@ -51,6 +52,37 @@ extension MediaInput {
                    climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier,
                    aspect: m.aspectRatio, edit: (m.isBaked || m.isReel) ? nil : edit,
                    isBaked: m.isBaked, reelTitle: m.reelTitle, timeMap: m.bakeTimeMap)
+    }
+}
+
+extension ClipStudioEdit {
+    /// Every clip's Studio edit, keyed by `SessionMedia.id`, for a whole LIST of media rows at
+    /// once (prompt 309). Every surface that shows a clip or a number next to one stamps the
+    /// edit on its `MediaInput` from this, so the kept range, the HR window and the "Clip only"
+    /// scope set in the Studio are the same in the Clips feed, Recap, the activity pages, the
+    /// Kilter library and the festival set screen. One pass over the projects per list, never
+    /// per cell: `StudioProject.clips` is the largest blob on the project, so only the projects
+    /// of sessions that have media in `media` are opened. First project wins per media id (a
+    /// session has one today).
+    @MainActor
+    static func byMedia(projects: [StudioProject], media: [SessionMedia]) -> [UUID: ClipStudioEdit] {
+        guard !projects.isEmpty, !media.isEmpty else { return [:] }
+        let mediaIDByLocal = Dictionary(media.map { ($0.localIdentifier, $0.id) },
+                                        uniquingKeysWith: { a, _ in a })
+        let mediaSessionIDs = Set(media.map(\.sessionID))
+        var edits: [UUID: ClipStudioEdit] = [:]
+        for p in projects where mediaSessionIDs.contains(p.sessionID) {
+            edits.merge(byMedia(clips: p.clips, mediaIDByLocalID: mediaIDByLocal)) { a, _ in a }
+        }
+        return edits
+    }
+
+    /// The same, for a surface that holds no `@Query` of the projects: one fetch.
+    @MainActor
+    static func byMedia(context: ModelContext, media: [SessionMedia]) -> [UUID: ClipStudioEdit] {
+        guard !media.isEmpty else { return [:] }
+        let projects = (try? context.fetch(FetchDescriptor<StudioProject>())) ?? []
+        return byMedia(projects: projects, media: media)
     }
 }
 

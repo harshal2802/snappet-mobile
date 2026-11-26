@@ -61,8 +61,11 @@ enum SessionHighlightInput {
         /// A session's media row as a reel clip: it starts when the first frame of the video the
         /// asset plays now was filmed (`reelStartSec`), and carries the row's time map.
         static func from(_ media: SessionMedia) -> Clip {
-            Clip(localIdentifier: media.localIdentifier, isVideo: media.kind == .video,
-                 offsetSec: media.reelStartSec, durationSec: media.durationSec, timeMap: media.bakeTimeMap)
+            // The map is decoded once (`reelStartSec` would decode it a second time).
+            let map = media.bakeTimeMap
+            return Clip(localIdentifier: media.localIdentifier, isVideo: media.kind == .video,
+                        offsetSec: ClipCaptureClock(offsetSec: media.offsetSec, timeMap: map).captureStartSec,
+                        durationSec: media.durationSec, timeMap: map)
         }
     }
 

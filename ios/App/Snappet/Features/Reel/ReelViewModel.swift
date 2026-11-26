@@ -39,7 +39,20 @@ struct ReelSource {
     /// The baked clips' time maps, keyed by media id (prompt 309): the reel's heart rate reads a
     /// baked clip through its map (`ReelHeartRate`). Not used for hand-picked media.
     var timeMaps: [String: BakedTimeMap] = [:]
+    /// A reel stitched from SEVERAL sessions (weekly, month, picked clips, festival): each
+    /// session's own heart rate, its max and rest, its place on the stitched timeline and its
+    /// media (prompt 309). A clip's heart rate is read from its own session only. Empty = a reel
+    /// of one session: the workout's series is that session's.
+    var heartRateSessions: [ReelHeartRate.Session] = []
 
+    /// What the reel's scorebug is read from for `workout` (the one `makeWorkout` returned).
+    /// Hand-picked media (the limited-Photos picker) are not this source's rows: they are read
+    /// against the workout's series with no time map.
+    func heartRate(for workout: Workout, usesManualMedia: Bool) -> ReelHeartRate.Input {
+        if usesManualMedia { return .oneSession(workout) }
+        guard !heartRateSessions.isEmpty else { return .oneSession(workout, timeMaps: timeMaps) }
+        return ReelHeartRate.Input(media: workout.media, sessions: heartRateSessions, timeMaps: timeMaps)
+    }
 }
 
 /// Drives the auto-generate-then-edit flow (#60 §B): generate a good reel
@@ -352,29 +365,28 @@ final class ReelViewModel {
     /// The reel's heart rate for `plan` (prompt 309): each clip's own readings, in reel time,
     /// from the one resolver. The ONE call for the preview's scorebug and the export's.
     private func heartRateTrack(for plan: ReelPlan, workout wk: Workout) -> ReelHeartRate.Track {
-        ReelHeartRate.track(plan: plan, media: wk.media,
-                            series: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
-                            timeMaps: usesManualMedia ? [:] : source.timeMaps)
+        ReelHeartRate.track(plan: plan, input: source.heartRate(for: wk, usesManualMedia: usesManualMedia))
     }
 
-    /// The live preview scorebug (reel editor redesign): the SAME `.feedClipScorebug` tile the
-    /// export burns, over the same heart rate (`ReelHeartRate`: each clip's own readings while
-    /// it is on screen) — so the SwiftUI overlay on the preview IS the burn, previewed. `nil`
-    /// when the HR chip is off or the reel's clips have no HR. (The CA burn itself can't render
-    /// in an in-app player.)
-    var previewHRTile: (tile: HRTile, values: HROverlayValues)? {
-        guard overlayEnabled, let wk = workout, let track = previewTrack, track.hasData,
-              let map = timelineMap, map.totalDuration > 0 else { return nil }
-        let values = ReelHeartRate.values(track: track, durationSec: map.totalDuration,
-                                          maxHR: wk.maxBpm, restHR: wk.restBpm)
-        // `resolveTile` is the renderability gate (the same one the burn runs) — the view
-        // draws the HRTile itself, exactly like the feed poster does.
+    /// The live preview scorebug (reel editor redesign) with the playhead `reelFraction` (0…1)
+    /// through the reel: the SAME tile the export burns, over the same heart rate
+    /// (`ReelHeartRate`: each clip's own readings while it is on screen) — so the SwiftUI
+    /// overlay on the preview IS the burn, previewed. `fraction` is the playhead within the
+    /// stretch of the reel the values cover. `nil` when the HR chip is off, and while a clip
+    /// with no heart rate plays: no number is shown for it. (The CA burn itself can't render in
+    /// an in-app player.)
+    func previewHRTile(atReelFraction reelFraction: Double)
+        -> (tile: HRTile, values: HROverlayValues, fraction: Double)? {
+        guard overlayEnabled, let track = previewTrack, let map = timelineMap, map.totalDuration > 0,
+              let at = track.run(at: min(1, max(0, reelFraction)) * map.totalDuration) else { return nil }
+        // `wouldDraw` is the renderability gate (the same one the burn runs) — the view draws
+        // the HRTile itself, exactly like the feed poster does.
         // The user's Clips overlay default (prompt 163), falling back to the built-in scorebug when it
         // would draw nothing — the same fallback the burn applies.
-        let styled = styleTile(restHR: wk.restBpm)
-        let tile = values.wouldDraw(styled) ? styled : HRTile.feedClipScorebug(restHR: wk.restBpm)
-        guard values.wouldDraw(tile) else { return nil }
-        return (tile, values)
+        let styled = styleTile(restHR: at.run.restHR)
+        let tile = at.run.values.wouldDraw(styled) ? styled : HRTile.feedClipScorebug(restHR: at.run.restHR)
+        guard at.run.values.wouldDraw(tile) else { return nil }
+        return (tile, at.run.values, at.fraction)
     }
 
     /// The saved Clips overlay default's tile (design + stats + transparency), or the built-in look.
@@ -408,10 +420,9 @@ final class ReelViewModel {
             // Burn the glass HR scorebug (highlights P1) — the SAME overlay path the feed's Animate
             // uses (`ReelHeartRate` → `feedClipScorebug` → `StudioOverlays.makeAnimationTool`),
             // with each clip's own heart rate while it is on screen (prompt 309).
-            let track = heartRateTrack(for: plan, workout: wk)
-            let overlay: ReelExporter.HROverlay? = (overlayEnabled && track.hasData)
-                ? ReelExporter.HROverlay(track: track,
-                                         maxHR: wk.maxBpm, restHR: wk.restBpm,
+            // The exporter times the scorebug from where it actually puts each segment.
+            let overlay: ReelExporter.HROverlay? = overlayEnabled
+                ? ReelExporter.HROverlay(heartRate: source.heartRate(for: wk, usesManualMedia: usesManualMedia),
                                          tile: styleTile(restHR: wk.restBpm))
                 : nil
             let url = try await exporter.export(plan, hrOverlay: overlay, renderAspect: format.aspect,

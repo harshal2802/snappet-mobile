@@ -43,6 +43,9 @@ struct FeedView: View {
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
     @Query private var allMedia: [SessionMedia]
+    /// The Studio projects, for each clip's edit (prompt 309): the poster chip and the viewer
+    /// read a clip's trim, HR window and scope as the Clips feed does.
+    @Query(sort: \StudioProject.updatedAt, order: .reverse) private var studioProjects: [StudioProject]
     // F2 batched membership: hoist the reaction/save corpus to ONE query each (was 2 FetchDescriptors
     // PER card in FeedReactionStrip.task). @Model-backed, so both auto-refresh on any toggle.
     @Query private var feedReactions: [FeedReaction]
@@ -84,7 +87,8 @@ struct FeedView: View {
             },
             buildIndex: {
                 FeedMediaIndex(kilterSessions: kilterSessions, workoutSessions: workoutSessions,
-                               kilterLogs: kilterLogs, allMedia: allMedia)
+                               kilterLogs: kilterLogs, allMedia: allMedia,
+                               studioProjects: studioProjects)
             })
     }
 
@@ -101,6 +105,8 @@ struct FeedView: View {
         h.combine(allMedia.count)
         h.combine(kilterSessions.first?.startedAt)      // @Query sorted newest-first
         h.combine(workoutSessions.first?.startedAt)
+        h.combine(studioProjects.count)                 // a Studio edit changes a clip's numbers
+        h.combine(studioProjects.first?.updatedAt)      // @Query sorted newest-first
         return h.finalize()
     }
 
@@ -384,7 +390,7 @@ struct FeedView: View {
         let media = index.mediaBySession[sid] ?? []  // O(1) instead of allMedia.filter
         guard !media.isEmpty else { return nil }
         let resolver = FeedMediaResolver(index: index)
-        return FeedCardMedia(clips: media.map { MediaInput.from($0) },
+        return FeedCardMedia(clips: resolver.mediaInputs(for: sid),
                              hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                              nameFor: resolver.nameResolver(for: sid),
                              clipContext: resolver.clipContext(for: sid, card: card))

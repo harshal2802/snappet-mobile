@@ -369,7 +369,11 @@ the Studio (preview tile, HR-window sliders, export, bake) and the reel scorebug
 call it; what a surface may do differently is a field of `ClipHROptions`. The poster chip and the
 activity average now show the overlay's PEAK and AVG, a photo is read 10 s either side of its moment
 everywhere, and a reel's scorebug reads each clip's own heart rate while it is on screen (it was the whole
-session stretched over the reel). `ClipHRCrossSurfaceTests` compares the surfaces with each other. **Resizable base video**: an
+session stretched over the reel), from the clip's own session, with no scorebug over a clip that has none
+(`ReelHeartRate`: sessions, runs, placements). A clip's Studio edit (`ClipStudioEdit.byMedia`, one lookup
+per list) reaches Recap, the activity pages, the Kilter library and the festival set screen as well as the
+Clips feed. Footage more than 90 s outside the recording on either side has no heart rate, and a recorded
+sample counts once in AVG. `ClipHRCrossSurfaceTests` compares the surfaces with each other. **Resizable base video**: an
 optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
 a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
 export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a

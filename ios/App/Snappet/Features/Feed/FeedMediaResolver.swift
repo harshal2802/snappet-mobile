@@ -24,11 +24,17 @@ struct FeedMediaIndex {
     var kilterByID: [UUID: KilterSession] = [:]
     var workoutByID: [UUID: WorkoutSession] = [:]
     var logsBySession: [UUID: [KilterLogEntry]] = [:]
+    /// Each clip's Studio edit by media id (prompt 309), so Recap's poster chip and viewer read
+    /// the clip as the Clips feed does. Built once with the index, not per card.
+    var editsByMedia: [UUID: ClipStudioEdit] = [:]
 
     init() {}
 
+    @MainActor
     init(kilterSessions: [KilterSession], workoutSessions: [WorkoutSession],
-         kilterLogs: [KilterLogEntry], allMedia: [SessionMedia]) {
+         kilterLogs: [KilterLogEntry], allMedia: [SessionMedia],
+         studioProjects: [StudioProject]) {
+        self.editsByMedia = ClipStudioEdit.byMedia(projects: studioProjects, media: allMedia)
         var media: [UUID: [SessionMedia]] = [:]
         for m in allMedia { media[m.sessionID, default: []].append(m) }
         var logs: [UUID: [KilterLogEntry]] = [:]
@@ -46,6 +52,11 @@ struct FeedMediaResolver {
     let index: FeedMediaIndex
 
     init(index: FeedMediaIndex) { self.index = index }
+
+    /// A session's media as the viewer and the poster chip get them: each with its Studio edit.
+    func mediaInputs(for sid: UUID) -> [MediaInput] {
+        (index.mediaBySession[sid] ?? []).map { MediaInput.from($0, edit: index.editsByMedia[$0.id]) }
+    }
 
     func hrSeries(for sid: UUID) -> [HRPoint] {
         index.kilterByID[sid]?.hrSeries ?? index.workoutByID[sid]?.hrSeries ?? []

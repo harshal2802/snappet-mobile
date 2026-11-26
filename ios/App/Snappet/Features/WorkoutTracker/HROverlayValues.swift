@@ -47,8 +47,6 @@ struct HROverlayValues {
     /// The peak bpm over the RAW window (not the smoothed chart series) — the value the curve's peak
     /// label shows, kept consistent with the scorebug's PEAK so smoothing can't shave it.
     var rawPeakBpm: Double? { stats?.maxBpm }
-    /// The plain mean of the RAW readings in the metrics scope: the value AVG shows, before rounding.
-    var rawAverageBpm: Double? { stats?.avgBpm }
 
     /// `statsSamples` (prompt 115): when set, the **aggregates** (stats + effort) are computed over
     /// these samples instead of `samples` — the `.clip` metrics scope passes the footage-only slice
@@ -58,11 +56,17 @@ struct HROverlayValues {
     /// `chartSamples` (prompt 309): a display series that is already resolved, used as it is. Only
     /// the reel maker passes one (`ReelHeartRate`): each clip's own display series laid end to end,
     /// which must not be smoothed again across a cut. `nil` = made from `samples`, as always.
+    ///
+    /// `countedSamples` (prompt 309): the readings the peak, the average and the time in zones
+    /// count, when that is not every sample of the scope. `ClipHeartRate` passes it where the
+    /// scope reaches past the first or last recorded sample: the edge reading there is a copy of
+    /// that sample and must not be counted a second time. `nil` = the scope's samples.
     init(samples: [HRPoint], durationSec: Double, maxHR: Double?, restHR: Double?,
          kcal: Double? = nil, hrv: HRVMetrics = .empty,
          window: HRClipWindow? = nil,
          statsSamples: [HRPoint]? = nil, statsDurationSec: Double? = nil,
-         chartSamples: [HRPoint]? = nil) {
+         chartSamples: [HRPoint]? = nil,
+         countedSamples: [HRPoint]? = nil) {
         self.samples = samples
         self.durationSec = durationSec
         self.maxHR = maxHR
@@ -71,7 +75,8 @@ struct HROverlayValues {
         self.hrv = hrv
         self.window = window
         let scoped = statsSamples ?? samples
-        self.stats = WorkoutHRStats.make(from: scoped, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
+        self.stats = WorkoutHRStats.make(from: countedSamples ?? scoped,
+                                         maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
         self.chartSamples = chartSamples ?? HRChartGeometry.displaySeries(samples)
         self.cadence = HRCadence.summarize(samples)
         self.effort = ClimbEffort.make(

@@ -64,41 +64,10 @@ struct ClipHR: Sendable {
     /// The text, colours and chart every tile is drawn from.
     let values: HROverlayValues
 
-    /// The session-time window the samples cover as asked for (the recorded data may end sooner).
-    var captureWindow: (start: Double, span: Double) { (captureStartSec, window.spanSec) }
-
-    /// Where the video's progress (0…1 of the footage) is on the chart (0…1 of its width).
-    func chartFraction(videoFraction f: Double) -> Double { values.chartFraction(forVideoFraction: f) }
-
-    /// The bpm shown when the video is at `f` (0…1 of the footage).
-    func bpm(atVideoFraction f: Double) -> Double? {
-        values.bpm(atFraction: chartFraction(videoFraction: f))
-    }
-
-    /// The bpm shown at `t` seconds into the video the asset plays now.
-    func bpm(atRenditionTime t: Double) -> Double? {
-        bpm(atVideoFraction: videoFraction(atRenditionTime: t))
-    }
-
-    /// The zone (and so the colour) of the reading at `f`, against the options' maximum.
-    func zone(atVideoFraction f: Double) -> HeartRateZone {
-        bpm(atVideoFraction: f).map { HeartRateZone.forBpm($0, maxHR: values.resolvedMaxHR) } ?? .none
-    }
-
-    /// The highest reading over the options' scope, before rounding.
-    var peakBpm: Double? { values.rawPeakBpm }
-    /// The plain mean of the readings over the options' scope, before rounding.
-    var averageBpm: Double? { values.rawAverageBpm }
-    /// The peak and the average as every surface prints them.
-    var summary: ClipHRSummary? {
-        guard let peak = values.rawPeakBpm, let average = values.rawAverageBpm else { return nil }
-        return ClipHRSummary(peakBpm: peak, averageBpm: average)
-    }
-
-    func videoFraction(atRenditionTime t: Double) -> Double {
-        let span = renditionEndSec - renditionStartSec
-        return span > 0 ? min(1, max(0, (t - renditionStartSec) / span)) : 0
-    }
+    /// `true` when the whole window lies outside the recorded heart rate (within the clamp
+    /// tolerance of it): the readings are the nearest recorded sample, held, not measurements.
+    /// The tile draws such a window dashed (`HROverlayValues.isSparseChart`).
+    let isHeld: Bool
 
     /// The footage's samples in **rendition time**: `t` is seconds into the video the asset plays
     /// now, from `renditionStartSec` to `renditionEndSec`. The footage's stretch of the session
@@ -145,6 +114,10 @@ struct ClipHRSummary: Sendable, Equatable {
     var peakBpm: Double
     /// The plain mean of the readings over the options' scope.
     var averageBpm: Double
+    /// `true` when the whole window lies outside the recorded heart rate: the numbers are the
+    /// nearest sample, held (see `ClipHR.isHeld`). A surface that prints a bare number with no
+    /// dashed line to say so leaves it out (`ActivityMediaIndex.averageBPM`).
+    var isHeld: Bool = false
 
     /// Whole beats, rounded the one way every surface rounds.
     var peak: Int { ClipHeartRate.rounded(peakBpm) }
@@ -156,15 +129,10 @@ struct ClipHRSummary: Sendable, Equatable {
     }
 }
 
-/// Why a clip has no heart rate to show.
+/// A clip with no heart rate to show: the session recorded none, or the footage lies more than
+/// the clamp tolerance outside the recording. The window is still known (the Studio's HR-window
+/// sliders show it).
 struct ClipHRGap: Sendable, Equatable {
-    enum Reason: Sendable, Equatable {
-        /// The session recorded no heart rate.
-        case noSeries
-        /// The window is further than the clamp tolerance from every recorded sample.
-        case farFromAnySample
-    }
-    var reason: Reason
     var captureStartSec: Double
     var window: HRClipWindow
 }
@@ -205,14 +173,18 @@ enum ClipHRResult: Sendable {
 /// - **The window**: the footage's capture window, widened by `options.leadSec` (clamped at the
 ///   session's start) and `options.tailSec`.
 /// - **Which samples**: `HRWindowSlicer`. Recorded samples inside the window, plus one reading at
-///   each edge, read off the straight line between the two samples around it. A window outside
-///   the recording but within `clampTolerance` of it holds the nearest sample flat; further away
-///   there is no data.
+///   each edge, read off the straight line between the two samples around it.
+/// - **Outside the recording**: footage more than `clampTolerance` (90 s) before the first
+///   recorded sample or after the last one, measured from the footage's nearest edge, has no
+///   data, on either side; the lead-in and the tail do not move this limit. Nearer than that, a
+///   window that reaches no recorded sample shows the nearest one, held (`isHeld`).
 /// - **The reading at a moment**: straight-line interpolation in the window's display series
 ///   (`HRChartGeometry.displaySeries`: a 0.5 s grid, smoothed over 2 s). Never "hold the last
 ///   sample".
 /// - **Peak and average**: the highest reading and the plain mean of the readings in the scope
-///   (the whole window, or the footage for `.clip`), from `WorkoutHRStats`.
+///   (the whole window, or the footage for `.clip`), from `WorkoutHRStats`. Each recorded sample
+///   counts once: where the scope reaches past the first or the last recorded sample, the edge
+///   reading is a copy of that sample and is left out of the count.
 /// - **Rounding**: to the nearest whole beat, halves away from zero.
 /// - **Zone**: `HeartRateZone.forBpm` against `options.maxHR`, or 190 when the session has none.
 enum ClipHeartRate {
@@ -225,13 +197,14 @@ enum ClipHeartRate {
         let slice = slice(series: series, clock: clock, renditionStart: renditionStart,
                           renditionEnd: renditionEnd, options: options)
         guard !slice.samples.isEmpty else {
-            return .noData(ClipHRGap(reason: series.isEmpty ? .noSeries : .farFromAnySample,
-                                     captureStartSec: slice.start, window: slice.window))
+            return .noData(ClipHRGap(captureStartSec: slice.start, window: slice.window))
         }
         return .data(ClipHR(captureStartSec: slice.start, window: slice.window, samples: slice.samples,
                             renditionStartSec: renditionStart,
                             renditionEndSec: max(renditionStart, renditionEnd),
-                            values: values(samples: slice.samples, window: slice.window, options: options)))
+                            values: values(samples: slice.samples, window: slice.window, options: options,
+                                           scoped: slice.scoped, counted: slice.counted),
+                            isHeld: slice.isHeld))
     }
 
     /// The peak and the average `resolve` gives, without building the chart. `nil` = no data.
@@ -240,9 +213,9 @@ enum ClipHeartRate {
                         options: ClipHROptions) -> ClipHRSummary? {
         let slice = slice(series: series, clock: clock, renditionStart: renditionStart,
                           renditionEnd: renditionEnd, options: options)
-        let scoped = scoped(samples: slice.samples, window: slice.window, scope: options.scope)
-        guard let stats = WorkoutHRStats.make(from: scoped?.samples ?? slice.samples) else { return nil }
-        return ClipHRSummary(peakBpm: stats.maxBpm, averageBpm: stats.avgBpm)
+        guard let stats = WorkoutHRStats.make(from: slice.counted ?? slice.scoped?.samples ?? slice.samples)
+        else { return nil }
+        return ClipHRSummary(peakBpm: stats.maxBpm, averageBpm: stats.avgBpm, isHeld: slice.isHeld)
     }
 
     /// The window a clip's heart rate is read over: the footage's capture window from the clock,
@@ -260,8 +233,33 @@ enum ClipHeartRate {
     /// The values for a tile that is NOT over one clip's window (the Studio's whole-session
     /// fallback for a clip whose row cannot be found): the same builder, no window.
     static func values(samples: [HRPoint], window: HRClipWindow?, options: ClipHROptions) -> HROverlayValues {
+        values(samples: samples, window: window, options: options,
+               scoped: window.flatMap { scoped(samples: samples, window: $0, scope: options.scope) },
+               counted: nil)
+    }
+
+    /// A reading as a whole number of beats.
+    static func rounded(_ bpm: Double) -> Int { Int(bpm.rounded()) }
+
+    // MARK: - Private
+
+    private struct Slice {
+        var start: Double
+        var window: HRClipWindow
+        /// The window's samples, window-local. Empty = no data.
+        var samples: [HRPoint] = []
+        /// The footage's part of them, when the scope is the footage and the window is wider.
+        var scoped: (samples: [HRPoint], span: Double)? = nil
+        /// The readings the peak and the average count, when that is not all of the scope's
+        /// samples (an edge reading that copies a recorded sample is left out). `nil` = all.
+        var counted: [HRPoint]? = nil
+        var isHeld = false
+    }
+
+    private static func values(samples: [HRPoint], window: HRClipWindow?, options: ClipHROptions,
+                               scoped: (samples: [HRPoint], span: Double)?,
+                               counted: [HRPoint]?) -> HROverlayValues {
         let span = samples.last?.t ?? 0
-        let scoped = window.flatMap { Self.scoped(samples: samples, window: $0, scope: options.scope) }
         let statsSamples = scoped?.samples ?? samples
         let statsSpan = scoped?.span ?? span
         let kcal = options.energyProfile?.estimatedKcal(forSeries: statsSamples, durationSec: statsSpan)
@@ -272,22 +270,66 @@ enum ClipHeartRate {
             : .empty
         return HROverlayValues(samples: samples, durationSec: span, maxHR: options.maxHR, restHR: options.restHR,
                                kcal: kcal, hrv: hrv, window: window,
-                               statsSamples: scoped?.samples, statsDurationSec: scoped?.span)
+                               statsSamples: scoped?.samples, statsDurationSec: scoped?.span,
+                               countedSamples: counted)
     }
-
-    /// A reading as a whole number of beats.
-    static func rounded(_ bpm: Double) -> Int { Int(bpm.rounded()) }
-
-    // MARK: - Private
 
     private static func slice(series: [HRPoint], clock: ClipCaptureClock,
                               renditionStart: Double, renditionEnd: Double,
-                              options: ClipHROptions) -> (start: Double, window: HRClipWindow, samples: [HRPoint]) {
+                              options: ClipHROptions) -> Slice {
         let ext = window(clock: clock, renditionStart: renditionStart, renditionEnd: renditionEnd,
                          leadSec: options.leadSec, tailSec: options.tailSec)
-        let samples = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
+        var out = Slice(start: ext.start, window: ext.window)
+        guard let recorded = recordedBounds(series) else { return out }
+
+        // Outside the recording: one limit, on both sides, from the footage's nearest edge.
+        let footage = clock.captureWindow(renditionStart: renditionStart, renditionEnd: renditionEnd)
+        let footageEnd = footage.start + max(0, footage.span)
+        if footage.start > recorded.last + options.clampTolerance
+            || footageEnd < recorded.first - options.clampTolerance { return out }
+
+        out.samples = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
                                            clampTolerance: options.clampTolerance)
-        return (ext.start, ext.window, samples)
+        guard !out.samples.isEmpty else { return out }
+        // The slicer's own window, in session seconds (it cannot start before the session).
+        let base = max(0, ext.start)
+        let span = max(0.001, ext.window.spanSec)
+        // No recorded sample in the window as asked for (before the slicer's clamps): what it
+        // returned is the nearest sample, held.
+        out.isHeld = ext.start > recorded.last || footageEnd + ext.window.tailSec < recorded.first
+        if let scoped = scoped(samples: out.samples, window: ext.window, scope: options.scope) {
+            out.scoped = scoped
+            out.counted = countedOnce(scoped.samples, from: base + ext.window.leadSec,
+                                      to: base + ext.window.leadSec + ext.window.footageSec, recorded: recorded)
+        } else {
+            out.counted = countedOnce(out.samples, from: base, to: base + span, recorded: recorded)
+        }
+        return out
+    }
+
+    /// The first and the last recorded second of a series.
+    private static func recordedBounds(_ series: [HRPoint]) -> (first: Double, last: Double)? {
+        guard var first = series.first?.t else { return nil }
+        var last = first
+        for point in series {
+            if point.t < first { first = point.t }
+            if point.t > last { last = point.t }
+        }
+        return (first, last)
+    }
+
+    /// `samples` (a slice over the session seconds `from … to`) without the edge readings that
+    /// only repeat a recorded sample: where the slice starts before the first recorded sample its
+    /// first reading is a copy of that sample, which is also in the slice at its own time; the
+    /// same at the end. `nil` when nothing is repeated.
+    private static func countedOnce(_ samples: [HRPoint], from: Double, to: Double,
+                                    recorded: (first: Double, last: Double)) -> [HRPoint]? {
+        var out = samples
+        // Two readings are always kept: time in a zone needs a stretch of time, and a lone sample
+        // repeated is the same mean.
+        if recorded.first > from, recorded.first < to, out.count > 2 { out.removeFirst() }
+        if recorded.last < to, recorded.last > from, out.count > 2 { out.removeLast() }
+        return out.count == samples.count ? nil : out
     }
 
     /// The footage's part of the window, when the scope is the footage and the window is wider.

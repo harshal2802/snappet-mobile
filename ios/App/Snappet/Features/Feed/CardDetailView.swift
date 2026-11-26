@@ -18,6 +18,7 @@ struct CardDetailView: View {
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
     @Query private var allMedia: [SessionMedia]
+    @Query private var studioProjects: [StudioProject]
     @Query private var feedReactions: [FeedReaction]
     @Query private var feedSaveItems: [FeedSaveItem]
     @State private var showingShare = false
@@ -178,7 +179,7 @@ struct CardDetailView: View {
                 .accessibilityIdentifier("feed.mediaButton")
                 .sheet(isPresented: $showingMedia) {
                     let resolver = mediaResolver
-                    MediaBrowserView(media: media.map { MediaInput.from($0) },
+                    MediaBrowserView(media: resolver.mediaInputs(for: sid),
                                      hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                                      nameFor: resolver.nameResolver(for: sid),
                                      card: card, clipContext: clipContext)
@@ -192,7 +193,7 @@ struct CardDetailView: View {
     private var mediaResolver: FeedMediaResolver {
         FeedMediaResolver(index: FeedMediaIndex(
             kilterSessions: kilterSessions, workoutSessions: workoutSessions,
-            kilterLogs: kilterLogs, allMedia: allMedia))
+            kilterLogs: kilterLogs, allMedia: allMedia, studioProjects: studioProjects))
     }
 
     private var openInModuleButton: some View {

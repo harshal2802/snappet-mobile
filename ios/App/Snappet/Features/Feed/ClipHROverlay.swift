@@ -11,7 +11,7 @@ import Foundation
 //
 // Prompt 116 (feed ⇄ Studio convergence): the mapping honours the clip's `MediaInput.edit` — the chart
 // window is the **kept (trimmed) footage extended by the clip's lead/tail** (the SAME window the Studio
-// preview shows and the export burns, via the shared `StudioHRPlacement.extendedWindow`), aggregates
+// preview shows and the export burns: all three ask `ClipHeartRate`, the one resolver), aggregates
 // follow the clip's metrics scope, and the playhead maps **kept-range-relative** video time onto the
 // chart via `HROverlayValues.chartFraction`. A clip with no Studio project gets the same defaults the
 // Studio would apply (lead 0:05 · tail 0:30 · full-window scope) — never-edited clips tell the

@@ -267,9 +267,9 @@ private struct ReelEditorView: View {
         // live playhead. (The CA burn itself can't draw in an in-app player — this SwiftUI
         // overlay is the WYSIWYG stand-in, and it replaces the old explanatory footer.)
         .overlay(alignment: .bottom) {
-            if let hr = vm.previewHRTile, vm.previewPlayer != nil {
+            if vm.previewPlayer != nil, let hr = vm.previewHRTile(atReelFraction: transport.fraction) {
                 HRTileView(tile: hr.tile, values: hr.values,
-                           fraction: transport.fraction, liveBlur: false)
+                           fraction: hr.fraction, liveBlur: false)
                     .frame(maxWidth: .infinity)
                     .frame(height: 88)
                     .allowsHitTesting(false)
