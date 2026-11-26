@@ -1342,21 +1342,21 @@ final class StudioEditorViewModel {
     /// change is what the user is looking at. `nil` when there's no targetable video clip with a
     /// resolvable capture offset.
     var hrWindowInfo: HRWindowEditorInfo? {
-        guard let clip = placedClipUnderPlayhead()?.clip, let clock = captureClock(of: clip) else { return nil }
-        let ext = StudioHRPlacement.extendedWindow(offset: clock.offsetSec, trimStart: clip.trimStart,
-                                                   trimEnd: clip.trimEnd,
-                                                   sourceDuration: timelineDurations[clip.id],
-                                                   leadSec: clip.hrWindowLeadSec,
-                                                   tailSec: clip.hrWindowTailSec,
-                                                   timeMap: clock.timeMap)
+        // The window alone (no samples are read for the sliders): the resolver's window rule,
+        // asked as `clipHeartRate` asks it.
+        guard let clip = placedClipUnderPlayhead()?.clip,
+              let ask = heartRateRequest(for: clip, sourceDuration: timelineDurations[clip.id]) else { return nil }
+        let ext = ClipHeartRate.window(clock: ask.clock, renditionStart: ask.start, renditionEnd: ask.end,
+                                       leadSec: ask.options.leadSec, tailSec: ask.options.tailSec)
+        let window = ext.window
         let coverageEnd = hrSeries.last?.t ?? 0
-        let footageEnd = ext.start + ext.window.leadSec + ext.window.footageSec
+        let footageEnd = ext.start + window.leadSec + window.footageSec
         return HRWindowEditorInfo(
             clipID: clip.id,
             lead: clip.hrWindowLeadSec, tail: clip.hrWindowTailSec,
-            effectiveLead: ext.window.leadSec,
+            effectiveLead: window.leadSec,
             effectiveTail: min(clip.hrWindowTailSec, max(0, coverageEnd - footageEnd)),
-            footageSec: ext.window.footageSec, scope: clip.hrMetricsScope,
+            footageSec: window.footageSec, scope: clip.hrMetricsScope,
             isCustomized: clip.hrLeadSec != nil || clip.hrTailSec != nil || clip.hrMetricsScopeRaw != nil)
     }
 
@@ -1459,57 +1459,49 @@ final class StudioEditorViewModel {
         guard !hrSeries.isEmpty else { return [:] }
         // A clip baked with a tile gets no entry (prompt 295): the tile is in its pixels.
         let videoClips = visibleSnapshotClips.filter { !$0.isPhoto && !ClipBakePlan.hidesHRTile(over: $0) }
-        let clocks = Dictionary(uniqueKeysWithValues: videoClips.compactMap { c in
-            captureClock(of: c).map { (c.id, $0) }
-        })
-        let offsets = clocks.mapValues(\.offsetSec)
-        guard !offsets.isEmpty else { return [:] }
         // Each clip's EXTENDED window (prompt 115): footage widened by its lead-in/tail, so the burned
         // chart shows the effort's after-story while the dot sweeps only the on-camera span.
         // A baked asset's time map (prompt 305) goes with its offset: both from one clock.
-        let sampled = StudioHRPlacement.sampleExtended(clips: videoClips, offsets: offsets,
-                                                       sourceDurations: sourceDurations, series: hrSeries,
-                                                       timeMaps: clocks.compactMapValues(\.timeMap))
-        guard !sampled.isEmpty else { return [:] }
+        // All of it is `ClipHeartRate`, the one resolver (prompt 309).
+        var resolved: [UUID: ClipHR] = [:]
+        var hasClock = false
+        for clip in videoClips {
+            guard let result = clipHeartRate(of: clip, sourceDuration: sourceDurations[clip.id]) else { continue }
+            hasClock = true
+            if let hr = result.data { resolved[clip.id] = hr }
+        }
+        guard hasClock, !resolved.isEmpty else { return [:] }
         // One composite tile per clip, resolved over the clip's own capture window. No tile → no per-clip
         // HR content (legacy free-floating badges were removed once everything migrates to a tile).
         guard let tile = snapshot.hrOverlay?.tile else { return [:] }
-        var out: [UUID: StudioClipHRContent] = [:]
-        for (id, s) in sampled {
-            let scope = videoClips.first { $0.id == id }?.hrMetricsScope ?? .default
-            out[id] = StudioClipHRContent(
-                samples: s.samples,
-                tile: scopedOverlayValues(samples: s.samples, window: s.window, scope: scope).resolveTile(tile))
-        }
-        return out
+        return resolved.mapValues { StudioClipHRContent(samples: $0.samples, tile: $0.values.resolveTile(tile)) }
     }
 
-    /// Build the overlay VALUES for one clip's (possibly extended) window — per-clip avg/max/zone/
-    /// calories/HRV, not the session-wide values; bounds (max/rest HR) stay session-wide. Under a
-    /// `.clip` metrics scope the aggregates re-slice to the footage sub-window (`[lead, lead+footage]`
-    /// of the already window-local samples) while the chart keeps the full window. ONE builder for the
-    /// preview badges AND the export burn-in, so the two can't diverge (WYSIWYG).
-    private func scopedOverlayValues(samples: [HRPoint], window: HRClipWindow?,
-                                     scope: HRMetricsScope) -> HROverlayValues {
-        let span = samples.last?.t ?? 0
-        let clipScoped = scope == .clip && (window?.isExtended ?? false)
-        let scoped: [HRPoint]
-        let scopedSpan: Double
-        if clipScoped, let w = window {
-            scoped = HRWindowSlicer.slice(samples, start: w.leadSec, span: w.footageSec)
-            scopedSpan = scoped.last?.t ?? w.footageSec
-        } else {
-            scoped = samples
-            scopedSpan = span
-        }
-        let kcal = hrProfile?.estimatedKcal(forSeries: scoped, durationSec: scopedSpan)
-        let hrv = HRVMetrics.make(
-            from: scoped.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
-            start: 0, end: scopedSpan)
-        return HROverlayValues(samples: samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
-                               kcal: kcal, hrv: hrv, window: window,
-                               statsSamples: clipScoped ? scoped : nil,
-                               statsDurationSec: clipScoped ? scopedSpan : nil)
+    /// What the Studio asks the resolver for a clip: its HR-window sliders, the session's bounds,
+    /// and the profile for calories and HRV.
+    private func heartRateOptions(for clip: TimelineClip) -> ClipHROptions {
+        .studio(clip: clip, maxHR: hrMaxHR, restHR: hrRestHR, profile: hrProfile)
+    }
+
+    /// A clip's heart rate from `ClipHeartRate`, the one resolver (prompt 309): the trimmed range
+    /// of the video the asset plays now, read through the clip's capture clock. ONE call for the
+    /// preview tile, the HR-window sliders, the export and the bake, so they cannot differ.
+    /// `sourceDuration` is the length the caller's timeline uses for the clip. `nil` when the
+    /// clip's row cannot be found (no clock).
+    private func clipHeartRate(of clip: TimelineClip, sourceDuration: Double?) -> ClipHRResult? {
+        guard let ask = heartRateRequest(for: clip, sourceDuration: sourceDuration) else { return nil }
+        return ClipHeartRate.resolve(series: hrSeries, clock: ask.clock, renditionStart: ask.start,
+                                     renditionEnd: ask.end, options: ask.options)
+    }
+
+    /// What the Studio asks the resolver about a clip: its clock, the stretch of the video its
+    /// trims keep, and its options. `nil` when the clip's row cannot be found.
+    private func heartRateRequest(for clip: TimelineClip, sourceDuration: Double?)
+        -> (clock: ClipCaptureClock, start: Double, end: Double, options: ClipHROptions)? {
+        guard let clock = captureClock(of: clip) else { return nil }
+        let range = StudioHRPlacement.renditionRange(trimStart: clip.trimStart, trimEnd: clip.trimEnd,
+                                                     sourceDuration: sourceDuration)
+        return (clock, range.start, range.end, heartRateOptions(for: clip))
     }
 
     /// The preview's per-clip HR context: the clip under the playhead, its (possibly extended) HR
@@ -1523,6 +1515,8 @@ final class StudioEditorViewModel {
         /// The extended window, `nil` on the whole-session fallback (clip with no resolvable offset).
         var window: HRClipWindow?
         var scope: HRMetricsScope
+        /// The tile's values: the resolver's, for the clip under the playhead (prompt 309).
+        var values: HROverlayValues
     }
 
     /// The video clip that OWNS the playhead's moment (last clip when the playhead is at the very
@@ -1542,31 +1536,32 @@ final class StudioEditorViewModel {
     /// to its own extended window, with the clip-local playhead time + duration so the dot tracks
     /// within the footage span. Falls back to the whole-session series for a clip with no media link.
     var previewHR: PreviewHR {
-        guard let p = placedClipUnderPlayhead(), let clock = captureClock(of: p.clip) else {
+        guard let p = placedClipUnderPlayhead(),
+              let result = clipHeartRate(of: p.clip, sourceDuration: timelineDurations[p.clip.id]) else {
+            // No row for the clip under the playhead: the whole session's series, no window.
+            var options = ClipHROptions(maxHR: hrMaxHR, restHR: hrRestHR)
+            options.energyProfile = hrProfile
+            options.includesHRV = true
             return PreviewHR(samples: hrSeries, currentTime: currentTime,
-                             totalDuration: max(0.01, totalDuration), window: nil, scope: .default)
+                             totalDuration: max(0.01, totalDuration), window: nil, scope: .default,
+                             values: ClipHeartRate.values(samples: hrSeries, window: nil, options: options))
         }
-        let ext = StudioHRPlacement.extendedWindow(offset: clock.offsetSec, trimStart: p.clip.trimStart,
-                                                   trimEnd: p.clip.trimEnd,
-                                                   sourceDuration: timelineDurations[p.clip.id],
-                                                   leadSec: p.clip.hrWindowLeadSec,
-                                                   tailSec: p.clip.hrWindowTailSec,
-                                                   timeMap: clock.timeMap)
-        let samples = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
-        return PreviewHR(samples: samples, currentTime: currentTime - p.startSec,
-                         totalDuration: max(0.01, p.durationSec), window: ext.window,
-                         scope: p.clip.hrMetricsScope)
+        // No heart rate near the clip: the tile's values over no samples (it draws nothing).
+        let values = result.data?.values
+            ?? ClipHeartRate.values(samples: [], window: result.window, options: heartRateOptions(for: p.clip))
+        return PreviewHR(samples: result.data?.samples ?? [], currentTime: currentTime - p.startSec,
+                         totalDuration: max(0.01, p.durationSec), window: result.window,
+                         scope: p.clip.hrMetricsScope, values: values)
     }
 
     /// The preview tile's VALUES + playhead fraction, computed together from ONE `previewHR` pass
-    /// (one timeline build, one slice, one `HROverlayValues` init per render — the split accessors
-    /// each redid all of it). The fraction routes through `values.chartFraction(forVideoFraction:)`,
-    /// the SAME remap the export's segments use, so the maxT rule lives in exactly one place.
+    /// (one timeline build, one resolve per render). The fraction routes through
+    /// `values.chartFraction(forVideoFraction:)`, the SAME remap the export's segments use, so the
+    /// maxT rule lives in exactly one place.
     var previewTile: (values: HROverlayValues, fraction: Double) {
         let p = previewHR
-        let values = scopedOverlayValues(samples: p.samples, window: p.window, scope: p.scope)
         let videoF = p.totalDuration > 0 ? min(1, max(0, p.currentTime / p.totalDuration)) : 0
-        return (values, values.chartFraction(forVideoFraction: videoF))
+        return (p.values, p.values.chartFraction(forVideoFraction: videoF))
     }
 
     // MARK: Picture-in-picture (a second video composited over the main track)

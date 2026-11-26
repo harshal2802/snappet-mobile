@@ -43,13 +43,34 @@ enum SessionHighlightInput {
         let offsetSec: Double
         /// Source duration in seconds; `nil` for photos or an unresolved video.
         let durationSec: Double?
+        /// The row's `SessionMedia.bakeTimeMap` (prompt 309): how a baked video's time maps back
+        /// to the recording. The reel planner does not read it (`offsetSec` is already when the
+        /// first frame of the baked video was filmed); the reel's heart rate does
+        /// (`ReelHeartRate`), so a clip baked at 2× or from joined parts reads the right seconds.
+        let timeMap: BakedTimeMap?
 
-        init(localIdentifier: String, isVideo: Bool, offsetSec: Double, durationSec: Double?) {
+        init(localIdentifier: String, isVideo: Bool, offsetSec: Double, durationSec: Double?,
+             timeMap: BakedTimeMap? = nil) {
             self.localIdentifier = localIdentifier
             self.isVideo = isVideo
             self.offsetSec = offsetSec
             self.durationSec = durationSec
+            self.timeMap = timeMap
         }
+
+        /// A session's media row as a reel clip: it starts when the first frame of the video the
+        /// asset plays now was filmed (`reelStartSec`), and carries the row's time map.
+        static func from(_ media: SessionMedia) -> Clip {
+            Clip(localIdentifier: media.localIdentifier, isVideo: media.kind == .video,
+                 offsetSec: media.reelStartSec, durationSec: media.durationSec, timeMap: media.bakeTimeMap)
+        }
+    }
+
+    /// The baked clips' time maps, keyed by media id (the Photos identifier): what
+    /// `ReelHeartRate.track` needs next to the planner's media.
+    static func timeMaps(of clips: [Clip]) -> [String: BakedTimeMap] {
+        Dictionary(clips.compactMap { clip in clip.timeMap.map { (clip.localIdentifier, $0) } },
+                   uniquingKeysWith: { first, _ in first })
     }
 
     // MARK: - HR mapping
@@ -150,11 +171,7 @@ extension ReelSource {
         let hr = session.hrSeries, duration = session.duration
         let maxHR = session.maxHR, restHR = session.restHR
         // Posted reels are session media too — never reel-of-reel them.
-        let baseClips = media.filter { !$0.isReel }.map {
-            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
-                                       isVideo: $0.kind == .video,
-                                       offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
-        }
+        let baseClips = media.filter { !$0.isReel }.map(SessionHighlightInput.Clip.from)
         let boostWindows = WorkoutHRStats.peakEffortWindows(
             for: session.exercises, sessionStart: session.startedAt,
             hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })
@@ -176,6 +193,7 @@ extension ReelSource {
                     sport: sport, category: category, restHR: restHR, maxHR: maxHR)
             })
         source.boostWindows = boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: baseClips)
         source.postSessionID = session.id
         source.postTitle = "\(session.routineName.isEmpty ? "Workout" : session.routineName) — Highlights"
         return source

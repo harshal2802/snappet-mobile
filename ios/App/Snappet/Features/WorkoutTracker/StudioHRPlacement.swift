@@ -44,12 +44,19 @@ enum StudioHRPlacement {
     static func captureWindow(offset: Double, trimStart: Double, trimEnd: Double?,
                               sourceDuration: Double?,
                               timeMap: BakedTimeMap? = nil) -> (start: Double, span: Double) {
+        let range = renditionRange(trimStart: trimStart, trimEnd: trimEnd, sourceDuration: sourceDuration)
+        let window = ClipCaptureClock(offsetSec: offset, timeMap: timeMap)
+            .captureWindow(renditionStart: range.start, renditionEnd: range.end)
+        return (window.start, max(0.001, window.span))
+    }
+
+    /// The range of the video the asset plays now that a clip's trims keep: `trimEnd` clamped to
+    /// the video's length, `trimStart` to 0. What `ClipHeartRate` is asked about (prompt 309).
+    static func renditionRange(trimStart: Double, trimEnd: Double?,
+                               sourceDuration: Double?) -> (start: Double, end: Double) {
         let src = sourceDuration ?? trimEnd ?? 0
         let end = min(trimEnd ?? src, src > 0 ? src : (trimEnd ?? 0))
-        let start = max(0, trimStart)
-        let window = ClipCaptureClock(offsetSec: offset, timeMap: timeMap)
-            .captureWindow(renditionStart: start, renditionEnd: end)
-        return (window.start, max(0.001, window.span))
+        return (max(0, trimStart), end)
     }
 
     /// The **extended** HR window for a clip (prompt 115): the footage capture window widened by the
@@ -58,15 +65,17 @@ enum StudioHRPlacement {
     /// to stay aligned with what actually got sliced). The tail is passed through as requested — the
     /// slicer's coverage clamp surfaces via the sliced samples' `maxT`, which every fraction in
     /// `HRClipWindow` is computed against.
+    ///
+    /// The window itself is `ClipHeartRate.window` (prompt 309), the one rule; this is its form for
+    /// a clip given as an offset, a map and trims.
     static func extendedWindow(offset: Double, trimStart: Double, trimEnd: Double?,
                                sourceDuration: Double?, leadSec: Double, tailSec: Double,
                                timeMap: BakedTimeMap? = nil)
         -> (start: Double, window: HRClipWindow) {
-        let base = captureWindow(offset: offset, trimStart: trimStart, trimEnd: trimEnd,
-                                 sourceDuration: sourceDuration, timeMap: timeMap)
-        let lead = min(max(0, leadSec), base.start)
-        let window = HRClipWindow(leadSec: lead, footageSec: base.span, tailSec: max(0, tailSec))
-        return (base.start - lead, window)
+        let range = renditionRange(trimStart: trimStart, trimEnd: trimEnd, sourceDuration: sourceDuration)
+        return ClipHeartRate.window(clock: ClipCaptureClock(offsetSec: offset, timeMap: timeMap),
+                                    renditionStart: range.start, renditionEnd: range.end,
+                                    leadSec: leadSec, tailSec: tailSec)
     }
 
     /// Per-clip sliced + rebased HR samples for the placed **video** clips, keyed by clip id. A clip
@@ -95,13 +104,14 @@ enum StudioHRPlacement {
         var out: [UUID: SampledClipHR] = [:]
         for clip in clips where !clip.isPhoto {
             guard let offset = offsets[clip.id] else { continue }
-            let ext = extendedWindow(offset: offset, trimStart: clip.trimStart, trimEnd: clip.trimEnd,
-                                     sourceDuration: sourceDurations[clip.id],
-                                     leadSec: clip.hrWindowLeadSec, tailSec: clip.hrWindowTailSec,
-                                     timeMap: timeMaps[clip.id])
-            let sliced = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
-                                              clampTolerance: clampTolerance)
-            if !sliced.isEmpty { out[clip.id] = SampledClipHR(samples: sliced, window: ext.window) }
+            let range = renditionRange(trimStart: clip.trimStart, trimEnd: clip.trimEnd,
+                                       sourceDuration: sourceDurations[clip.id])
+            var options = ClipHROptions(leadSec: clip.hrWindowLeadSec, tailSec: clip.hrWindowTailSec)
+            options.clampTolerance = clampTolerance
+            let result = ClipHeartRate.resolve(
+                series: series, clock: ClipCaptureClock(offsetSec: offset, timeMap: timeMaps[clip.id]),
+                renditionStart: range.start, renditionEnd: range.end, options: options)
+            if let hr = result.data { out[clip.id] = SampledClipHR(samples: hr.samples, window: hr.window) }
         }
         return out
     }

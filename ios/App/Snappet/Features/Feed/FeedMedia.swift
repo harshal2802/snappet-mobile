@@ -79,46 +79,23 @@ enum FeedMedia {
         nameFor(groupKey(m))
     }
 
-    /// Peak/avg/zone BPM for a clip's HR window — computed over the **same** sliced window the overlay
-    /// draws (`clipHRWindow` → `HRWindowSlicer`), so the still poster's chip and the inline / fullscreen
-    /// overlay can never disagree. `nil` when the window resolves no HR (the name-tag-only path).
+    /// The peak / average chip of a still poster (Recap carousel, media browser): the PEAK and AVG
+    /// the clip's overlay shows, from `ClipHeartRate`, the one resolver (prompt 309), asked exactly
+    /// as the overlay asks (`ClipHROverlay.summary`): the kept footage, read where its frames were
+    /// filmed, over the clip's own HR window. All `nil` when there is no heart rate near the clip
+    /// (the name-tag-only path). The zone is the peak's, against `maxHR`.
     ///
-    /// `timeMap` is the clip's `MediaInput.timeMap` (prompt 305): a baked, start-trimmed clip's
-    /// chip is then read where its frames were filmed, not from the original's start.
-    static func clipHR(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint], maxHR: Double,
-                       timeMap: BakedTimeMap? = nil) -> MediaClipHR {
-        let bpms = clipHRWindow(offsetSec: offsetSec, durationSec: durationSec, hrSeries: hrSeries,
-                                timeMap: timeMap).map(\.bpm)
-        guard !bpms.isEmpty else { return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil) }
-        let peak = bpms.max() ?? 0
-        let avg = bpms.reduce(0, +) / Double(bpms.count)
-        return MediaClipHR(peakBpm: Int(peak.rounded()), avgBpm: Int(avg.rounded()),
-                           zoneRaw: HeartRateZone.forBpm(peak, maxHR: maxHR).rawValue)
+    /// Before prompt 309 the chip was worked out here over the footage alone, so it could show
+    /// "peak 95" on a poster whose viewer then showed "PEAK 110".
+    static func clipHR(for clip: MediaInput, hrSeries: [HRPoint], maxHR: Double) -> MediaClipHR {
+        guard let summary = ClipHROverlay.summary(clip: clip, hrSeries: hrSeries) else {
+            return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil)
+        }
+        return MediaClipHR(peakBpm: summary.peak, avgBpm: summary.average,
+                           zoneRaw: summary.peakZone(maxHR: maxHR).rawValue)
     }
 
-    /// The session HR samples inside a clip's `[offsetSec, offsetSec + durationSec]` window, **rebased to
-    /// clip-local time** `[0, span]`, routed through the project's ONE hardened slicer (`HRWindowSlicer`) —
-    /// the same slicer the Studio editor and the export burn-in (R4) use, so the feed poster, the inline /
-    /// fullscreen overlay, the export, and the *playing video* can't drift. (The prior inline strict
-    /// `t >= offset && t <= end` filter + crude ±8s fallback re-introduced the "element vanishes / HR
-    /// frozen" bug `HRWindowSlicer` exists to kill — decisions.md prompt-29 / prompt-91.)
-    ///
-    /// Guarantees inherited from `HRWindowSlicer`: **interpolated endpoints** at the window edges, a
-    /// **≥2-point** result whenever any HR exists within the window or its ±90s edge-clamp pad (so the
-    /// chart never blanks and the playhead `maxT` reaches the window edge), and an honest **empty** `[]`
-    /// only when the window is farther than that pad from all data. A photo (`nil` duration) uses
-    /// `photoWindowSec`; a 0-duration clip collapses to a degenerate flat line at its instant.
-    ///
-    /// The window is `ClipCaptureClock.captureWindow` over the whole video (prompt 305); with no
-    /// time map that is `[offsetSec, offsetSec + durationSec]`, as before.
-    static func clipHRWindow(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint],
-                             timeMap: BakedTimeMap? = nil) -> [HRPoint] {
-        let window = ClipCaptureClock(offsetSec: offsetSec, timeMap: timeMap)
-            .captureWindow(renditionStart: 0, renditionEnd: durationSec ?? Self.photoWindowSec)
-        return HRWindowSlicer.slice(hrSeries, start: window.start, span: window.span)
-    }
-
-    /// The default window (seconds) used for a photo / nil-duration clip when slicing HR.
+    /// The footage length (seconds) assumed for a video whose length is not known.
     static let photoWindowSec: Double = 6
 
     /// Re-bucket the same clips by the chosen grouping. `nameFor` resolves a group key to a label.

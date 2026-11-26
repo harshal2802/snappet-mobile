@@ -127,6 +127,7 @@ extension ReelSource {
         var source = ReelSource(id: id, activity: stitched.workout.activity, title: title, start: start,
                                 makeWorkout: { _, _ in stitched.workout })
         source.boostWindows = stitched.boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: sessions.flatMap(\.clips))
         source.trimToHighlights = trimToHighlights
         source.postSessionID = latest.id
         source.postTitle = postTitle
@@ -149,6 +150,7 @@ extension ReelSource {
             // The stitched snapshot IS the input — manual picks don't apply to a week cut.
             makeWorkout: { _, _ in stitched.workout })
         source.boostWindows = stitched.boostWindows
+        source.timeMaps = SessionHighlightInput.timeMaps(of: sessions.flatMap(\.clips))
         source.trimToHighlights = true
         source.postSessionID = latest.id
         source.postTitle = "Your Week — Highlights"

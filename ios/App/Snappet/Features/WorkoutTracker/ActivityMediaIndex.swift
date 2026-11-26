@@ -95,9 +95,6 @@ struct ActivitySessionGroup: Identifiable, Sendable, Equatable {
 /// UI — so it runs in `SnappetTests` with no device.
 enum ActivityMediaIndex {
 
-    /// Seconds either side of a photo's instant that count as "its" heart rate.
-    static let photoHRWindowSec: Double = 10
-
     /// Every activity's clip count across `history`, skipping `excludingSession` (the live session —
     /// its own clips are already on the page's media shelf). Feeds the pager's "▶ N past clips" chip.
     static func counts(history: [WorkoutSession], media: [ActivityMediaInput],
@@ -156,18 +153,15 @@ enum ActivityMediaIndex {
         return media.filter { !$0.isReel && $0.assignedExerciseID == nil && sessionIDs.contains($0.sessionID) }.count
     }
 
-    /// Mean BPM over a clip: a video's `[offset, offset + duration]`, a photo's `± photoHRWindowSec`.
-    /// `nil` when no HR sample falls inside. A video's window comes from `ClipCaptureClock`
-    /// (prompt 305), so a baked clip is read where its frames were filmed.
+    /// The average printed next to a clip on the activity pages ("♥ 132"): the AVG its viewer's
+    /// overlay shows, from `ClipHeartRate`, the one resolver (prompt 309), asked as the overlay
+    /// asks (`ClipHROverlay.summary` over the clip as the viewer gets it). A photo: 10 s either
+    /// side of its moment. `nil` when there is no heart rate near the clip.
+    ///
+    /// Before prompt 309 this was the mean of the recorded samples strictly inside the footage,
+    /// so a clip between two sparse samples had no number while its viewer showed one.
     static func averageBPM(for m: ActivityMediaInput, hrSeries: [HRPoint]) -> Int? {
-        let video = ClipCaptureClock(offsetSec: m.offsetSec, timeMap: m.timeMap)
-            .captureWindow(renditionStart: 0, renditionEnd: max(1, m.durationSec ?? 1))
-        let (start, end): (Double, Double) = m.kindRaw == "video"
-            ? (video.start, video.start + video.span)
-            : (m.offsetSec - photoHRWindowSec, m.offsetSec + photoHRWindowSec)
-        let inWindow = hrSeries.filter { $0.t >= start && $0.t <= end }.map(\.bpm)
-        guard !inWindow.isEmpty else { return nil }
-        return Int((inWindow.reduce(0, +) / Double(inWindow.count)).rounded())
+        ClipHROverlay.summary(clip: m.mediaInput, hrSeries: hrSeries)?.average
     }
 
     // MARK: - Private

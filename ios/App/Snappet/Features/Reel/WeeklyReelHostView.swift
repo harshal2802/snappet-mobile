@@ -94,11 +94,7 @@ struct WeeklyReelHostView: View {
         func inScope(_ d: Date) -> Bool { interval?.contains(d) ?? true }
 
         func clips(_ rows: [SessionMedia]) -> [SessionHighlightInput.Clip] {
-            rows.map {
-                SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
-                                           isVideo: $0.kind == .video,
-                                           offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
-            }
+            rows.map(SessionHighlightInput.Clip.from)
         }
 
         var out: [WeeklyHighlights.SessionInput] = []

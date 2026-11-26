@@ -80,7 +80,10 @@ enum ClipExportCoordinator {
         do {
             let url = try await exporter.export(
                 plan,
-                hrOverlay: ReelExporter.HROverlay(hrSeries: context.hrSeries,
+                // The scorebug reads each clip's own heart rate (prompt 309, `ReelHeartRate`).
+                hrOverlay: ReelExporter.HROverlay(track: ReelHeartRate.track(
+                                                      plan: plan, media: workout.media, series: context.hrSeries,
+                                                      timeMaps: SessionHighlightInput.timeMaps(of: context.clips)),
                                                   maxHR: context.maxHR,
                                                   restHR: context.restHR,
                                                   clipName: context.clipName))

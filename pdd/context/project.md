@@ -361,7 +361,15 @@ capture time from `ClipCaptureClock` (`offsetSec` + the map), so an HR tile adde
 original" is on the right seconds; not yet run on a phone. Checked in the running editor on the
 simulator (prompt 306, `StudioHRTimingUITests`): the DEBUG-only seed `-uiTestSeedStudioHRTiming` gives
 the Studio a generated video, a ramp heart rate and rows as a bake writes them, and the preview tile
-and the export read the mapped seconds; the Photos write itself is still device-only. **Resizable base video**: an
+and the export read the mapped seconds; the Photos write itself is still device-only. **One heart-rate
+resolver** (prompt 309): `ClipHeartRate.resolve` decides which samples belong to a clip and what numbers
+are shown (window, edge readings, the reading at a moment, peak, average, rounding, zone, "no data"), and
+the feed overlay and its viewers, "Share with heart rate", the poster chip, the activity pages' average,
+the Studio (preview tile, HR-window sliders, export, bake) and the reel scorebug (`ReelHeartRate`) all
+call it; what a surface may do differently is a field of `ClipHROptions`. The poster chip and the
+activity average now show the overlay's PEAK and AVG, a photo is read 10 s either side of its moment
+everywhere, and a reel's scorebug reads each clip's own heart rate while it is on screen (it was the whole
+session stretched over the reel). `ClipHRCrossSurfaceTests` compares the surfaces with each other. **Resizable base video**: an
 optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
 a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
 export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a

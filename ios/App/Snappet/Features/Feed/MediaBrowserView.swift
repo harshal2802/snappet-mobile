@@ -103,8 +103,7 @@ struct MediaBrowserView: View {
     }
 
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
-        FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR,
-                         timeMap: m.timeMap)
+        FeedMedia.clipHR(for: m, hrSeries: hrSeries, maxHR: maxHR)
     }
 
     private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }

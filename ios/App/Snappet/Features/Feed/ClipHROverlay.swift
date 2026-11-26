@@ -53,32 +53,11 @@ enum ClipHROverlay {
         // all the same, so a row that carries a map without the flag is still read through the
         // one rule and not from `offsetSec` alone.)
         guard !clip.isBaked, !clip.isReel else { return nil }
-        let edit = clip.edit ?? ClipStudioEdit()
-        let footage = keptFootage(clip)
-        // The SAME window builder the Studio preview + export use (prompt 115): footage = the kept
-        // (trimmed) range — which the feed also PLAYS — widened by the clip's lead-in/tail, lead clamped
-        // at session start.
-        let ext = StudioHRPlacement.extendedWindow(offset: clip.offsetSec,
-                                                   trimStart: footage.start,
-                                                   trimEnd: footage.start + footage.span,
-                                                   sourceDuration: footage.rawDur,
-                                                   leadSec: edit.hrLeadSec, tailSec: edit.hrTailSec,
-                                                   timeMap: clip.timeMap)
-        let window = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
-        guard !window.isEmpty else { return nil }
-        // Metrics scope (prompt 115 semantics): `.clip` re-slices the aggregates to the footage
-        // sub-window; the chart always draws the full window. Durations passed as ACTUAL coverage
-        // (the sliced samples' last t), mirroring `StudioEditorViewModel.scopedOverlayValues` —
-        // nominal spans would skew `isSparseChart`/effort against the Studio's rendering of the SAME
-        // clip (one shared factory is a named follow-up).
-        let clipScoped = edit.hrMetricsScope == .clip && ext.window.isExtended
-        let scoped = clipScoped
-            ? HRWindowSlicer.slice(window, start: ext.window.leadSec, span: ext.window.footageSec) : nil
-        let values = HROverlayValues(samples: window, durationSec: window.last?.t ?? ext.window.spanSec,
-                                     maxHR: maxHR, restHR: restHR,
-                                     window: ext.window,
-                                     statsSamples: scoped,
-                                     statsDurationSec: scoped.map { $0.last?.t ?? ext.window.footageSec })
+        // The one resolver (prompt 309): the kept (trimmed) footage, which the feed also PLAYS, read
+        // through the clip's capture clock and widened by the clip's lead-in / tail. The Studio's
+        // preview, its export and the poster chip ask the same function, so they cannot disagree.
+        guard let values = resolve(clip: clip, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR).data?.values
+        else { return nil }
         // Use the saved Studio tile only if it would actually DRAW something with the feed's data — the
         // export/editor gate the same way via `resolveTile`. Otherwise fall back to the scorebug, so a
         // no-data custom tile (e.g. only kcal/HRV enabled with no chart) can't render an empty glass panel.
@@ -88,6 +67,42 @@ enum ClipHROverlay {
         if let tile, values.wouldDraw(tile) { chosen = tile }
         else { chosen = .feedClipScorebug(restHR: restHR) }
         return Payload(tile: chosen, values: values)
+    }
+
+    /// What the resolver is asked for a feed clip: its kept footage and its own HR window (the
+    /// clip's Studio edit, or the Studio's defaults for a clip never edited). ONE place, so the
+    /// overlay (`make`), the poster chip (`FeedMedia.clipHR`) and the activity pages' average
+    /// (`ActivityMediaIndex.averageBPM`) ask the same question.
+    static func request(for clip: MediaInput, maxHR: Double?, restHR: Double?)
+        -> (renditionStart: Double, renditionEnd: Double, options: ClipHROptions) {
+        let footage = keptFootage(clip)
+        let range = StudioHRPlacement.renditionRange(trimStart: footage.start,
+                                                     trimEnd: footage.start + footage.span,
+                                                     sourceDuration: footage.rawDur)
+        return (range.start, range.end, .clip(edit: clip.edit, maxHR: maxHR, restHR: restHR))
+    }
+
+    /// A feed clip's heart rate from `ClipHeartRate`, the one resolver (prompt 309).
+    static func resolve(clip: MediaInput, hrSeries: [HRPoint], maxHR: Double?, restHR: Double?) -> ClipHRResult {
+        let ask = request(for: clip, maxHR: maxHR, restHR: restHR)
+        return ClipHeartRate.resolve(series: hrSeries, clock: clip.captureClock,
+                                     renditionStart: ask.renditionStart, renditionEnd: ask.renditionEnd,
+                                     options: ask.options)
+    }
+
+    /// The peak and the average printed NEXT to a clip (the Recap poster chip, the activity
+    /// pages' "♥ 132"): the numbers its overlay shows as PEAK and AVG, from the same resolver with
+    /// the same request, without building a chart. A photo is one moment: its numbers are over
+    /// `ClipHROptions.photo` (10 s either side). `nil` = no heart rate near the clip.
+    static func summary(clip: MediaInput, hrSeries: [HRPoint]) -> ClipHRSummary? {
+        guard clip.kind == "video" else {
+            return ClipHeartRate.summary(series: hrSeries, clock: ClipCaptureClock(offsetSec: clip.offsetSec),
+                                         renditionStart: 0, renditionEnd: 0, options: .photo)
+        }
+        let ask = request(for: clip, maxHR: nil, restHR: nil)
+        return ClipHeartRate.summary(series: hrSeries, clock: clip.captureClock,
+                                     renditionStart: ask.renditionStart, renditionEnd: ask.renditionEnd,
+                                     options: ask.options)
     }
 
     /// The playhead `fraction` a NON-playing surface shows when it has no payload to consult — kept for

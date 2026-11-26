@@ -36,6 +36,9 @@ struct ReelSource {
     /// Burned per-clip captions, keyed by media id (`localIdentifier`) — the progress reel's
     /// "15 Sep · 60 kg × 8" (prompt 180). Export-only, like every Studio text overlay. Empty = none.
     var segmentCaptions: [String: String] = [:]
+    /// The baked clips' time maps, keyed by media id (prompt 309): the reel's heart rate reads a
+    /// baked clip through its map (`ReelHeartRate`). Not used for hand-picked media.
+    var timeMaps: [String: BakedTimeMap] = [:]
 
 }
 
@@ -102,6 +105,10 @@ final class ReelViewModel {
     private(set) var lastPlan: ReelPlan?
     /// Reel-timeline map for the last plan (current-frame ring, "Play from here").
     private(set) var timelineMap: ReelTimelineMap?
+    /// The last plan's heart rate in reel time (prompt 309): what the preview's scorebug shows.
+    private(set) var previewTrack: ReelHeartRate.Track?
+    /// Whether the current cut was built from hand-picked media (their rows' time maps do not apply).
+    private var usesManualMedia = false
 
     /// Set when a manual pick resolved to NOTHING (the picks aren't in the Photos selection
     /// Snappet may read): `emptySpec` then explains the cause instead of showing the generic
@@ -226,6 +233,7 @@ final class ReelViewModel {
         do {
             let wk = try await source.makeWorkout(model, manualMedia)
             workout = wk
+            usesManualMedia = manualMedia != nil
             // Full-length clips (no per-clip trim); the planner is uncapped (AppModel) so nothing is
             // dropped for length — the user didn't want a limit on session videos.
             // Boost the source's achievement windows (Phase 4) when present; empty ⇒ HR-only.
@@ -332,6 +340,7 @@ final class ReelViewModel {
             item.videoComposition = videoComposition
             lastPlan = plan
             timelineMap = ReelTimelineMap(plan: plan)
+            previewTrack = heartRateTrack(for: plan, workout: wk)
             previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil
@@ -340,16 +349,24 @@ final class ReelViewModel {
         }
     }
 
+    /// The reel's heart rate for `plan` (prompt 309): each clip's own readings, in reel time,
+    /// from the one resolver. The ONE call for the preview's scorebug and the export's.
+    private func heartRateTrack(for plan: ReelPlan, workout wk: Workout) -> ReelHeartRate.Track {
+        ReelHeartRate.track(plan: plan, media: wk.media,
+                            series: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
+                            timeMaps: usesManualMedia ? [:] : source.timeMaps)
+    }
+
     /// The live preview scorebug (reel editor redesign): the SAME `.feedClipScorebug` tile the
-    /// export burns, over the same whole-session series mapped linearly across the reel — so
-    /// the SwiftUI overlay on the preview IS the burn, previewed. `nil` when the HR chip is
-    /// off or the session has no HR. (The CA burn itself can't render in an in-app player.)
+    /// export burns, over the same heart rate (`ReelHeartRate`: each clip's own readings while
+    /// it is on screen) — so the SwiftUI overlay on the preview IS the burn, previewed. `nil`
+    /// when the HR chip is off or the reel's clips have no HR. (The CA burn itself can't render
+    /// in an in-app player.)
     var previewHRTile: (tile: HRTile, values: HROverlayValues)? {
-        guard overlayEnabled, let wk = workout, !wk.hr.isEmpty, let map = timelineMap,
-              map.totalDuration > 0 else { return nil }
-        let values = HROverlayValues(samples: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
-                                     durationSec: map.totalDuration,
-                                     maxHR: wk.maxBpm, restHR: wk.restBpm)
+        guard overlayEnabled, let wk = workout, let track = previewTrack, track.hasData,
+              let map = timelineMap, map.totalDuration > 0 else { return nil }
+        let values = ReelHeartRate.values(track: track, durationSec: map.totalDuration,
+                                          maxHR: wk.maxBpm, restHR: wk.restBpm)
         // `resolveTile` is the renderability gate (the same one the burn runs) — the view
         // draws the HRTile itself, exactly like the feed poster does.
         // The user's Clips overlay default (prompt 163), falling back to the built-in scorebug when it
@@ -372,6 +389,7 @@ final class ReelViewModel {
         previewError = nil
         lastPlan = nil
         timelineMap = nil
+        previewTrack = nil
         previewEpoch += 1   // the view's auto-rebuild hook (.task(id:))
     }
 
@@ -388,10 +406,11 @@ final class ReelViewModel {
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
             // Burn the glass HR scorebug (highlights P1) — the SAME overlay path the feed's Animate
-            // uses (`HROverlayValues` → `feedClipScorebug` → `StudioOverlays.makeAnimationTool`),
-            // with the whole session's series across the reel, so every video surface matches.
-            let overlay: ReelExporter.HROverlay? = (overlayEnabled && !wk.hr.isEmpty)
-                ? ReelExporter.HROverlay(hrSeries: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
+            // uses (`ReelHeartRate` → `feedClipScorebug` → `StudioOverlays.makeAnimationTool`),
+            // with each clip's own heart rate while it is on screen (prompt 309).
+            let track = heartRateTrack(for: plan, workout: wk)
+            let overlay: ReelExporter.HROverlay? = (overlayEnabled && track.hasData)
+                ? ReelExporter.HROverlay(track: track,
                                          maxHR: wk.maxBpm, restHR: wk.restBpm,
                                          tile: styleTile(restHR: wk.restBpm))
                 : nil

@@ -218,7 +218,9 @@ final class ReelExporter: Sendable {
     /// keeps a single source of truth — the recap-feed "Animate" clip matches the studio's scorebug.
     /// `Sendable` value-type snapshot so it crosses into the AVFoundation export with no `@Model`.
     struct HROverlay: Sendable {
-        var hrSeries: [HRPoint]
+        /// The reel's heart rate in reel time (prompt 309): each clip's own readings, end to end,
+        /// from `ReelHeartRate.track`. (It was the whole session's series, stretched over the reel.)
+        var track: ReelHeartRate.Track
         var maxHR: Double?
         var restHR: Double?
         var clipName: String? = nil
@@ -264,11 +266,10 @@ final class ReelExporter: Sendable {
             let captionOverlays = ActivityProgressReel.captionOverlays(placements: built.placements,
                                                                        captions: captions)
             var tile: ResolvedHRTile?
-            if let hrOverlay {
-                let values = HROverlayValues(samples: hrOverlay.hrSeries,
-                                             durationSec: composition.duration.seconds,
-                                             maxHR: hrOverlay.maxHR,
-                                             restHR: hrOverlay.restHR)
+            if let hrOverlay, hrOverlay.track.hasData {
+                let values = ReelHeartRate.values(track: hrOverlay.track,
+                                                  durationSec: composition.duration.seconds,
+                                                  maxHR: hrOverlay.maxHR, restHR: hrOverlay.restHR)
                 // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
                 tile = hrOverlay.tile.flatMap({ values.resolveTile($0) })
                     ?? values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR))
@@ -277,7 +278,7 @@ final class ReelExporter: Sendable {
                let tool = StudioOverlays.makeAnimationTool(
                     overlays: captionOverlays, canvas: mvc.renderSize,
                     totalDuration: composition.duration.seconds,
-                    hrSamples: hrOverlay?.hrSeries ?? [], hrTile: tile) {
+                    hrSamples: hrOverlay?.track.samples ?? [], hrTile: tile) {
                 mvc.animationTool = tool
                 exportVideoComposition = mvc
             }

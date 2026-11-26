@@ -13466,3 +13466,73 @@ each does nothing unless the seed argument is present.
 
 The UI test is one test with one launch. Three tests were tried first: a launch and the way to
 the session cost about 55 s each, which put the class over four minutes.
+
+## 2026-11-26 — One heart-rate resolver; the rules feed, share and Studio already shared are the rules (prompt 309)
+
+`ClipHeartRate.resolve(series:clock:renditionStart:renditionEnd:options:)` is the one place that
+decides which samples belong to a clip and what numbers are shown. An inventory of the code
+(table in the prompt file) found five surfaces that already agreed (feed overlay and viewers,
+"Share with heart rate", Studio preview, sliders, export) and three that did not (poster chip,
+activity average, reel scorebug). The agreeing five keep their numbers bit for bit
+(`ClipHRCharacterizationTests`, recorded before the refactor), so the rules are theirs:
+
+- samples: `HRWindowSlicer` (recorded samples, one straight-line reading at each window edge, the
+  nearest sample held flat within 90 s outside the recording, nothing further away);
+- a reading between samples is always a straight line, never "hold the last sample" (no surface
+  held inside the recording; the activity average had no readings between samples at all);
+- peak and average: the highest reading and the plain mean of the readings in the scope;
+- rounding: nearest whole beat; zone: against the session's maximum, 190 without one.
+
+Kept as it is, and written down because it is not obvious: the average is not time-weighted, and
+when the recording ends inside the window the last sample is also the window's end reading and
+counts twice. Three surfaces have always shown that number; changing it is a separate decision
+about all of them, not a disagreement between them.
+
+What a surface may do differently is a field of `ClipHROptions` (lead-in, tail, scope, max and
+rest HR, the calorie profile, HRV, clamp tolerance). The feed still shows no calories and no HRV.
+
+## 2026-11-26 — The poster chip shows the overlay's PEAK and AVG (prompt 309)
+
+The Recap poster chip (`FeedMedia.clipHR`) took its peak and average over the footage alone; the
+tile shown when the clip is opened takes them over the clip's HR window (5 s before, 30 s after,
+prompt 115's default, whose point is that the peak lands after the camera stops). Same clip, ramp
+`bpm = 60 + s / 2`, filmed 60…70 s: chip **95 / 93**, tile **110 / 99**. The chip now asks the
+resolver exactly as the overlay does (`ClipHROverlay.request`), so it is **110 / 99**. It also
+follows the clip's Studio trim and "Clip only" scope where the surface has them (real-shaped
+fixture, trimmed, 3 s / 4 s window: 162 / 151 becomes 159 / 151). The other way round (overlay
+follows the chip) would have undone prompt 115 on the feed, share and Studio.
+
+## 2026-11-26 — The activity pages' average is the viewer's AVG (prompt 309)
+
+`ActivityMediaIndex.averageBPM` was the mean of the recorded samples with `start ≤ t ≤ end` of the
+footage: no edge readings, no hold, no HR window. Against the viewer opened from the same row:
+"♥ **93**" in the list, AVG **99** in the viewer (the ramp clip above); sparse samples (151 the only
+one inside): "♥ **151**", AVG **136**; a clip filmed 20 s after the heart rate ended: **no number**,
+AVG **210**. It now asks the resolver as the viewer does: **99**, **136**, **210**. A list that
+shows a number the next screen contradicts was judged worse than either rule.
+
+## 2026-11-26 — A photo is read 10 s either side of its moment (prompt 309)
+
+Two photo rules existed: the poster chip read 6 s forward from the photo, the activity pages 10 s
+either side. A photo has no "after", so the centred window is the one kept
+(`ClipHROptions.photo`), on both. Ramp, photo at 60 s: chip **93 / 92** becomes **95 / 90**; the
+activity number stays 90. With sparse samples the activity number can move (135 becomes 133 in the
+fixture) because the window's edge readings now count, as they do for a video.
+
+## 2026-11-26 — A reel's scorebug reads each clip's own heart rate (prompt 309)
+
+The reel maker drew the whole session's series stretched over the reel: at a fraction `f` of the
+reel it showed the session at fraction `f`, whatever clip was on screen. A reel of one clip filmed
+60…70 s of a 300 s ramp session showed BPM **60 → 210**, AVG **135**, PEAK **210**; the feed over
+the same clip shows **90 → 95**, peak **95**. `ReelHeartRate.track` now asks the resolver for each
+planned segment (footage only, through the clip's clock and its bake time map) and lays the
+readings end to end: **90 → 95**, AVG **93**, PEAK **95**. A reel has no lead-in or tail: the
+chart is a row of clips, not one stretch of a session.
+
+Done without changing the reel maker's model: `HighlightEngine` is untouched, the time maps travel
+beside the planner's inputs (`SessionHighlightInput.Clip.timeMap`, `ReelSource.timeMaps`), and
+`HROverlayValues` takes an optional ready-made display series so each clip's line is not smoothed
+again across a cut. Still inexact, by choice, until reels move to the new model (P9, P10): the
+planner scores a clip baked at a speed or from joined parts second for second; the exported
+file's drawn line is smoothed across a cut (the numbers are not); a clip with no heart rate holds
+the neighbouring reading; a weekly reel has one max and one rest HR; hand-picked media get no map.

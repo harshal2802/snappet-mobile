@@ -73,10 +73,7 @@ struct FeedMediaResolver {
     func clipContext(for sid: UUID, card: FeedCard) -> ClipExportCoordinator.Context? {
         let media = index.mediaBySession[sid] ?? []
         guard media.contains(where: { $0.kind == .video }) else { return nil }
-        let clips = media.map {
-            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                                       offsetSec: $0.reelStartSec, durationSec: $0.durationSec)
-        }
+        let clips = media.map(SessionHighlightInput.Clip.from)
         let duration: Double
         var restHR: Double? = nil
         var clipName: String? = nil

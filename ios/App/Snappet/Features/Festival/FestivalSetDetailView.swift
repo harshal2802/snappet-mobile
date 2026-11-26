@@ -81,7 +81,8 @@ struct FestivalSetDetailView: View {
         /// The reel maker's clip: it starts when the first frame of the current video was filmed.
         var reelClip: SessionHighlightInput.Clip {
             SessionHighlightInput.Clip(localIdentifier: localIdentifier, isVideo: isVideo,
-                                       offsetSec: captureClock.captureStartSec, durationSec: durationSec)
+                                       offsetSec: captureClock.captureStartSec, durationSec: durationSec,
+                                       timeMap: timeMap)
         }
     }
 

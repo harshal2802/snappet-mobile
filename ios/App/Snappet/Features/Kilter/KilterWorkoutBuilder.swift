@@ -14,6 +14,8 @@ enum KilterWorkoutBuilder {
         var isVideo: Bool
         var offsetSec: Double
         var durationSec: Double?
+        /// The row's `SessionMedia.bakeTimeMap` (prompt 309), for the reel's heart rate only.
+        var timeMap: BakedTimeMap? = nil
     }
 
     /// Assemble the engine input. `hr` is the session's persisted `HRPoint` series (already on the
@@ -44,7 +46,8 @@ extension KilterWorkoutBuilder.Clip {
             localIdentifier: media.localIdentifier,
             isVideo: media.kind == .video,
             offsetSec: media.reelStartSec,
-            durationSec: media.durationSec)
+            durationSec: media.durationSec,
+            timeMap: media.bakeTimeMap)
     }
 }
 
@@ -89,6 +92,8 @@ extension ReelSource {
                                   hr: hr, duration: duration, maxHR: maxHR, restHR: restHR, clips: clips)
                           })
         source.boostWindows = sentWindows
+        source.timeMaps = Dictionary(baseClips.compactMap { clip in clip.timeMap.map { (clip.localIdentifier, $0) } },
+                                     uniquingKeysWith: { first, _ in first })
         // A finished cut can post back into the Clips feed under this session (highlights P2).
         source.postSessionID = session.id
         source.postTitle = "\(session.title ?? "Kilter session") — Highlights"
