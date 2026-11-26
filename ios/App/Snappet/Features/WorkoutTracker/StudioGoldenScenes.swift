@@ -16,6 +16,13 @@ enum StudioGoldenSource: String, CaseIterable, Sendable {
     case rotated
     /// 1080×1920, 5 s. Only for the self-check's timed export; no golden frame uses it.
     case large
+    /// 540×960, upright. The picture behind text, stickers, climb tags and the heart-rate tile
+    /// (`StudioOverlayReference`): big enough for the glyphs to be read.
+    case overlayBase
+    /// 180×320, upright, tagged Display P3 (wide colour). For the pass-through test only.
+    case wideColour
+    /// 180×320, upright, 10-bit HEVC tagged BT.2020 HLG (HDR). For the pass-through test only.
+    case hdr
 
     /// The sources the golden scenes use.
     static let golden: [StudioGoldenSource] = [.portraitA, .portraitB, .landscape, .rotated]
@@ -23,16 +30,27 @@ enum StudioGoldenSource: String, CaseIterable, Sendable {
     /// The size of the stored picture, before any rotation.
     var bufferWidth: Int {
         switch self {
-        case .portraitA, .portraitB: return 180
+        case .portraitA, .portraitB, .wideColour, .hdr: return 180
         case .landscape, .rotated: return 320
         case .large: return 1080
+        case .overlayBase: return 540
         }
     }
     var bufferHeight: Int {
         switch self {
-        case .portraitA, .portraitB: return 320
+        case .portraitA, .portraitB, .wideColour, .hdr: return 320
         case .landscape, .rotated: return 180
         case .large: return 1920
+        case .overlayBase: return 960
+        }
+    }
+    /// How the file's colours are stored and tagged.
+    enum Colour: Sendable { case bt709, displayP3, hlg }
+    var colour: Colour {
+        switch self {
+        case .wideColour: return .displayP3
+        case .hdr: return .hlg
+        default: return .bt709
         }
     }
     /// True when the file carries a quarter turn clockwise.
@@ -44,7 +62,7 @@ enum StudioGoldenSource: String, CaseIterable, Sendable {
     /// them both ways, and no two sources share a colour.
     var palette: [StudioGoldenPattern.RGB] {
         switch self {
-        case .portraitA, .large:
+        case .portraitA, .large, .overlayBase, .wideColour, .hdr:
             return [.init(200, 60, 60), .init(60, 170, 80), .init(60, 90, 200), .init(215, 185, 60)]
         case .portraitB:
             return [.init(60, 180, 190), .init(190, 70, 180), .init(225, 130, 50), .init(120, 120, 120)]
@@ -67,6 +85,16 @@ enum StudioGoldenPattern {
     struct RGB: Equatable, Sendable {
         let r: UInt8, g: UInt8, b: UInt8
         init(_ r: UInt8, _ g: UInt8, _ b: UInt8) { self.r = r; self.g = g; self.b = b }
+    }
+
+    /// What a BT.709 video stores for an sRGB value. The pattern's colours are sRGB numbers (what
+    /// a decoded frame shows on screen and what a golden PNG holds); a video file keeps them on
+    /// a different curve — a plain 1.961 gamma, `CGColorSpace.coreMedia709` — so the fixture
+    /// writer converts each value with this before it fills a pixel buffer.
+    static func videoValue(forSRGB value: UInt8) -> UInt8 {
+        let v = Double(value) / 255
+        let linear = v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        return UInt8(max(0, min(255, (pow(linear, 1 / 1.961) * 255).rounded())))
     }
 
     /// The moving block's side.
@@ -128,6 +156,8 @@ struct StudioGoldenScene: Identifiable, Sendable {
     var background: StudioBackground = .black
     /// Output frame numbers at 30 frames a second.
     var frames: [Int] = []
+    /// A heart-rate tile for every clip (drawn from `StudioGoldenScene.heartRate`); `nil` for none.
+    var heartRateTile: ResolvedHRTile?
     /// Why the scene is not rendered yet; `nil` for a real scene.
     var pendingReason: String?
 
@@ -154,7 +184,7 @@ extension StudioGoldenScene {
     static let pendingHeartRate = "drawn by the compositor from prompt 306"
     static let pendingPhotos = "photo clips are not rendered yet (planned for prompt 314+)"
 
-    private static func clip(_ source: StudioGoldenSource, _ order: Int, trimStart: Double = 0,
+    static func clip(_ source: StudioGoldenSource, _ order: Int, trimStart: Double = 0,
                              trimEnd: Double? = nil, speed: Double = 1,
                              crop: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
                              filter: StudioFilter = .none, intensity: Double = 1,
@@ -174,7 +204,7 @@ extension StudioGoldenScene {
             id: "transition-\(kind.rawValue)", title: "Transition: \(kind.display)",
             clips: [a, b],
             transitions: [StudioTransition(afterClipID: a.id, kind: kind, durationSec: 0.6)],
-            frames: [12, 21, 29, 30])
+            frames: [12, 17, 21, 25, 29, 30])
     }
 
     /// Every scene, in the order the tests and the self-check run them. The sources are 1 s
@@ -280,6 +310,13 @@ extension StudioGoldenScene {
         scenes.append(StudioGoldenScene(id: "photo-clip", title: "Photo clip", pendingReason: pendingPhotos))
         return scenes
     }()
+
+    /// One clip of `source` with no edits at all. It has no golden image: the pass-through test
+    /// compares it with the source file decoded directly.
+    static func passThrough(_ source: StudioGoldenSource) -> StudioGoldenScene {
+        StudioGoldenScene(id: "pass-through-\(source.rawValue)", title: "Unedited clip",
+                          clips: [clip(source, 0)], frames: [0, 14, 29])
+    }
 
     /// The scenes that are rendered.
     static var rendered: [StudioGoldenScene] { all.filter { !$0.isPending } }

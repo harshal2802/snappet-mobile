@@ -6,6 +6,7 @@ import CoreMedia
 import CoreVideo
 import ImageIO
 import UniformTypeIdentifiers
+import VideoToolbox
 import os
 
 /// The device edge of the Studio render check (prompt 304): writes the fixture videos, renders a
@@ -39,8 +40,9 @@ enum StudioGoldenRenderer {
     /// A new, empty folder for a fixture in the temporary directory.
     static func newFixtureDirectory() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("studio-golden-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(fixturePrefix + UUID().uuidString, isDirectory: true)
     }
+    static let fixturePrefix = "studio-golden-"
 
     /// Write `sources` into `directory` (a file that is already there is kept). Blocks until the
     /// files are finished; call it off the main thread.
@@ -63,21 +65,43 @@ enum StudioGoldenRenderer {
         let fps = Int32(StudioGoldenPattern.fps)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
 
+        // How the file is tagged, and the same three tags for every pixel buffer handed to it.
+        let primaries: String, transfer: String, matrix: String
+        var compression: [String: Any] = [
+            AVVideoAverageBitRateKey: w * h * 12,
+            AVVideoMaxKeyFrameIntervalKey: Int(fps),
+            AVVideoAllowFrameReorderingKey: false,
+            AVVideoExpectedSourceFrameRateKey: Int(fps)]
+        var codec = AVVideoCodecType.h264
+        var pixelFormat = kCVPixelFormatType_32BGRA
+        switch source.colour {
+        case .bt709:
+            primaries = AVVideoColorPrimaries_ITU_R_709_2
+            transfer = AVVideoTransferFunction_ITU_R_709_2
+            matrix = AVVideoYCbCrMatrix_ITU_R_709_2
+        case .displayP3:
+            primaries = AVVideoColorPrimaries_P3_D65
+            transfer = AVVideoTransferFunction_ITU_R_709_2
+            matrix = AVVideoYCbCrMatrix_ITU_R_709_2
+        case .hlg:
+            primaries = AVVideoColorPrimaries_ITU_R_2020
+            transfer = AVVideoTransferFunction_ITU_R_2100_HLG
+            matrix = AVVideoYCbCrMatrix_ITU_R_2020
+            codec = .hevc
+            pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked
+            compression[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main10_AutoLevel as String
+        }
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
+            AVVideoCodecKey: codec, AVVideoWidthKey: w, AVVideoHeightKey: h,
             AVVideoColorPropertiesKey: [
-                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2],
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: w * h * 12,
-                AVVideoMaxKeyFrameIntervalKey: Int(fps),
-                AVVideoAllowFrameReorderingKey: false,
-                AVVideoExpectedSourceFrameRateKey: Int(fps)]])
+                AVVideoColorPrimariesKey: primaries,
+                AVVideoTransferFunctionKey: transfer,
+                AVVideoYCbCrMatrixKey: matrix],
+            AVVideoCompressionPropertiesKey: compression])
         video.expectsMediaDataInRealTime = false
         if source.isRotated { video.transform = CGAffineTransform(rotationAngle: .pi / 2) }
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
             kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h])
 
         let rate = 44_100
@@ -96,8 +120,24 @@ enum StudioGoldenRenderer {
 
         // The picture without the block, as BGRA rows; each frame copies it and paints the block.
         let background = StudioGoldenPattern.background(width: w, height: h, palette: source.palette)
+        // The pattern's colours are sRGB; a BT.709 buffer holds what a BT.709 video stores for
+        // them and is tagged BT.709, so nothing converts it on the way into the file and a
+        // decoded frame, shown as sRGB, has the pattern's own numbers. (The wide-colour and HDR
+        // sources reuse the same numbers under their own tags; only their pass-through matters.)
+        let stored = (0 ... 255).map { StudioGoldenPattern.videoValue(forSRGB: UInt8($0)) }
         var bgra = background.rgba
-        for i in stride(from: 0, to: bgra.count, by: 4) { bgra.swapAt(i, i + 2) }
+        for i in stride(from: 0, to: bgra.count, by: 4) {
+            let r = bgra[i], g = bgra[i + 1], b = bgra[i + 2]
+            if source.colour == .hlg {
+                // 2 bits of alpha, then 10 each of red, green, blue; little-endian.
+                let word = UInt32(3) << 30 | (UInt32(r) * 1023 / 255) << 20
+                    | (UInt32(g) * 1023 / 255) << 10 | (UInt32(b) * 1023 / 255)
+                bgra[i] = UInt8(word & 0xFF); bgra[i + 1] = UInt8(word >> 8 & 0xFF)
+                bgra[i + 2] = UInt8(word >> 16 & 0xFF); bgra[i + 3] = UInt8(word >> 24 & 0xFF)
+            } else {
+                bgra[i] = stored[Int(b)]; bgra[i + 1] = stored[Int(g)]; bgra[i + 2] = stored[Int(r)]; bgra[i + 3] = 255
+            }
+        }
         let side = StudioGoldenPattern.blockSide(width: w, height: h)
 
         let frames = source.frameCount
@@ -110,6 +150,10 @@ enum StudioGoldenRenderer {
                 var made: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &made)
                 guard let buffer = made else { throw Failure.writer("no pixel buffer") }
+                // The AVVideo… and kCVImageBuffer… tag names are the same strings.
+                CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, primaries as CFString, .shouldPropagate)
+                CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, transfer as CFString, .shouldPropagate)
+                CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, matrix as CFString, .shouldPropagate)
                 CVPixelBufferLockBaseAddress(buffer, [])
                 if let base = CVPixelBufferGetBaseAddress(buffer) {
                     let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
@@ -205,6 +249,15 @@ enum StudioGoldenRenderer {
         let composer = StudioComposer()
         let (composition, videoComposition, audioMix) = try await assemble(
             scene, fixture: fixture, composer: composer, forPlayback: path == .preview)
+        return try await frames(scene.frames, composition: composition, videoComposition: videoComposition,
+                                audioMix: audioMix, path: path, composer: composer)
+    }
+
+    /// Output frames of a composition that is already built: read from the exported file, or
+    /// drawn straight from the video composition (the preview).
+    static func frames(_ frames: [Int], composition: AVMutableComposition, videoComposition: AVVideoComposition?,
+                       audioMix: AVAudioMix?, path: StudioSelfCheck.RenderPath,
+                       composer: StudioComposer) async throws -> [StudioGoldenImage] {
         let generator: AVAssetImageGenerator
         var file: URL?
         switch path {
@@ -222,14 +275,45 @@ enum StudioGoldenRenderer {
         generator.requestedTimeToleranceAfter = .zero
         generator.appliesPreferredTrackTransform = true
         var images: [StudioGoldenImage] = []
-        for frame in scene.frames {
+        for frame in frames {
             // 600 ticks a second: frame n starts at tick 20 n, exactly.
             let time = CMTime(value: CMTimeValue(frame) * 600 / CMTimeValue(StudioGoldenPattern.fps), timescale: 600)
             let cgImage = try await generator.image(at: time).image
-            guard let image = image(cgImage) else { throw Failure.frame("frame \(frame) of \(scene.id)") }
+            guard let image = image(cgImage) else { throw Failure.frame("frame \(frame)") }
             images.append(image)
         }
         return images
+    }
+
+    /// Frames of a finished video file (an export), by output frame number.
+    static func frames(_ frames: [Int], ofFile url: URL) async throws -> [StudioGoldenImage] {
+        var images: [StudioGoldenImage] = []
+        for frame in frames { images.append(try await sourceFrame(url, frame: frame)) }
+        return images
+    }
+
+    /// Fixture folders a run that was killed left in the temporary directory. The screen calls
+    /// this when it opens; returns how many were removed.
+    @discardableResult
+    static func removeLeftovers(in directory: URL = FileManager.default.temporaryDirectory) -> Int {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        var removed = 0
+        for name in names where name.hasPrefix(fixturePrefix) {
+            if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))) != nil { removed += 1 }
+        }
+        return removed
+    }
+
+    /// Frame `frame` of a video file, decoded directly (no Studio code), turned upright.
+    static func sourceFrame(_ url: URL, frame: Int) async throws -> StudioGoldenImage {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        generator.appliesPreferredTrackTransform = true
+        let time = CMTime(value: CMTimeValue(frame) * 600 / CMTimeValue(StudioGoldenPattern.fps), timescale: 600)
+        let cgImage = try await generator.image(at: time).image
+        guard let image = image(cgImage) else { throw Failure.frame("frame \(frame) of \(url.lastPathComponent)") }
+        return image
     }
 
     /// `StudioComposer.assemble` for a scene. `loopPictureInPicture` repeats each
@@ -254,9 +338,14 @@ enum StudioGoldenRenderer {
             let asset = try await looped(fixture.url(source), seconds: source.seconds, times: loopPictureInPicture)
             videoOverlays.append((overlay, asset))
         }
+        var clipHR: [UUID: StudioClipHRContent] = [:]
+        if let tile = scene.heartRateTile {
+            for clip in scene.clips { clipHR[clip.id] = StudioClipHRContent(samples: StudioGoldenScene.heartRate, tile: tile) }
+        }
         return try await composer.assemble(
             resolved: resolved, aspect: scene.aspect, sourceDurations: durations,
             transitions: scene.transitions, overlays: scene.overlays, videoOverlays: videoOverlays,
+            clipHRByID: clipHR,
             baseFrame: scene.baseFrame, background: scene.background, forPlayback: forPlayback)
     }
 
@@ -327,14 +416,19 @@ enum StudioGoldenRenderer {
     /// Export `scene` (`StudioGoldenScene.timed` on the screen) and report how long the export
     /// session took and the most memory the app used while it ran (sampled every 50 ms). The
     /// fixture must hold the scene's source.
-    static func timedExport(_ scene: StudioGoldenScene = .timed, fixture: Fixture) async throws -> StudioSelfCheck.Timing {
+    ///
+    /// `baselineBytes` is the app's memory before anything was done for the timed export. Pass
+    /// the value read BEFORE the source video was written: the writer's buffers are still
+    /// around when the export starts, and a baseline taken then hides them.
+    static func timedExport(_ scene: StudioGoldenScene = .timed, fixture: Fixture,
+                            baselineBytes: UInt64? = nil) async throws -> StudioSelfCheck.Timing {
         let composer = StudioComposer()
         let (composition, videoComposition, audioMix) = try await assemble(
             scene, fixture: fixture, composer: composer, forPlayback: false, loopPictureInPicture: 4)
         let size = videoComposition?.renderSize ?? .zero
         let outputSeconds = composition.duration.seconds
 
-        let baseline = memoryFootprint()
+        let baseline = baselineBytes ?? memoryFootprint()
         let peak = OSAllocatedUnfairLock(initialState: baseline)
         let sampler = Task.detached(priority: .utility) {
             while !Task.isCancelled {
@@ -368,6 +462,41 @@ enum StudioGoldenRenderer {
             }
         }
         return result == KERN_SUCCESS ? info.phys_footprint : 0
+    }
+
+    // MARK: The overlay reference
+
+    /// Render `StudioOverlayReference.scenes` through today's export (the Core Animation tool
+    /// draws the text, stickers, climb tags and heart-rate tile) and save every frame as a PNG
+    /// in `directory`, with a manifest. `directory` is emptied first. Returns the files written,
+    /// the manifest last.
+    static func captureOverlayReference(into directory: URL, machine: StudioSelfCheck.Machine,
+                                        device: String, capturedAt: String) async throws -> [URL] {
+        try? FileManager.default.removeItem(at: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fixtureDirectory = newFixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: fixtureDirectory) }
+        let fixture = try await Task.detached(priority: .userInitiated) {
+            try makeFixture([.overlayBase], in: fixtureDirectory)
+        }.value
+        var files: [URL] = []
+        var sizes: [String: (width: Int, height: Int)] = [:]
+        for scene in StudioOverlayReference.scenes {
+            let images = try await frames(of: scene, fixture: fixture, path: .export)
+            for (frame, image) in zip(scene.frames, images) {
+                guard let data = pngData(image) else { throw Failure.frame("frame \(frame) of \(scene.id)") }
+                let url = directory.appendingPathComponent(scene.fileName(frame: frame))
+                try data.write(to: url)
+                files.append(url)
+                sizes[scene.id] = (image.width, image.height)
+            }
+        }
+        let manifest = StudioOverlayReference.manifest(machine: machine, device: device,
+                                                       capturedAt: capturedAt, sizes: sizes)
+        let manifestURL = directory.appendingPathComponent(StudioOverlayReference.manifestName)
+        try StudioOverlayReference.encoded(manifest).write(to: manifestURL)
+        files.append(manifestURL)
+        return files
     }
 
     // MARK: Images

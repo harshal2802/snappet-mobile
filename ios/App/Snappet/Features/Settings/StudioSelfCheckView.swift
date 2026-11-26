@@ -66,11 +66,16 @@ final class StudioSelfCheckModel {
         results.map { "\($0.id)=\($0.status.word)" }.joined(separator: ";")
     }
 
-    var report: String {
-        var header = ["\(UIDevice.current.name) — \(Self.hardware), \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"]
+    /// The phone and the build, for the report and the overlay reference's manifest.
+    private static var deviceLines: [String] {
         let info = Bundle.main.infoDictionary
-        header.append("Snappet \(info?["CFBundleShortVersionString"] as? String ?? "?") "
-            + "(\(info?["CFBundleVersion"] as? String ?? "?")), \(Self.machine.label.lowercased())")
+        return ["\(UIDevice.current.name) — \(hardware), \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+                "Snappet \(info?["CFBundleShortVersionString"] as? String ?? "?") "
+                    + "(\(info?["CFBundleVersion"] as? String ?? "?")), \(machine.label.lowercased())"]
+    }
+
+    var report: String {
+        var header = Self.deviceLines
         if let setupError { header.append("The test videos could not be written: \(setupError)") }
         return StudioSelfCheck.report(header: header, machine: Self.machine, results: results,
                                       timing: timing, timingError: timingError)
@@ -83,6 +88,65 @@ final class StudioSelfCheckModel {
         return withUnsafeBytes(of: &system.machine) { raw in
             String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
         }
+    }
+
+    // MARK: The overlay reference
+
+    enum Capture: Equatable {
+        case idle, running
+        case saved([URL])
+        case failed(String)
+    }
+    private(set) var capture: Capture = .idle
+
+    /// The frames and the manifest of the last capture.
+    var referenceFiles: [URL] {
+        if case .saved(let files) = capture { return files }
+        return []
+    }
+
+    var captureLine: String {
+        switch capture {
+        case .idle: return "Not captured yet"
+        case .running: return "Rendering…"
+        case .saved(let files): return StudioOverlayReference.statusLine(fileCount: files.count, machine: Self.machine)
+        case .failed(let message): return "Failed: \(message)"
+        }
+    }
+
+    /// One word for the UI test: idle, running, saved or failed.
+    var captureWord: String {
+        switch capture {
+        case .idle: return "idle"
+        case .running: return "running"
+        case .saved: return "saved"
+        case .failed: return "failed"
+        }
+    }
+
+    /// Render the overlay scenes through today's export and save the frames.
+    func captureOverlayReference() {
+        guard capture != .running, !isRunning else { return }
+        capture = .running
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(StudioOverlayReference.folderName, isDirectory: true)
+        let device = Self.deviceLines.joined(separator: "; ")
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        Task {
+            do {
+                let files = try await StudioGoldenRenderer.captureOverlayReference(
+                    into: directory, machine: Self.machine, device: device, capturedAt: stamp)
+                capture = .saved(files)
+            } catch {
+                capture = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Remove what a run that was killed left behind. Called when the screen opens.
+    func cleanUp() {
+        guard !isRunning, capture != .running else { return }
+        StudioGoldenRenderer.removeLeftovers()
     }
 
     private var task: Task<Void, Never>?
@@ -126,11 +190,13 @@ final class StudioSelfCheckModel {
         }
         if includesTimedExport {
             phase = .running("the timed export")
+            // Before the 1080×1920 source is written: what the writer leaves in memory counts.
+            let before = StudioGoldenRenderer.memoryFootprint()
             do {
                 try await Task.detached(priority: .userInitiated) {
                     _ = try StudioGoldenRenderer.makeFixture([.large], in: directory)
                 }.value
-                timing = try await StudioGoldenRenderer.timedExport(fixture: fixture)
+                timing = try await StudioGoldenRenderer.timedExport(fixture: fixture, baselineBytes: before)
             } catch {
                 timingError = error.localizedDescription
             }
@@ -210,6 +276,37 @@ struct StudioSelfCheckView: View {
 
             Section {
                 Button {
+                    model.captureOverlayReference()
+                } label: {
+                    Label("Capture overlay reference", systemImage: "camera.viewfinder")
+                }
+                .disabled(model.isRunning || model.capture == .running)
+                .accessibilityIdentifier("studioSelfCheck.captureReference")
+
+                Text(model.captureLine)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("studioSelfCheck.captureStatus")
+                    .accessibilityValue("\(model.captureWord) \(model.referenceFiles.count)")
+
+                if !model.referenceFiles.isEmpty {
+                    ShareLink(items: model.referenceFiles) {
+                        Label("Share the \(model.referenceFiles.count) files", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("studioSelfCheck.shareReference")
+                }
+            } header: {
+                Text("Overlay reference")
+            } footer: {
+                Text("Renders fixed scenes with text, stickers, a climb tag and the heart-rate tile through "
+                     + "today's export and saves the frames as PNG files with a manifest. Do this on a phone and "
+                     + "commit the files: they are what the compositor's own drawing is compared with from "
+                     + "prompt 305. The simulator draws the boxes but not the letters or symbols, so its "
+                     + "pictures are not a reference.")
+            }
+
+            Section {
+                Button {
                     UIPasteboard.general.string = model.report
                     copied = true
                 } label: {
@@ -221,6 +318,7 @@ struct StudioSelfCheckView: View {
         }
         .navigationTitle("Studio render check")
         .navigationBarTitleDisplayMode(.inline)
+        .task { model.cleanUp() }
     }
 
     private var statusColour: Color {

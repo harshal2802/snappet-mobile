@@ -141,9 +141,16 @@ Each mini-app is a self-contained `Features/<App>/` folder. To add one:
     `StudioGoldenPattern`; do not commit a video for a golden test.
   - **To record**: `touch ios/App/SnappetTests/GoldenFrames/.record`, run
     `-only-testing:SnappetTests/StudioGoldenFrameTests`, delete the file, run again. With the file there every
-    scene's export frames are written as the new images and `testRecordModeIsOff` fails, so a recording run is
-    never green. It is a file, not an environment variable, because `xcodebuild` does not pass the shell's
+    scene's export frames are written as the new images and **every golden test fails** (each scene test after
+    writing), so no part of a recording run is green. It is a file, not an environment variable, because `xcodebuild` does not pass the shell's
     environment to a hosted unit test. `.record` is git-ignored. Look at each changed PNG before committing it.
+  - **A re-record for a machine change (new Xcode, macOS or simulator runtime) is its own PR and touches no
+    Studio source file** — only the PNGs and the prompt that says what changed on the machine. A PR that changes
+    Studio source and re-records must name the rendering change that moved each image.
+  - **An unedited clip must come out as it went in**: `StudioPassThroughTests` compares the Studio's export and
+    preview with the source file decoded directly, with no golden image. A colour or brightness change shows
+    there first. New wrong-render cases go in `StudioGoldenMutationTests` (a deliberately wrong render must fail
+    against the golden image).
   - The tolerances are in `StudioSelfCheck.tolerance(for:on:)`. Do not loosen one to make a test pass; find out
     what moved.
   - A Debug build copies the images into the app (`project.yml`, "Copy Studio golden frames") for the

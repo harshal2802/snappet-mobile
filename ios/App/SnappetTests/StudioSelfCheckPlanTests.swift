@@ -65,7 +65,7 @@ final class StudioSelfCheckPlanTests: XCTestCase {
         let names = StudioGoldenScene.fileNames
         XCTAssertEqual(Set(names).count, names.count)
         XCTAssertEqual(StudioGoldenScene.all.first { $0.id == "cut" }?.fileName(frame: 29), "cut-f029.png")
-        XCTAssertEqual(names.count, 56)
+        XCTAssertEqual(names.count, 66)
     }
 
     /// The list covers what the compositor draws today.
@@ -142,7 +142,12 @@ final class StudioSelfCheckPlanTests: XCTestCase {
             XCTAssertLessThanOrEqual(tight.chroma, loose.chroma)
             XCTAssertLessThanOrEqual(tight.maxFraction, loose.maxFraction)
             XCTAssertLessThanOrEqual(tight.maxCellFraction, loose.maxCellFraction)
+            XCTAssertLessThanOrEqual(tight.mean, loose.mean)
         }
+        // The region mean is held to a few levels everywhere: it is what catches a small change
+        // that is the same all over.
+        XCTAssertEqual(values.first?.mean, 3)
+        XCTAssertLessThanOrEqual(values.last?.mean ?? 99, 10)
         XCTAssertNotEqual(values.first, values.last)
     }
 
@@ -166,7 +171,7 @@ final class StudioSelfCheckPlanTests: XCTestCase {
 
     // MARK: Roll-up
 
-    private let tight = StudioGoldenTolerance(luma: 12, chroma: 12, maxFraction: 0.002, maxCellFraction: 0.08)
+    private let tight = StudioGoldenTolerance(luma: 12, chroma: 12, maxFraction: 0.002, maxCellFraction: 0.08, mean: 255)
 
     private func check(_ frame: Int, _ path: StudioSelfCheck.RenderPath, passes: Bool) -> StudioSelfCheck.FrameCheck {
         let golden = StudioGoldenImage(width: 32, height: 32, r: 10, g: 10, b: 10)
@@ -218,6 +223,78 @@ final class StudioSelfCheckPlanTests: XCTestCase {
         XCTAssertEqual([passed, failed, skipped].map(\.status.word), ["pass", "fail", "skipped"])
     }
 
+    /// The largest differences over a scene's frames, per path: what a tolerance is set from.
+    func testASceneReportsItsLargestDifferencesPerPath() {
+        let golden = StudioGoldenImage(width: 32, height: 32, r: 100, g: 100, b: 100)
+        func compared(_ frame: Int, _ path: StudioSelfCheck.RenderPath, red: UInt8) -> StudioSelfCheck.FrameCheck {
+            let actual = StudioGoldenImage(width: 32, height: 32, r: red, g: 100, b: 100)
+            return .init(frame: frame, path: path, goldenName: "s",
+                         outcome: .compared(StudioGoldenCompare.compare(actual: actual, golden: golden, tolerance: tight)))
+        }
+        var result = StudioSelfCheck.SceneResult(id: "s", title: "S", status: .passed)
+        result.frames = [compared(1, .export, red: 102), compared(2, .export, red: 105),
+                         compared(1, .preview, red: 100),
+                         .init(frame: 3, path: .preview, goldenName: "s", outcome: .missingGolden)]
+        let export = result.worst(.export)
+        XCTAssertEqual(export?.mean, 5)
+        XCTAssertEqual(export?.luma, 1, "5 levels of red are 1 of brightness")
+        XCTAssertEqual(export?.fraction, 0)
+        XCTAssertEqual(result.worst(.preview), StudioSelfCheck.Worst())
+        XCTAssertEqual(result.worst(.preview)?.line,
+                       "brightness 0, colour 0, frame 0.00%, one region 0.00%, region mean 0.0")
+        XCTAssertNil(StudioSelfCheck.SceneResult(id: "t", title: "T", status: .skipped("x")).worst(.export))
+    }
+
+    // MARK: The overlay reference
+
+    func testOverlayReferenceScenesCoverTextStickersATagAndTheTile() {
+        let scenes = StudioOverlayReference.scenes
+        XCTAssertEqual(scenes.map(\.id), ["ref-text", "ref-sticker", "ref-climb-tag", "ref-hr-tile", "ref-hr-tile-transition"])
+        let kinds = Set(scenes.flatMap(\.overlays).map(\.kind))
+        XCTAssertEqual(kinds, [.text, .sticker, .climbName])
+        XCTAssertEqual(scenes.filter { $0.heartRateTile != nil }.count, 2)
+        for scene in scenes {
+            XCTAssertFalse(scene.isPending)
+            XCTAssertFalse(scene.frames.isEmpty, scene.id)
+            XCTAssertTrue(scene.clips.allSatisfy { $0.localIdentifier == StudioGoldenSource.overlayBase.rawValue }, scene.id)
+            let lastFrame = Int((scene.durationSec * 30).rounded()) - 1
+            for frame in scene.frames { XCTAssertTrue((0 ... lastFrame).contains(frame), "\(scene.id) frame \(frame)") }
+        }
+        // Not golden scenes: no golden image is expected for them.
+        XCTAssertTrue(Set(scenes.map(\.id)).isDisjoint(with: StudioGoldenScene.all.map(\.id)))
+        XCTAssertEqual(StudioGoldenSource.overlayBase.bufferWidth, 540)
+        XCTAssertEqual(StudioGoldenSource.overlayBase.bufferHeight, 960)
+        XCTAssertFalse(StudioGoldenSource.golden.contains(.overlayBase))
+        XCTAssertEqual(StudioOverlayReference.fileNames.count, 12)
+        XCTAssertEqual(StudioOverlayReference.fileNames.first, "ref-text-f005.png")
+        XCTAssertEqual(StudioOverlayReference.fileNames.last, "manifest.json")
+    }
+
+    func testOverlayReferenceManifest() throws {
+        var sizes: [String: (width: Int, height: Int)] = [:]
+        for scene in StudioOverlayReference.scenes { sizes[scene.id] = (540, 960) }
+        let manifest = StudioOverlayReference.manifest(machine: .device, device: "iPhone16,1, iOS 18.1",
+                                                       capturedAt: "2026-11-25T10:00:00Z", sizes: sizes)
+        XCTAssertEqual(manifest.frames.count, 11)
+        XCTAssertEqual(manifest.frames.first, .init(scene: "ref-text", title: "Text", frame: 5, timeSec: 5.0 / 30,
+                                                    file: "ref-text-f005.png", width: 540, height: 960))
+        XCTAssertEqual(manifest.machine, "device")
+        XCTAssertEqual(manifest.renderer, StudioOverlayReference.renderer)
+        XCTAssertTrue(manifest.note.contains("on a phone"))
+        let data = try StudioOverlayReference.encoded(manifest)
+        XCTAssertEqual(try JSONDecoder().decode(StudioOverlayReference.Manifest.self, from: data), manifest)
+        XCTAssertEqual(try StudioOverlayReference.encoded(manifest), data, "the same manifest is the same bytes")
+
+        // A scene that was not rendered is left out; the simulator's capture says what it is.
+        sizes["ref-sticker"] = nil
+        let partial = StudioOverlayReference.manifest(machine: .simulator, device: "sim", capturedAt: "t", sizes: sizes)
+        XCTAssertEqual(partial.frames.count, 10)
+        XCTAssertTrue(partial.note.contains("NOT a reference"))
+        XCTAssertEqual(StudioOverlayReference.statusLine(fileCount: 0, machine: .device), "Nothing was saved")
+        XCTAssertTrue(StudioOverlayReference.statusLine(fileCount: 12, machine: .device).hasPrefix("12 files saved. Share"))
+        XCTAssertTrue(StudioOverlayReference.statusLine(fileCount: 12, machine: .simulator).contains("not a reference"))
+    }
+
     // MARK: Timing and report
 
     private let timing = StudioSelfCheck.Timing(outputSeconds: 20, width: 1080, height: 1920, exportSeconds: 8,
@@ -258,8 +335,13 @@ final class StudioSelfCheckPlanTests: XCTestCase {
         let export = StudioSelfCheck.tolerance(for: .export, on: machine)
         XCTAssertEqual(lines[3], "Tolerance, export on device: brightness \(export.luma), colour \(export.chroma), "
             + "frame \(StudioGoldenCompare.Result.percent(export.maxFraction)), "
-            + "one region \(StudioGoldenCompare.Result.percent(export.maxCellFraction))")
+            + "one region \(StudioGoldenCompare.Result.percent(export.maxCellFraction)), "
+            + "region mean \(StudioGoldenCompare.Result.decimal(export.mean))")
         XCTAssertTrue(lines[4].hasPrefix("Tolerance, preview on device: brightness "), lines[4])
+        XCTAssertEqual(lines[5], "The device tolerances are a first guess. Set them from the measured lines below.")
+        // What was measured is listed for every scene that was compared, pass or fail.
+        XCTAssertTrue(lines.contains("         measured, export: brightness 0, colour 0, frame 0.00%, one region 0.00%, region mean 0.0"), report)
+        XCTAssertTrue(lines.contains("         measured, preview: brightness 40, colour 95, frame 100.00%, one region 100.00%, region mean 190.0"), report)
         XCTAssertTrue(lines.contains("pass     cut — 2 frames, 0.50 s"), report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("FAIL     pip — frame 3 (preview): FAIL — 1024 of 1024 pixels differ") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("         frame 3 (preview): FAIL") }, report)
@@ -269,6 +351,7 @@ final class StudioSelfCheckPlanTests: XCTestCase {
 
         let good = StudioSelfCheck.report(header: [], machine: .simulator, results: [passed, skipped], timing: nil)
         XCTAssertTrue(good.contains("Result: PASS — 1 passed, 0 failed, 1 skipped"), good)
+        XCTAssertFalse(good.contains("first guess"), "the simulator's tolerances are measured")
         XCTAssertTrue(good.hasSuffix("Timed export: not run"), good)
         let broken = StudioSelfCheck.report(header: [], machine: .simulator, results: [passed], timing: nil,
                                             timingError: "no space")

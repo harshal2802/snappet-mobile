@@ -51,6 +51,10 @@ struct StudioGoldenImage: Equatable, Sendable {
 /// - `maxFraction`: the share of the frame's pixels that may still differ.
 /// - `maxCellFraction`: the share of ONE small square that may differ. A wrong element is a
 ///   patch of differing pixels in one place, even when it is a small part of the frame.
+/// - `mean`: how far the MEAN colour of one small square may be from the golden's. The rules
+///   above ask "is any pixel far off?", so a small change everywhere (a filter at the wrong
+///   strength, an opacity a tenth off, a faint glass tile missing) stays under them. A mean
+///   over 256 pixels has almost no encoder noise in it, so it can be held to a few levels.
 struct StudioGoldenTolerance: Equatable, Sendable {
     /// A pixel differs when its brightness is further than this from the golden's (0…255).
     var luma: Int
@@ -60,6 +64,8 @@ struct StudioGoldenTolerance: Equatable, Sendable {
     var maxFraction: Double
     /// The largest share of one `StudioGoldenCompare.cell`-sized square that may differ.
     var maxCellFraction: Double
+    /// The largest difference between the two frames' mean R, G or B over one such square.
+    var mean: Double
 }
 
 /// The pure comparison of a rendered frame with its golden image (prompt 304).
@@ -96,6 +102,9 @@ enum StudioGoldenCompare {
         let maxChroma: Int
         /// The square with the most differing pixels; `nil` when no pixel differs.
         let worst: Region?
+        /// The largest difference of a square's mean R, G or B, and that square (`differing` is 0).
+        let maxMean: Double
+        let meanRegion: Region?
         let tolerance: StudioGoldenTolerance
 
         var fraction: Double { total > 0 ? Double(differing) / Double(total) : 0 }
@@ -104,8 +113,12 @@ enum StudioGoldenCompare {
             guard sizeMatches else { return false }
             if fraction > tolerance.maxFraction { return false }
             if let worst, worst.fraction > tolerance.maxCellFraction { return false }
+            if maxMean > tolerance.mean { return false }
             return true
         }
+
+        /// The share of one square that differs, in the worst square (0 when no pixel differs).
+        var cellFraction: Double { worst?.fraction ?? 0 }
 
         /// One line for a test failure or the self-check report.
         var summary: String {
@@ -120,7 +133,16 @@ enum StudioGoldenCompare {
                     + "y \(worst.y)–\(worst.y + worst.height - 1): \(worst.differing) pixels "
                     + "(\(Self.percent(worst.fraction)), allowed \(Self.percent(tolerance.maxCellFraction)))"
             }
+            text += "; largest region mean difference \(Self.decimal(maxMean)) (allowed \(Self.decimal(tolerance.mean)))"
+            if let meanRegion, maxMean > tolerance.mean {
+                text += " at x \(meanRegion.x)–\(meanRegion.x + meanRegion.width - 1), "
+                    + "y \(meanRegion.y)–\(meanRegion.y + meanRegion.height - 1)"
+            }
             return text
+        }
+
+        static func decimal(_ value: Double) -> String {
+            String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
         }
 
         static func percent(_ fraction: Double) -> String {
@@ -134,7 +156,7 @@ enum StudioGoldenCompare {
             return Result(sizeMatches: false, actualWidth: actual.width, actualHeight: actual.height,
                           goldenWidth: golden.width, goldenHeight: golden.height,
                           differing: 0, total: golden.width * golden.height, maxLuma: 0, maxChroma: 0,
-                          worst: nil, tolerance: tolerance)
+                          worst: nil, maxMean: 0, meanRegion: nil, tolerance: tolerance)
         }
         let w = actual.width, h = actual.height
         let lumaLimit = Double(tolerance.luma), chromaLimit = Double(tolerance.chroma)
@@ -176,10 +198,62 @@ enum StudioGoldenCompare {
             let x = at.column * half, y = at.row * half
             worst = Region(x: x, y: y, width: min(cell, w - x), height: min(cell, h - y), differing: most)
         }
+        var maxMean = 0.0, meanRegion: Region?
+        for square in meanDifferences(actual: actual, golden: golden) where square.value > maxMean {
+            maxMean = square.value
+            meanRegion = Region(x: square.x, y: square.y, width: square.width, height: square.height, differing: 0)
+        }
         return Result(sizeMatches: true, actualWidth: w, actualHeight: h, goldenWidth: w, goldenHeight: h,
                       differing: differing, total: w * h,
                       maxLuma: Int(maxLuma.rounded()), maxChroma: Int(maxChroma.rounded()),
-                      worst: worst, tolerance: tolerance)
+                      worst: worst, maxMean: (maxMean * 10).rounded() / 10, meanRegion: meanRegion,
+                      tolerance: tolerance)
+    }
+
+    /// For every square (the same overlapping squares as above, cut to the image): the largest of
+    /// the differences between the two frames' mean R, mean G and mean B. Sizes must match.
+    private static func meanDifferences(actual: StudioGoldenImage, golden: StudioGoldenImage)
+        -> [(x: Int, y: Int, width: Int, height: Int, value: Double)] {
+        let w = actual.width, h = actual.height
+        guard w > 0, h > 0 else { return [] }
+        let columns = max(1, (w + half - 1) / half), rows = max(1, (h + half - 1) / half)
+        // Signed sums of the difference per half-cell tile: red, then green, then blue.
+        let tileCount = columns * rows
+        var sums = [Int](repeating: 0, count: tileCount * 3)
+        actual.rgba.withUnsafeBufferPointer { a in
+            golden.rgba.withUnsafeBufferPointer { g in
+                sums.withUnsafeMutableBufferPointer { sums in
+                    for y in 0 ..< h {
+                        let row = (y / half) * columns
+                        for x in 0 ..< w {
+                            let i = (y * w + x) * 4, tile = row + x / half
+                            sums[tile] += Int(a[i]) - Int(g[i])
+                            sums[tileCount + tile] += Int(a[i + 1]) - Int(g[i + 1])
+                            sums[2 * tileCount + tile] += Int(a[i + 2]) - Int(g[i + 2])
+                        }
+                    }
+                }
+            }
+        }
+        var out: [(x: Int, y: Int, width: Int, height: Int, value: Double)] = []
+        for row in 0 ..< max(1, rows - 1) {
+            for column in 0 ..< max(1, columns - 1) {
+                let x = column * half, y = row * half
+                let width = min(cell, w - x), height = min(cell, h - y)
+                var largest = 0.0
+                for channel in 0 ..< 3 {
+                    var sum = 0
+                    for dy in 0 ... 1 where row + dy < rows {
+                        for dx in 0 ... 1 where column + dx < columns {
+                            sum += sums[channel * tileCount + (row + dy) * columns + column + dx]
+                        }
+                    }
+                    largest = max(largest, abs(Double(sum)) / Double(width * height))
+                }
+                out.append((x, y, width, height, largest))
+            }
+        }
+        return out
     }
 
     /// A picture of where two frames differ: the rendered frame, darkened, with every differing
@@ -197,6 +271,13 @@ enum StudioGoldenCompare {
                 out.rgba[i] /= 3; out.rgba[i + 1] /= 3; out.rgba[i + 2] /= 3
             }
             out.rgba[i + 3] = 255
+        }
+        // A square whose mean colour is off gets a yellow outline.
+        for q in meanDifferences(actual: actual, golden: golden) where q.value > tolerance.mean {
+            out.fill(x: q.x, y: q.y, width: q.width, height: 1, r: 255, g: 230, b: 0)
+            out.fill(x: q.x, y: q.y + q.height - 1, width: q.width, height: 1, r: 255, g: 230, b: 0)
+            out.fill(x: q.x, y: q.y, width: 1, height: q.height, r: 255, g: 230, b: 0)
+            out.fill(x: q.x + q.width - 1, y: q.y, width: 1, height: q.height, r: 255, g: 230, b: 0)
         }
         return out
     }

@@ -95,5 +95,21 @@ final class StudioSelfCheckUITests: XCTestCase {
         snap("04-bottom")
         copy.tap()
         XCTAssertTrue(app.buttons["studioSelfCheck.copy"].label.contains("Copied"))
+
+        // The overlay reference: here the action only has to run and save its files. (The
+        // simulator draws the Core Animation tool's boxes and not its letters, so these
+        // pictures are not a reference, and the screen says so.)
+        let capture = app.buttons["studioSelfCheck.captureReference"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 4))
+        let captureStatus = any("studioSelfCheck.captureStatus")
+        XCTAssertEqual(captureStatus.value as? String, "idle 0")
+        capture.tap()
+        let captured = expectation(for: NSPredicate(format: "value BEGINSWITH 'saved' OR value BEGINSWITH 'failed'"),
+                                   evaluatedWith: captureStatus)
+        wait(for: [captured], timeout: 180)
+        XCTAssertEqual(captureStatus.value as? String, "saved 12", captureStatus.label)
+        XCTAssertTrue(captureStatus.label.contains("not a reference"), captureStatus.label)
+        XCTAssertTrue(any("studioSelfCheck.shareReference").waitForExistence(timeout: 4))
+        snap("05-overlay-reference")
     }
 }

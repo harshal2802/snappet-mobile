@@ -26,22 +26,26 @@ enum StudioSelfCheck {
     /// `pdd/context/decisions.md` (2026-11-25, prompt 304).
     ///
     /// - Simulator, export: the golden images were made this way. Two runs on one Mac gave the
-    ///   same bytes, so this only leaves room for another Mac's encoder.
+    ///   same bytes, so this only leaves room for another Mac's encoder. A region's mean colour
+    ///   may be 3 levels off: a filter at 0.7 for 1 moves it by 4, a dropped filter by 9 or more,
+    ///   an opacity a tenth off by 8, a dissolve a tenth off by 17.
     /// - Simulator, preview: the same frame without the export's H.264 pass. Measured against the
-    ///   export goldens over all 56 frames: brightness up to 17 apart, averaged colour up to 18.
+    ///   export frames over every scene: brightness up to 25 apart on single pixels, averaged
+    ///   colour up to 18, a region's mean colour up to 4.2 (where a colour edge crosses it).
     /// - Device: another encoder and decoder made the source files and the export, and another
-    ///   GPU drew the frames. Not measured yet (no phone run); looser on every number, and still
-    ///   far below what one frame too early or a missing element changes.
+    ///   GPU drew the frames. NOT MEASURED: these are a first guess, loose enough to pass a
+    ///   frame that is a pixel off. The report lists each scene's largest differences so the
+    ///   first run on a phone can set real numbers; tighten these then.
     static func tolerance(for path: RenderPath, on machine: Machine) -> StudioGoldenTolerance {
         switch (machine, path) {
         case (.simulator, .export):
-            return StudioGoldenTolerance(luma: 10, chroma: 8, maxFraction: 0.002, maxCellFraction: 0.06)
+            return StudioGoldenTolerance(luma: 10, chroma: 8, maxFraction: 0.002, maxCellFraction: 0.06, mean: 3)
         case (.simulator, .preview):
-            return StudioGoldenTolerance(luma: 24, chroma: 22, maxFraction: 0.005, maxCellFraction: 0.10)
+            return StudioGoldenTolerance(luma: 24, chroma: 22, maxFraction: 0.005, maxCellFraction: 0.10, mean: 6)
         case (.device, .export):
-            return StudioGoldenTolerance(luma: 28, chroma: 24, maxFraction: 0.01, maxCellFraction: 0.15)
+            return StudioGoldenTolerance(luma: 28, chroma: 24, maxFraction: 0.01, maxCellFraction: 0.15, mean: 8)
         case (.device, .preview):
-            return StudioGoldenTolerance(luma: 32, chroma: 26, maxFraction: 0.015, maxCellFraction: 0.20)
+            return StudioGoldenTolerance(luma: 32, chroma: 26, maxFraction: 0.015, maxCellFraction: 0.20, mean: 10)
         }
     }
 
@@ -99,6 +103,40 @@ enum StudioSelfCheck {
         var frames: [FrameCheck] = []
         /// How long the scene took to render and compare.
         var seconds: Double = 0
+
+        /// The largest differences over the scene's frames on one path; `nil` when no frame of
+        /// that path was compared.
+        func worst(_ path: RenderPath) -> Worst? {
+            var worst = Worst()
+            var any = false
+            for check in frames where check.path == path {
+                guard case .compared(let result) = check.outcome, result.sizeMatches else { continue }
+                any = true
+                worst.luma = max(worst.luma, result.maxLuma)
+                worst.chroma = max(worst.chroma, result.maxChroma)
+                worst.fraction = max(worst.fraction, result.fraction)
+                worst.cellFraction = max(worst.cellFraction, result.cellFraction)
+                worst.mean = max(worst.mean, result.maxMean)
+            }
+            return any ? worst : nil
+        }
+    }
+
+    /// The largest value of each measure over a set of frames. These are what was measured,
+    /// whatever the tolerance: the numbers a tolerance is set from.
+    struct Worst: Equatable, Sendable {
+        var luma = 0
+        var chroma = 0
+        /// The share of the frame over the tolerance's brightness or colour limit.
+        var fraction = 0.0
+        var cellFraction = 0.0
+        var mean = 0.0
+
+        var line: String {
+            "brightness \(luma), colour \(chroma), frame \(StudioGoldenCompare.Result.percent(fraction)), "
+                + "one region \(StudioGoldenCompare.Result.percent(cellFraction)), "
+                + "region mean \(StudioGoldenCompare.Result.decimal(mean))"
+        }
     }
 
     /// What a scene's frames add up to. A render error fails the scene. A scene with no frames
@@ -192,7 +230,11 @@ enum StudioSelfCheck {
             let t = tolerance(for: path, on: machine)
             lines.append("Tolerance, \(path.rawValue) on \(machine.rawValue): brightness \(t.luma), colour \(t.chroma), "
                 + "frame \(StudioGoldenCompare.Result.percent(t.maxFraction)), "
-                + "one region \(StudioGoldenCompare.Result.percent(t.maxCellFraction))")
+                + "one region \(StudioGoldenCompare.Result.percent(t.maxCellFraction)), "
+                + "region mean \(StudioGoldenCompare.Result.decimal(t.mean))")
+        }
+        if machine == .device {
+            lines.append("The device tolerances are a first guess. Set them from the measured lines below.")
         }
         lines.append("")
         for result in results {
@@ -204,6 +246,12 @@ enum StudioSelfCheck {
             case .failed(let reason):
                 lines.append("FAIL     \(result.id) — \(reason)")
                 for frame in result.frames where !frame.passed { lines.append("         \(frame.line)") }
+            }
+            // What was measured, pass or fail: the largest differences on each path.
+            for path in RenderPath.allCases {
+                if let worst = result.worst(path) {
+                    lines.append("         measured, \(path.rawValue): \(worst.line)")
+                }
             }
         }
         lines.append("")
