@@ -21,10 +21,14 @@ enum StudioOverlayReference {
 
     /// Committed frames that show a bug in the export they were captured from, not the look the
     /// compositor is to match (prompt 307). A comparison against the reference skips them.
-    /// `ref-sticker-f010.png`: the export burned each sticker as a solid black box (the phone
-    /// capture of 2026-11-26); prompt 308 fixes the export, and a new capture of that scene
-    /// replaces the frame and empties this set.
-    static let knownWrongFrames: Set<String> = ["ref-sticker-f010.png"]
+    /// - `ref-sticker-f010.png`: the export burned each sticker as a solid black box (the phone
+    ///   capture of 2026-11-26); prompt 308 fixes the export, and a new capture of that scene
+    ///   replaces the frame.
+    /// - `ref-hr-tile-transition-f021.png`: frame 21 is 0.7 s, exactly the handover between the
+    ///   two clips' tiles, and both windows include that instant, so both tiles are drawn (darker
+    ///   glass, two chart markers). One frame at most in a real export. The Core Animation path is
+    ///   replaced by prompt 311, which must draw exactly one tile there; this frame stays wrong.
+    static let knownWrongFrames: Set<String> = ["ref-sticker-f010.png", "ref-hr-tile-transition-f021.png"]
 
     /// The fixed scenes. Each is one or two clips of `StudioGoldenSource.overlayBase` (540×960,
     /// four strong colours and a moving white block), so every overlay sits over an edge

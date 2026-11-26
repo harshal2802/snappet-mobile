@@ -179,10 +179,10 @@ struct StudioGoldenScene: Identifiable, Sendable {
 extension StudioGoldenScene {
 
     /// The reason every placeholder for text, stickers and climb tags carries.
-    static let pendingOverlays = "drawn by the compositor from prompt 305"
+    static let pendingOverlays = "drawn by the compositor from prompt 310"
     /// The reason every placeholder for the heart-rate tile carries.
-    static let pendingHeartRate = "drawn by the compositor from prompt 306"
-    static let pendingPhotos = "photo clips are not rendered yet (planned for prompt 314+)"
+    static let pendingHeartRate = "drawn by the compositor from prompt 311"
+    static let pendingPhotos = "photo clips are not rendered yet (planned for prompt 318+)"
 
     static func clip(_ source: StudioGoldenSource, _ order: Int, trimStart: Double = 0,
                              trimEnd: Double? = nil, speed: Double = 1,
@@ -347,7 +347,7 @@ extension StudioGoldenScene {
     /// picture-in-picture for 16 s). Only its export time and memory are reported.
     static let timed = timedScene(source: .large, transitionSec: 1.25)
 
-    /// A fixed heart-rate series for the scenes that will draw a heart-rate tile (prompt 306):
+    /// A fixed heart-rate series for the scenes that will draw a heart-rate tile (prompt 311):
     /// one sample a second for 40 s, rising from 96 to 172 and easing back. Whole numbers, written
     /// out, so it is the same on every machine.
     static let heartRate: [HRPoint] = {

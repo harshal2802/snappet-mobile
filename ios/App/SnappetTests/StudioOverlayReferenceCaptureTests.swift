@@ -59,7 +59,9 @@ final class StudioOverlayReferenceCaptureTests: XCTestCase {
     /// (and a README), a manifest from a device made by today's renderer, every frame a 540×960
     /// PNG named in the manifest.
     func testTheCommittedReferenceIsAWholePhoneCapture() throws {
-        let present = Set(try FileManager.default.contentsOfDirectory(atPath: Self.committedDirectory.path))
+        // Hidden files (a Finder .DS_Store) are not part of the capture.
+        let present = Set(try FileManager.default.contentsOfDirectory(atPath: Self.committedDirectory.path)
+            .filter { !$0.hasPrefix(".") })
         XCTAssertEqual(present.subtracting(["README.md"]), Set(StudioOverlayReference.fileNames))
         XCTAssertTrue(present.contains("README.md"), "the README says what the files are")
 
@@ -67,8 +69,10 @@ final class StudioOverlayReferenceCaptureTests: XCTestCase {
             StudioOverlayReference.Manifest.self,
             from: Data(contentsOf: Self.committedDirectory.appendingPathComponent(StudioOverlayReference.manifestName)))
         XCTAssertEqual(manifest.machine, StudioSelfCheck.Machine.device.rawValue, "a simulator capture is not a reference")
-        XCTAssertEqual(manifest.note, StudioOverlayReference.note(for: .device))
-        XCTAssertEqual(manifest.renderer, StudioOverlayReference.renderer)
+        // Frozen: what the old export wrote. Not today's `renderer` / `note(for:)`, which describe the
+        // pipeline of the build that runs and will change when the compositor draws the overlays.
+        XCTAssertEqual(manifest.renderer, "AVVideoCompositionCoreAnimationTool (before prompt 305)")
+        XCTAssertTrue(manifest.note.hasPrefix("Rendered on a phone"), manifest.note)
         XCTAssertEqual(manifest.frames.map(\.file), Array(StudioOverlayReference.fileNames.dropLast()))
         for entry in manifest.frames {
             let url = Self.committedDirectory.appendingPathComponent(entry.file)

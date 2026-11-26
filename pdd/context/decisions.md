@@ -13645,3 +13645,11 @@ and a new capture replaces it. Not done: holding the commit until the fix, becau
 frames are what prompts 310 and 311 need and they are correct now. The reference lives under
 `GoldenFrames` (already out of the test bundle and out of the Debug app's copy), so `project.yml`
 does not change.
+
+## 2026-11-26 — The tile's handover frame is left wrong in the old export (prompt 307)
+
+The overlay reference showed both heart-rate tiles on the dissolve's handover frame (0.7 s): each
+tile's window includes its end and the next one's start, so at exactly that instant both are fully
+drawn. One frame at most in a real export (a darker glass, two chart markers). Not fixed in the
+Core Animation path, because prompt 311 replaces it; 311's acceptance includes exactly one tile on
+the handover frame. The frame is listed in `StudioOverlayReference.knownWrongFrames`.

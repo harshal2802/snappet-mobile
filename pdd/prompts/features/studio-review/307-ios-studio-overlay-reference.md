@@ -25,8 +25,18 @@ capture.
   manifest; prompt 304's code and its UI test already count 12 (`StudioOverlayReference.fileNames`
   is the frames plus the manifest). The phone list's wording was the mistake, not the capture.
 - Looked at every frame. Text (bold, italic, highlight, rotation, opacity, appearing at 0.3 s and
-  going at 0.8 s), the climb tag chip and the heart-rate tile (number, unit, zone chart, one tile
-  through the dissolve) are drawn as the scenes describe.
+  going at 0.8 s), the climb tag chip and the heart-rate tile (number, unit, zone chart) are
+  drawn as the scenes describe, with two exceptions besides the stickers:
+  - **Transition frame 21 shows both tiles.** It is 0.7 s, exactly the handover between the two
+    clips' tiles, and both windows include that instant (`gateSegmentOpacity`: 0 at `e + ε`, full at
+    `e`; the next tile full at `s = e`). Any other frame shows one; a real export shows the double
+    tile on one frame at most. Found by the review of this PR. Not fixed in the Core Animation
+    path, which prompt 311 replaces; 311 must draw exactly one tile on that frame. Listed as known
+    wrong.
+  - **The climb tag has one line.** The scene asks for "Attempt 2", but the editor adds that line
+    to the text (`KilterClimbCaption.composeClimbTag`) before an export and the capture passes the
+    raw text. The frame is a true picture of a one-line chip; a two-line chip has no reference
+    (a gap since prompt 304).
 - **The stickers are not.** Both stickers in `ref-sticker` (a star, and an orange flame at 2×,
   turned −20°) came out as solid black boxes: right place, size and rotation, no symbol, no
   colour. That frame goes through the same export as a user's video, so users' exported videos
@@ -41,10 +51,13 @@ capture.
   the golden-frame tests only list `.png` files at the folder's top level, so a subfolder does not
   disturb `testGoldenFolderHoldsExactlyTheScenesImages`. The Debug app's copy script copies only
   top-level PNGs, so the reference is not shipped in the app.
-- `StudioOverlayReference.knownWrongFrames` = `["ref-sticker-f010.png"]`: the frame is kept (it is
-  the honest record of what the export did) but marked so a later comparison skips it.
+- `StudioOverlayReference.knownWrongFrames` = `["ref-sticker-f010.png",
+  "ref-hr-tile-transition-f021.png"]`: the frames are kept (they are the honest record of what the
+  export did) but marked so a later comparison skips them.
 - Prompt 308 fixes the sticker export. After it is on the phone, a new capture replaces
-  `ref-sticker-f010.png` and `manifest.json`, and `knownWrongFrames` becomes empty.
+  `ref-sticker-f010.png` and `manifest.json`, and the sticker frame leaves `knownWrongFrames`.
+- Stale prompt numbers in the debug screen ("drawn by the compositor from prompt 305 / 306",
+  "prompt 314+") now say 310 / 311 / 318+, with their tests.
 - PLAN.md: 307 and 308 take the next two numbers, as 305, 306 and 309 did before them, so P2 is
   now 310, P3 311, P5 312 … P11 318+. P4 stays 309 (done).
 
@@ -54,8 +67,9 @@ capture.
 - `ios/App/Snappet/Features/WorkoutTracker/StudioOverlayReference.swift` — `knownWrongFrames`.
 - `ios/App/SnappetTests/StudioOverlayReferenceCaptureTests.swift` — two tests:
   - `testTheCommittedReferenceIsAWholePhoneCapture`: the folder holds exactly the capture's files
-    and a README; the manifest is from a device, with the device note and today's renderer; every
-    frame is a 540×960 PNG named in the manifest.
+    and a README (hidden files ignored); the manifest is from a device, with the renderer string
+    the old export wrote (frozen, so a later change to today's label does not fail it); every frame
+    is a 540×960 PNG named in the manifest.
   - `testKnownWrongFramesAreInTheReferenceAndNamedInTheReadme`.
 - `pdd/context/decisions.md` (2026-11-26), `PLAN.md` numbers, the knowledge-graph node for the
   render check.
