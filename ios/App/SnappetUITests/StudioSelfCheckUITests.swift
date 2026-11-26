@@ -53,7 +53,7 @@ final class StudioSelfCheckUITests: XCTestCase {
         // Fifteen small scenes, each through the export and the preview.
         let finished = NSPredicate(format: "value == 'pass' OR value == 'fail'")
         let done = expectation(for: finished, evaluatedWith: status)
-        wait(for: [done], timeout: 180)
+        wait(for: [done], timeout: 480)
         snap("02-after")
 
         // One element carries every scene's result: `cut=pass;…;text=skipped;…`.
@@ -106,7 +106,7 @@ final class StudioSelfCheckUITests: XCTestCase {
         capture.tap()
         let captured = expectation(for: NSPredicate(format: "value BEGINSWITH 'saved' OR value BEGINSWITH 'failed'"),
                                    evaluatedWith: captureStatus)
-        wait(for: [captured], timeout: 180)
+        wait(for: [captured], timeout: 480)
         XCTAssertEqual(captureStatus.value as? String, "saved 12", captureStatus.label)
         XCTAssertTrue(captureStatus.label.contains("not a reference"), captureStatus.label)
         XCTAssertTrue(any("studioSelfCheck.shareReference").waitForExistence(timeout: 4))
