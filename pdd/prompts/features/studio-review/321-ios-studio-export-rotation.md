@@ -9,9 +9,11 @@ Built on `studio-v2` (after #499).
 
 ## What changes for the user
 
-A sticker, a text line or a climb tag turned in the Studio editor is turned the same way in the
-exported or baked video. Before, the file turned it the other way: text tilted down to the right
-in the editor came out tilted up to the right.
+Nothing a user can do today: the Studio has no control that turns an overlay (nothing in the app
+sets `rotationDegrees`; it is 0 unless it comes from a decoded project or a test scene — found by
+the review of this PR). When a turn control is added, a turned sticker, text line or climb tag
+will come out of the export the same way the editor shows it. Before this fix the file turned it
+the other way, as the overlay reference's test scenes show.
 
 ## Problem
 
@@ -86,7 +88,7 @@ compositor). `StudioOverlayReference` scenes and `GoldenFrames/OverlayReference/
 ## Not done
 
 - Prompt 307's reference frames for text and stickers (`ref-text-f015.png`,
-  `ref-text-f027.png` if it shows the turned line, `ref-sticker-f010.png`) were captured with the
+  `ref-sticker-f010.png`) were captured with the
   old direction. They must be captured again on a phone with this build and replaced, with this
   prompt as the reason. The change is intended.
 - Videos already exported or baked keep the old turn; nothing can repair them.
@@ -98,7 +100,12 @@ compositor). `StudioOverlayReference` scenes and `GoldenFrames/OverlayReference/
    frames "Second go" now falls to the right (turned clockwise), and in the sticker frame the
    flame leans to the left (turned counter-clockwise), as the editor shows them. The text and
    sticker frames change on purpose; share them so prompt 307's reference can be replaced.
-3. In the Studio, add a text line, a sticker and a climb tag to a real clip and turn each one
-   (one clockwise, one counter-clockwise). Export as a new video and compare with the editor:
-   each is turned the same way and by the same amount.
-4. "Save to original" the same edit: the baked clip matches the editor too.
+3. (Not possible yet: the editor has no turn control. When one is added, export and "Save to
+   original" a turned text line, sticker and climb tag and compare with the editor.)
+
+## Review follow-up (2026-11-26)
+
+- The Studio has no control that sets `rotationDegrees`; "What changes for the user" and "Owed on
+  device" say so.
+- `ref-text-f015.png` is added to `StudioOverlayReference.knownWrongFrames` and the overlay
+  reference README (frames 5 and 27 do not show the turned line).

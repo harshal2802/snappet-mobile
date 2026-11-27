@@ -28,7 +28,11 @@ enum StudioOverlayReference {
     ///   two clips' tiles, and both windows include that instant, so both tiles are drawn (darker
     ///   glass, two chart markers). One frame at most in a real export. The Core Animation path is
     ///   replaced by prompt 311, which must draw exactly one tile there; this frame stays wrong.
-    static let knownWrongFrames: Set<String> = ["ref-sticker-f010.png", "ref-hr-tile-transition-f021.png"]
+    /// - `ref-text-f015.png`: "Second go" (+10°) is turned the wrong way (counter-clockwise); the old
+    ///   export turned every overlay opposite to the editor. Prompt 321 fixes the export; a new capture
+    ///   replaces the frame.
+    static let knownWrongFrames: Set<String> = ["ref-sticker-f010.png", "ref-hr-tile-transition-f021.png",
+                                                "ref-text-f015.png"]
 
     /// The fixed scenes. Each is one or two clips of `StudioGoldenSource.overlayBase` (540×960,
     /// four strong colours and a moving white block), so every overlay sits over an edge
