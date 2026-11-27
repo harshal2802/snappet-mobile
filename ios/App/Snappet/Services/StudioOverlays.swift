@@ -819,10 +819,11 @@ enum StudioOverlays {
         let side = max(24, canvas.height * 0.12 * overlay.scale)
         let layer = CALayer()
         let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
+        // An unknown symbol name draws nothing, as in the preview (`Image(systemName:)`).
         var size = CGSize(width: side, height: side)
-        if let sticker = stickerImage(symbol: overlay.content, colorHex: overlay.colorHex, pointSize: side) {
+        if let sticker = stickerImage(symbol: overlay.content, colorHex: overlay.colorHex, pointSize: side,
+                                      maxSide: max(canvas.width, canvas.height)) {
             layer.contents = sticker.cgImage
-            layer.contentsScale = sticker.scale
             size = sticker.size
         }
         layer.contentsGravity = .resizeAspect
@@ -834,26 +835,37 @@ enum StudioOverlays {
         return layer
     }
 
-    /// The pixels a sticker layer shows: the symbol (or a filled circle when the name is unknown)
-    /// drawn by UIKit in `colorHex` into an 8-bit sRGB bitmap with a transparent background, at
-    /// `scale` pixels per canvas point. `size` is the symbol's own size in canvas points.
+    /// The pixels a sticker layer shows: the symbol drawn by UIKit in `colorHex`, at its own size,
+    /// into an 8-bit sRGB bitmap with a transparent background. The canvas is already in output
+    /// pixels, so one bitmap pixel is one output pixel (scale 1). `size` is the bitmap's size: the
+    /// symbol's size rounded up. Its longest side is at most `maxSide` (the canvas's longest side):
+    /// a bigger symbol is drawn at a smaller point size, so a huge sticker cannot take hundreds of
+    /// megabytes. `nil` when the name is not a symbol.
     static func stickerImage(symbol: String, colorHex: String, pointSize: CGFloat,
-                             scale: CGFloat = 2) -> (cgImage: CGImage, size: CGSize, scale: CGFloat)? {
-        let config = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
-        guard let base = UIImage(systemName: symbol, withConfiguration: config)
-                ?? UIImage(systemName: "circle.fill", withConfiguration: config) else { return nil }
-        let tinted = base.withTintColor(uiColor(colorHex), renderingMode: .alwaysOriginal)
-        let size = CGSize(width: ceil(base.size.width), height: ceil(base.size.height))
+                             maxSide: CGFloat) -> (cgImage: CGImage, size: CGSize)? {
+        func symbolImage(_ points: CGFloat) -> UIImage? {
+            UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: points, weight: .semibold))
+        }
+        guard maxSide >= 1, var base = symbolImage(pointSize) else { return nil }
+        let longest = max(base.size.width, base.size.height)
+        if ceil(longest) > maxSide, longest > 0 {
+            guard let smaller = symbolImage(pointSize * floor(maxSide) / ceil(longest) * 0.99) else { return nil }
+            base = smaller
+        }
+        let size = CGSize(width: min(maxSide, ceil(base.size.width)), height: min(maxSide, ceil(base.size.height)))
         guard size.width > 0, size.height > 0 else { return nil }
+        let tinted = base.withTintColor(uiColor(colorHex), renderingMode: .alwaysOriginal)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = scale
+        format.scale = 1
         format.opaque = false
         format.preferredRange = .standard          // 8-bit sRGB, like the text layers' colours
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            tinted.draw(in: CGRect(origin: .zero, size: size))
+            // At its own size (no stretch to the rounded-up box), centred in it.
+            tinted.draw(in: CGRect(x: (size.width - base.size.width) / 2, y: (size.height - base.size.height) / 2,
+                                   width: base.size.width, height: base.size.height))
         }
         guard let cgImage = image.cgImage else { return nil }
-        return (cgImage, size, scale)
+        return (cgImage, size)
     }
 
     /// A **styled text / climb-name** overlay: an `NSAttributedString` `CATextLayer` (font preset +

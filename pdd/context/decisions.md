@@ -13640,9 +13640,12 @@ layer was given `UIImage(systemName:).withTintColor(_, renderingMode: .alwaysOri
 a symbol's `.cgImage` is the untinted template raster (measured: mean opaque colour 0, 0, 0), and
 in the export even its transparent pixels came out black. `StudioOverlays.stickerImage` now draws
 the tinted symbol with `UIGraphicsImageRenderer` (`opaque = false`, `preferredRange = .standard`,
-scale 2, the same as the text layers' `contentsScale`) and the layer is sized to the symbol's own
-size and aspect, as the SwiftUI preview draws it, instead of a square with `resizeAspect`. An
-unknown symbol name draws `circle.fill` (the old comment promised it; the old code drew nothing).
+scale 1: the canvas is already in output pixels; scale 2 was four times the memory, about 100 MB
+per sticker on a 4K portrait at sticker scale 6), at its own size into a bitmap of its size
+rounded up, with the longest side capped at the canvas's longest side. The layer is sized to the
+symbol's own size and aspect, as the SwiftUI preview draws it, instead of a square with
+`resizeAspect`. An unknown symbol name draws nothing, as in the preview. Stickers already baked
+into a video before this keep their black boxes; nothing can repair them.
 Rule: any image given to a Core Animation export layer is a bitmap the app drew itself. The
 simulator reproduces the bug and the fix (a bitmap is not a glyph), so `StudioStickerExportTests`
 checks the exported frame's pixels; no golden scene was added (a pixel test says exactly what is

@@ -8,7 +8,7 @@ import UIKit
 /// out as two solid black rectangles: the layer was handed a symbol image's `.cgImage`, which is
 /// the untinted template raster, not the tinted picture. The fix draws the tinted symbol into a
 /// bitmap of our own. A bitmap is not a glyph, so the simulator's Core Animation tool draws it
-/// too, and this test renders the scene through the real export and looks at the pixels.
+/// too, and these tests render scenes through the real export and look at the pixels.
 final class StudioStickerExportTests: StudioFixtureTestCase {
 
     override class var sources: [StudioGoldenSource] { [.overlayBase] }
@@ -20,11 +20,15 @@ final class StudioStickerExportTests: StudioFixtureTestCase {
 
     func testStickerImageIsTheTintedSymbolOnATransparentBackground() throws {
         let image = try XCTUnwrap(StudioOverlays.stickerImage(symbol: "flame.fill", colorHex: "#FF9500",
-                                                              pointSize: 230))
+                                                              pointSize: 230, maxSide: 960))
         let bitmap = try XCTUnwrap(rgba(image.cgImage))
         let w = bitmap.width, h = bitmap.height
-        XCTAssertGreaterThan(w, 100)
-        XCTAssertGreaterThan(h, 100)
+        // One bitmap pixel per output pixel: the symbol's own size, rounded up.
+        let symbol = try XCTUnwrap(UIImage(systemName: "flame.fill",
+                                           withConfiguration: UIImage.SymbolConfiguration(pointSize: 230, weight: .semibold)))
+        XCTAssertEqual(w, Int(ceil(symbol.size.width)))
+        XCTAssertEqual(h, Int(ceil(symbol.size.height)))
+        XCTAssertEqual(image.size, CGSize(width: w, height: h))
         // Every corner is see-through.
         for (x, y) in [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)] {
             XCTAssertEqual(bitmap.pixel(x, y).a, 0, "corner (\(x), \(y)) is transparent")
@@ -36,31 +40,74 @@ final class StudioStickerExportTests: StudioFixtureTestCase {
             XCTAssertTrue(close(p, orange, 6), "an opaque pixel is orange: \(p)")
         }
         // A colour the app cannot read falls back to white, like text.
-        let white = try XCTUnwrap(StudioOverlays.stickerImage(symbol: "star.fill", colorHex: "nope", pointSize: 50))
+        let white = try XCTUnwrap(StudioOverlays.stickerImage(symbol: "star.fill", colorHex: "nope",
+                                                              pointSize: 50, maxSide: 960))
         let whiteBitmap = try XCTUnwrap(rgba(white.cgImage))
         let center = whiteBitmap.pixel(whiteBitmap.width / 2, whiteBitmap.height / 2)
         XCTAssertTrue(close(center, (255, 255, 255), 3), "the star's middle is white: \(center)")
-        // An unknown symbol draws the filled circle the layer always fell back to.
-        XCTAssertNotNil(StudioOverlays.stickerImage(symbol: "no.such.symbol.anywhere", colorHex: "#FFFFFF",
-                                                    pointSize: 50))
+        // An unknown symbol draws nothing, as in the preview.
+        XCTAssertNil(StudioOverlays.stickerImage(symbol: "no.such.symbol.anywhere", colorHex: "#FFFFFF",
+                                                 pointSize: 50, maxSide: 960))
     }
 
-    /// What the layer used to get, for the record: the `.cgImage` of a tinted symbol image.
-    func testOldPathCGImageForTheRecord() throws {
+    /// A huge sticker is drawn smaller rather than into a bitmap larger than the canvas.
+    func testStickerImageIsNeverLargerThanTheCanvas() throws {
+        let image = try XCTUnwrap(StudioOverlays.stickerImage(symbol: "flame.fill", colorHex: "#FF9500",
+                                                              pointSize: 6_000, maxSide: 960))
+        XCTAssertLessThanOrEqual(max(image.cgImage.width, image.cgImage.height), 960)
+        XCTAssertGreaterThan(max(image.cgImage.width, image.cgImage.height), 900, "still as big as it may be")
+        XCTAssertEqual(image.size, CGSize(width: image.cgImage.width, height: image.cgImage.height))
+    }
+
+    /// The old path's raster, pinned: a symbol image's `.cgImage` does not carry the tint (the
+    /// reason the layer gets a bitmap of our own). If UIKit ever changes this, this test says so.
+    func testASymbolImagesCGImageIsNotTinted() throws {
         let config = UIImage.SymbolConfiguration(pointSize: 230, weight: .semibold)
         let old = try XCTUnwrap(UIImage(systemName: "flame.fill", withConfiguration: config)?
             .withTintColor(UIColor(red: 1, green: 149 / 255, blue: 0, alpha: 1), renderingMode: .alwaysOriginal))
-        guard let cg = old.cgImage else { print("StudioStickerExportTests old path: cgImage is nil"); return }
+        let cg = try XCTUnwrap(old.cgImage)
         let bitmap = try XCTUnwrap(rgba(cg))
-        let inked = bitmap.pixels.filter { $0.a > 0 }
-        let opaque = inked.filter { $0.a == 255 }
-        func mean(_ k: KeyPath<(r: UInt8, g: UInt8, b: UInt8, a: UInt8), UInt8>) -> Int {
-            opaque.isEmpty ? -1 : opaque.reduce(0) { $0 + Int($1[keyPath: k]) } / opaque.count
+        let opaque = bitmap.pixels.filter { $0.a == 255 }
+        XCTAssertGreaterThan(opaque.count, 1_000)
+        XCTAssertFalse(opaque.contains { close($0, orange, 30) }, "no pixel of the old raster is orange")
+    }
+
+    /// Stickers are not upside down or mirrored in the export. Two unturned symbols in #FF9500
+    /// over the test video: `play.fill` points right, so its orange mass sits left of its box's
+    /// middle (mirrored: right); `arrowtriangle.up.fill` points up, so its mass sits below the
+    /// middle (upside down: above).
+    func testExportedStickersAreTheRightWayRound() async throws {
+        let clip = StudioGoldenScene.clip(.overlayBase, 0)
+        let scene = StudioGoldenScene(
+            id: "sticker-orientation", title: "Sticker orientation", clips: [clip],
+            overlays: [
+                OverlayItem(kind: .sticker, content: "play.fill", startSec: 0, endSec: 1,
+                            position: CGPoint(x: 0.75, y: 0.25), colorHex: "#FF9500"),
+                OverlayItem(kind: .sticker, content: "arrowtriangle.up.fill", startSec: 0, endSec: 1,
+                            position: CGPoint(x: 0.75, y: 0.75), colorHex: "#FF9500")],
+            frames: [frame])
+        let image = try await StudioGoldenRenderer.frames(of: scene, fixture: try fixture(), path: .export)[0]
+        attach(image, "sticker-orientation-f010-export")
+        let side = 0.12 * 960.0
+        for (center, name) in [(CGPoint(x: 405, y: 240), "play.fill"), (CGPoint(x: 405, y: 720), "arrowtriangle.up.fill")] {
+            var xs: [Double] = [], ys: [Double] = []
+            let half = Int(side * 0.7)
+            for dy in -half ... half {
+                for dx in -half ... half {
+                    let x = Int(center.x) + dx, y = Int(center.y) + dy
+                    if close(image.pixel(x, y), orange, 30) { xs.append(Double(x)); ys.append(Double(y)) }
+                }
+            }
+            XCTAssertGreaterThan(xs.count, 1_000, "\(name) is drawn")
+            guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() else { continue }
+            let meanX = xs.reduce(0, +) / Double(xs.count), meanY = ys.reduce(0, +) / Double(ys.count)
+            let midX = (minX + maxX) / 2, midY = (minY + maxY) / 2
+            if name == "play.fill" {
+                XCTAssertLessThan(meanX, midX - 4, "play.fill points right (mass \(meanX), box middle \(midX))")
+            } else {
+                XCTAssertGreaterThan(meanY, midY + 4, "the triangle points up (mass \(meanY), box middle \(midY))")
+            }
         }
-        print("StudioStickerExportTests old path: \(cg.width)x\(cg.height) px, \(cg.bitsPerComponent) bpc, "
-              + "alpha info \(cg.alphaInfo.rawValue), space \(cg.colorSpace?.name.map { $0 as String } ?? "-"), "
-              + "image \(old.size) @\(old.scale)x; \(inked.count) pixels with alpha > 0, \(opaque.count) opaque, "
-              + "mean opaque colour (\(mean(\.r)), \(mean(\.g)), \(mean(\.b)))")
     }
 
     // MARK: The exported frame

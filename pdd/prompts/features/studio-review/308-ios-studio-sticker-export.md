@@ -42,12 +42,18 @@ phone's frame). The measurements are in "Evidence".
 
 ## Change
 
-- `StudioOverlays.stickerImage(symbol:colorHex:pointSize:scale:)` (new, internal): draws the
+- `StudioOverlays.stickerImage(symbol:colorHex:pointSize:maxSide:)` (new, internal): draws the
   tinted symbol with `UIGraphicsImageRenderer` into a bitmap we own: `opaque = false`,
   `preferredRange = .standard` (8-bit sRGB, the colour space the text layers' colours are in),
-  `scale = 2` (as the text layers' `contentsScale`). An unknown symbol name draws `circle.fill`,
-  which the old doc comment promised and the old code did not do (it drew nothing).
-- `stickerLayer` hands that bitmap to the layer, with `contentsScale` = the bitmap's scale, and
+  `scale = 1`. The canvas is already in output pixels, so one bitmap pixel is one output pixel.
+  The bitmap is the symbol's size rounded up, and the symbol is drawn at its own size inside it
+  (no stretch). Its longest side is at most the canvas's longest side (`maxSide`): a bigger
+  symbol is drawn at a smaller point size. (Review: scale 2 was four times the memory; a 4K
+  portrait at sticker scale 6 was about 100 MB per sticker.)
+- An unknown symbol name gives `nil` and the layer stays empty, as before and as in the preview
+  (`Image(systemName:)` draws nothing). The old doc comment's "filled circle" fallback was never
+  true and is gone.
+- `stickerLayer` hands that bitmap to the layer and
   sizes the layer to the symbol's own size and aspect, centred on the overlay's position. Before,
   the layer was a `side × side` square and `resizeAspect` shrank the symbol to fit it; the
   preview draws the symbol at its own size at the same point size, so the export is now a little
@@ -84,14 +90,22 @@ Measured on the iPhone 17 Pro simulator (iOS 26.5), `StudioStickerExportTests`:
 `StudioStickerExportTests` (new):
 
 - `testStickerImageIsTheTintedSymbolOnATransparentBackground`: the bitmap for `flame.fill` in
-  #FF9500 has transparent corners, covers more than a quarter of its box, and every opaque pixel
-  is orange (±6); an unreadable colour falls back to white; an unknown name still gives a bitmap.
+  #FF9500 is the symbol's size rounded up at one pixel per point, has transparent corners, covers
+  more than a quarter of its box, and every opaque pixel is orange (±6); an unreadable colour
+  falls back to white; an unknown name gives no bitmap.
+- `testStickerImageIsNeverLargerThanTheCanvas`: `flame.fill` at 6000 pt on a 960 canvas is a
+  bitmap whose longest side is between 900 and 960.
+- `testASymbolImagesCGImageIsNotTinted`: the old path's raster has opaque pixels and none of them
+  is orange (pins the cause; it fails if UIKit ever starts tinting it).
+- `testExportedStickersAreTheRightWayRound`: an unturned `play.fill` and `arrowtriangle.up.fill`
+  in #FF9500 through the real export. The play triangle's orange mass is left of its box's middle
+  (fails if mirrored); the up triangle's mass is below its middle (fails if upside down).
 - `testExportedStickerFrameShowsTheSymbolsNotBlackBoxes`: renders `ref-sticker` frame 10 through
   `StudioComposer.export` on the simulator (the golden-frame harness's `StudioGoldenRenderer`) and
-  the bare clip's same frame. The star's middle is white and the flame's body orange (±30); the
+  the bare clip's same frame. The star's middle is white and more than 30 % of the flame's old
+  box is orange (±30); the
   four corners of each OLD black box show the bare video (±24); fewer than 0.5 % of the pixels in
   each old box are near black.
-- `testOldPathCGImageForTheRecord`: prints what the old path's `.cgImage` is (no assertion).
 
 No golden scene was added. The golden images are compared with a tolerance meant for whole frames
 and the simulator's golden scenes have no overlays drawn by the Core Animation tool; a pixel test
@@ -100,13 +114,19 @@ says exactly what is wrong. No golden image changed. `StudioOverlayReference` an
 
 ### Runs (iPhone 17 Pro simulator, iOS 26.5)
 
-- `StudioStickerExportTests` with the old line put back: Executed 3 tests, with 8 failures. With
-  the fix: Executed 3 tests, with 0 failures.
+- First commit: `StudioStickerExportTests` with the old line put back: Executed 3 tests, with 8
+  failures. With the fix: Executed 3 tests, with 0 failures.
 - Full unit suite (`SnappetTests`, every golden-frame test unchanged): Executed 3776 tests, with
   11 tests skipped and 0 failures.
 - UI: `StudioSelfCheckUITests`, `LiveWorkoutStudioWalkthroughTests`, `StudioHRTimingUITests`:
   Executed 3 tests, with 0 failures.
 - Device compile (`generic/platform=iOS`, Debug): BUILD SUCCEEDED, no warnings in `StudioOverlays.swift`.
+- Second commit (review): `StudioStickerExportTests` with the golden, mutation, compare,
+  compositor, overlay-reference and self-check classes: Executed 109 tests, with 6 tests skipped
+  and 0 failures. The orientation test with the sticker layer flipped (`CATransform3DMakeScale(-1,
+  -1, 1)`, one run): Executed 1 test, with 2 failures (play mass 410.5 right of its middle 398.5;
+  triangle mass 707.9 above its middle 719.5). UI, the three classes again: Executed 3 tests,
+  with 0 failures.
 
 ## Not done
 
@@ -117,9 +137,16 @@ says exactly what is wrong. No golden image changed. `StudioOverlayReference` an
 
 1. Install this build on the phone.
 2. Settings → Developer → Studio render check → "Capture overlay reference" again. The
-   `ref-sticker` frame shows a white star at upper left and a large orange flame, turned a little
-   clockwise, at lower right, with the coloured quarters of the test video around them (no black
+   `ref-sticker` frame shows a white star at upper left and a large orange flame at lower right, with the coloured quarters of the test video around them (no black
    boxes). Share the files so the reference can be replaced (prompt 307's folder).
 3. Add a sticker (any colour, turned and scaled) to a real clip in the Studio, export as a new
    video and compare with the editor's preview: same symbol, same colour, same place and turn.
 4. "Save to original" the same edit: the baked clip shows the sticker, not a black box.
+
+Clips already baked with a sticker ("Save to original" or "Replace original") before this build
+keep their black boxes: the box is in the video's pixels and nothing can repair it. To get the
+sticker, "Revert to Original" in Photos (for "Save to original") and bake again with this build.
+
+The turn: the export turns an overlay the opposite way from the preview (a separate, older bug,
+prompt 321). Until that lands, step 3's sticker matches the preview in symbol, colour, place and
+size, and is turned the other way.
