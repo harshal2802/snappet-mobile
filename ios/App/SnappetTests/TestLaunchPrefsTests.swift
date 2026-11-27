@@ -126,11 +126,53 @@ final class TestLaunchPrefsTests: XCTestCase {
         XCTAssertEqual(launch(test: false, at: 11), .notNeeded)
     }
 
-    func testTheRestoreLaunchRestoresHoweverOldTheRunIs() {
+    /// A run cut short leaves a snapshot; days of another build follow. The end-of-run launch of a LATER run must
+    /// not roll those days back.
+    func testTheRestoreLaunchSetsAStaleSnapshotAside() {
         seedRealSettings()
         XCTAssertEqual(launch(test: true), .saved)
         actLikeATest()
-        XCTAssertEqual(launch(test: false, at: 60 * 24 * 3, restoreOnly: true), .restored)
+        XCTAssertEqual(launch(test: false, at: 60 * 24 * 3, restoreOnly: true), .setAside)
+        assertTestSettingsLeft()
+        XCTAssertFalse(exists(file))
+    }
+
+    func testTheRestoreLaunchSetsASnapshotAsideWhenAnotherLaunchChangedSettings() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        app.set(5, forKey: "clips.grid.columns")   // an older build, after the run
+        XCTAssertEqual(launch(test: false, at: 120, restoreOnly: true,
+                              settingsModifiedAt: t0.addingTimeInterval(90 * 60)), .setAside)
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 5)
+    }
+
+    /// The reviewer's scenario: run 1 is cut short (snapshot S1 of the settings then), the person uses another
+    /// build for days and changes settings, then run 2 starts. Run 2 must save the CURRENT settings, not keep S1.
+    func testANewRunAfterAStaleSnapshotSavesTheCurrentSettings() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)                       // S1
+        actLikeATest()
+        // Days later, in another build, the person's settings are now these.
+        app.set(6, forKey: "clips.grid.columns")
+        app.set("activities", forKey: "clips.level")
+        let days = 60.0 * 24 * 4
+        XCTAssertEqual(launch(test: true, at: days, settingsModifiedAt: t0.addingTimeInterval(days * 60 - 3600)), .saved,
+                       "S1 is not this run's: a fresh snapshot")
+        XCTAssertTrue(exists(TestLaunchPrefs.setAsideURL(for: file, now: t0.addingTimeInterval(days * 60))), "S1 kept aside")
+        app.set(2, forKey: "clips.grid.columns")                          // run 2's tests
+        app.removeObject(forKey: "clips.level")
+        XCTAssertEqual(launch(test: false, at: days + 10, restoreOnly: true), .restored)
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 6, "the settings from before run 2")
+        XCTAssertEqual(app.string(forKey: "clips.level"), "activities")
+    }
+
+    func testATestLaunchSoonAfterTheLastKeepsTheSnapshot() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        XCTAssertEqual(launch(test: true, at: 4, settingsModifiedAt: t0.addingTimeInterval(3 * 60)), .kept)
+        XCTAssertEqual(launch(test: false, at: 9, restoreOnly: true, settingsModifiedAt: t0.addingTimeInterval(8 * 60)),
+                       .restored)
         assertRealSettingsBack()
     }
 

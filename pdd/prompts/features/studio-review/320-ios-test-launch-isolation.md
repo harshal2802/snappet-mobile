@@ -102,14 +102,19 @@ clip-copies actions reachable from the UI; rows 3–9 are the fix.)
 4. **Settings snapshot (`TestLaunchPrefs`), on a real phone only.** First thing in `SnappetApp.init`:
    - a test launch with no snapshot saves the app's persistent domain and the App Group's
      (`group.com.snappet.app`) to `Library/SnappetTestLaunch/settings-snapshot.plist`, with the time;
-   - a test launch with a snapshot keeps it and stamps `lastTestLaunchAt`;
+   - a test launch with a snapshot keeps it and stamps `lastTestLaunchAt` — only if it is this run's
+     (the same freshness check as the fallback below). A snapshot left by a run cut short, followed by
+     another build's use, is set aside and the CURRENT settings are saved instead;
    - **if the snapshot cannot be written (or stamped), the launch touches no setting**: no clearing,
      no festival flags, no Kilter fixture, no demo band; its read-out says `prefs failed` and the
      device guard stops the test before its first tap;
    - **end of run**: the UI-test helper (`PrefsRestoreAtEnd`, a test observer registered by the first
-     guarded launch on a device) relaunches the app with `-uiTestRestorePrefs` when the test bundle
-     finishes. That launch restores both domains exactly, deletes the snapshot and shows only
-     "Settings restored" (`uiTest.prefsRestored`); no store, no shell;
+     guarded launch on a device) relaunches the app with `-uiTestRestorePrefs` when each test class
+     finishes, and once more when the bundle finishes as a backup. That launch restores both domains
+     exactly (if the snapshot passes the freshness check; otherwise it is set aside), deletes the
+     snapshot and shows only "Settings restored" (`uiTest.prefsRestored`); no store, no shell. The
+     two Backup and three Clips feed tests that launched unguarded now use the guarded launch, and
+     the Clips feed test that resets the Photos permission skips it on a phone;
    - **fallback**: the next normal launch restores only if the latest test launch was at most 6 h ago
      and the settings files on disk did not change more than 30 min after it (a later change was made
      by another launch, e.g. a TestFlight build that knows nothing of snapshots, and must not be rolled

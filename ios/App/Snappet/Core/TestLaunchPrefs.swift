@@ -11,7 +11,9 @@ import os
 /// - the FIRST test launch saves the app's settings and the App Group's to a snapshot file in Library before
 ///   anything touches them; if that fails, the launch touches no setting at all and its read-out says
 ///   `prefs failed`, so the device test stops before its first tap;
-/// - later test launches keep that first snapshot and only stamp the time of the latest test launch;
+/// - later test launches keep that first snapshot and only stamp the time of the latest test launch — unless it
+///   is not this run's (too old, or the settings changed after its last test launch): then it is set aside and
+///   the CURRENT settings are saved. The end-of-run restore applies the same check;
 /// - at the END of a device run the UI-test helper relaunches the app with `-uiTestRestorePrefs`, which puts
 ///   both domains back exactly, deletes the snapshot and shows nothing else (`restoreOnly`);
 /// - the next normal launch is only a FALLBACK (the run was cut short): it restores only when that is
@@ -115,34 +117,55 @@ enum TestLaunchPrefs {
     }
 
     /// Saves, keeps or restores the snapshot at `file` for `domains`. `restoreOnly` is the helper's end-of-run
-    /// launch: it restores without the fallback's checks. `settingsModifiedAt` is when the settings files last
-    /// changed on disk. Returns what it did.
+    /// launch. `settingsModifiedAt` is when the settings files last changed on disk. Returns what it did.
+    ///
+    /// Every use of an existing snapshot — keeping it on a test launch, the end-of-run restore, the fallback
+    /// restore — first asks `fallback` whether it still belongs to the current run. A snapshot left by a run cut
+    /// short, followed by days of another build, is set aside and never applied: a test launch then saves the
+    /// CURRENT settings instead, and a restore leaves the settings as they are.
     @discardableResult
     static func run(isTestLaunch: Bool, restoreOnly: Bool = false, domains: [Domain], file: URL, now: Date = .now,
                     settingsModifiedAt: () -> Date? = { nil }, fileManager: FileManager = .default) -> Outcome {
         let exists = fileManager.fileExists(atPath: file.path)
-        if restoreOnly { return exists ? restore(domains: domains, file: file, fileManager: fileManager) : .notNeeded }
-        switch step(isTestLaunch: isTestLaunch, snapshotExists: exists) {
-        case .none:
-            return .notNeeded
-        case .snapshot:
+        func fresh() -> (plist: [String: Any]?, check: Fallback?) {
+            guard let plist = read(file), let last = plist["lastTestLaunchAt"] as? Date else { return (nil, nil) }
+            return (plist, fallback(now: now, lastTestLaunchAt: last, settingsModifiedAt: settingsModifiedAt()))
+        }
+        func setAsideStale(_ check: Fallback?) -> Outcome {
+            let reason = switch check {
+            case nil: "unreadable"
+            case .tooOld?: "older than \(Int(maxAge / 3600)) h"
+            default: "settings changed after the run"
+            }
+            return setAside(file, now: now, reason: reason, fileManager: fileManager)
+        }
+        func snapshot() -> Outcome {
             var saved: [String: Any] = [:]
             for domain in domains { saved[domain.name] = domain.read() ?? [:] }
             return write(["version": formatVersion, "savedAt": now, "lastTestLaunchAt": now, "domains": saved],
                          to: file, fileManager: fileManager) ? .saved : .failed
+        }
+        if restoreOnly {
+            guard exists else { return .notNeeded }
+            let (_, check) = fresh()
+            return check == .restore ? restore(domains: domains, file: file, fileManager: fileManager) : setAsideStale(check)
+        }
+        switch step(isTestLaunch: isTestLaunch, snapshotExists: exists) {
+        case .none:
+            return .notNeeded
+        case .snapshot:
+            return snapshot()
         case .keepSnapshot:
-            guard var plist = read(file) else { return .failed }
-            plist["lastTestLaunchAt"] = now
-            return write(plist, to: file, fileManager: fileManager) ? .kept : .failed
+            let (plist, check) = fresh()
+            guard check == .restore, var current = plist else {
+                // Not this run's: put it aside and save what the settings are NOW.
+                return setAsideStale(check) == .setAside ? snapshot() : .failed
+            }
+            current["lastTestLaunchAt"] = now
+            return write(current, to: file, fileManager: fileManager) ? .kept : .failed
         case .restore:
-            guard let plist = read(file), let last = plist["lastTestLaunchAt"] as? Date else {
-                return setAside(file, now: now, reason: "unreadable", fileManager: fileManager)
-            }
-            switch fallback(now: now, lastTestLaunchAt: last, settingsModifiedAt: settingsModifiedAt()) {
-            case .restore: return restore(domains: domains, file: file, fileManager: fileManager)
-            case .tooOld: return setAside(file, now: now, reason: "older than \(Int(maxAge / 3600)) h", fileManager: fileManager)
-            case .changedSince: return setAside(file, now: now, reason: "settings changed after the run", fileManager: fileManager)
-            }
+            let (_, check) = fresh()
+            return check == .restore ? restore(domains: domains, file: file, fileManager: fileManager) : setAsideStale(check)
         }
     }
 

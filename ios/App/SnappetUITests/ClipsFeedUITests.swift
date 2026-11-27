@@ -75,9 +75,10 @@ import XCTest
     /// clip". (The `.missing` copy itself needs full access + a really-deleted asset: device-owed.)
     func testUnresolvableClipWithoutPhotosAccessIsNotCalledMissing() {
         let app = XCUIApplication()
-        app.resetAuthorizationStatus(for: .photos)
+        // Never on a phone (prompt 320): it would reset the person's own Photos permission for Snappet.
+        if !TestStoreGuard.isRealDevice { app.resetAuthorizationStatus(for: .photos) }
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
-        app.launch()
+        app.launchOnTestStore()   // the guarded launch (prompt 320)
         app.tabBars.buttons["Clips"].tap()
 
         // The feed shows a still poster until a clip is played; tapping it mounts the media surface,
@@ -99,7 +100,7 @@ import XCTest
     func testMissingClipsNoticeOpensTheRelinkSheetAndDismisses() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight", "-uiTestAssumeMissingClips"]
-        app.launch()
+        app.launchOnTestStore()   // the guarded launch (prompt 320)
         app.tabBars.buttons["Clips"].tap()
 
         let notice = app.descendants(matching: .any)["clips.missing"]
@@ -123,7 +124,7 @@ import XCTest
     func testADismissedMissingClipsNoticeIsStillReachableFromBackup() {
         let app = XCUIApplication()
         app.launchArguments += ["clips", "-uiTestSeedFestivalNight", "-uiTestAssumeMissingClips"]
-        app.launch()
+        app.launchOnTestStore()   // the guarded launch (prompt 320)
         app.tabBars.buttons["Clips"].tap()
         let notice = app.descendants(matching: .any)["clips.missing"]
         XCTAssertTrue(notice.waitForExistence(timeout: 15))

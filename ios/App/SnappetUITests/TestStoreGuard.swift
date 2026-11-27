@@ -61,21 +61,38 @@ enum TestStoreGuard {
     }
 }
 
-/// At the end of a device run (prompt 320): relaunch Snappet with `-uiTestRestorePrefs`, which puts the person's
-/// settings back from the snapshot the first test launch saved, deletes it and shows only "Settings restored".
-/// Registered by the first guarded launch on a real device. The app's next normal launch is only a fallback.
+/// On a device (prompt 320): relaunch Snappet with `-uiTestRestorePrefs`, which puts the person's settings back
+/// from the snapshot the first test launch saved, deletes it and shows only "Settings restored". It runs when each
+/// test CLASS finishes (inside the run, so XCTest drives it like any launch; a run killed mid-class still restored
+/// every class before it), and once more when the bundle finishes, as a backup. Registered by the first guarded
+/// launch on a real device; only after a guarded launch since the last restore. The app's next normal launch is
+/// only a fallback.
 final class PrefsRestoreAtEnd: NSObject, XCTestObservation {
     static let restoreArgument = "-uiTestRestorePrefs"   // `TestLaunchPrefs.restoreArgument`
     static let restoredIdentifier = "uiTest.prefsRestored"
     nonisolated(unsafe) private static var registered = false
+    /// A guarded launch happened since the last restore, so a snapshot may be waiting.
+    nonisolated(unsafe) static var pending = false
 
     static func registerOnDevice() {
-        guard TestStoreGuard.isRealDevice, !registered else { return }
+        guard TestStoreGuard.isRealDevice else { return }
+        pending = true
+        guard !registered else { return }
         registered = true
         XCTestObservationCenter.shared.addTestObserver(PrefsRestoreAtEnd())
     }
 
-    func testBundleDidFinish(_ testBundle: Bundle) {
+    /// A class's suite (its tests are test cases, not suites) has finished.
+    func testSuiteDidFinish(_ testSuite: XCTestSuite) {
+        guard testSuite.tests.contains(where: { $0 is XCTestCase }) else { return }
+        restore()
+    }
+
+    func testBundleDidFinish(_ testBundle: Bundle) { restore() }
+
+    private func restore() {
+        guard Self.pending else { return }
+        Self.pending = false
         MainActor.assumeIsolated {
             let app = XCUIApplication()
             app.launchArguments = [Self.restoreArgument]

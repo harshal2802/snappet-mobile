@@ -13723,6 +13723,15 @@ doubt sets the snapshot aside — kept and logged, never applied — because los
 costs nothing and rolling back real ones costs the person data. A restore first renames the
 snapshot, so a failed delete is reported and can never restore twice.
 
+**Every use of a snapshot checks it is this run's** (second review). The same freshness test guards
+keeping a snapshot on a test launch and the end-of-run restore, not only the fallback: a run cut short
+leaves S1, the person uses another build for days, and the next run's first launch would otherwise
+keep S1, clear keys whose current values S1 never held, and its end-of-run restore would roll the days
+back. So a stale S1 is set aside and the test launch saves the CURRENT settings; a restore of a stale
+snapshot sets it aside and leaves the settings alone. Cost: a single test running more than 30 min
+after its launch makes the next launch re-snapshot (the real copy is set aside, not lost). The restore
+runs when each test class finishes, inside the run, with the bundle-finish hook as a backup.
+
 **A failed snapshot touches nothing.** If the snapshot cannot be written or stamped, that launch skips
 every settings write it would make (the ~20 cleared keys, the festival flags, the Kilter fixture's
 `kilter.*`, the demo band, the dismissed-missing count); its read-out says `prefs failed` and the device
