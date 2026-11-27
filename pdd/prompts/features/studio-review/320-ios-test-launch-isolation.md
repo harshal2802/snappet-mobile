@@ -82,9 +82,36 @@ clip-copies actions reachable from the UI; rows 3–9 are the fix.)
 | 34 | Remembered heart-rate band (`StudioDemoSeed.seedRememberedBandIfRequested` → `BandMemory`) | Overwrote the person's band in settings | Only once the settings are saved (row 36); restored with them |
 | 35 | Watch messages (`LiveWorkoutMessage.allows`) | Any `-uiTest` prefix: not sent | Unchanged (`Shared/`, compiled into the watch too) |
 | 36 | **Settings**: clearing ~20 keys, festival flags, `kilter.*`, `clips.missing.dismissedAtCount`, everything tests change (`UserDefaults.standard` and the App Group suite) | Cleared and changed by every test launch, never put back | **Snapshot and restore on a phone** (the design below); a launch whose snapshot failed touches none of them |
-| 37 | Reels, posters, exported files (Documents, Caches, tmp) | Tests add exports; the sweep removes old exports by age, as on a normal launch | Harmless: nothing is deleted that a normal launch would keep |
-| 38 | Downloaded guide photos / Kilter generator files | A test that downloads them replaces the same files | Harmless: same content, re-downloadable |
-| 39 | App Intents donations, background tasks | None exist | Harmless |
+| 37 | App Intents donations, background tasks | None exist | Harmless |
+
+### Files (re-audited after the phone run found the feedback log)
+
+Every file the app reads or writes under Application Support, Documents, Library/Caches, tmp and the App
+Group container, and what a test launch does with it. "Scratch" = `tmp/uitest-files/…` (`TestLaunchFiles`)
+or another tmp folder, never the person's copy.
+
+| # | File | Before | Now, on a test launch |
+|---|---|---|---|
+| F1 | `Application Support/highlight-feedback.jsonl` (`FeedbackStore`; read back by `recomputeFeedbackTuning` to tune the reel builder, exported from Backup) | **Read and appended**: 2026-11-26 device runs of the Clips month reel and the progress reel added 8 "shown" rows | **Scratch** (`FeedbackStore.make`, emptied each launch): never read or written |
+| F2 | `Application Support/Reels/` (reel exports, swept to the newest few before each export) | A test export added a file and its sweep removed the person's older kept renders | **Scratch** (`ReelExporter.exportDestination`) |
+| F3 | `Application Support/ExerciseGuidePhotos/` (guide photo pack + `installed-manifest.json`) | `GuidePhotoUITests` **removes the installed pack** and installs a test pack from a local server | **Scratch** (`ExercisePhotoStore`) |
+| F4 | `Application Support/Kilter/` (installed catalogs, `active-catalog`) | The fixture cleared it | **Scratch** (row 29) |
+| F5 | `Application Support/KilterGenerator/` (model, training index, `installed.json`) | Read; downloaded on demand. Its `remove()` has no caller in the UI | Harmless: read-only, or re-downloaded with the same content |
+| F6 | `Application Support/KilterBoardPhotos/` (board photo JPEGs) | Scratch (`KilterBoardPhotos-uitest`) only under `-uiTestFreshStore` | **Scratch** on every test launch (row 30) |
+| F7 | `Application Support/ClipPosters/` (posters kept for clips freed from Photos) | Written by free-up / bring-back | **Scratch** for writes (`makeMediaVault`); the feed's poster READS stay on the real folder, keyed by the person's asset ids, which test rows do not have: harmless |
+| F8 | `Library/Caches/ClipVault/` (Drive copies cached for playback) | Real cache, trimmed by size | **Scratch** (`makeMediaVault`) |
+| F9 | `Library/Caches/racket-motion/` (rally motion chunks per asset) | Cache keyed by asset id | Harmless: a cache; test assets get their own entries |
+| F10 | `Documents/studio-music-*.m4a` (music imported into the Studio) | A test that imports music adds a file | Harmless: only adds a file the person never sees; nothing is deleted |
+| F11 | `Documents/racket-camera.log` | Written only with `-racketCameraDebug` (a device check) | Harmless: a debug log, only on request |
+| F12 | `Application Support/default.store*` (SwiftData) | The corrupt-store reset could delete it | Never opened (in-memory store); reset **refused** (row 32) |
+| F13 | `Library/SnappetTestLaunch/` (this prompt's settings snapshot) | — | Written by the test launch itself; removed by the restore |
+| F14 | iCloud container `Backups/` and Google Drive backups | Uploaded the test store | **Unreachable** (rows 1–3) |
+| F15 | tmp: `uitest-cloud-vault`, `uitest-kilter`, `uitest-mediavault`, `uitest-files`, `studio-hr-timing`, render temp files | Test-only already | Scratch |
+| F16 | App Group `today-widget-snapshot.json` and the widget check-off outbox (`WidgetSnapshotStore`, `WidgetOutbox`) | Written / drained for most seeds | **Refused** (row 25) |
+| F17 | App Group household widget snapshot (`HouseholdWidgetStore`) | Not written (prefix rule) | Unchanged (row 26) |
+| F18 | App Group app-actions inbox (`AppActionInbox`) | Drained | **Refused** (row 28) |
+| F19 | App Group settings suite (accent, widget settings) | Changed by tests | Snapshot and restore (row 36) |
+| F20 | `cloud-probe.log`, `net-trace.log` | No code on this branch writes them (they come from device-check builds on other branches) | Not applicable here; such a build must write them only on a normal launch |
 
 ## The design
 

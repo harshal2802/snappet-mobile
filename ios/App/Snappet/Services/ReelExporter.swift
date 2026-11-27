@@ -333,8 +333,13 @@ final class ReelExporter: Sendable {
     /// (review fix: no copy may imply a replaced cut is retrievable here).
     private func exportDestination() throws -> URL {
         let fm = FileManager.default
-        let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                 appropriateFor: nil, create: true)
+        // A test launch renders into scratch, so its sweep never removes the person's kept renders (prompt 320).
+        let support: URL
+        if UITestStore.onTestLaunch {
+            support = TestLaunchFiles.supportDirectory()
+        } else {
+            support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        }
         var dir = ReelFlowPolicy.exportsDirectory(under: support)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         var values = URLResourceValues()

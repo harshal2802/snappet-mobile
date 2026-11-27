@@ -13760,3 +13760,10 @@ Refusing is the default because an empty list must mean "touch nothing". Discove
 assets only, so a seeded session dated now cannot pick up the person's footage from today; a manual pick
 by identifier is still taken, since attaching it is read-only and the test chose it. Every seed also
 refuses to run unless the store is the fresh in-memory one.
+
+Plain files follow the same rule (found on the phone after the second review: device runs appended 8
+rows to the person's `highlight-feedback.jsonl`, which the reel builder tunes itself from). A test launch
+writes the feedback log, reel exports and the guide photo pack under `tmp/uitest-files/` (`TestLaunchFiles`)
+and never reads the person's copies. A file is left on the real path only when a test can at most read it
+or add to it without effect (caches keyed by the person's asset ids, the Kilter generator's downloads,
+imported Studio music); the prompt's file table lists each one.

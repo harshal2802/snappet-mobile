@@ -38,10 +38,8 @@ final class ExercisePhotoStore: @unchecked Sendable {
     private let images = NSCache<NSString, UIImage>()
 
     init(directoryName: String = "ExerciseGuidePhotos") {
-        let support = (try? FileManager.default.url(for: .applicationSupportDirectory,
-                                                    in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? FileManager.default.temporaryDirectory
-        self.dir = support.appendingPathComponent(directoryName, isDirectory: true)
+        // A test launch installs (e.g. a local test pack) into scratch, never over the person's pack (prompt 320).
+        self.dir = TestLaunchFiles.supportDirectory().appendingPathComponent(directoryName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let config = URLSessionConfiguration.ephemeral

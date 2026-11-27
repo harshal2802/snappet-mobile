@@ -22,7 +22,7 @@ final class AppModel {
     /// WorkoutTracker session-scoped media tagging (B1): auto-discovery by capture-time
     /// window + manual PHPicker add. Distinct from `photos`, the flagship reels path.
     let sessionMedia = SessionMediaService()
-    let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
+    let feedback = FeedbackStore.make(arguments: CommandLine.arguments)   // FeedbackSink → disk (training data); scratch on a test launch
     /// On-device Vision scene scorer (#83 Step 1): saliency + sharpness + face/body presence per sampled
     /// frame → a scalar `visualScore` for the fusion's scene term. Platform I/O lives here; only the
     /// scalar crosses into the engine.
