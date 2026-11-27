@@ -143,8 +143,13 @@ videos in the simulator's library (three per run).
   feed's player-item handler. No other function changed.
 - Full unit suite (`SnappetTests`, no parallel testing): Executed 3784 tests, with 11 tests
   skipped and 0 failures.
-- UI: UI-RESULTS
-- Device compile (`generic/platform=iOS`, Debug): DEVICE-RESULT
+- UI: `LiveWorkoutStudioWalkthroughTests`, `StudioSelfCheckUITests`, `ClipsFeedUITests` (15; the
+  feed's player) and `FestivalUITests` (11; the QR scanner screens) passed. `StudioHRTimingUITests`
+  failed once on its 90 s wait for "Export as new video" to finish (the Mac's load average was
+  above 300; a screenshot during the rerun showed the export still running at 57 %, no dialog).
+  Run again alone: Executed 1 test, with 0 failures.
+- Device compile (`generic/platform=iOS`, Debug, fresh derived data): BUILD SUCCEEDED, no
+  warnings in the changed files.
 
 ## Not done
 
