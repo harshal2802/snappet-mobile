@@ -104,10 +104,7 @@ enum WidgetSnapshotService {
 
     /// True under the suite's UI-test launch args (the same set `SnappetApp` keys on for its
     /// in-memory store branches), so a test run never writes the shared snapshot file.
-    private static var isUITestLaunch: Bool {
-        let args = ProcessInfo.processInfo.arguments
-        return args.contains("-uiTestFreshStore")
-            || args.contains("-uiTestCorruptStore")
-            || args.contains(StudioDemoSeed.argument)
-    }
+    /// The one gate (`UITestStore`, prompt 320): it listed three arguments, so other seeds published their test data
+    /// to the person's home-screen widgets and drained the widgets' real check-off outbox into the test store.
+    private static var isUITestLaunch: Bool { UITestStore.onTestLaunch }
 }

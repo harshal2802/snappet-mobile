@@ -31,7 +31,12 @@ struct InstalledCatalog: Identifiable, Sendable, Equatable {
 /// the active one, and remove any individually. A value type with a canonical `shared`; the
 /// main-thread-only convention that `KilterCatalog` uses still holds for the *reader*, not this store.
 struct KilterCatalogStore: Sendable {
-    static let shared = KilterCatalogStore()
+    /// On a test launch (prompt 320) the library is a scratch folder in tmp: the UI tests clear and install a
+    /// fixture catalog, which on a phone used to delete the person's downloaded catalogs.
+    static let shared = UITestStore.onTestLaunch
+        ? KilterCatalogStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("uitest-kilter", isDirectory: true))
+        : KilterCatalogStore()
 
     /// Posted (on the main thread) after install / remove / activate so any open Kilter screen can
     /// reload the reader and re-evaluate availability.

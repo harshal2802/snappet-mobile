@@ -36,7 +36,7 @@ final class WorkoutNotifications {
     /// the optional "Next: …" line. No-op if unauthorized / `seconds <= 0`.
     func scheduleRestComplete(after seconds: TimeInterval, nextUp: String?) {
         #if canImport(UserNotifications)
-        guard seconds > 0 else { return }
+        guard seconds > 0, !UITestStore.onTestLaunch else { return }   // a test's rest never alerts a phone (prompt 320)
         let (title, body) = Self.restCompleteContent(nextUp: nextUp)
         let content = UNMutableNotificationContent()
         content.title = title

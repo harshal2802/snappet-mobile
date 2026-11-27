@@ -113,7 +113,7 @@ final class AppModel {
     /// scratch suite, so a test run on a real phone can never overwrite the user's max (the prompt-133 rule).
     /// The scratch suite starts empty on every such launch (prompt 289): it used to keep what the last test run
     /// typed, so a max left by an interrupted run was already in the field of the next one ("52" became "525").
-    let forceMax = ForceMaxStore(defaults: UITestStore.isFreshStore(CommandLine.arguments)
+    let forceMax = ForceMaxStore(defaults: UITestStore.onTestLaunch
                                  ? ForceMaxStore.emptyScratchDefaults() : .standard)
     /// Scheduled-routine reminders (prompt 136) — and the app's notification delegate, installed in
     /// `init` so a cold start from a tapped "Start now" / "Skip today" action is delivered.
@@ -312,6 +312,7 @@ final class AppModel {
     /// The connection became a different kind while the app is open: look again (prompt 293). The
     /// passes keep their own rules — Wi-Fi only, Low Data Mode, a running session.
     func startNetworkWatch() {
+        guard TestLaunchIsolation.cloudCopiesRun(CommandLine.arguments) else { return }   // prompt 320
         networkWatch.start { [weak self] in
             guard let self else { return }
             await self.mediaVault.stopIfNoLongerAllowed()   // the clip being sent, if this network is not allowed
@@ -335,6 +336,8 @@ final class AppModel {
     }
 
     func runMediaVault() async {
+        // Never on a test launch (prompt 320): copies go to the person's real Google Drive.
+        guard TestLaunchIsolation.cloudCopiesRun(CommandLine.arguments) else { return }
         guard google.isConfigured, google.isSignedIn, let context = modelContainer?.mainContext else { return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-vaultStreamProbe") {   // device check, read-only (prompt 276)
@@ -390,8 +393,18 @@ final class AppModel {
     /// Automatic encrypted backup to the person's own cloud. OFF until they choose a destination.
     /// UI tests swap in a local folder + fixed key (`-uiTestCloudVault`): the simulator under test
     /// has no iCloud account.
+    /// Any other test launch (prompt 320) gets a backup that cannot reach a cloud at all: no vault, an emptied
+    /// scratch suite for its settings (so the real `cloudBackup.lastManifest` is never read or written) and a fixed
+    /// key. On 2026-11-26 a seeded device run uploaded its test store to the person's Google Drive.
     let cloudBackup: CloudBackupService = {
-        guard CommandLine.arguments.contains("-uiTestCloudVault") else { return CloudBackupService() }
+        guard CommandLine.arguments.contains(TestLaunchIsolation.cloudVaultArgument) else {
+            guard UITestStore.onTestLaunch else { return CloudBackupService() }
+            let suite = "uitest.cloudbackup.none"
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            return CloudBackupService(defaults: UserDefaults(suiteName: suite) ?? .standard, vaultFor: { _ in nil },
+                                      keys: FixedBackupKeyStore(key: .init(data: Data(repeating: 7, count: 32))),
+                                      network: { .wifi }, deviceName: "Test iPhone")
+        }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("uitest-cloud-vault")
         if CommandLine.arguments.contains("-uiTestCloudVaultReset") { try? FileManager.default.removeItem(at: folder) }
         let defaults = UserDefaults(suiteName: "uitest.cloudbackup") ?? .standard
@@ -412,6 +425,7 @@ final class AppModel {
 
     /// Upload a backup if one is due. Called on launch, foreground and background; cheap when off.
     func runCloudBackup(manual: Bool = false) async {
+        guard TestLaunchIsolation.cloudBackupRuns(CommandLine.arguments) else { return }   // prompt 320
         guard let context = modelContainer?.mainContext else { return }
         if !manual, sessionIsRunning() { resumeCloudWorkWhenTheSessionEnds() }
         await cloudBackup.runIfNeeded(context: context, storeHealthy: storeIsHealthy, manual: manual,
@@ -421,6 +435,7 @@ final class AppModel {
 
     /// On launch: if this install holds no records yet and a backup exists, offer it.
     func checkCloudRestoreOffer() async {
+        guard TestLaunchIsolation.cloudBackupRuns(CommandLine.arguments) else { return }   // prompt 320
         guard storeIsHealthy, let context = modelContainer?.mainContext,
               let file = try? SnappetBackup.snapshot(of: context) else { return }
         await cloudBackup.checkRestoreOffer(localUserRecordCount: file.userRecordCount)

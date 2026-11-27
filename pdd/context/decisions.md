@@ -13685,3 +13685,34 @@ kinds. Picture-in-picture is turned by the compositor in a top-left (y-down) spa
 matched; nothing else in an export turns. The stored value did not change meaning, so projects are
 not migrated: they now export the way the editor always showed them. Prompt 307's text and sticker
 reference frames show the old direction and are to be captured again.
+## 2026-11-26 — One test-launch gate for everything outside the test store (prompt 320)
+
+`UITestStore.isTestLaunch` (any `freshStoreArguments` entry, or `-uiTestCorruptStore`) is the only
+answer to "may this launch reach outside its in-memory store?". The cloud backup, its restore offer,
+clip copies, the network watch, Health background delivery, routine / festival / rest / focus
+notifications, the launch Live Activity reconcile, Spotlight, the widgets' App Group files, the app
+actions inbox, the Kilter catalog folder and the store-reset button all check it. Before, four files
+each kept a short list (RootShell had four arguments), so on 2026-11-26 a seeded device run backed its
+test store up to the person's Google Drive. The gate is about the STORE, not the `-uiTest` prefix: an
+argument that only tunes a screen leaves the app on its real store, where its normal behaviour is
+correct, and the device tests that run on the real store on purpose stay as they are. The cloud is
+gated at the edge too (`AppModel.runCloudBackup` / `runMediaVault` / `startNetworkWatch`, and a test
+launch's `CloudBackupService` has no vault and scratch settings), so a new caller cannot reach the
+person's cloud. A unit test reads every `"-uiTestSeed…"` literal in the app's sources and fails if one
+is missing from the list, and another reads `TestStoreGuard.swift` to keep the UI-test mirror equal.
+
+## 2026-11-26 — A phone's settings are saved before a test launch and put back after (prompt 320)
+
+Tests need known settings, so `SnappetApp.init` keeps clearing them; instead of moving every setting
+to a scratch suite (dozens of `@AppStorage` keys, and every new one would be another leak), the whole
+app domain and the App Group domain are saved by the first test launch to
+`Library/SnappetTestLaunch/settings-snapshot.plist` and restored exactly (`setPersistentDomain`) by the
+next normal launch, first thing in `SnappetApp.init`, then the file is deleted. Later test launches
+keep the first snapshot, since by then the settings are the tests'. Any age restores (a phone may sit
+a week between a test run and a normal launch; an expiry would lose exactly the settings this exists
+for). Library, not tmp: iOS may purge tmp. **Real device only**: on the simulator a restore whenever
+the unit-test host or a plain relaunch runs between UI tests would undo state the suites rely on, and
+simulator settings are throwaway. A device test checks the outcome before its first tap through the
+test-store marker's value (`TestLaunchIsolation.readOut`): `prefs saved` or `prefs kept`, with the
+cloud, copies and network watch off. Not covered: the Keychain (only the gated cloud uses it) and
+files outside the Kilter catalog (see the audit table in the prompt).

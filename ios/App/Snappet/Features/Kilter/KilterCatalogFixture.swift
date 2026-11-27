@@ -79,7 +79,9 @@ enum KilterCatalogFixture {
     static func installForUITestingIfRequested() {
         let args = ProcessInfo.processInfo.arguments
         let install = args.contains("-uiTestInstallKilterCatalog")
-        guard install || args.contains("-uiTestFreshStore") else { return }
+        // Every test-store launch (prompt 320). The catalog it clears is the test launch's scratch folder
+        // (`KilterCatalogStore.shared`), never the person's downloaded catalogs.
+        guard install || UITestStore.onTestLaunch else { return }
 
         // Deterministic browse state for UI tests. The Kilter filter prefs (angle/layout/grade) live in
         // `@AppStorage` → UserDefaults, which persists across simulator launches and `-uiTestFreshStore`

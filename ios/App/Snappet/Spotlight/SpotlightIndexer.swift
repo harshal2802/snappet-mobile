@@ -45,11 +45,6 @@ enum SpotlightIndexer {
                                 attributeSet: attributes)
     }
 
-    nonisolated private static var isUITestLaunch: Bool {
-        let args = ProcessInfo.processInfo.arguments
-        return args.contains("-uiTestFreshStore")
-            || args.contains("-uiTestCorruptStore")
-            || args.contains("-uiTestSeedStudioDemo")
-            || args.contains("-uiTestSeedRoutineHistory")
-    }
+    /// The one test-launch gate (`UITestStore`, prompt 320).
+    nonisolated private static var isUITestLaunch: Bool { UITestStore.onTestLaunch }
 }

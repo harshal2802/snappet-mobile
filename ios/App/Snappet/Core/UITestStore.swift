@@ -39,8 +39,27 @@ enum UITestStore {
         RunningWorkoutSeed.oldArgument,
     ]
 
+    /// The fallback-banner test (`-uiTestCorruptStore`): an in-memory store too, flagged as a fallback.
+    static let corruptStoreArgument = "-uiTestCorruptStore"
+
+    /// Every launch argument that puts the app on an in-memory test store: the fresh-store list plus the
+    /// corrupt-store simulation. A launch with any of these is a TEST LAUNCH (prompt 320).
+    static let testLaunchArguments: [String] = freshStoreArguments + [corruptStoreArgument]
+
     /// True when `arguments` ask for the in-memory test store. Pure: pass `ProcessInfo.processInfo.arguments`.
     static func isFreshStore(_ arguments: [String]) -> Bool {
         arguments.contains { freshStoreArguments.contains($0) }
     }
+
+    /// The one gate for everything that reaches outside the in-memory store (prompt 320): the cloud backup and
+    /// its restore offer, clip copies, the network watch, Health deliveries, notifications, Live Activities,
+    /// Spotlight, the widgets' App Group files, and real files on disk. On 2026-11-26 a seeded device run
+    /// (`-uiTestSeedStudioDevicePhotos`) uploaded the test store to the person's Google Drive because the old
+    /// checks listed only four of these arguments. Pure: pass the launch arguments.
+    static func isTestLaunch(_ arguments: [String]) -> Bool {
+        arguments.contains { testLaunchArguments.contains($0) }
+    }
+
+    /// `isTestLaunch` for this process's own arguments (they never change while it runs).
+    static let onTestLaunch: Bool = isTestLaunch(ProcessInfo.processInfo.arguments)
 }

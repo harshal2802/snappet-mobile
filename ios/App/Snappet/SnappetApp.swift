@@ -15,6 +15,10 @@ struct SnappetApp: App {
     private let onTestStore: Bool
 
     init() {
+        let args = ProcessInfo.processInfo.arguments
+        // FIRST, before any code reads a setting (prompt 320): on a phone, a test launch saves the person's real
+        // settings once and a normal launch puts them back. Off on the simulator.
+        TestLaunchPrefs.atLaunch(arguments: args)
         // The shared on-device store for the whole suite (Snappet Core). A corrupt
         // store should never brick the app → fall back to in-memory, but the fallback
         // is RECORDED in StoreHealth and surfaced by StoreHealthBanner (issue #68).
@@ -33,7 +37,6 @@ struct SnappetApp: App {
         // it likewise IMPLIES a fresh in-memory store, then seeds a completed KilterSession with a
         // logged send and one BUNDLED video clip so the Recap card shows clips and the Share sheet's
         // Animate path runs the real ReelExporter render hermetically on the simulator.
-        let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let seedRecapClip = args.contains(RecapClipSeed.argument)
         // `-uiTestSeedFestivalLineup` (festival prompt 02) likewise IMPLIES a fresh in-memory store,
@@ -59,7 +62,8 @@ struct SnappetApp: App {
         // Every seed above implies the fresh store; `UITestStore` is the single list (prompt 266), shared with
         // the `uiTest.freshStore` marker the UI tests wait for before their first tap.
         let freshStore = UITestStore.isFreshStore(args)
-        onTestStore = freshStore
+        // The corrupt-store simulation is an in-memory store too, so it carries the marker (prompt 320).
+        onTestStore = UITestStore.isTestLaunch(args)
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
@@ -129,7 +133,7 @@ struct SnappetApp: App {
         // `-uiTestCorruptStore` simulates an unopenable on-disk store (the `try?` else
         // branch below can't be forced from a test) so the fallback banner is testable.
         // Test-only, like the args above; a normal launch never hits it.
-        let corruptStore = args.contains("-uiTestCorruptStore")
+        let corruptStore = args.contains(UITestStore.corruptStoreArgument)
         func inMemory() -> ModelContainer {
             try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
@@ -222,7 +226,10 @@ struct SnappetApp: App {
             // UI tests confirm this marker before their first tap, so a test can never act on real data (prompt 266).
             // Only on the test store; a 1pt clear overlay that takes no taps and changes no layout.
             .overlay(alignment: .topLeading) {
-                if onTestStore { TestStoreMarker() }
+                if onTestStore {
+                    TestStoreMarker(readOut: TestLaunchIsolation.readOut(arguments: ProcessInfo.processInfo.arguments,
+                                                                         prefs: TestLaunchPrefs.launchOutcome))
+                }
             }
         }
         .modelContainer(container)
@@ -247,13 +254,17 @@ struct SnappetApp: App {
 }
 
 /// The invisible test-store marker (prompt 266): one accessibility element, identifier `uiTest.freshStore`.
+/// Its value is what this test launch keeps away from (`TestLaunchIsolation.readOut`, prompt 320), so a device
+/// test can check "cloud backup off; … prefs saved" before its first tap.
 private struct TestStoreMarker: View {
+    let readOut: String
     var body: some View {
         Color.clear
             .frame(width: 1, height: 1)
             .allowsHitTesting(false)
             .accessibilityElement()
             .accessibilityLabel("UI test store")
+            .accessibilityValue(readOut)
             .accessibilityIdentifier(UITestStore.markerIdentifier)
     }
 }

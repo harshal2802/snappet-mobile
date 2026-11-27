@@ -26,7 +26,7 @@ enum WatchImportTombstones {
     /// user's actual app, long after the test store evaporated. Under `-uiTestFreshStore` they go to
     /// a scratch suite instead; the shipped app is unaffected (`.standard`, as before).
     static var store: UserDefaults {
-        guard ProcessInfo.processInfo.arguments.contains("-uiTestFreshStore"),
+        guard UITestStore.onTestLaunch,   // every test-store argument, not only -uiTestFreshStore (prompt 320)
               let suite = UserDefaults(suiteName: uiTestSuiteName) else { return .standard }
         return suite
     }

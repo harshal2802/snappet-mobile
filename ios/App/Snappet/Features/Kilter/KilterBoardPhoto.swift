@@ -78,7 +78,7 @@ final class KilterBoardPhotoStore {
     /// UI-test launches use a scratch index + folder, emptied each launch, so a test run on a real phone never
     /// touches the user's board photos (the prompt-133 rule).
     static let shared: KilterBoardPhotoStore = {
-        guard CommandLine.arguments.contains("-uiTestFreshStore"),
+        guard UITestStore.onTestLaunch,   // every test-store argument (prompt 320)
               let scratch = UserDefaults(suiteName: "snappet.uitest.boardPhotos") else { return KilterBoardPhotoStore() }
         scratch.removePersistentDomain(forName: "snappet.uitest.boardPhotos")
         try? FileManager.default.removeItem(at: folderURL(scratch: true))

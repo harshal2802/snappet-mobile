@@ -23,10 +23,28 @@ enum TestStoreGuard {
         "-uiTestSeedRunningWorkoutOld",
         "-uiTestSeedStudioHRTiming",
     ]
+    /// `UITestStore.corruptStoreArgument`: the fallback-banner test's in-memory store, which carries the marker too.
+    static let corruptStoreArgument = "-uiTestCorruptStore"
     /// `UITestStore.markerIdentifier`.
     static let markerIdentifier = "uiTest.freshStore"
     static let refusal = "Snappet is not on the test store; refusing to touch real data"
     static let markerTimeout: TimeInterval = 15
+
+    /// The marker's value is the app's `TestLaunchIsolation.readOut` (prompt 320), e.g.
+    /// "cloud backup off; restore offer off; copies off; network watch off; prefs saved". On a real device the
+    /// launch is refused unless the person's cloud, clip copies and settings are all kept out of the test.
+    /// Returns `nil` when the read-out is safe.
+    static func isolationRefusal(readOut: String?) -> String? {
+        guard let readOut else { return "Snappet did not say what this test launch is kept away from" }
+        let parts = Set(readOut.components(separatedBy: "; "))
+        let backupSafe = parts.contains("cloud backup off") || parts.contains("cloud backup test vault")
+        let offerSafe = parts.contains("restore offer off") || parts.contains("restore offer test vault")
+        let prefsSafe = parts.contains("prefs saved") || parts.contains("prefs kept")
+        guard backupSafe, offerSafe, parts.contains("copies off"), parts.contains("network watch off"), prefsSafe else {
+            return "This test launch is not isolated from real data (\(readOut)); refusing to touch it"
+        }
+        return nil
+    }
 
     static var isRealDevice: Bool {
         #if targetEnvironment(simulator)
@@ -46,7 +64,9 @@ enum TestStoreGuard {
 extension XCUIApplication {
     /// Whether these launch arguments ask the app for the in-memory test store.
     var argumentsImplyTestStore: Bool {
-        launchArguments.contains { TestStoreGuard.freshStoreArguments.contains($0) }
+        launchArguments.contains {
+            TestStoreGuard.freshStoreArguments.contains($0) || $0 == TestStoreGuard.corruptStoreArgument
+        }
     }
 
     /// Launches, then — always on a real device, and on the simulator when the arguments ask for the test store
@@ -59,9 +79,16 @@ extension XCUIApplication {
         let applies = require ?? (TestStoreGuard.isRealDevice || argumentsImplyTestStore)
         guard applies else { return nil }
         let marker = descendants(matching: .any).matching(identifier: TestStoreGuard.markerIdentifier).firstMatch
-        if marker.waitForExistence(timeout: timeout) { return nil }
-        terminate()
-        return TestStoreGuard.refusal
+        guard marker.waitForExistence(timeout: timeout) else {
+            terminate()
+            return TestStoreGuard.refusal
+        }
+        // On a phone, also confirm the cloud, clip copies and settings are kept out of this launch (prompt 320).
+        if TestStoreGuard.isRealDevice, let refusal = TestStoreGuard.isolationRefusal(readOut: marker.value as? String) {
+            terminate()
+            return refusal
+        }
+        return nil
     }
 
     /// Every UI test's launch. Fails the test (after terminating the app) when Snappet isn't on the test store.
