@@ -13,8 +13,30 @@ struct SnappetApp: App {
     @UIApplicationDelegateAdaptor(SnappetAppDelegate.self) private var appDelegate
     /// On the in-memory UI-test store (`UITestStore`, prompt 266): shows the invisible `uiTest.freshStore` marker.
     private let onTestStore: Bool
+    /// The UI-test helper's end-of-run launch (`-uiTestRestorePrefs`, prompt 320): settings put back, nothing else.
+    private let restoreOnly: Bool
 
     init() {
+        let args = ProcessInfo.processInfo.arguments
+        // FIRST, before any code reads a setting (prompt 320): on a phone, the first test launch saves the person's
+        // real settings, and the end-of-run launch (or, only when safe, the next normal one) puts them back.
+        // Off on the simulator.
+        TestLaunchPrefs.atLaunch(arguments: args)
+        restoreOnly = TestLaunchPrefs.isRestoreOnly(args)
+        if restoreOnly {
+            // No store, no shell: the helper reads the outcome and terminates the app. AppModel is the test
+            // launch's inert one (the restore argument counts as a test launch).
+            container = try! ModelContainer(for: Schema(SnappetSchema.models),
+                                            configurations: ModelConfiguration(isStoredInMemoryOnly: true,
+                                                                               cloudKitDatabase: .none))
+            _appModel = State(wrappedValue: AppModel())
+            _storeHealth = State(wrappedValue: StoreHealth(mode: .ok))
+            onTestStore = false
+            return
+        }
+        // On a phone, a test launch whose snapshot failed touches no setting (prompt 320): its marker says
+        // "prefs failed" and the device test stops before its first tap.
+        let mayTouchSettings = TestLaunchPrefs.mayTouchSettingsNow
         // The shared on-device store for the whole suite (Snappet Core). A corrupt
         // store should never brick the app → fall back to in-memory, but the fallback
         // is RECORDED in StoreHealth and surfaced by StoreHealthBanner (issue #68).
@@ -33,7 +55,6 @@ struct SnappetApp: App {
         // it likewise IMPLIES a fresh in-memory store, then seeds a completed KilterSession with a
         // logged send and one BUNDLED video clip so the Recap card shows clips and the Share sheet's
         // Animate path runs the real ReelExporter render hermetically on the simulator.
-        let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let seedRecapClip = args.contains(RecapClipSeed.argument)
         // `-uiTestSeedFestivalLineup` (festival prompt 02) likewise IMPLIES a fresh in-memory store,
@@ -59,8 +80,9 @@ struct SnappetApp: App {
         // Every seed above implies the fresh store; `UITestStore` is the single list (prompt 266), shared with
         // the `uiTest.freshStore` marker the UI tests wait for before their first tap.
         let freshStore = UITestStore.isFreshStore(args)
-        onTestStore = freshStore
-        if freshStore {
+        // The corrupt-store simulation is an in-memory store too, so it carries the marker (prompt 320).
+        onTestStore = UITestStore.isTestLaunch(args)
+        if freshStore, mayTouchSettings {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
             // (the KilterCatalogFixture precedent for its kilter.* keys).
@@ -112,14 +134,14 @@ struct SnappetApp: App {
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a
         // synthetic fixture so the Kilter UI tests have data to browse. No-ops on a normal launch.
-        KilterCatalogFixture.installForUITestingIfRequested()
+        if mayTouchSettings { KilterCatalogFixture.installForUITestingIfRequested() }   // it clears kilter.* settings
         // Resolve the demo "Saved" band BEFORE building AppModel — its LiveMetricsCoordinator
         // constructs the BLE source eagerly and reads BandMemory (UserDefaults) at that moment,
         // so the picker only shows the "Saved" flow if the band is persisted first. A normal
         // launch takes the else branch, which clears any leftover demo band (a no-op for real
         // users, whose band id differs from the fixed demo id).
         if seedStudioDemo {
-            StudioDemoSeed.seedRememberedBandIfRequested()
+            if mayTouchSettings { StudioDemoSeed.seedRememberedBandIfRequested() }
         } else {
             // Undo any leftover demo band so a normal launch (and the shared unit-test host on the
             // simulator) starts clean — see clearRememberedBandSeedIfStale.
@@ -129,7 +151,7 @@ struct SnappetApp: App {
         // `-uiTestCorruptStore` simulates an unopenable on-disk store (the `try?` else
         // branch below can't be forced from a test) so the fallback banner is testable.
         // Test-only, like the args above; a normal launch never hits it.
-        let corruptStore = args.contains("-uiTestCorruptStore")
+        let corruptStore = args.contains(UITestStore.corruptStoreArgument)
         func inMemory() -> ModelContainer {
             try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
@@ -179,7 +201,9 @@ struct SnappetApp: App {
         // Test-only (prompt 266): report the seeded clips as missing so the notice + relink sheet
         // are reachable on a simulator, which cannot hold Photos access under test.
         if args.contains(MediaLinkService.assumeMissingArgument) {
-            UserDefaults.standard.removeObject(forKey: "clips.missing.dismissedAtCount")   // each run starts un-dismissed
+            if mayTouchSettings {   // each run starts un-dismissed
+                UserDefaults.standard.removeObject(forKey: "clips.missing.dismissedAtCount")
+            }
             _appModel.wrappedValue.mediaLinks.missing = MediaLinkService.assumeAllMissing(in: container.mainContext)
         }
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production impact.
@@ -210,19 +234,24 @@ struct SnappetApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if RacketCameraProbe.requested {
+                if restoreOnly {
+                    PrefsRestoredView(outcome: TestLaunchPrefs.launchOutcome)
+                } else if RacketCameraProbe.requested {
                     RacketCameraProbe()
                 } else {
                     shell
                 }
                 #else
-                shell
+                if restoreOnly { PrefsRestoredView(outcome: TestLaunchPrefs.launchOutcome) } else { shell }
                 #endif
             }
             // UI tests confirm this marker before their first tap, so a test can never act on real data (prompt 266).
             // Only on the test store; a 1pt clear overlay that takes no taps and changes no layout.
             .overlay(alignment: .topLeading) {
-                if onTestStore { TestStoreMarker() }
+                if onTestStore {
+                    TestStoreMarker(readOut: TestLaunchIsolation.readOut(arguments: ProcessInfo.processInfo.arguments,
+                                                                         prefs: TestLaunchPrefs.launchOutcome))
+                }
             }
         }
         .modelContainer(container)
@@ -247,13 +276,28 @@ struct SnappetApp: App {
 }
 
 /// The invisible test-store marker (prompt 266): one accessibility element, identifier `uiTest.freshStore`.
+/// The end-of-run launch's only screen (prompt 320): what happened to the person's settings. The UI-test helper reads
+/// `uiTest.prefsRestored` and terminates the app.
+private struct PrefsRestoredView: View {
+    let outcome: TestLaunchPrefs.Outcome
+    var body: some View {
+        Text("Settings \(outcome.rawValue)")
+            .accessibilityIdentifier("uiTest.prefsRestored")
+            .accessibilityValue(outcome.rawValue)
+    }
+}
+
+/// Its value is what this test launch keeps away from (`TestLaunchIsolation.readOut`, prompt 320), so a device
+/// test can check "cloud backup off; … prefs saved" before its first tap.
 private struct TestStoreMarker: View {
+    let readOut: String
     var body: some View {
         Color.clear
             .frame(width: 1, height: 1)
             .allowsHitTesting(false)
             .accessibilityElement()
             .accessibilityLabel("UI test store")
+            .accessibilityValue(readOut)
             .accessibilityIdentifier(UITestStore.markerIdentifier)
     }
 }

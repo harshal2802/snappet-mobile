@@ -13685,6 +13685,88 @@ kinds. Picture-in-picture is turned by the compositor in a top-left (y-down) spa
 matched; nothing else in an export turns. The stored value did not change meaning, so projects are
 not migrated: they now export the way the editor always showed them. Prompt 307's text and sticker
 reference frames show the old direction and are to be captured again.
+## 2026-11-26 — One test-launch gate for everything outside the test store (prompt 320)
+
+`UITestStore.isTestLaunch` (any `freshStoreArguments` entry, or `-uiTestCorruptStore`) is the only
+answer to "may this launch reach outside its in-memory store?". The cloud backup, its restore offer,
+clip copies, the network watch, Health background delivery, routine / festival / rest / focus
+notifications, the launch Live Activity reconcile, Spotlight, the widgets' App Group files, the app
+actions inbox, the Kilter catalog folder and the store-reset button all check it. Before, four files
+each kept a short list (RootShell had four arguments), so on 2026-11-26 a seeded device run backed its
+test store up to the person's Google Drive. The gate is about the STORE, not the `-uiTest` prefix: an
+argument that only tunes a screen leaves the app on its real store, where its normal behaviour is
+correct, and the device tests that run on the real store on purpose stay as they are. The cloud is
+gated at the edge too (`AppModel.runCloudBackup` / `runMediaVault` / `startNetworkWatch`, and a test
+launch's `CloudBackupService` has no vault and scratch settings), so a new caller cannot reach the
+person's cloud. A unit test reads every `"-uiTestSeed…"` literal in the app's sources and fails if one
+is missing from the list, and another reads `TestStoreGuard.swift` to keep the UI-test mirror equal.
+
+## 2026-11-26 — A phone's settings are saved before a test run and put back at its end (prompt 320)
+
+Tests need known settings, so `SnappetApp.init` keeps clearing them; instead of moving every setting
+to a scratch suite (dozens of `@AppStorage` keys, and every new one would be another leak), the whole
+app domain and the App Group domain are saved by the first test launch to
+`Library/SnappetTestLaunch/settings-snapshot.plist` (Library: iOS may purge tmp). Later test launches
+keep the first snapshot (by then the settings are the tests') and stamp the latest launch time.
+
+**When to put them back.** The first version restored on the next normal launch, whatever the
+snapshot's age. Review found that unsafe: if the person next opens a TestFlight or main build that knows
+nothing of snapshots, uses it for days, then opens this build, a restore rolls back weeks of real
+settings and records kept in settings (`cloudBackup.lastManifest`, the clip-copies index / known /
+excluded clips, Watch-import tombstones, Kilter boards, the remembered band). So the restore is tied to
+the RUN: the UI-test helper's test observer relaunches the app with `-uiTestRestorePrefs` when the test
+bundle finishes, and that launch restores, deletes the snapshot and shows nothing else. The next normal
+launch is only a fallback for a cut-short run, and restores only when certainly safe: the latest test
+launch is at most 6 h old, and the settings files on disk were not modified more than 30 min after it
+(the last test keeps writing settings after its own launch; anything later was another launch). Any
+doubt sets the snapshot aside — kept and logged, never applied — because losing a test's settings
+costs nothing and rolling back real ones costs the person data. A restore first renames the
+snapshot, so a failed delete is reported and can never restore twice.
+
+**Every use of a snapshot checks it is this run's** (second review). The same freshness test guards
+keeping a snapshot on a test launch and the end-of-run restore, not only the fallback: a run cut short
+leaves S1, the person uses another build for days, and the next run's first launch would otherwise
+keep S1, clear keys whose current values S1 never held, and its end-of-run restore would roll the days
+back. So a stale S1 is set aside and the test launch saves the CURRENT settings; a restore of a stale
+snapshot sets it aside and leaves the settings alone. Cost: a single test running more than 30 min
+after its launch makes the next launch re-snapshot (the real copy is set aside, not lost). The restore
+runs when each test class finishes, inside the run, with the bundle-finish hook as a backup.
+
+**A failed snapshot touches nothing.** If the snapshot cannot be written or stamped, that launch skips
+every settings write it would make (the ~20 cleared keys, the festival flags, the Kilter fixture's
+`kilter.*`, the demo band, the dismissed-missing count); its read-out says `prefs failed` and the device
+guard stops the test before the first tap.
+
+**Real device only**: on the simulator a restore whenever the unit-test host or a plain relaunch runs
+between UI tests would undo state the suites rely on, and simulator settings are throwaway. A device
+test checks the outcome before its first tap through the test-store marker's value
+(`TestLaunchIsolation.readOut`): `prefs saved` or `prefs kept`, with the cloud, copies and network
+watch off.
+
+## 2026-11-26 — A test launch's Google account, clip copies and Photos changes are stand-ins (prompt 320)
+
+Gating the automatic passes was not enough: Settings → Clip copies on a test launch still drove the real
+`MediaVaultService` with the person's signed-in account, so "Move to trash" compared their Drive index with
+the TEST store (every real copy looks like a leftover) and "Sign out" deleted their Keychain tokens. So a
+test launch BUILDS different objects, in the same functions the app uses (`GoogleAccount.make`,
+`AppModel.makeCloudBackup`, `AppModel.makeMediaVault`), which unit tests call too: an account with
+in-memory tokens and an offline HTTP client (signed out, unless `-uiTestGoogleSignedIn` asks for the fake
+signed-in one), a backup with no vault, clip copies with a scratch index and folders. Gating per object
+rather than per button means a new button cannot reach the person's cloud.
+
+Photos is one shared library, so a test launch may change or delete only assets it created in that
+launch (`TestLaunchAssets`, in memory, empty at start; a seed with its own assets registers them).
+Refusing is the default because an empty list must mean "touch nothing". Discovery by date keeps owned
+assets only, so a seeded session dated now cannot pick up the person's footage from today; a manual pick
+by identifier is still taken, since attaching it is read-only and the test chose it. Every seed also
+refuses to run unless the store is the fresh in-memory one.
+
+Plain files follow the same rule (found on the phone after the second review: device runs appended 8
+rows to the person's `highlight-feedback.jsonl`, which the reel builder tunes itself from). A test launch
+writes the feedback log, reel exports and the guide photo pack under `tmp/uitest-files/` (`TestLaunchFiles`)
+and never reads the person's copies. A file is left on the real path only when a test can at most read it
+or add to it without effect (caches keyed by the person's asset ids, the Kilter generator's downloads,
+imported Studio music); the prompt's file table lists each one.
 
 ## 2026-11-27 — A closure a framework calls off the main thread is built outside the main actor (prompt 322)
 

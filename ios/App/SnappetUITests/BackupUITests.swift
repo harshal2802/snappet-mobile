@@ -66,7 +66,7 @@ final class BackupUITests: XCTestCase {
     func testAutomaticBackupIsOptInBacksUpAndRestores() {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestSeedFestivalNight", "-uiTestCloudVault", "-uiTestCloudVaultReset", "-uiTestNoGoogle"]
-        app.launch()
+        app.launchOnTestStore()   // the guarded launch (prompt 320)
         app.tabBars.buttons["Apps"].tap()
         let open = app.buttons["suite.backup.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10))
@@ -107,7 +107,7 @@ final class BackupUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestSeedFestivalNight", "-uiTestCloudVault", "-uiTestCloudVaultReset",
                                "-uiTestGoogleSignedIn"]
-        app.launch()
+        app.launchOnTestStore()   // the guarded launch (prompt 320)
         app.tabBars.buttons["Apps"].tap()
         let open = app.buttons["suite.backup.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10))

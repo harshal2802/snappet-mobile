@@ -70,6 +70,7 @@ final class MediaLibraryService: Sendable {
         } catch {
             throw SaveError.failed(error.localizedDescription)
         }
+        TestLaunchAssets.noteCreated(idBox.value)   // a test launch may change what it made (prompt 320)
         return idBox.value
     }
 
@@ -124,6 +125,7 @@ final class MediaLibraryService: Sendable {
             throw SaveError.failed(error.localizedDescription)
         }
         guard let id = idBox.value else { throw SaveError.failed("no asset id") }
+        TestLaunchAssets.noteCreated(id)   // prompt 320
         return RecordedClip(localIdentifier: id, capturedAt: takenAt, durationSec: nil, isPhoto: true)
     }
 
@@ -133,6 +135,7 @@ final class MediaLibraryService: Sendable {
     /// not just adding). Throws `.notEditable` if the asset can't be edited (shared/read-only).
     /// The CALLER must confirm first — this is destructive to the original.
     func overwriteVideoAsset(localIdentifier: String, with url: URL) async throws {
+        try TestLaunchAssets.requireMayChange([localIdentifier])   // a test launch: only what it made (prompt 320)
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else { throw SaveError.denied }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
@@ -174,6 +177,7 @@ final class MediaLibraryService: Sendable {
     /// own system confirmation as well; the CALLER should still confirm first (destructive).
     func deleteAssets(localIdentifiers: [String]) async throws {
         guard !localIdentifiers.isEmpty else { return }
+        try TestLaunchAssets.requireMayChange(localIdentifiers)   // a test launch: only what it made (prompt 320)
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard status == .authorized || status == .limited else { throw SaveError.denied }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)

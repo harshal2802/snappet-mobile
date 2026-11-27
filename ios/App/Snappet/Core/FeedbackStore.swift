@@ -11,10 +11,22 @@ final class FeedbackStore: FeedbackSink, @unchecked Sendable {
     private let url: URL
     private let encoder = JSONEncoder()
 
-    init(filename: String = "highlight-feedback.jsonl") {
-        let dir = try? FileManager.default.url(for: .applicationSupportDirectory,
-                                               in: .userDomainMask, appropriateFor: nil, create: true)
+    /// `directory` nil = Application Support (the person's log).
+    init(filename: String = "highlight-feedback.jsonl", directory: URL? = nil) {
+        let dir = directory ?? (try? FileManager.default.url(for: .applicationSupportDirectory,
+                                                             in: .userDomainMask, appropriateFor: nil, create: true))
+        if let directory { try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         self.url = (dir ?? FileManager.default.temporaryDirectory).appendingPathComponent(filename)
+    }
+
+    /// How the app builds its store for these arguments (prompt 320). A test launch reads and appends to an emptied
+    /// scratch log, never the person's: on 2026-11-26 device runs of the Clips month reel and the progress reel
+    /// appended 8 "shown" rows to it, and the reel builder tunes itself from that log.
+    static func make(arguments: [String]) -> FeedbackStore {
+        guard UITestStore.isTestLaunch(arguments) else { return FeedbackStore() }
+        let scratch = TestLaunchFiles.scratchRoot.appendingPathComponent("feedback", isDirectory: true)
+        try? FileManager.default.removeItem(at: scratch)
+        return FeedbackStore(directory: scratch)
     }
 
     func record(_ event: HighlightFeedbackEvent) {

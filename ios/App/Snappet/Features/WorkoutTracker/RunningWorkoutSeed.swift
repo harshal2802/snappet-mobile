@@ -11,7 +11,8 @@ enum RunningWorkoutSeed {
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
         let args = ProcessInfo.processInfo.arguments
-        guard args.contains(argument) || args.contains(oldArgument) else { return }
+        guard args.contains(argument) || args.contains(oldArgument),
+              UITestStore.isFreshStore(args) else { return }   // never into the real store (prompt 320)
         let ago: TimeInterval = args.contains(oldArgument) ? 9 * 3600 : 25 * 60
         context.insert(WorkoutSession(routineName: "Quick Session", startedAt: now.addingTimeInterval(-ago)))
         try? context.save()

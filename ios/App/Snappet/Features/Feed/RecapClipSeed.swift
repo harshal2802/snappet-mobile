@@ -50,7 +50,8 @@ enum RecapClipSeed {
     /// `SnappetApp.init()` against the fresh in-memory container, before any UI appears.
     @MainActor
     static func seedIfRequested(into context: ModelContext) {
-        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        guard ProcessInfo.processInfo.arguments.contains(argument),
+              UITestStore.isFreshStore(ProcessInfo.processInfo.arguments) else { return }   // never into the real store (prompt 320)
         let sid = sessionID
         let existing = try? context.fetch(
             FetchDescriptor<KilterSession>(predicate: #Predicate { $0.id == sid }))

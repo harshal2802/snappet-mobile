@@ -74,9 +74,7 @@ enum RoutineScheduleSync {
         replan(context: context, reminders: reminders)
     }
 
-    static var isUITestLaunch: Bool {
-        let args = CommandLine.arguments
-        return args.contains("-uiTestFreshStore") || args.contains("-uiTestCorruptStore")
-            || args.contains("-uiTestSeedStudioDemo") || args.contains("-uiTestSeedRoutineHistory")
-    }
+    /// The one test-launch gate (`UITestStore`, prompt 320). With only four arguments listed here, every other seed
+    /// re-planned from the test store and `apply([])` removed the person's real routine reminders.
+    static var isUITestLaunch: Bool { UITestStore.onTestLaunch }
 }

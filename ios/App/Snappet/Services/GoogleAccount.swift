@@ -61,7 +61,8 @@ struct GoogleAuthorizedHTTP: Sendable {
     var http: any GoogleHTTP = URLSessionGoogleHTTP()
 
     static func forSharedAccount() -> GoogleAuthorizedHTTP {
-        GoogleAuthorizedHTTP(accessToken: { force in try await GoogleAccount.shared.accessToken(forceRefresh: force) })
+        GoogleAuthorizedHTTP(accessToken: { force in try await GoogleAccount.shared.accessToken(forceRefresh: force) },
+                             http: GoogleAccount.isOffline(CommandLine.arguments) ? OfflineGoogleHTTP() : URLSessionGoogleHTTP())
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -128,6 +129,18 @@ struct KeychainGoogleTokenStore: GoogleTokenStore {
     }
 }
 
+/// A test launch's Google connection (prompt 320): every request fails as if offline, so a test can never reach
+/// the person's Google account, whatever tokens it holds.
+struct OfflineGoogleHTTP: GoogleHTTP {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw URLError(.notConnectedToInternet) }
+    func upload(_ request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        throw URLError(.notConnectedToInternet)
+    }
+    func download(_ request: URLRequest, to destination: URL) async throws -> HTTPURLResponse {
+        throw URLError(.notConnectedToInternet)
+    }
+}
+
 final class MemoryGoogleTokenStore: GoogleTokenStore, @unchecked Sendable {
     private let lock = NSLock()
     private var tokens: GoogleTokens?
@@ -145,18 +158,38 @@ final class GoogleAccount {
     /// The app's account. UI tests (`-uiTestGoogleSignedIn`) get a configured, signed-in stand-in
     /// that never touches the network or the keychain — Google's own sign-in sheet can't be driven
     /// from a test, and the test vault is a local folder.
-    static let shared: GoogleAccount = {
+    static let shared: GoogleAccount = make(arguments: CommandLine.arguments)
+
+    /// How the app builds its account for these launch arguments. On a test launch (prompt 320) it is never the
+    /// person's: tokens in memory only (the Keychain is not read, so signing out cannot delete theirs) and no
+    /// network at all, so nothing can reach their Google Drive or Photos. Signed out unless the test asks for
+    /// the signed-in stand-in.
+    static func make(arguments: [String]) -> GoogleAccount {
         // `-uiTestNoGoogle`: a build with no client ID, whatever this build carries — keeps the
         // "Google stays hidden" UI test meaningful once a real client ID is configured.
-        if CommandLine.arguments.contains("-uiTestNoGoogle") {
-            return GoogleAccount(config: nil, store: MemoryGoogleTokenStore())
+        if arguments.contains("-uiTestNoGoogle") {
+            return GoogleAccount(config: nil, store: MemoryGoogleTokenStore(), http: OfflineGoogleHTTP())
         }
-        guard CommandLine.arguments.contains("-uiTestGoogleSignedIn") else { return GoogleAccount() }
-        let tokens = GoogleTokens(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture,
-                                  scopes: [GoogleScope.driveAppData], email: "tester@example.com")
-        return GoogleAccount(config: GoogleOAuthConfig(clientID: "0-uitest.apps.googleusercontent.com"),
-                             store: MemoryGoogleTokenStore(tokens))
-    }()
+        if arguments.contains("-uiTestGoogleSignedIn") {
+            let tokens = GoogleTokens(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture,
+                                      scopes: [GoogleScope.driveAppData], email: "tester@example.com")
+            return GoogleAccount(config: GoogleOAuthConfig(clientID: "0-uitest.apps.googleusercontent.com"),
+                                 store: MemoryGoogleTokenStore(tokens), http: OfflineGoogleHTTP())
+        }
+        if isOffline(arguments) {
+            return GoogleAccount(config: .fromBundle, store: MemoryGoogleTokenStore(), http: OfflineGoogleHTTP())
+        }
+        return GoogleAccount()
+    }
+
+    /// Every Google call goes nowhere for these arguments: a test launch, or one of the Google stand-ins (prompt 320).
+    nonisolated static func isOffline(_ arguments: [String]) -> Bool {
+        UITestStore.isTestLaunch(arguments) || arguments.contains("-uiTestGoogleSignedIn")
+            || arguments.contains("-uiTestNoGoogle")
+    }
+
+    /// Whether this account can only ever be a test stand-in (memory tokens, no network).
+    var isTestStandIn: Bool { http is OfflineGoogleHTTP && store is MemoryGoogleTokenStore }
 
     struct Pending: Equatable, Sendable {
         let url: URL
@@ -318,6 +351,7 @@ extension GoogleDriveVault {
     /// The vault for the app's signed-in account.
     static func forSharedAccount() -> GoogleDriveVault {
         GoogleDriveVault(accessToken: { force in try await GoogleAccount.shared.accessToken(forceRefresh: force) },
-                         isSignedIn: { await GoogleAccount.shared.isSignedIn })
+                         isSignedIn: { await GoogleAccount.shared.isSignedIn },
+                         http: GoogleAccount.isOffline(CommandLine.arguments) ? OfflineGoogleHTTP() : URLSessionGoogleHTTP())
     }
 }

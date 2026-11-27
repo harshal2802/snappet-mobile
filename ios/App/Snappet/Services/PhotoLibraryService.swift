@@ -66,7 +66,8 @@ final class PhotoLibraryService: Sendable {
         let result = PHAsset.fetchAssets(with: options)
         var items: [MediaItem] = []
         result.enumerateObjects { asset, _, _ in
-            guard let created = asset.creationDate else { return }
+            // Found by date: a test launch keeps only what it made (prompt 320).
+            guard let created = asset.creationDate, TestLaunchAssets.isDiscoverable(asset.localIdentifier) else { return }
             let kind: MediaItem.Kind = asset.mediaType == .video ? .video : .photo
             items.append(MediaItem(
                 id: asset.localIdentifier,

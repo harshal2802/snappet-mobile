@@ -47,7 +47,9 @@ struct RootShell: View {
                         uiTestReminderStart()   // prompt 265 (F13): UI tests only
                         reopenRunningWorkout()   // prompt 279: a fresh start mid-workout returns to the workout
                         reconcileLiveActivities()   // prompt 198: no stale "session on" left on the Lock Screen
-                        app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
+                        // HealthKit background delivery (watch-workouts-clips P2). Not on a test launch (prompt 320):
+                        // its callback imports the person's real Health workouts.
+                        if !Self.isUITestLaunch { app.startWatchWorkoutObserver() }
                         // Housekeeping nothing on screen waits for, once the first screen is up.
                         Task { @MainActor in
                             try? await Task.sleep(for: .seconds(2))
@@ -61,12 +63,14 @@ struct RootShell: View {
                             // ride the retired Workout Reels module's bootstrap (highlights P3).
                             app.recomputeFeedbackTuning()
                         }
+                        // Off on a test launch except to the local test vault (prompt 320); AppModel checks the
+                        // same gate again at each entry, so no other caller can reach the person's cloud either.
                         if Self.cloudBackupRuns {
-                            if !Self.isUITestLaunch { app.startNetworkWatch() }   // prompt 293
+                            app.startNetworkWatch()   // prompt 293; a no-op on a test launch
                             Task(priority: .utility) {
                                 await app.checkCloudRestoreOffer()   // fresh install + a backup exists (prompt 267)
                                 await app.runCloudBackup()
-                                if !Self.isUITestLaunch { await app.runMediaVault() }
+                                await app.runMediaVault()   // a no-op on a test launch
                             }
                         }
                     }
@@ -85,7 +89,7 @@ struct RootShell: View {
             guard phase == .active, Self.cloudBackupRuns else { return }
             Task(priority: .utility) {
                 await app.runCloudBackup()
-                if !Self.isUITestLaunch { await app.runMediaVault() }   // clip copies (prompt 269)
+                await app.runMediaVault()   // clip copies (prompt 269); a no-op on a test launch
             }
         }
         // "Welcome back": a fresh install with a backup in the person's cloud is offered it once.
@@ -229,7 +233,10 @@ struct RootShell: View {
     /// Match the Lock Screen to the store (prompt 198): keep the Live Activity of the workout / board session that's
     /// actually running and end every other — a crash or the system closing the app mid-workout used to leave one
     /// showing "session on" after the session had ended (and a resume started a second beside it).
+    /// Not on a test launch (prompt 320): the test store has no running session, so it would end the person's real
+    /// one on the Lock Screen. A test session's own activity is still started, and its `start` ends any other.
     private func reconcileLiveActivities() {
+        guard !Self.isUITestLaunch else { return }
         let running = (try? context.fetch(FetchDescriptor<WorkoutSession>(
             predicate: #Predicate { $0.completedAt == nil },
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)])))?.first
@@ -382,17 +389,11 @@ struct RootShell: View {
     }
 
     /// Cloud backup stays out of UI-test launches unless a test asked for the local test vault.
-    private static var cloudBackupRuns: Bool {
-        !isUITestLaunch || CommandLine.arguments.contains("-uiTestCloudVault")
-    }
+    private static var cloudBackupRuns: Bool { TestLaunchIsolation.cloudBackupRuns(CommandLine.arguments) }
 
-    private static var isUITestLaunch: Bool {
-        let args = CommandLine.arguments
-        return args.contains("-uiTestFreshStore")
-            || args.contains("-uiTestCorruptStore")
-            || args.contains("-uiTestSeedStudioDemo")
-            || args.contains("-uiTestSeedRoutineHistory")
-    }
+    /// The one test-launch gate (prompt 320): every argument that puts the app on an in-memory test store. It used
+    /// to list four of them, so a seeded device run backed the test store up to the person's Google Drive.
+    private static var isUITestLaunch: Bool { UITestStore.onTestLaunch }
 }
 
 /// A calm, branded cold-start view (issue #30 §5.10) — a brand-tinted pulse glyph over a

@@ -101,7 +101,8 @@ struct StoreHealthBanner: View {
 
     private func reset() {
         do {
-            try StoreRecovery.resetPersistentStore()
+            // A test launch (`-uiTestCorruptStore`, prompt 320) only pretends: on a phone the files are the real store.
+            if !UITestStore.onTestLaunch { try StoreRecovery.resetPersistentStore() }
             resetError = nil
             health.mode = .resetDone
         } catch {

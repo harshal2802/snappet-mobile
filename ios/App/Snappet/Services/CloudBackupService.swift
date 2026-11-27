@@ -118,6 +118,8 @@ final class CloudBackupService {
     /// where nothing is chosen yet, can still be offered an existing backup). Reading the person's
     /// own cloud folder sends nothing anywhere.
     private var readVault: (any CloudVault)? { vaultFor(readDestination) }
+    /// Whether a destination reaches any vault (a test launch's backup reaches none, prompt 320).
+    func hasVault(for destination: CloudBackupDestination) -> Bool { vaultFor(destination) != nil }
     var readDestination: CloudBackupDestination {
         settings.destination == .off ? .iCloud : settings.destination
     }

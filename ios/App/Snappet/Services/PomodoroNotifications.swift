@@ -42,6 +42,8 @@ final class PomodoroNotifications {
     /// up (`add()` fails while status is .notDetermined; #70 review blocker).
     func scheduleBoundaries(_ boundaries: [(phase: PomodoroPhase, endDate: Date)]) {
         #if canImport(UserNotifications)
+        // A test launch neither replaces the person's pending focus alerts nor leaves its own (prompt 320).
+        guard !UITestStore.onTestLaunch else { return }
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: Self.boundaryIDs)
         center.removeDeliveredNotifications(withIdentifiers: Self.boundaryIDs)
@@ -73,6 +75,7 @@ final class PomodoroNotifications {
     /// Cancel all pending/delivered phase-end alerts (pause, reset, orphan cleanup).
     func clear() {
         #if canImport(UserNotifications)
+        guard !UITestStore.onTestLaunch else { return }   // the pending alerts are the person's (prompt 320)
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: Self.boundaryIDs)
         center.removeDeliveredNotifications(withIdentifiers: Self.boundaryIDs)

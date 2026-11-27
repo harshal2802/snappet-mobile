@@ -65,6 +65,7 @@ final class FestivalNotifications {
     /// later from the For-You sheet. No-op where `UserNotifications` is unavailable.
     func reschedule(plan: FestivalPlan, pack: FestivalPack, leadMinutes: Int, now: Date = .now) {
         #if canImport(UserNotifications)
+        guard !UITestStore.onTestLaunch else { return }   // a seeded lineup never schedules on a phone (prompt 320)
         let center = UNUserNotificationCenter.current()
         // Clear any reminder for THIS pack's sets (pending or delivered).
         let ids = pack.allSets.map { Self.reminderID(packID: pack.id, setID: $0.id) }
@@ -92,6 +93,7 @@ final class FestivalNotifications {
     /// unavailable.
     func postClashAlert(_ clash: FestivalPlan.Clash, pack: FestivalPack) {
         #if canImport(UserNotifications)
+        guard !UITestStore.onTestLaunch else { return }   // prompt 320
         let (title, body) = Self.clashContent(clash, offsetSeconds: pack.utcOffsetSeconds)
         let content = UNMutableNotificationContent()
         content.title = title
@@ -147,6 +149,7 @@ final class FestivalNotifications {
 
     private func add(id: String, title: String, body: String, after seconds: TimeInterval) {
         #if canImport(UserNotifications)
+        guard !UITestStore.onTestLaunch else { return }   // prompt 320
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard seconds > 0 else { return }

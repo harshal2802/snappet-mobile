@@ -18,7 +18,8 @@ enum RoutineHistorySeed {
 
     @MainActor
     static func seedIfRequested(into context: ModelContext, now: Date = .now) {
-        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        guard ProcessInfo.processInfo.arguments.contains(argument),
+              UITestStore.isFreshStore(ProcessInfo.processInfo.arguments) else { return }   // never into the real store (prompt 320)
         seed(into: context, now: now)
     }
 
