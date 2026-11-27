@@ -128,7 +128,7 @@ final class StudioStickerExportTests: StudioFixtureTestCase {
         XCTAssertEqual(with.height, 960)
 
         // The two old boxes (prompt 308's phone frame): side = 12 % of the height × scale, centred
-        // on the overlay's position, the flame's turned −20°.
+        // on the overlay's position, the flame's turned −20° (counter-clockwise, as in the preview).
         let starCenter = CGPoint(x: 0.3 * 540, y: 0.3 * 960), starSide = 0.12 * 960.0
         let flameCenter = CGPoint(x: 0.7 * 540, y: 0.7 * 960), flameSide = 0.12 * 960.0 * 2
         let flameTurn = -20.0 * .pi / 180
@@ -195,13 +195,11 @@ final class StudioStickerExportTests: StudioFixtureTestCase {
     }
 
     /// A point given in a box's own picture coordinates (x right, y down, from its centre), with
-    /// the box turned the way `CATransform3DMakeRotation(turn, 0, 0, 1)` turns it in the export
-    /// (Core Animation's y-up space: a negative angle looks clockwise).
+    /// the box turned by `turn` radians the way the preview turns it (`.rotationEffect`: positive
+    /// = clockwise on screen). Since prompt 321 the export turns the same way.
     private func point(_ center: CGPoint, local: CGPoint, turn: Double) -> CGPoint {
         let c = cos(turn), s = sin(turn)
-        let x = local.x * c - (-local.y) * s
-        let yUp = local.x * s + (-local.y) * c
-        return CGPoint(x: center.x + x, y: center.y - yUp)
+        return CGPoint(x: center.x + local.x * c - local.y * s, y: center.y + local.x * s + local.y * c)
     }
 
     private func close(_ p: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), _ q: (r: Int, g: Int, b: Int),

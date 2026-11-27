@@ -14,7 +14,7 @@ compared with these frames, loosely (the two renderers will not agree pixel for 
 
 | Scene | Frames | Shows |
 |---|---|---|
-| `ref-text` | 5, 15, 27 | Bold "REP PR"; "Second go" italic on a yellow highlight, turned 10°, at 80 %, from 0.3 s to 0.8 s |
+| `ref-text` | 5, 15, 27 | Bold "REP PR"; "Second go" italic on a yellow highlight, turned 10°, at 80 %, from 0.3 s to 0.8 s; frame 15 is **wrong, see below** |
 | `ref-sticker` | 10 | **Wrong, see below** |
 | `ref-climb-tag` | 10 | "Pinch Me · V5 · 40°" on a dark chip. One line only: the capture passes the tag's raw text, while the editor adds an "Attempt 2" line before a real export, so a two-line chip has no reference |
 | `ref-hr-tile` | 3, 15, 27 | Glass hero tile, "152 BPM", zone-coloured chart |
@@ -23,7 +23,7 @@ compared with these frames, loosely (the two renderers will not agree pixel for 
 ## Known wrong: `ref-sticker-f010.png`
 
 The scene has a star sticker and an orange flame sticker. The export burned each as a solid
-black box (right place, size and rotation; no symbol, no colour). That is a bug in the export,
+black box (right place and size; no symbol, no colour; and turned the wrong way, see below). That is a bug in the export,
 also in users' exported videos, not the look to match. It is listed in
 `StudioOverlayReference.knownWrongFrames`, so comparisons skip it. Prompt 308 fixes the export;
 after it, a new capture on a phone replaces this frame (and `manifest.json`) and removes it from
@@ -37,6 +37,14 @@ markers. Any other frame shows one tile; in a real export this is one frame at m
 Animation path that does this is replaced by prompt 311, which must draw exactly one tile on that
 frame, so this frame stays listed in `StudioOverlayReference.knownWrongFrames`; frames 10 and 35
 are the reference for the tile through a dissolve.
+
+## Known wrong: `ref-text-f015.png` (and the sticker frame's turn)
+
+The old export turned every overlay the opposite way from the editor: "Second go" at +10° rises
+to the right here, where the editor turns it clockwise (falls to the right); the flame at −20° in
+the sticker frame falls to the right where the editor leans it left. Prompt 321 fixes the export.
+Frames 5 and 27 do not show the turned line ("Second go" is on from 0.3 s to 0.8 s), so they stay
+right. A new capture with prompts 308 and 321 replaces both frames.
 
 ## Replacing the reference
 
