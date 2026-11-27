@@ -74,6 +74,8 @@ final class ClipBakeService: ClipBaking {
     /// REVERTIBLE bake: write `renderedURL` onto the original asset as its edited rendition.
     /// `projectID` rides in the adjustment data so a future Studio session can recognize its own bake.
     func saveToOriginal(renderedURL: URL, localIdentifier: String, projectID: UUID) async throws {
+        // A test launch bakes only into an asset it made (prompt 320).
+        guard TestLaunchAssets.mayChange([localIdentifier]) else { throw BakeError.writeFailed("not this test's clip") }
         try await ensureAuthorized()
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
         else { throw BakeError.assetNotFound }
@@ -119,6 +121,10 @@ final class ClipBakeService: ClipBaking {
     /// runs in a SECOND change block: if the user cancels the system dialog, the new asset survives
     /// and the caller still re-points to it (the original just lingers in the library).
     func replaceOriginal(renderedURL: URL, oldLocalIdentifier: String) async throws -> String {
+        // A test launch replaces (deletes) only an asset it made (prompt 320); refused before anything is created.
+        guard TestLaunchAssets.mayChange([oldLocalIdentifier]) else {
+            throw BakeError.writeFailed("not this test's clip")
+        }
         try await ensureAuthorized()
         var placeholderID: String?
         do {
@@ -130,6 +136,7 @@ final class ClipBakeService: ClipBaking {
             throw BakeError.writeFailed(error.localizedDescription)
         }
         guard let newID = placeholderID else { throw BakeError.writeFailed("no asset was created") }
+        TestLaunchAssets.noteCreated(newID)
 
         if let old = PHAsset.fetchAssets(withLocalIdentifiers: [oldLocalIdentifier], options: nil).firstObject {
             do {

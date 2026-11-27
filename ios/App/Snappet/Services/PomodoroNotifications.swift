@@ -75,6 +75,7 @@ final class PomodoroNotifications {
     /// Cancel all pending/delivered phase-end alerts (pause, reset, orphan cleanup).
     func clear() {
         #if canImport(UserNotifications)
+        guard !UITestStore.onTestLaunch else { return }   // the pending alerts are the person's (prompt 320)
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: Self.boundaryIDs)
         center.removeDeliveredNotifications(withIdentifiers: Self.boundaryIDs)

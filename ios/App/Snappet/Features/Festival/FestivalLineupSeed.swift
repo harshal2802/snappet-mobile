@@ -92,7 +92,8 @@ enum FestivalLineupSeed {
     /// real installer uses, so the seed can never install a shape production wouldn't.
     static func seedIfRequested(into context: ModelContext) {
         let args = ProcessInfo.processInfo.arguments
-        guard args.contains(argument) || args.contains(FestivalNightSeed.argument) else { return }
+        guard args.contains(argument) || args.contains(FestivalNightSeed.argument),
+              UITestStore.isFreshStore(args) else { return }   // never into the real store (prompt 320)
         let pack = pack()
         guard let data = try? pack.fpackData(),
               let validated = try? FestivalPackValidator.validate(pack) else { return }

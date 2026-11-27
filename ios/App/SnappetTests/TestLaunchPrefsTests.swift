@@ -1,15 +1,17 @@
 import XCTest
 @testable import Snappet
 
-/// The person's settings survive a UI-test launch on their phone (prompt 320): the first test launch saves them, a
-/// later test launch keeps that first copy, and the next normal launch puts them back exactly. Runs on two scratch
-/// suites and a temp file, no device.
+/// The person's settings survive a UI-test launch on their phone (prompt 320): the first test launch saves them,
+/// later test launches keep that copy, the end-of-run launch puts them back exactly, and a normal launch restores
+/// only when it is certainly safe. Runs on two scratch suites, a temp folder and a fixed clock; no device.
 final class TestLaunchPrefsTests: XCTestCase {
     private var appName = ""
     private var groupName = ""
     private var app: UserDefaults!
     private var group: UserDefaults!
+    private var folder: URL!
     private var file: URL!
+    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
     override func setUp() {
         super.setUp()
@@ -18,15 +20,14 @@ final class TestLaunchPrefsTests: XCTestCase {
         groupName = "snappet.tests.prefs.group.\(id)"
         app = UserDefaults(suiteName: appName)
         group = UserDefaults(suiteName: groupName)
-        file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("prefs-\(id)", isDirectory: true)
-            .appendingPathComponent("settings-snapshot.plist")
+        folder = FileManager.default.temporaryDirectory.appendingPathComponent("prefs-\(id)", isDirectory: true)
+        file = folder.appendingPathComponent("settings-snapshot.plist")
     }
 
     override func tearDown() {
         app.removePersistentDomain(forName: appName)
         group.removePersistentDomain(forName: groupName)
-        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+        try? FileManager.default.removeItem(at: folder)
         super.tearDown()
     }
 
@@ -35,9 +36,14 @@ final class TestLaunchPrefsTests: XCTestCase {
     }
 
     @discardableResult
-    private func launch(test: Bool, now: Date = .now) -> TestLaunchPrefs.Outcome {
-        TestLaunchPrefs.run(isTestLaunch: test, domains: domains, file: file, now: now)
+    private func launch(test: Bool, at minutes: Double = 0, restoreOnly: Bool = false,
+                        settingsModifiedAt: Date? = nil, fileManager: FileManager = .default) -> TestLaunchPrefs.Outcome {
+        TestLaunchPrefs.run(isTestLaunch: test || restoreOnly, restoreOnly: restoreOnly, domains: domains, file: file,
+                            now: t0.addingTimeInterval(minutes * 60), settingsModifiedAt: { settingsModifiedAt },
+                            fileManager: fileManager)
     }
+
+    private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
 
     /// The person's own settings, the ones lost on 2026-11-26.
     private func seedRealSettings() {
@@ -69,7 +75,12 @@ final class TestLaunchPrefsTests: XCTestCase {
         XCTAssertNil(group.object(forKey: "today-widget-outbox"), file: file, line: line)
     }
 
-    // MARK: - The decision
+    private func assertTestSettingsLeft(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 3, file: file, line: line)
+        XCTAssertEqual(group.string(forKey: "accent"), "orange", file: file, line: line)
+    }
+
+    // MARK: - The decisions
 
     func testStepTable() {
         XCTAssertEqual(TestLaunchPrefs.step(isTestLaunch: true, snapshotExists: false), .snapshot)
@@ -78,72 +89,161 @@ final class TestLaunchPrefsTests: XCTestCase {
         XCTAssertEqual(TestLaunchPrefs.step(isTestLaunch: false, snapshotExists: false), .none)
     }
 
-    // MARK: - Save and restore
-
-    func testATestLaunchThenANormalLaunchPutsEverySettingBack() {
-        seedRealSettings()
-        XCTAssertEqual(launch(test: true), .saved)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
-        actLikeATest()
-        XCTAssertEqual(launch(test: false), .restored)
-        assertRealSettingsBack()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the snapshot is used once")
+    func testFallbackTable() {
+        let last = t0
+        func at(_ hours: Double) -> Date { last.addingTimeInterval(hours * 3600) }
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(1), lastTestLaunchAt: last, settingsModifiedAt: nil), .restore)
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(1), lastTestLaunchAt: last, settingsModifiedAt: at(0.25)), .restore,
+                       "the last test still runs after its launch")
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(5.9), lastTestLaunchAt: last, settingsModifiedAt: at(0.5)), .restore)
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(6.1), lastTestLaunchAt: last, settingsModifiedAt: nil), .tooOld)
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(24 * 30), lastTestLaunchAt: last, settingsModifiedAt: nil), .tooOld)
+        XCTAssertEqual(TestLaunchPrefs.fallback(now: at(2), lastTestLaunchAt: last, settingsModifiedAt: at(1)), .changedSince,
+                       "another launch (an older build) wrote settings after the run")
     }
 
-    func testSeveralTestLaunchesKeepTheFirstSnapshot() {
+    func testOnlyASafelySavedTestLaunchMayTouchSettings() {
+        for outcome in [TestLaunchPrefs.Outcome.saved, .kept, .offOnSimulator] {
+            XCTAssertTrue(TestLaunchPrefs.mayTouchSettings(isTestLaunch: true, outcome: outcome), outcome.rawValue)
+        }
+        for outcome in [TestLaunchPrefs.Outcome.failed, .notNeeded, .restored, .setAside, .restoredNotDeleted] {
+            XCTAssertFalse(TestLaunchPrefs.mayTouchSettings(isTestLaunch: true, outcome: outcome), outcome.rawValue)
+        }
+        XCTAssertTrue(TestLaunchPrefs.mayTouchSettings(isTestLaunch: false, outcome: .failed))
+    }
+
+    // MARK: - Save, then the end-of-run restore
+
+    func testATestRunThenTheRestoreLaunchPutsEverySettingBack() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        XCTAssertTrue(exists(file))
+        actLikeATest()
+        XCTAssertEqual(launch(test: false, at: 10, restoreOnly: true), .restored)
+        assertRealSettingsBack()
+        XCTAssertFalse(exists(file), "the snapshot is used once")
+        XCTAssertFalse(exists(TestLaunchPrefs.claimedURL(for: file)))
+        XCTAssertEqual(launch(test: false, at: 11), .notNeeded)
+    }
+
+    func testTheRestoreLaunchRestoresHoweverOldTheRunIs() {
         seedRealSettings()
         XCTAssertEqual(launch(test: true), .saved)
         actLikeATest()
-        XCTAssertEqual(launch(test: true), .kept, "the second test launch must not save the test's settings")
+        XCTAssertEqual(launch(test: false, at: 60 * 24 * 3, restoreOnly: true), .restored)
+        assertRealSettingsBack()
+    }
+
+    func testTheRestoreLaunchWithNoSnapshotDoesNothing() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: false, restoreOnly: true), .notNeeded)
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4)
+    }
+
+    func testSeveralTestLaunchesKeepTheFirstSnapshotAndStampTheLatest() throws {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        XCTAssertEqual(launch(test: true, at: 5), .kept, "the second test launch must not save the test's settings")
         app.set(9, forKey: "clips.grid.columns")
-        XCTAssertEqual(launch(test: true), .kept)
-        XCTAssertEqual(launch(test: false), .restored)
-        assertRealSettingsBack()
-    }
-
-    func testAnOldSnapshotStillRestores() {
-        seedRealSettings()
-        XCTAssertEqual(launch(test: true, now: Date(timeIntervalSinceNow: -60 * 86_400)), .saved)
-        actLikeATest()
-        XCTAssertEqual(launch(test: false), .restored)
+        XCTAssertEqual(launch(test: true, at: 50), .kept)
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil)
+                                  as? [String: Any])
+        XCTAssertEqual(plist["savedAt"] as? Date, t0)
+        XCTAssertEqual(plist["lastTestLaunchAt"] as? Date, t0.addingTimeInterval(50 * 60))
+        XCTAssertEqual(launch(test: false, at: 60, restoreOnly: true), .restored)
         assertRealSettingsBack()
     }
 
     func testEmptySettingsComeBackEmpty() {
         XCTAssertEqual(launch(test: true), .saved)
         actLikeATest()
-        XCTAssertEqual(launch(test: false), .restored)
+        XCTAssertEqual(launch(test: false, restoreOnly: true), .restored)
         XCTAssertNil(app.object(forKey: "clips.grid.columns"))
         XCTAssertNil(app.object(forKey: "festival.tourSeen"))
         XCTAssertNil(group.object(forKey: "accent"))
     }
 
-    func testANormalLaunchWithNoSnapshotTouchesNothing() {
-        seedRealSettings()
-        XCTAssertEqual(launch(test: false), .notNeeded)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4)
-        XCTAssertEqual(launch(test: false), .notNeeded)
-    }
-
-    func testAnUnreadableSnapshotIsDroppedAndSettingsAreLeftAlone() throws {
-        seedRealSettings()
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("not a plist".utf8).write(to: file)
-        XCTAssertEqual(launch(test: false), .failed)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4)
-        XCTAssertEqual(launch(test: false), .notNeeded, "never retried")
-    }
-
     func testADomainTheSnapshotDoesNotNameIsLeftAlone() {
         seedRealSettings()
-        XCTAssertEqual(TestLaunchPrefs.run(isTestLaunch: true, domains: [.defaults(app, name: appName)], file: file),
-                       .saved)
+        XCTAssertEqual(TestLaunchPrefs.run(isTestLaunch: true, domains: [.defaults(app, name: appName)], file: file,
+                                           now: t0), .saved)
         actLikeATest()
-        XCTAssertEqual(launch(test: false), .restored)
+        XCTAssertEqual(launch(test: false, restoreOnly: true), .restored)
         XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4)
         XCTAssertEqual(group.string(forKey: "accent"), "orange", "not in the snapshot: not overwritten")
+    }
+
+    // MARK: - A failed snapshot
+
+    func testASnapshotThatCannotBeWrittenFailsTheLaunch() throws {
+        // The snapshot's folder is a plain file, so nothing can be written under it.
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let blocker = folder.appendingPathComponent("blocked")
+        try Data().write(to: blocker)
+        file = blocker.appendingPathComponent("settings-snapshot.plist")
+        seedRealSettings()
+        let outcome = launch(test: true)
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertFalse(TestLaunchPrefs.mayTouchSettings(isTestLaunch: true, outcome: outcome))
+        XCTAssertTrue(TestLaunchIsolation.readOut(arguments: ["-uiTestFreshStore"], prefs: outcome).hasSuffix("prefs failed"))
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4, "nothing touched")
+    }
+
+    // MARK: - The next normal launch, a fallback
+
+    func testANormalLaunchSoonAfterTheRunRestores() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        XCTAssertEqual(launch(test: false, at: 40, settingsModifiedAt: t0.addingTimeInterval(10 * 60)), .restored)
+        assertRealSettingsBack()
+    }
+
+    func testANormalLaunchHoursLaterSetsTheSnapshotAside() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        let now = t0.addingTimeInterval(7 * 3600)
+        XCTAssertEqual(launch(test: false, at: 7 * 60), .setAside)
+        assertTestSettingsLeft()
+        XCTAssertFalse(exists(file))
+        XCTAssertTrue(exists(TestLaunchPrefs.setAsideURL(for: file, now: now)), "kept, not deleted")
+        XCTAssertEqual(launch(test: false, at: 7 * 60 + 1), .notNeeded, "never tried again")
+    }
+
+    func testSettingsChangedByAnotherLaunchAreNeverRolledBack() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        // An older build ran after the run (it knows nothing of snapshots) and the person changed a setting.
+        app.set(5, forKey: "clips.grid.columns")
+        XCTAssertEqual(launch(test: false, at: 120, settingsModifiedAt: t0.addingTimeInterval(90 * 60)), .setAside)
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 5)
+    }
+
+    func testAnUnreadableSnapshotIsSetAsideAndSettingsAreLeftAlone() throws {
+        seedRealSettings()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("not a plist".utf8).write(to: file)
+        XCTAssertEqual(launch(test: false), .setAside)
+        XCTAssertFalse(exists(file))
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 4)
+        XCTAssertEqual(launch(test: false, at: 1), .notNeeded, "never retried")
+    }
+
+    /// A delete that fails after a restore is reported; the snapshot was renamed first, so it never restores again.
+    func testAFailedDeleteIsReportedAndNeverRestoresAgain() {
+        seedRealSettings()
+        XCTAssertEqual(launch(test: true), .saved)
+        actLikeATest()
+        XCTAssertEqual(launch(test: false, at: 5, restoreOnly: true, fileManager: NoDeleteFileManager()),
+                       .restoredNotDeleted)
+        assertRealSettingsBack()
+        app.set(7, forKey: "clips.grid.columns")   // the person changes a setting afterwards
+        XCTAssertEqual(launch(test: false, at: 6), .notNeeded)
+        XCTAssertEqual(launch(test: false, at: 7, restoreOnly: true), .notNeeded)
+        XCTAssertEqual(app.integer(forKey: "clips.grid.columns"), 7)
     }
 
     // MARK: - The read-out a device test checks
@@ -169,5 +269,12 @@ final class TestLaunchPrefsTests: XCTestCase {
         XCTAssertTrue(TestLaunchIsolation.cloudCopiesRun([]))
         // A device test that runs on the real store on purpose (`-vaultHoldCopies`) is not a test launch.
         XCTAssertTrue(TestLaunchIsolation.cloudCopiesRun(["-vaultHoldCopies", "YES"]))
+    }
+}
+
+/// A file manager whose deletes always fail (moves still work).
+private final class NoDeleteFileManager: FileManager, @unchecked Sendable {
+    override func removeItem(at URL: URL) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

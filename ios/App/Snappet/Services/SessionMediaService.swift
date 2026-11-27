@@ -130,6 +130,8 @@ final class SessionMediaService: Sendable {
         let result = PHAsset.fetchAssets(with: options)
         var raw: [(localIdentifier: String, creationDate: Date?, isVideo: Bool, duration: Double)] = []
         result.enumerateObjects { asset, _, _ in
+            // A test launch never attaches the person's own footage to a seeded session (prompt 320).
+            guard TestLaunchAssets.isDiscoverable(asset.localIdentifier) else { return }
             raw.append((asset.localIdentifier, asset.creationDate,
                         asset.mediaType == .video, asset.duration))
         }
@@ -153,6 +155,7 @@ final class SessionMediaService: Sendable {
         let result = PHAsset.fetchAssets(with: options)
         var raw: [(localIdentifier: String, creationDate: Date?, isVideo: Bool, duration: Double)] = []
         result.enumerateObjects { asset, _, _ in
+            guard TestLaunchAssets.isDiscoverable(asset.localIdentifier) else { return }   // prompt 320
             raw.append((asset.localIdentifier, asset.creationDate,
                         asset.mediaType == .video, asset.duration))
         }

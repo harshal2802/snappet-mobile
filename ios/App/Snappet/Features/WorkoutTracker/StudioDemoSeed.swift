@@ -33,7 +33,8 @@ enum StudioDemoSeed {
     /// `SnappetApp.init()` against the fresh in-memory container, before any UI appears.
     @MainActor
     static func seedIfRequested(into context: ModelContext) {
-        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        guard ProcessInfo.processInfo.arguments.contains(argument),
+              UITestStore.isFreshStore(ProcessInfo.processInfo.arguments) else { return }   // never into the real store (prompt 320)
         let rid = routineID
         let existing = try? context.fetch(
             FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.routineID == rid }))
@@ -80,7 +81,8 @@ enum StudioDemoSeed {
     /// coordinator's default resolves to BLE — exactly the returning-band-user experience.
     @MainActor
     static func seedRememberedBandIfRequested() {
-        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        guard ProcessInfo.processInfo.arguments.contains(argument),
+              UITestStore.isFreshStore(ProcessInfo.processInfo.arguments) else { return }   // never into the real store (prompt 320)
         BandMemory().remember(id: demoBandID, name: demoBandName)
     }
 

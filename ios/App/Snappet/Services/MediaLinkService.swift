@@ -249,6 +249,7 @@ struct MediaLinkService {
             options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate <= %@",
                                             window.start as NSDate, window.end as NSDate)
             PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
+                guard TestLaunchAssets.isDiscoverable(asset.localIdentifier) else { return }   // prompt 320
                 guard let fingerprint = makeFingerprint(of: asset) else { return }
                 snapshot.candidates.append(MediaLinkCandidate(localIdentifier: asset.localIdentifier,
                                                               fingerprint: fingerprint))

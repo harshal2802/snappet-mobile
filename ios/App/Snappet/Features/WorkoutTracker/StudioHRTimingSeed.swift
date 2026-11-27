@@ -83,7 +83,8 @@ enum StudioHRTimingSeed {
 
     @MainActor
     static func seedIfRequested(into context: ModelContext) {
-        guard isActive else { return }
+        // Never into the real store (prompt 320).
+        guard isActive, UITestStore.isFreshStore(ProcessInfo.processInfo.arguments) else { return }
         let rid = routineID
         let existing = try? context.fetch(
             FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.routineID == rid }))

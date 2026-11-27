@@ -181,7 +181,9 @@ final class AppModel {
         // correct countdown (the OS owns it). Re-attach and rebuild the timer from its
         // absolute end while the phase is still ahead; past the end, clean up the orphan
         // (the elapsed focus can't be retro-logged — the store isn't reachable here).
-        if let orphan = pomodoroLiveActivity.adoptRunning() {
+        // Not on a test launch (prompt 320): the running focus on the Lock Screen is the person's, and adopting
+        // it would let the test pause or end it.
+        if !UITestStore.onTestLaunch, let orphan = pomodoroLiveActivity.adoptRunning() {
             if orphan.endDate.timeIntervalSinceNow > 0 {
                 pomodoro.restore(phase: orphan.isFocus ? .focus : .breakTime, endDate: orphan.endDate)
             } else {
@@ -301,7 +303,28 @@ final class AppModel {
     // MARK: - Clip vault (cloud-connect P4, prompt 269)
 
     /// Opt-in copies of clips in the person's Google Drive, and footage brought back from Google Photos.
-    let mediaVault = MediaVaultService()
+    let mediaVault = AppModel.makeMediaVault(arguments: CommandLine.arguments, google: GoogleAccount.shared)
+
+    /// How the app builds its clip copies for these arguments (prompt 320; unit-tested: `TestLaunchWiringTests`).
+    /// On a test launch: the test's own Google account (never signed in to the person's, no network), an emptied
+    /// scratch suite instead of the real copies index, and scratch cache and poster folders. So "Move to trash",
+    /// "Remove all copies", per-clip remove and free-up space cannot reach the person's Drive, and their index is
+    /// never compared with the test store. Photos changes are limited further by `TestLaunchAssets`.
+    static func makeMediaVault(arguments: [String], google: GoogleAccount) -> MediaVaultService {
+        guard UITestStore.isTestLaunch(arguments) else { return MediaVaultService() }
+        let suite = "uitest.mediavault"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("uitest-mediavault", isDirectory: true)
+        try? FileManager.default.removeItem(at: scratch)
+        return MediaVaultService(
+            defaults: UserDefaults(suiteName: suite) ?? .standard,
+            account: .init(isSignedIn: { google.isSignedIn }, grants: { google.grants($0) }),
+            google: GoogleAuthorizedHTTP(accessToken: { force in try await google.accessToken(forceRefresh: force) },
+                                         http: OfflineGoogleHTTP()),
+            network: { .wifi },
+            cacheDirectory: scratch.appendingPathComponent("ClipVault", isDirectory: true),
+            posterDirectory: scratch.appendingPathComponent("ClipPosters", isDirectory: true))
+    }
 
     private let networkWatch = CloudBackupNetworkWatch()
 
@@ -396,25 +419,27 @@ final class AppModel {
     /// Any other test launch (prompt 320) gets a backup that cannot reach a cloud at all: no vault, an emptied
     /// scratch suite for its settings (so the real `cloudBackup.lastManifest` is never read or written) and a fixed
     /// key. On 2026-11-26 a seeded device run uploaded its test store to the person's Google Drive.
-    let cloudBackup: CloudBackupService = {
-        guard CommandLine.arguments.contains(TestLaunchIsolation.cloudVaultArgument) else {
-            guard UITestStore.onTestLaunch else { return CloudBackupService() }
+    let cloudBackup: CloudBackupService = AppModel.makeCloudBackup(arguments: CommandLine.arguments)
+
+    /// How the app builds its backup for these launch arguments (unit-tested: `TestLaunchWiringTests`).
+    static func makeCloudBackup(arguments: [String]) -> CloudBackupService {
+        let testKey = FixedBackupKeyStore(key: .init(data: Data(repeating: 7, count: 32)))
+        guard arguments.contains(TestLaunchIsolation.cloudVaultArgument) else {
+            guard UITestStore.isTestLaunch(arguments) else { return CloudBackupService() }
             let suite = "uitest.cloudbackup.none"
             UserDefaults.standard.removePersistentDomain(forName: suite)
             return CloudBackupService(defaults: UserDefaults(suiteName: suite) ?? .standard, vaultFor: { _ in nil },
-                                      keys: FixedBackupKeyStore(key: .init(data: Data(repeating: 7, count: 32))),
-                                      network: { .wifi }, deviceName: "Test iPhone")
+                                      keys: testKey, network: { .wifi }, deviceName: "Test iPhone")
         }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("uitest-cloud-vault")
-        if CommandLine.arguments.contains("-uiTestCloudVaultReset") { try? FileManager.default.removeItem(at: folder) }
+        if arguments.contains("-uiTestCloudVaultReset") { try? FileManager.default.removeItem(at: folder) }
         let defaults = UserDefaults(suiteName: "uitest.cloudbackup") ?? .standard
-        if CommandLine.arguments.contains("-uiTestCloudVaultReset") {
+        if arguments.contains("-uiTestCloudVaultReset") {
             defaults.removePersistentDomain(forName: "uitest.cloudbackup")
         }
         return CloudBackupService(defaults: defaults, vaultFor: { _ in FolderVault(directory: folder) },
-                                  keys: FixedBackupKeyStore(key: .init(data: Data(repeating: 7, count: 32))),
-                                  network: { .wifi }, deviceName: "Test iPhone")
-    }()
+                                  keys: testKey, network: { .wifi }, deviceName: "Test iPhone")
+    }
 
     /// The Google account behind the Google Drive backup destination (prompt 268). Signed out, and
     /// hidden entirely, unless the build carries a Google client ID.

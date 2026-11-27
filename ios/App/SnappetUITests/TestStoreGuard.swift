@@ -61,6 +61,36 @@ enum TestStoreGuard {
     }
 }
 
+/// At the end of a device run (prompt 320): relaunch Snappet with `-uiTestRestorePrefs`, which puts the person's
+/// settings back from the snapshot the first test launch saved, deletes it and shows only "Settings restored".
+/// Registered by the first guarded launch on a real device. The app's next normal launch is only a fallback.
+final class PrefsRestoreAtEnd: NSObject, XCTestObservation {
+    static let restoreArgument = "-uiTestRestorePrefs"   // `TestLaunchPrefs.restoreArgument`
+    static let restoredIdentifier = "uiTest.prefsRestored"
+    nonisolated(unsafe) private static var registered = false
+
+    static func registerOnDevice() {
+        guard TestStoreGuard.isRealDevice, !registered else { return }
+        registered = true
+        XCTestObservationCenter.shared.addTestObserver(PrefsRestoreAtEnd())
+    }
+
+    func testBundleDidFinish(_ testBundle: Bundle) {
+        MainActor.assumeIsolated {
+            let app = XCUIApplication()
+            app.launchArguments = [Self.restoreArgument]
+            app.launch()
+            let done = app.descendants(matching: .any).matching(identifier: Self.restoredIdentifier).firstMatch
+            if done.waitForExistence(timeout: 20) {
+                print("SNAPPET-PREFS settings \(done.value as? String ?? "?")")
+            } else {
+                print("SNAPPET-PREFS the restore launch did not answer; the next normal launch is the fallback")
+            }
+            app.terminate()
+        }
+    }
+}
+
 extension XCUIApplication {
     /// Whether these launch arguments ask the app for the in-memory test store.
     var argumentsImplyTestStore: Bool {
@@ -75,6 +105,7 @@ extension XCUIApplication {
     @discardableResult
     func launchCheckingTestStore(require: Bool? = nil,
                                  timeout: TimeInterval = TestStoreGuard.markerTimeout) -> String? {
+        PrefsRestoreAtEnd.registerOnDevice()
         launch()
         let applies = require ?? (TestStoreGuard.isRealDevice || argumentsImplyTestStore)
         guard applies else { return nil }

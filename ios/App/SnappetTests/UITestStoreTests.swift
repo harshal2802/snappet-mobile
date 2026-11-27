@@ -44,12 +44,13 @@ final class UITestStoreTests: XCTestCase {
     /// clip copies, notifications, widgets and the rest. On 2026-11-26 a seed missing from the old four-argument
     /// list backed the test store up to the person's Google Drive.
     func testEveryTestStoreArgumentIsATestLaunch() {
-        for arg in UITestStore.freshStoreArguments + ["-uiTestCorruptStore"] {
+        for arg in UITestStore.freshStoreArguments + ["-uiTestCorruptStore", "-uiTestRestorePrefs"] {
             XCTAssertTrue(UITestStore.isTestLaunch([arg]), arg)
             XCTAssertTrue(UITestStore.isTestLaunch(["Snappet", "-uiTestFakeCamera", arg]), arg)
         }
         XCTAssertEqual(Set(UITestStore.testLaunchArguments),
-                       Set(UITestStore.freshStoreArguments + [UITestStore.corruptStoreArgument]))
+                       Set(UITestStore.freshStoreArguments + [UITestStore.corruptStoreArgument,
+                                                              TestLaunchPrefs.restoreArgument]))
     }
 
     /// Arguments that only tune a screen leave the store, and so the gate, alone.
@@ -71,6 +72,7 @@ final class UITestStoreTests: XCTestCase {
         XCTAssertEqual(mirrored, Set(UITestStore.freshStoreArguments))
         XCTAssertTrue(source.contains("static let corruptStoreArgument = \"\(UITestStore.corruptStoreArgument)\""))
         XCTAssertTrue(source.contains("static let markerIdentifier = \"\(UITestStore.markerIdentifier)\""))
+        XCTAssertTrue(source.contains("static let restoreArgument = \"\(TestLaunchPrefs.restoreArgument)\""))
     }
 
     /// Every `-uiTestSeed…` the app knows is in the list — a new seed that forgets to join it would run the cloud

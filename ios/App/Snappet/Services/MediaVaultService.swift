@@ -204,6 +204,7 @@ struct PhotosMediaVaultExporter: MediaVaultExporter {
     }
 
     func setCreationDate(_ date: Date, of localIdentifier: String) async throws {
+        try TestLaunchAssets.requireMayChange([localIdentifier])   // a test launch: only what it made (prompt 320)
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else {
             throw CloudVaultError.notFound(localIdentifier)
         }
@@ -213,6 +214,8 @@ struct PhotosMediaVaultExporter: MediaVaultExporter {
     }
 
     func delete(localIdentifiers: [String]) async throws {
+        // Free up space on a test launch: only what the test made (prompt 320).
+        try TestLaunchAssets.requireMayChange(localIdentifiers)
         guard PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil).count > 0 else { return }
         try await PHPhotoLibrary.shared().performChanges {
             PHAssetChangeRequest.deleteAssets(PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil))
@@ -230,6 +233,7 @@ struct PhotosMediaVaultExporter: MediaVaultExporter {
             box.value = request.placeholderForCreatedAsset?.localIdentifier
         }
         guard let id = box.value else { throw MediaVaultFailure("Photos did not save the clip.") }
+        TestLaunchAssets.noteCreated(id)
         return id
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The person's settings survive a UI-test launch on their phone (prompt 320).
 ///
@@ -6,28 +7,51 @@ import Foundation
 /// not isolate: `SnappetApp.init` clears ~20 keys so each test starts the same, tests flip switches, and
 /// on 2026-11-26 a device run lost the person's Clips grid size, feed level, recent grades and gyms.
 ///
-/// So, on a phone: the FIRST test launch saves the app's settings and the App Group's settings to a snapshot
-/// file in Library before anything touches them; later test launches keep that first snapshot and change
-/// settings freely; the next NORMAL launch puts both back exactly and deletes the snapshot, before any other
-/// code reads a setting. A snapshot of any age restores. On the simulator this is off (`atLaunch`), so
-/// simulator runs and the shared unit-test host keep today's behaviour.
+/// On a phone:
+/// - the FIRST test launch saves the app's settings and the App Group's to a snapshot file in Library before
+///   anything touches them; if that fails, the launch touches no setting at all and its read-out says
+///   `prefs failed`, so the device test stops before its first tap;
+/// - later test launches keep that first snapshot and only stamp the time of the latest test launch;
+/// - at the END of a device run the UI-test helper relaunches the app with `-uiTestRestorePrefs`, which puts
+///   both domains back exactly, deletes the snapshot and shows nothing else (`restoreOnly`);
+/// - the next normal launch is only a FALLBACK (the run was cut short): it restores only when that is
+///   certainly safe — the latest test launch was a few hours ago at most, and the settings files were not
+///   changed after the run by some other launch (an older build that knows nothing of snapshots). Otherwise
+///   the snapshot is set aside, kept and logged, never restored over newer settings.
+/// A restore first renames the snapshot, so a failed delete is reported and can never restore again.
+/// On the simulator all of this is off (`atLaunch`), so simulator runs and the unit-test host keep today's
+/// behaviour.
 ///
-/// The decision (`step`) and the save/restore (`run`) are pure over injected domains and a file URL, and
-/// unit-tested without a device.
+/// The decisions (`step`, `fallback`, `mayTouchSettings`) are pure, and `run` works over injected domains,
+/// a file URL and a clock, so all of it is unit-tested without a device.
 enum TestLaunchPrefs {
+    /// The UI-test helper's last launch of a device run: restore, then show only "Settings restored".
+    static let restoreArgument = "-uiTestRestorePrefs"
+
     /// What this launch does with the snapshot.
     enum Step: Equatable {
         case snapshot        // test launch, no snapshot yet: save the real settings first
         case keepSnapshot    // test launch, a snapshot exists: it holds the real settings, keep it
-        case restore         // normal launch, a snapshot exists: put the real settings back
+        case restore         // normal launch, a snapshot exists: put the real settings back if it is safe
         case none            // normal launch, nothing saved
     }
 
     /// What happened, for the test-launch read-out (`TestLaunchIsolation.readOut`).
     enum Outcome: String, Equatable {
         case saved, kept, restored, notNeeded
+        /// Restored, but the used snapshot could not be deleted (it was already renamed, so it never restores again).
+        case restoredNotDeleted = "restored (snapshot not deleted)"
+        /// A fallback restore was not safe: the snapshot was set aside, not used.
+        case setAside = "set aside"
         case offOnSimulator = "off (simulator)"
         case failed
+    }
+
+    /// Why a fallback restore is refused.
+    enum Fallback: Equatable {
+        case restore
+        case tooOld               // the latest test launch is older than `maxAge`
+        case changedSince         // a settings file changed after the run, by some other launch
     }
 
     static func step(isTestLaunch: Bool, snapshotExists: Bool) -> Step {
@@ -37,6 +61,27 @@ enum TestLaunchPrefs {
         case (false, true): return .restore
         case (false, false): return .none
         }
+    }
+
+    /// A fallback restore (a normal launch finds a snapshot) is safe only soon after the run.
+    static let maxAge: TimeInterval = 6 * 3600
+    /// Settings keep changing while the last test runs after its launch; a change later than this after the latest
+    /// test launch was made by something else.
+    static let runGrace: TimeInterval = 30 * 60
+
+    /// Pure: may a normal launch restore a snapshot whose latest test launch was at `lastTestLaunchAt`?
+    static func fallback(now: Date, lastTestLaunchAt: Date, settingsModifiedAt: Date?,
+                         maxAge: TimeInterval = maxAge, runGrace: TimeInterval = runGrace) -> Fallback {
+        if now.timeIntervalSince(lastTestLaunchAt) > maxAge { return .tooOld }
+        if let modified = settingsModifiedAt, modified.timeIntervalSince(lastTestLaunchAt) > runGrace { return .changedSince }
+        return .restore
+    }
+
+    /// Pure: may this launch clear or seed settings? A normal launch always; a test launch only once the real ones
+    /// are safely saved (or on the simulator, where nothing is saved and nothing is real).
+    static func mayTouchSettings(isTestLaunch: Bool, outcome: Outcome) -> Bool {
+        guard isTestLaunch else { return true }
+        return [.saved, .kept, .offOnSimulator].contains(outcome)
     }
 
     /// One settings domain the snapshot covers: read its whole persistent domain, or replace it (`nil` removes it).
@@ -56,46 +101,103 @@ enum TestLaunchPrefs {
         }
     }
 
-    static let formatVersion = 1
+    static let formatVersion = 2
+    private static let log = Logger(subsystem: "com.snappet.app", category: "TestLaunchPrefs")
 
-    /// Saves, keeps or restores the snapshot at `file` for `domains`. Returns what it did.
+    /// The file a restore renames the snapshot to before using it.
+    static func claimedURL(for file: URL) -> URL {
+        file.deletingPathExtension().appendingPathExtension("restoring.plist")
+    }
+
+    /// Where a refused snapshot is kept.
+    static func setAsideURL(for file: URL, now: Date) -> URL {
+        file.deletingPathExtension().appendingPathExtension("set-aside-\(Int(now.timeIntervalSince1970)).plist")
+    }
+
+    /// Saves, keeps or restores the snapshot at `file` for `domains`. `restoreOnly` is the helper's end-of-run
+    /// launch: it restores without the fallback's checks. `settingsModifiedAt` is when the settings files last
+    /// changed on disk. Returns what it did.
     @discardableResult
-    static func run(isTestLaunch: Bool, domains: [Domain], file: URL, now: Date = .now,
-                    fileManager: FileManager = .default) -> Outcome {
-        switch step(isTestLaunch: isTestLaunch, snapshotExists: fileManager.fileExists(atPath: file.path)) {
+    static func run(isTestLaunch: Bool, restoreOnly: Bool = false, domains: [Domain], file: URL, now: Date = .now,
+                    settingsModifiedAt: () -> Date? = { nil }, fileManager: FileManager = .default) -> Outcome {
+        let exists = fileManager.fileExists(atPath: file.path)
+        if restoreOnly { return exists ? restore(domains: domains, file: file, fileManager: fileManager) : .notNeeded }
+        switch step(isTestLaunch: isTestLaunch, snapshotExists: exists) {
         case .none:
             return .notNeeded
-        case .keepSnapshot:
-            return .kept
         case .snapshot:
             var saved: [String: Any] = [:]
             for domain in domains { saved[domain.name] = domain.read() ?? [:] }
-            let plist: [String: Any] = ["version": formatVersion, "savedAt": now, "domains": saved]
-            do {
-                let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
-                try fileManager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try data.write(to: file, options: .atomic)
-                return .saved
-            } catch {
-                return .failed
-            }
+            return write(["version": formatVersion, "savedAt": now, "lastTestLaunchAt": now, "domains": saved],
+                         to: file, fileManager: fileManager) ? .saved : .failed
+        case .keepSnapshot:
+            guard var plist = read(file) else { return .failed }
+            plist["lastTestLaunchAt"] = now
+            return write(plist, to: file, fileManager: fileManager) ? .kept : .failed
         case .restore:
-            guard let data = try? Data(contentsOf: file),
-                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-                  let saved = plist["domains"] as? [String: Any] else {
-                try? fileManager.removeItem(at: file)   // unreadable: nothing to put back, and never retry it
-                return .failed
+            guard let plist = read(file), let last = plist["lastTestLaunchAt"] as? Date else {
+                return setAside(file, now: now, reason: "unreadable", fileManager: fileManager)
             }
-            for domain in domains {
-                // A domain the snapshot does not name is left alone (a newer build may cover more).
-                guard let value = saved[domain.name] as? [String: Any] else { continue }
-                domain.write(value)
+            switch fallback(now: now, lastTestLaunchAt: last, settingsModifiedAt: settingsModifiedAt()) {
+            case .restore: return restore(domains: domains, file: file, fileManager: fileManager)
+            case .tooOld: return setAside(file, now: now, reason: "older than \(Int(maxAge / 3600)) h", fileManager: fileManager)
+            case .changedSince: return setAside(file, now: now, reason: "settings changed after the run", fileManager: fileManager)
             }
-            // Only after every domain is back: a crash in between restores again on the next launch.
-            try? fileManager.removeItem(at: file)
-            return .restored
         }
     }
+
+    private static func restore(domains: [Domain], file: URL, fileManager: FileManager) -> Outcome {
+        // Claim it first: once renamed it can never be restored a second time, whatever fails next.
+        let claimed = claimedURL(for: file)
+        try? fileManager.removeItem(at: claimed)
+        do { try fileManager.moveItem(at: file, to: claimed) } catch {
+            log.error("snapshot could not be claimed: \(error.localizedDescription, privacy: .public)")
+            return .failed
+        }
+        guard let plist = read(claimed), let saved = plist["domains"] as? [String: Any] else {
+            log.error("claimed snapshot is unreadable; left at \(claimed.path, privacy: .public)")
+            return .failed
+        }
+        for domain in domains {
+            // A domain the snapshot does not name is left alone (a newer build may cover more).
+            guard let value = saved[domain.name] as? [String: Any] else { continue }
+            domain.write(value)
+        }
+        do { try fileManager.removeItem(at: claimed) } catch {
+            log.error("restored, but the used snapshot was not deleted: \(error.localizedDescription, privacy: .public)")
+            return .restoredNotDeleted
+        }
+        return .restored
+    }
+
+    private static func setAside(_ file: URL, now: Date, reason: String, fileManager: FileManager) -> Outcome {
+        let target = setAsideURL(for: file, now: now)
+        do { try fileManager.moveItem(at: file, to: target) } catch {
+            log.error("snapshot (\(reason, privacy: .public)) could not be set aside: \(error.localizedDescription, privacy: .public)")
+            return .failed
+        }
+        log.notice("snapshot not restored (\(reason, privacy: .public)); kept at \(target.path, privacy: .public)")
+        return .setAside
+    }
+
+    private static func read(_ file: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+    }
+
+    private static func write(_ plist: [String: Any], to file: URL, fileManager: FileManager) -> Bool {
+        do {
+            let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
+            try fileManager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+            return true
+        } catch {
+            log.error("snapshot not written: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    // MARK: - The app's own files
 
     /// Library/SnappetTestLaunch/settings-snapshot.plist — not tmp (iOS may purge it), not Preferences.
     static var snapshotURL: URL {
@@ -114,15 +216,38 @@ enum TestLaunchPrefs {
         return domains
     }
 
+    /// When the settings files on disk last changed (the app's and the App Group's), for the fallback's check.
+    static func realSettingsModifiedAt() -> Date? {
+        var files: [URL] = []
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        if let id = Bundle.main.bundleIdentifier {
+            files.append(library.appendingPathComponent("Preferences/\(id).plist"))
+        }
+        if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: WidgetSnapshotStore.appGroupID) {
+            files.append(group.appendingPathComponent("Library/Preferences/\(WidgetSnapshotStore.appGroupID).plist"))
+        }
+        return files.compactMap {
+            (try? FileManager.default.attributesOfItem(atPath: $0.path))?[.modificationDate] as? Date
+        }.max()
+    }
+
     /// What this launch did; set once, first thing in `SnappetApp.init`.
     nonisolated(unsafe) private(set) static var launchOutcome: Outcome = .notNeeded
+
+    /// Whether this launch may clear or seed settings (`mayTouchSettings` for this launch).
+    static var mayTouchSettingsNow: Bool {
+        mayTouchSettings(isTestLaunch: UITestStore.onTestLaunch, outcome: launchOutcome)
+    }
+
+    static func isRestoreOnly(_ arguments: [String]) -> Bool { arguments.contains(restoreArgument) }
 
     /// The launch hook. Must run before any other code reads a setting. Off on the simulator.
     static func atLaunch(arguments: [String]) {
         #if targetEnvironment(simulator)
         launchOutcome = UITestStore.isTestLaunch(arguments) ? .offOnSimulator : .notNeeded
         #else
-        launchOutcome = run(isTestLaunch: UITestStore.isTestLaunch(arguments), domains: realDomains, file: snapshotURL)
+        launchOutcome = run(isTestLaunch: UITestStore.isTestLaunch(arguments), restoreOnly: isRestoreOnly(arguments),
+                            domains: realDomains, file: snapshotURL, settingsModifiedAt: realSettingsModifiedAt)
         #endif
     }
 }

@@ -42,9 +42,11 @@ enum UITestStore {
     /// The fallback-banner test (`-uiTestCorruptStore`): an in-memory store too, flagged as a fallback.
     static let corruptStoreArgument = "-uiTestCorruptStore"
 
-    /// Every launch argument that puts the app on an in-memory test store: the fresh-store list plus the
-    /// corrupt-store simulation. A launch with any of these is a TEST LAUNCH (prompt 320).
-    static let testLaunchArguments: [String] = freshStoreArguments + [corruptStoreArgument]
+    /// Every launch argument that puts the app on an in-memory test store: the fresh-store list, the
+    /// corrupt-store simulation, and the UI-test helper's restore-only launch (it shows no app at all).
+    /// A launch with any of these is a TEST LAUNCH (prompt 320).
+    static let testLaunchArguments: [String] =
+        freshStoreArguments + [corruptStoreArgument, TestLaunchPrefs.restoreArgument]
 
     /// True when `arguments` ask for the in-memory test store. Pure: pass `ProcessInfo.processInfo.arguments`.
     static func isFreshStore(_ arguments: [String]) -> Bool {
