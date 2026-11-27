@@ -173,6 +173,25 @@ videos in the simulator's library (three per run).
   drops `AssetBox`: `PHAsset` is `Sendable` (`NS_SWIFT_SENDABLE` in the SDK), so the comment
   "PHAsset is not Sendable" was wrong.
 
+### Follow-up runs (a new simulator of its own, iPhone 17 Pro, iOS 26.5)
+
+- Binary check (device build): no `requestImage` handler has an isolation check any more. The
+  checks still in `ClipMediaSurface.load`, `RacketVideoLibrary.poster` and `AssetPosterLoader.poster`
+  are synchronous closures that run in place on the main thread (`Optional.map`, a `CMTime`
+  helper, a closure that dispatches to a global queue).
+- The CI sequence, from a fresh simulator: isolation tests with `SNAPPET_REQUIRE_PHOTOS=1` before
+  the grant: 2 failures ("Full Photos access is not granted…"), as intended. The grant test with
+  `SNAPPET_GRANT_PHOTOS=1`: tapped "Allow Full Access", passed. Isolation tests again: Executed 2
+  tests, with 0 failures.
+- Full unit suite (no parallel testing): Executed 3784 tests, with 11 tests skipped and 0 failures.
+- UI, on the erased simulator (no Photos access, like CI's UI legs): `ClipsFeedUITests` (15),
+  `RacketPlayerUITests` (8), `RacketVideosUITests` (2), `PreviousClimbSetterPhotosTests`,
+  `LiveWorkoutStudioWalkthroughTests`, `SuiteSmokeTests` passed; `PhotosAccessGrantUITests` skipped.
+  Executed 29 tests, with 1 test skipped and 0 failures.
+- `ci-ui-shard.py --check` and its 28 unit tests pass.
+- Device compile (`generic/platform=iOS`, Debug, fresh derived data): BUILD SUCCEEDED, no
+  warnings in the changed files. The `AssetBox` removal is device-only code and compiled there.
+
 ## Not done
 
 - The deletion block of Replace original is not run by a test (the system dialog). It is built the
