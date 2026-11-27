@@ -45,10 +45,10 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
         var result: [String: StudioAssetStatus] = [:]
         // Not returned by Photos: deleted, or outside what the user lets Snappet see.
         for id in ids where found[id] == nil { result[id] = .missing }
-        let probes = found.map { (id: $0.key, asset: AssetBox($0.value)) }
+        let probes = found.map { (id: $0.key, asset: $0.value) }
         await withTaskGroup(of: (String, StudioAssetStatus).self) { group in
             for probe in probes {
-                group.addTask { (probe.id, await Self.localStatus(of: probe.asset.value)) }
+                group.addTask { (probe.id, await Self.localStatus(of: probe.asset)) }
             }
             for await (id, status) in group { result[id] = status }
         }
@@ -92,12 +92,6 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
 
     // MARK: Private
 
-    /// `PHAsset` is not `Sendable`; it is only read on the task that receives it.
-    private struct AssetBox: @unchecked Sendable {
-        let value: PHAsset
-        init(_ value: PHAsset) { self.value = value }
-    }
-
     #if !targetEnvironment(simulator)
     /// Ask for the video with the network OFF. An asset comes back → it is on this phone. Nothing
     /// comes back and Photos says it is in iCloud → it needs a download. Nothing comes back for
@@ -105,7 +99,6 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
     /// this check existed (a wrong "missing" would block export of a good clip).
     private static func localStatus(of asset: PHAsset) async -> StudioAssetStatus {
         guard asset.mediaType == .video else { return .available }
-        let box = AssetBox(asset)
         // Photos may never call back; after the limit the clip counts as available (prompt 303).
         let answer = await StudioFirstAnswer.wait(
             seconds: StudioAvailabilityProbe.timeoutSec,
@@ -113,7 +106,7 @@ struct StudioMediaAvailabilityService: StudioMediaAvailabilityChecking {
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = false
             options.deliveryMode = .highQualityFormat
-            let id = PHImageManager.default().requestAVAsset(forVideo: box.value, options: options) { avAsset, _, info in
+            let id = PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
                 let inCloud = (info?[PHImageResultIsInCloudKey] as? Bool) ?? false
                 answer(avAsset != nil ? .onPhone : (inCloud ? .inCloud : .noReason))
             }

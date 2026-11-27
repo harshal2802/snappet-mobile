@@ -1,6 +1,7 @@
 import SwiftUI
 import AppIntents
 import SwiftData
+import Photos
 
 @main
 struct SnappetApp: App {
@@ -109,6 +110,14 @@ struct SnappetApp: App {
                 defaults.set(true, forKey: "festival.gettingStartedDismissed")
             }
         }
+        #if DEBUG
+        // `-uiTestRequestPhotosAccess` (prompt 322 follow-up): ask for Photos access at launch, so
+        // `PhotosAccessGrantUITests` can answer the system dialog once ("Allow Full Access") and CI can then
+        // run the Photos isolation unit tests with access. Test-only; a normal launch never asks here.
+        if args.contains("-uiTestRequestPhotosAccess") {
+            Task { _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite) }
+        }
+        #endif
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a
         // synthetic fixture so the Kilter UI tests have data to browse. No-ops on a normal launch.

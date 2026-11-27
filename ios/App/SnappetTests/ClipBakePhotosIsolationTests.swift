@@ -14,8 +14,11 @@ import Photos
 /// simulator and are skipped without it; they never ask (an unanswered system dialog would stay
 /// up and block the UI tests that run next). On the iOS 26.5 simulator `simctl privacy … grant
 /// photos` is stored but not honoured, so access is given once by answering the app's Photos
-/// dialog with "Allow Full Access"; it then lasts for that simulator. Parallel testing runs on
-/// clones that do not carry the grant (skipped there): run with `-parallel-testing-enabled NO`.
+/// dialog with "Allow Full Access"; it then lasts for that simulator (`PhotosAccessGrantUITests`
+/// does that tap). Parallel testing runs on clones that do not carry the grant (skipped there):
+/// run with `-parallel-testing-enabled NO`. CI does exactly this in the SnappetTests leg, with
+/// `SNAPPET_REQUIRE_PHOTOS=1`, which turns the skip into a failure so a lost grant cannot pass
+/// silently.
 ///
 /// The test videos are NOT deleted afterwards: Photos asks the user before an app deletes
 /// anything, and that dialog would also stay up. They are tiny grey videos in the simulator's
@@ -26,9 +29,15 @@ final class ClipBakePhotosIsolationTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        try XCTSkipUnless(status == .authorized,
-                          "Full Photos access is not granted to the app on this simulator (status \(status.rawValue)): "
-                          + "open the app's Photos prompt once and answer \"Allow Full Access\"")
+        guard status != .authorized else { return }
+        let why = "Full Photos access is not granted to the app on this simulator (status \(status.rawValue)): "
+            + "run PhotosAccessGrantUITests with SNAPPET_GRANT_PHOTOS=1, or answer the app's Photos prompt "
+            + "with \"Allow Full Access\""
+        if ProcessInfo.processInfo.environment["SNAPPET_REQUIRE_PHOTOS"] == "1" {
+            XCTFail(why)   // CI's Photos step: these tests must run, not skip
+            throw XCTSkip(why)
+        }
+        throw XCTSkip(why)
     }
 
     /// The revertible bake: the rendered video becomes the asset's edited rendition.

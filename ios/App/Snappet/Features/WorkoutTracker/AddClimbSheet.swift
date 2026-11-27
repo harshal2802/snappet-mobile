@@ -853,16 +853,8 @@ private struct ClimbPhotoThumb: View {
     private func load() async {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = assets.firstObject else { return }
-        let target = CGSize(width: side * 3, height: side * 3)
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = false   // on-device only
-        let loaded: UIImage? = await withCheckedContinuation { cont in
-            PHImageManager.default().requestImage(for: asset, targetSize: target,
-                                                  contentMode: .aspectFill, options: options) { img, _ in
-                cont.resume(returning: img)
-            }
-        }
+        let loaded = await PhotosImageRequest.image(for: asset, targetSize: CGSize(width: side * 3, height: side * 3),
+                                                    contentMode: .aspectFill, network: false)   // on-device only
         if let loaded { image = loaded }
     }
 }

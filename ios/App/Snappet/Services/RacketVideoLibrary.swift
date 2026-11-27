@@ -179,17 +179,9 @@ final class RacketVideoLibrary {
             return Self.turned(UIImage(cgImage: image), turns: turns)
         }
         guard let ph = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
-        let boxed: Box<UIImage?> = await withCheckedContinuation { cont in
-            let opts = PHImageRequestOptions()
-            opts.isNetworkAccessAllowed = false
-            opts.deliveryMode = .highQualityFormat
-            opts.isSynchronous = false
-            PHImageManager.default().requestImage(for: ph, targetSize: CGSize(width: 1080, height: 1080),
-                                                  contentMode: .aspectFit, options: opts) { image, _ in
-                cont.resume(returning: Box(value: image))
-            }
-        }
-        return boxed.value.map { Self.turned($0, turns: turns) }
+        let image = await PhotosImageRequest.image(for: ph, targetSize: CGSize(width: 1080, height: 1080),
+                                                   contentMode: .aspectFit, network: false)
+        return image.map { Self.turned($0, turns: turns) }
     }
 
     /// A still turned `turns` quarter turns clockwise, redrawn (so the pixels, not just an orientation tag, are turned).

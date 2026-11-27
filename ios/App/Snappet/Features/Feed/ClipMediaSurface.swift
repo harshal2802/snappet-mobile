@@ -377,23 +377,14 @@ struct ClipMediaSurface: View {
             image = loaded
             state = .ready
         } else if let asset {
-            let target = CGSize(width: 1080, height: 1920)
-            let opts = PHImageRequestOptions()
-            opts.deliveryMode = .highQualityFormat
-            opts.isNetworkAccessAllowed = true
-            let loaded: UIImage? = await withCheckedContinuation { cont in
-                PHImageManager.default().requestImage(for: asset, targetSize: target,
-                                                      contentMode: .aspectFit, options: opts) { img, _ in
-                    cont.resume(returning: img)
-                }
-            }
+            let loaded = await PhotosImageRequest.image(for: asset, targetSize: CGSize(width: 1080, height: 1920),
+                                                        contentMode: .aspectFit, network: true)
             guard let loaded else { state = .failed; return }
             image = loaded
             state = .ready
         }
     }
 
-    /// Wraps a non-Sendable value so it can cross an async continuation boundary (produced + consumed once).
     /// The clip's player item from Photos. `nonisolated` (prompt 322): Photos calls the result handler "on an
     /// arbitrary queue", and a handler written in this view's main-actor `load()` would be a main-actor closure
     /// that Swift 6 stops the app for when it runs off the main thread.
@@ -409,6 +400,7 @@ struct ClipMediaSurface: View {
         }
     }
 
+    /// Wraps a non-Sendable value so it can cross an async continuation boundary (produced + consumed once).
     private struct Box<T>: @unchecked Sendable {
         let value: T
         init(_ value: T) { self.value = value }
