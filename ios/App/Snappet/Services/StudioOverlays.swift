@@ -807,22 +807,53 @@ enum StudioOverlays {
         return v.isEmpty ? 0 : v.reduce(0, +) / Double(v.count)
     }
 
-    /// A sticker overlay: an SF Symbol image (`content` = symbol name) tinted by `colorHex`, sized by
-    /// scale, positioned + rotated. Falls back to a filled circle if the symbol can't be resolved.
+    /// A sticker overlay: an SF Symbol (`content` = symbol name) in `colorHex`, sized by scale,
+    /// positioned + rotated. The layer is handed a bitmap of the TINTED symbol drawn here
+    /// (`stickerImage`), at the symbol's own size and aspect, centred on the overlay's position —
+    /// what the SwiftUI preview draws (`Image(systemName:)` at the same point size).
+    ///
+    /// Prompt 308: it used to be handed `UIImage(systemName:).withTintColor(…).cgImage`. A symbol
+    /// image's `.cgImage` is not the tinted picture (the tint is applied only when UIKit draws the
+    /// image), and the export burned each sticker in as a solid black box on a phone.
     private static func stickerLayer(for overlay: OverlayItem, canvas: CGSize) -> CALayer {
         let side = max(24, canvas.height * 0.12 * overlay.scale)
         let layer = CALayer()
-        let config = UIImage.SymbolConfiguration(pointSize: side, weight: .semibold)
-        let image = UIImage(systemName: overlay.content, withConfiguration: config)?
-            .withTintColor(uiColor(overlay.colorHex), renderingMode: .alwaysOriginal)
-        layer.contents = image?.cgImage
-        layer.contentsGravity = .resizeAspect
         let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
-        layer.frame = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+        var size = CGSize(width: side, height: side)
+        if let sticker = stickerImage(symbol: overlay.content, colorHex: overlay.colorHex, pointSize: side) {
+            layer.contents = sticker.cgImage
+            layer.contentsScale = sticker.scale
+            size = sticker.size
+        }
+        layer.contentsGravity = .resizeAspect
+        layer.frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                             width: size.width, height: size.height)
         if abs(overlay.rotationDegrees) > 0.01 {
             layer.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
         }
         return layer
+    }
+
+    /// The pixels a sticker layer shows: the symbol (or a filled circle when the name is unknown)
+    /// drawn by UIKit in `colorHex` into an 8-bit sRGB bitmap with a transparent background, at
+    /// `scale` pixels per canvas point. `size` is the symbol's own size in canvas points.
+    static func stickerImage(symbol: String, colorHex: String, pointSize: CGFloat,
+                             scale: CGFloat = 2) -> (cgImage: CGImage, size: CGSize, scale: CGFloat)? {
+        let config = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        guard let base = UIImage(systemName: symbol, withConfiguration: config)
+                ?? UIImage(systemName: "circle.fill", withConfiguration: config) else { return nil }
+        let tinted = base.withTintColor(uiColor(colorHex), renderingMode: .alwaysOriginal)
+        let size = CGSize(width: ceil(base.size.width), height: ceil(base.size.height))
+        guard size.width > 0, size.height > 0 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+        format.preferredRange = .standard          // 8-bit sRGB, like the text layers' colours
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            tinted.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return (cgImage, size, scale)
     }
 
     /// A **styled text / climb-name** overlay: an `NSAttributedString` `CATextLayer` (font preset +

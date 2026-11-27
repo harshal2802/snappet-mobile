@@ -13632,3 +13632,19 @@ the plan's length. The exporter's renderable rule (a photo, or a video longer th
 predicate, `ReelHeartRate.isRenderable`, and a placement carries its segment's index in the plan,
 so a 0.05 s sliver before a 2 s segment of the same clip, or a failed first of two segments of one
 clip, cannot shift the readings.
+
+## 2026-11-26 — A sticker layer gets a bitmap we draw, never a symbol image's `.cgImage` (prompt 308)
+
+The phone's overlay reference showed every Studio sticker burned in as a solid black box. The
+layer was given `UIImage(systemName:).withTintColor(_, renderingMode: .alwaysOriginal).cgImage`:
+a symbol's `.cgImage` is the untinted template raster (measured: mean opaque colour 0, 0, 0), and
+in the export even its transparent pixels came out black. `StudioOverlays.stickerImage` now draws
+the tinted symbol with `UIGraphicsImageRenderer` (`opaque = false`, `preferredRange = .standard`,
+scale 2, the same as the text layers' `contentsScale`) and the layer is sized to the symbol's own
+size and aspect, as the SwiftUI preview draws it, instead of a square with `resizeAspect`. An
+unknown symbol name draws `circle.fill` (the old comment promised it; the old code drew nothing).
+Rule: any image given to a Core Animation export layer is a bitmap the app drew itself. The
+simulator reproduces the bug and the fix (a bitmap is not a glyph), so `StudioStickerExportTests`
+checks the exported frame's pixels; no golden scene was added (a pixel test says exactly what is
+wrong, and the golden tolerance is for whole frames). The phone's `ref-sticker-f010.png`
+reference (prompt 307) shows the bug and must be captured again with this build.
