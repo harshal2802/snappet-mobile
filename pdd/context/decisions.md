@@ -13651,3 +13651,24 @@ simulator reproduces the bug and the fix (a bitmap is not a glyph), so `StudioSt
 checks the exported frame's pixels; no golden scene was added (a pixel test says exactly what is
 wrong, and the golden tolerance is for whole frames). The phone's `ref-sticker-f010.png`
 reference (prompt 307) shows the bug and must be captured again with this build.
+
+## 2026-11-26 — The overlay reference is committed as captured, with the sticker frame marked wrong (prompt 307)
+
+The phone capture of 2026-11-26 (iPhone 13 Pro Max, iOS 27.2.1, `studio-v2` at `25a7d0c8`) is
+committed unchanged in `ios/App/SnappetTests/GoldenFrames/OverlayReference/`: 11 frames and
+`manifest.json` (the twelfth file; prompt 304 always wrote 12). Text, the climb tag and the
+heart-rate tile are right. Both stickers were burned as solid black boxes, a bug in the export that
+users' videos share. The frame is kept, because it is the true record of the old export, and listed
+in `StudioOverlayReference.knownWrongFrames` so a comparison skips it; prompt 308 fixes the export
+and a new capture replaces it. Not done: holding the commit until the fix, because the other ten
+frames are what prompts 310 and 311 need and they are correct now. The reference lives under
+`GoldenFrames` (already out of the test bundle and out of the Debug app's copy), so `project.yml`
+does not change.
+
+## 2026-11-26 — The tile's handover frame is left wrong in the old export (prompt 307)
+
+The overlay reference showed both heart-rate tiles on the dissolve's handover frame (0.7 s): each
+tile's window includes its end and the next one's start, so at exactly that instant both are fully
+drawn. One frame at most in a real export (a darker glass, two chart markers). Not fixed in the
+Core Animation path, because prompt 311 replaces it; 311's acceptance includes exactly one tile on
+the handover frame. The frame is listed in `StudioOverlayReference.knownWrongFrames`.

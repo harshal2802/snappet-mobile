@@ -117,8 +117,8 @@ final class StudioSelfCheckPlanTests: XCTestCase {
     func testPlaceholdersNameThePromptThatFillsThemIn() {
         let pending = StudioGoldenScene.all.filter(\.isPending)
         XCTAssertEqual(pending.map(\.id), ["text", "stickers", "climb-tags", "hr-tile", "hr-tile-transition", "photo-clip"])
-        XCTAssertEqual(pending.first { $0.id == "text" }?.pendingReason, "drawn by the compositor from prompt 305")
-        XCTAssertEqual(pending.first { $0.id == "hr-tile" }?.pendingReason, "drawn by the compositor from prompt 306")
+        XCTAssertEqual(pending.first { $0.id == "text" }?.pendingReason, "drawn by the compositor from prompt 310")
+        XCTAssertEqual(pending.first { $0.id == "hr-tile" }?.pendingReason, "drawn by the compositor from prompt 311")
         for scene in pending { XCTAssertTrue(scene.frames.isEmpty && scene.clips.isEmpty) }
     }
 
@@ -211,7 +211,7 @@ final class StudioSelfCheckPlanTests: XCTestCase {
         let failed = StudioSelfCheck.SceneResult(id: "b", title: "B", status: .failed("x"))
         let skipped = StudioSelfCheck.skipped(StudioGoldenScene(id: "text", title: "Text",
                                                                pendingReason: StudioGoldenScene.pendingOverlays))
-        XCTAssertEqual(skipped.status, .skipped("drawn by the compositor from prompt 305"))
+        XCTAssertEqual(skipped.status, .skipped("drawn by the compositor from prompt 310"))
         XCTAssertEqual(StudioSelfCheck.summary([passed, passed, skipped]),
                        .init(passed: 2, failed: 0, skipped: 1))
         XCTAssertTrue(StudioSelfCheck.summary([passed, skipped]).allPassed)
@@ -345,7 +345,7 @@ final class StudioSelfCheckPlanTests: XCTestCase {
         XCTAssertTrue(lines.contains("pass     cut — 2 frames, 0.50 s"), report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("FAIL     pip — frame 3 (preview): FAIL — 1024 of 1024 pixels differ") }, report)
         XCTAssertTrue(lines.contains { $0.hasPrefix("         frame 3 (preview): FAIL") }, report)
-        XCTAssertTrue(lines.contains("skipped  text — drawn by the compositor from prompt 305"), report)
+        XCTAssertTrue(lines.contains("skipped  text — drawn by the compositor from prompt 310"), report)
         XCTAssertTrue(lines.contains("Timed export"), report)
         XCTAssertEqual(lines.last, "File 30.0 MB")
 

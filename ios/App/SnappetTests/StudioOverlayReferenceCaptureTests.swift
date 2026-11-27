@@ -47,4 +47,49 @@ final class StudioOverlayReferenceCaptureTests: XCTestCase {
                                                  tolerance: StudioSelfCheck.tolerance(for: .export, on: .simulator))
         print("StudioOverlayReferenceCaptureTests: plain text over the clip, against the bare clip: \(result.summary)")
     }
+
+    // MARK: The committed reference (prompt 307)
+
+    /// `SnappetTests/GoldenFrames/OverlayReference`, found from this file's own path. The
+    /// `GoldenFrames` folder is left out of the test bundle, so these are read from the repo.
+    static let committedDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("GoldenFrames/OverlayReference", isDirectory: true)
+
+    /// The committed reference is one whole phone capture: exactly the files a capture writes
+    /// (and a README), a manifest from a device made by today's renderer, every frame a 540×960
+    /// PNG named in the manifest.
+    func testTheCommittedReferenceIsAWholePhoneCapture() throws {
+        // Hidden files (a Finder .DS_Store) are not part of the capture.
+        let present = Set(try FileManager.default.contentsOfDirectory(atPath: Self.committedDirectory.path)
+            .filter { !$0.hasPrefix(".") })
+        XCTAssertEqual(present.subtracting(["README.md"]), Set(StudioOverlayReference.fileNames))
+        XCTAssertTrue(present.contains("README.md"), "the README says what the files are")
+
+        let manifest = try JSONDecoder().decode(
+            StudioOverlayReference.Manifest.self,
+            from: Data(contentsOf: Self.committedDirectory.appendingPathComponent(StudioOverlayReference.manifestName)))
+        XCTAssertEqual(manifest.machine, StudioSelfCheck.Machine.device.rawValue, "a simulator capture is not a reference")
+        // Frozen: what the old export wrote. Not today's `renderer` / `note(for:)`, which describe the
+        // pipeline of the build that runs and will change when the compositor draws the overlays.
+        XCTAssertEqual(manifest.renderer, "AVVideoCompositionCoreAnimationTool (before prompt 305)")
+        XCTAssertTrue(manifest.note.hasPrefix("Rendered on a phone"), manifest.note)
+        XCTAssertEqual(manifest.frames.map(\.file), Array(StudioOverlayReference.fileNames.dropLast()))
+        for entry in manifest.frames {
+            let url = Self.committedDirectory.appendingPathComponent(entry.file)
+            let image = try XCTUnwrap(StudioGoldenRenderer.image(pngData: Data(contentsOf: url)), entry.file)
+            XCTAssertEqual(image.width, 540, entry.file)
+            XCTAssertEqual(image.height, 960, entry.file)
+            XCTAssertEqual(entry.width, 540, entry.file)
+            XCTAssertEqual(entry.height, 960, entry.file)
+        }
+    }
+
+    /// Every frame marked wrong is one the reference holds, and the README names it.
+    func testKnownWrongFramesAreInTheReferenceAndNamedInTheReadme() throws {
+        XCTAssertTrue(StudioOverlayReference.knownWrongFrames.isSubset(of: Set(StudioOverlayReference.fileNames)))
+        let readme = try String(contentsOf: Self.committedDirectory.appendingPathComponent("README.md"), encoding: .utf8)
+        for file in StudioOverlayReference.knownWrongFrames {
+            XCTAssertTrue(readme.contains(file), "README.md should explain why \(file) is wrong")
+        }
+    }
 }
