@@ -13767,3 +13767,18 @@ writes the feedback log, reel exports and the guide photo pack under `tmp/uitest
 and never reads the person's copies. A file is left on the real path only when a test can at most read it
 or add to it without effect (caches keyed by the person's asset ids, the Kilter generator's downloads,
 imported Studio music); the prompt's file table lists each one.
+
+## 2026-11-27 — A closure a framework calls off the main thread is built outside the main actor (prompt 322)
+
+"Save to original" and "Replace original" quit the app on a phone. The cause: the main-actor
+`ClipBakeService` wrote its `PHPhotoLibrary.performChanges` blocks inline. The SDK types them as
+plain `dispatch_block_t`, so Swift 6 made them main-actor closures with a run-time check, and Photos
+runs them on its own queue. This has been on `main` since prompt 117. Rule: when an Apple API takes
+a block that is not `@Sendable` and may call it off the main thread (Photos change blocks and
+`requestPlayerItem` / `requestAVAsset`, `AVCaptureDevice.requestAccess`, `WCSession.sendMessage`
+handlers), the block is written in a `nonisolated` function or as an explicit `@Sendable` closure,
+or the `async` form of the API is used. Never inline in a `@MainActor` type or a SwiftUI view.
+`ClipBakeService.PhotosChange` builds the bake's blocks this way. Swift 6 checking stays on; it is
+what found the bug. Audit method, kept for next time: list the functions in the built dylib that
+call `swift_task_isCurrentExecutor` (`otool -tV` + `swift-demangle`) and check each one that a
+framework calls back.

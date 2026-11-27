@@ -285,16 +285,7 @@ struct ClipMediaSurface: View {
             } else if let vaultStream {
                 playerItem = AVPlayerItem(asset: vaultStream)
             } else if let asset {
-                let opts = PHVideoRequestOptions()
-                opts.isNetworkAccessAllowed = true            // allow iCloud-stored clips to download
-                opts.deliveryMode = .automatic
-                // AVPlayerItem isn't Sendable → box it to cross the continuation boundary (mirrors ReelExporter).
-                let boxed: Box<AVPlayerItem?> = await withCheckedContinuation { cont in
-                    PHImageManager.default().requestPlayerItem(forVideo: asset, options: opts) { pItem, _ in
-                        cont.resume(returning: Box(pItem))
-                    }
-                }
-                guard let item = boxed.value else { state = .failed; return }
+                guard let item = await Self.playerItem(for: asset).value else { state = .failed; return }
                 playerItem = item
             } else {
                 state = .failed
@@ -403,6 +394,21 @@ struct ClipMediaSurface: View {
     }
 
     /// Wraps a non-Sendable value so it can cross an async continuation boundary (produced + consumed once).
+    /// The clip's player item from Photos. `nonisolated` (prompt 322): Photos calls the result handler "on an
+    /// arbitrary queue", and a handler written in this view's main-actor `load()` would be a main-actor closure
+    /// that Swift 6 stops the app for when it runs off the main thread.
+    /// AVPlayerItem isn't Sendable → boxed to cross the continuation boundary (mirrors ReelExporter).
+    nonisolated private static func playerItem(for asset: PHAsset) async -> Box<AVPlayerItem?> {
+        await withCheckedContinuation { cont in
+            let opts = PHVideoRequestOptions()
+            opts.isNetworkAccessAllowed = true            // allow iCloud-stored clips to download
+            opts.deliveryMode = .automatic
+            PHImageManager.default().requestPlayerItem(forVideo: asset, options: opts) { pItem, _ in
+                cont.resume(returning: Box(pItem))
+            }
+        }
+    }
+
     private struct Box<T>: @unchecked Sendable {
         let value: T
         init(_ value: T) { self.value = value }

@@ -151,7 +151,9 @@ final class RacketWatchRelay {
         guard WatchSendGate.allowed, isAvailable else { return }   // a UI test never drives the real Watch
         let session = WCSession.default
         if session.isReachable {
-            session.sendMessage(message.payload, replyHandler: nil) { _ in
+            // `@Sendable` (prompt 322): WatchConnectivity runs the error handler on a background queue; a
+            // plain closure here would be a main-actor closure that Swift 6 stops the app for there.
+            session.sendMessage(message.payload, replyHandler: nil) { @Sendable _ in
                 // Delivery failed (the Watch app went to sleep): queue it instead.
                 WCSession.default.transferUserInfo(message.payload)
             }

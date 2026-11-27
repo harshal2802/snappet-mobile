@@ -58,8 +58,11 @@ struct SnappetScannerView<Value>: View {
             Text("Snappet uses the camera to scan a QR code. Nothing leaves your device.")
         } actions: {
             Button("Allow camera") {
-                AVCaptureDevice.requestAccess(for: .video) { granted in
-                    Task { @MainActor in status = granted ? .authorized : .denied }
+                // The async form (prompt 322): the completion-handler form calls back "on an arbitrary dispatch
+                // queue", and a handler written in this main-actor button action would stop the app there (Swift 6).
+                Task {
+                    let granted = await AVCaptureDevice.requestAccess(for: .video)
+                    status = granted ? .authorized : .denied
                 }
             }
             .buttonStyle(.borderedProminent)
