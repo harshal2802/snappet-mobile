@@ -830,9 +830,19 @@ enum StudioOverlays {
         layer.frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
                              width: size.width, height: size.height)
         if abs(overlay.rotationDegrees) > 0.01 {
-            layer.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
+            layer.transform = overlayRotation(degrees: overlay.rotationDegrees)
         }
         return layer
+    }
+
+    /// The turn of an overlay layer (sticker, text, climb tag) in the export. `rotationDegrees` is
+    /// the preview's angle: SwiftUI's `.rotationEffect`, positive = clockwise on screen. This layer
+    /// tree has its origin at the bottom left (y up), where a positive angle turns counter-clockwise,
+    /// so the export turns by the negative angle (prompt 321: it used the angle as it was, and every
+    /// turned overlay was turned the other way in the file). Picture-in-picture is turned by the
+    /// compositor in a top-left space and already matched the preview.
+    static func overlayRotation(degrees: Double) -> CATransform3D {
+        CATransform3DMakeRotation(-CGFloat(degrees) * .pi / 180, 0, 0, 1)
     }
 
     /// The pixels a sticker layer shows: the symbol drawn by UIKit in `colorHex`, at its own size,
@@ -911,7 +921,7 @@ enum StudioOverlays {
         container.addSublayer(text)
 
         if abs(overlay.rotationDegrees) > 0.01 {
-            container.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
+            container.transform = overlayRotation(degrees: overlay.rotationDegrees)
         }
         return container
     }

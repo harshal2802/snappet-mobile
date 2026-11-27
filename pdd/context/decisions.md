@@ -13672,3 +13672,16 @@ tile's window includes its end and the next one's start, so at exactly that inst
 drawn. One frame at most in a real export (a darker glass, two chart markers). Not fixed in the
 Core Animation path, because prompt 311 replaces it; 311's acceptance includes exactly one tile on
 the handover frame. The frame is listed in `StudioOverlayReference.knownWrongFrames`.
+
+## 2026-11-26 — `rotationDegrees` is the preview's angle; the export turns by its negative (prompt 321)
+
+An overlay's `rotationDegrees` means what SwiftUI's `.rotationEffect` means: positive = clockwise
+on screen. The export's Core Animation layer tree is y up, where `CATransform3DMakeRotation` with
+a positive angle turns counter-clockwise, and `StudioOverlays` used the angle as it was, so every
+turned sticker, text line and climb tag was turned the other way in the file (the phone's
+`ref-text-f015.png`: "Second go" at +10° rose to the right; the editor has it falling). One helper,
+`StudioOverlays.overlayRotation(degrees:)`, turns by the negative angle and is used by both layer
+kinds. Picture-in-picture is turned by the compositor in a top-left (y-down) space and already
+matched; nothing else in an export turns. The stored value did not change meaning, so projects are
+not migrated: they now export the way the editor always showed them. Prompt 307's text and sticker
+reference frames show the old direction and are to be captured again.
