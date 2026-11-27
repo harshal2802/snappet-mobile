@@ -103,7 +103,9 @@ AREAS = {
     "studio": {   # the Studio's render path; its golden frames are unit tests, these are the screens (prompt 304)
         "paths": [f"{WT}/Studio*", f"{APP}/Services/Studio*", f"{APP}/Features/Settings/StudioSelfCheck*",
                   "ios/App/SnappetTests/GoldenFrames/*"],
-        "classes": ["StudioSelfCheckUITests", "StudioHRTimingUITests", "LiveWorkoutStudioWalkthroughTests"],
+        # PhotosAccessGrantUITests skips itself here; CI runs it for real in the SnappetTests leg (prompt 322).
+        "classes": ["StudioSelfCheckUITests", "StudioHRTimingUITests", "LiveWorkoutStudioWalkthroughTests",
+                    "PhotosAccessGrantUITests"],
     },
     "kilter": {
         "paths": [f"{APP}/Features/Kilter/*", f"{APP}/Services/Kilter*", "ios/App/Shared/Kilter*"],

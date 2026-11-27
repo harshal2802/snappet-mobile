@@ -13700,3 +13700,13 @@ or the `async` form of the API is used. Never inline in a `@MainActor` type or a
 what found the bug. Audit method, kept for next time: list the functions in the built dylib that
 call `swift_task_isCurrentExecutor` (`otool -tV` + `swift-demangle`) and check each one that a
 framework calls back.
+
+Follow-up: `PHImageManager.requestImage` handlers in views and main-actor classes go through the
+`nonisolated` `PhotosImageRequest.image`. The isolation tests (`ClipBakePhotosIsolationTests`) skip
+unless the simulator's app has full Photos access, which on the iOS 26.5 simulator only a tap on the
+system dialog gives (`simctl privacy grant photos` is ignored), and they skip under parallel testing
+(the clones do not carry the grant). So the ordinary unit run on CI does not guard this bug. CI's
+SnappetTests leg therefore has its own step: `PhotosAccessGrantUITests` (with
+`TEST_RUNNER_SNAPPET_GRANT_PHOTOS=1`) taps "Allow Full Access", then the isolation tests run
+serially with `TEST_RUNNER_SNAPPET_REQUIRE_PHOTOS=1`, which makes a missing grant a failure, not a
+skip. Locally, a skip still means "not run".

@@ -303,6 +303,24 @@ jobs:
             -retry-tests-on-failure -test-iterations 3 \
             CODE_SIGNING_ALLOWED=NO
 
+      # The Photos isolation tests (prompt 322): the real "Save to original" / "Replace original" writes against
+      # the simulator's Photos library. The unit run above skips them (no Photos access, and parallel clones do not
+      # carry it). Here: give the app full access by answering the system dialog (the simulator ignores
+      # `simctl privacy grant photos`), then run them serially; SNAPPET_REQUIRE_PHOTOS turns a skip into a failure.
+      - name: Photos isolation tests (SnappetTests leg, serial, with Photos access)
+        if: matrix.suite == 'SnappetTests'
+        working-directory: ios/App
+        run: |
+          set -euo pipefail
+          COMMON=(-scheme "$SCHEME" -destination "id=${{ steps.sim.outputs.udid }}"
+                  -clonedSourcePackagesDirPath "$SPM_CACHE" CODE_SIGNING_ALLOWED=NO)
+          TEST_RUNNER_SNAPPET_GRANT_PHOTOS=1 xcodebuild test "${COMMON[@]}" \
+            -only-testing:SnappetUITests/PhotosAccessGrantUITests \
+            -resultBundlePath "$RUNNER_TEMP/PhotosGrant.xcresult"
+          TEST_RUNNER_SNAPPET_REQUIRE_PHOTOS=1 xcodebuild test "${COMMON[@]}" \
+            -only-testing:SnappetTests/ClipBakePhotosIsolationTests -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/PhotosIsolation.xcresult"
+
       - name: Upload xcresult bundle
         if: always()
         uses: actions/upload-artifact@v4

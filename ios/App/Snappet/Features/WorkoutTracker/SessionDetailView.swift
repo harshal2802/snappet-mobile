@@ -1419,17 +1419,8 @@ struct SessionMediaThumb: View {
         guard image == nil else { return }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [item.localIdentifier], options: nil)
         guard let asset = assets.firstObject else { return }
-        let target = CGSize(width: side * 3, height: side * 3)
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = false   // on-device only
-        let manager = PHImageManager.default()
-        let loaded: UIImage? = await withCheckedContinuation { continuation in
-            manager.requestImage(for: asset, targetSize: target,
-                                 contentMode: .aspectFill, options: options) { img, _ in
-                continuation.resume(returning: img)
-            }
-        }
+        let loaded = await PhotosImageRequest.image(for: asset, targetSize: CGSize(width: side * 3, height: side * 3),
+                                                    contentMode: .aspectFill, network: false)   // on-device only
         if let loaded { image = loaded }
     }
 }

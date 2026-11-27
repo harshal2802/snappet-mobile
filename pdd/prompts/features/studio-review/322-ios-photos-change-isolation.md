@@ -85,7 +85,8 @@ framework calls it off the main thread.
 | `RacketWatchRelay.send` | `WCSession.sendMessage` error handler | **Fixed** (`@Sendable`), same as above |
 | `MediaLibraryService` (save / overwrite / delete) | `performChanges`, `requestContentEditingInput` | Safe. A nonisolated `Sendable` class |
 | `PhotosMediaVaultExporter` (backup / free up space) | `performChanges` ×3, `requestImage`, `PHAssetResourceManager` | Safe. A nonisolated struct |
-| `AssetPosterLoader.poster` / `SessionMediaThumb` / `AddClimbSheet` / `RacketVideoLibrary.poster` / `ClipMediaSurface` photo | `requestImage`, high-quality, not synchronous | Safe. Photos calls it on the main thread |
+| `AssetPosterLoader.poster` | `requestImage`, high-quality, not synchronous | Safe. Photos calls it on the main thread today |
+| `SessionMediaThumb` / `AddClimbSheet` thumb / `RacketVideoLibrary.poster` / `ClipMediaSurface` photo | `requestImage`, high-quality, not synchronous | **Fixed in the follow-up** (all four call the `nonisolated` `PhotosImageRequest.image`). Photos calls it on the main thread today, but the SDK does not promise that |
 | `AssetPosterLoader.extractFrameZero`, `RacketVideoLibrary.request`, `StudioComposer`, `ReelExporter`, `SceneScorer`, `ClipShareService`, `StudioMediaAvailabilityService`, `RacketMotionReader`, `PhotoClipRenderer`, `ClipAspectResolver` | `requestAVAsset`, `generateCGImagesAsynchronously`, `requestImage`, `finishWriting` | Safe. Already `nonisolated`, or in Sendable / nonisolated types (no check in the binary) |
 | `HealthKitService` | `HKObserverQuery`, `HKSampleQuery`, background delivery | Safe. `@unchecked Sendable`, nonisolated |
 | `WorkoutWatchManager` (Watch) | `beginCollection` / `endCollection`, HK delegates | Safe. HealthKit blocks are `@Sendable`, delegates `nonisolated` (no check in the Watch binary) |
@@ -104,6 +105,8 @@ framework calls it off the main thread.
 | `ShareViewController` (share extension) | `loadDataRepresentation` completion | Safe. No check in the extension binary (`@Sendable`) |
 | `WatchConnectivityLink` (Watch) | `WCSessionDelegate`, `sendMessage` | Safe. `@unchecked Sendable`, nonisolated |
 | URLSession | — | Only `async` APIs are used |
+| `RacketPlayerViews` player layer (`currentItem.status`, `isReadyForDisplay`), `StudioEditorViewModel.attachTransport` (`timeControlStatus`, item `status`), `StudioPlayerLayerView.Coordinator` (`isReadyForDisplay`) | KVO `observe(_:options:changeHandler:)` | Safe (added in the follow-up). Foundation types the change handler `@Sendable`, so these closures belong to no actor and have no check; each one only hops to main (`DispatchQueue.main.async` / `Task { @MainActor }`) before touching the view or the model |
+| `BackgroundTaskHold` (`CloudBackupService.swift`) | `beginBackgroundTask` expiration handler | Safe (added in the follow-up). UIKit calls it synchronously on the main thread; the handler uses `MainActor.assumeIsolated` |
 
 There are no `@preconcurrency` conformances in the app, so no delegate witness gets a hidden check.
 
@@ -150,6 +153,44 @@ videos in the simulator's library (three per run).
   Run again alone: Executed 1 test, with 0 failures.
 - Device compile (`generic/platform=iOS`, Debug, fresh derived data): BUILD SUCCEEDED, no
   warnings in the changed files.
+
+## Follow-up (review of #502)
+
+- `requestImage` result handlers formed in main-actor code moved to one `nonisolated` helper,
+  `PhotosImageRequest.image(for:targetSize:contentMode:network:)` (new,
+  `Snappet/Services/PhotosImageRequest.swift`): `ClipMediaSurface` (photo clips),
+  `RacketVideoLibrary.poster`, the `AddClimbSheet` thumb and `SessionDetailView`'s media thumb.
+  Same options as before at each call site (high quality, not synchronous, network on only for
+  `ClipMediaSurface`).
+- The KVO observers and the background-task expiration handler are in the audit table (safe).
+- CI runs the isolation tests. The SnappetTests leg has a new step: `PhotosAccessGrantUITests`
+  launches the app with `-uiTestRequestPhotosAccess` (DEBUG only: the app asks for Photos at
+  launch) and taps "Allow Full Access" on the system dialog; then `ClipBakePhotosIsolationTests`
+  run with `-parallel-testing-enabled NO` and `SNAPPET_REQUIRE_PHOTOS=1`, which turns their skip
+  into a failure. The grant test skips itself unless `SNAPPET_GRANT_PHOTOS=1`, so the ordinary UI
+  legs never change what other tests see. It is in the `studio` area of `ci-ui-shard.py`.
+- Nits: `ClipMediaSurface`'s `Box` doc comment is back on `Box`. `StudioMediaAvailabilityService`
+  drops `AssetBox`: `PHAsset` is `Sendable` (`NS_SWIFT_SENDABLE` in the SDK), so the comment
+  "PHAsset is not Sendable" was wrong.
+
+### Follow-up runs (a new simulator of its own, iPhone 17 Pro, iOS 26.5)
+
+- Binary check (device build): no `requestImage` handler has an isolation check any more. The
+  checks still in `ClipMediaSurface.load`, `RacketVideoLibrary.poster` and `AssetPosterLoader.poster`
+  are synchronous closures that run in place on the main thread (`Optional.map`, a `CMTime`
+  helper, a closure that dispatches to a global queue).
+- The CI sequence, from a fresh simulator: isolation tests with `SNAPPET_REQUIRE_PHOTOS=1` before
+  the grant: 2 failures ("Full Photos access is not granted…"), as intended. The grant test with
+  `SNAPPET_GRANT_PHOTOS=1`: tapped "Allow Full Access", passed. Isolation tests again: Executed 2
+  tests, with 0 failures.
+- Full unit suite (no parallel testing): Executed 3784 tests, with 11 tests skipped and 0 failures.
+- UI, on the erased simulator (no Photos access, like CI's UI legs): `ClipsFeedUITests` (15),
+  `RacketPlayerUITests` (8), `RacketVideosUITests` (2), `PreviousClimbSetterPhotosTests`,
+  `LiveWorkoutStudioWalkthroughTests`, `SuiteSmokeTests` passed; `PhotosAccessGrantUITests` skipped.
+  Executed 29 tests, with 1 test skipped and 0 failures.
+- `ci-ui-shard.py --check` and its 28 unit tests pass.
+- Device compile (`generic/platform=iOS`, Debug, fresh derived data): BUILD SUCCEEDED, no
+  warnings in the changed files. The `AssetBox` removal is device-only code and compiled there.
 
 ## Not done
 
