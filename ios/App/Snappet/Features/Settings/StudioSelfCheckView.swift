@@ -301,7 +301,7 @@ struct StudioSelfCheckView: View {
                 Text("Renders fixed scenes with text, stickers, a climb tag and the heart-rate tile through "
                      + "today's export and saves the frames as PNG files with a manifest. Do this on a phone and "
                      + "commit the files: they are what the compositor's own drawing is compared with from "
-                     + "prompt 305. The simulator draws the boxes but not the letters or symbols, so its "
+                     + "prompt 310. The simulator draws the boxes but not the letters or symbols, so its "
                      + "pictures are not a reference.")
             }
 

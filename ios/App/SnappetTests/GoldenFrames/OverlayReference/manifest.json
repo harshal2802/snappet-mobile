@@ -1,0 +1,109 @@
+{
+  "capturedAt" : "2026-11-26T23:38:50Z",
+  "device" : "iPhone — iPhone14,3, iOS 27.2.1; Snappet 0.1.0 (1), device",
+  "frames" : [
+    {
+      "file" : "ref-text-f005.png",
+      "frame" : 5,
+      "height" : 960,
+      "scene" : "ref-text",
+      "timeSec" : 0.16666666666666666,
+      "title" : "Text",
+      "width" : 540
+    },
+    {
+      "file" : "ref-text-f015.png",
+      "frame" : 15,
+      "height" : 960,
+      "scene" : "ref-text",
+      "timeSec" : 0.5,
+      "title" : "Text",
+      "width" : 540
+    },
+    {
+      "file" : "ref-text-f027.png",
+      "frame" : 27,
+      "height" : 960,
+      "scene" : "ref-text",
+      "timeSec" : 0.9,
+      "title" : "Text",
+      "width" : 540
+    },
+    {
+      "file" : "ref-sticker-f010.png",
+      "frame" : 10,
+      "height" : 960,
+      "scene" : "ref-sticker",
+      "timeSec" : 0.3333333333333333,
+      "title" : "Stickers",
+      "width" : 540
+    },
+    {
+      "file" : "ref-climb-tag-f010.png",
+      "frame" : 10,
+      "height" : 960,
+      "scene" : "ref-climb-tag",
+      "timeSec" : 0.3333333333333333,
+      "title" : "Climb tag",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-f003.png",
+      "frame" : 3,
+      "height" : 960,
+      "scene" : "ref-hr-tile",
+      "timeSec" : 0.1,
+      "title" : "Heart-rate tile",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-f015.png",
+      "frame" : 15,
+      "height" : 960,
+      "scene" : "ref-hr-tile",
+      "timeSec" : 0.5,
+      "title" : "Heart-rate tile",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-f027.png",
+      "frame" : 27,
+      "height" : 960,
+      "scene" : "ref-hr-tile",
+      "timeSec" : 0.9,
+      "title" : "Heart-rate tile",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-transition-f010.png",
+      "frame" : 10,
+      "height" : 960,
+      "scene" : "ref-hr-tile-transition",
+      "timeSec" : 0.3333333333333333,
+      "title" : "Heart-rate tile across a transition",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-transition-f021.png",
+      "frame" : 21,
+      "height" : 960,
+      "scene" : "ref-hr-tile-transition",
+      "timeSec" : 0.7,
+      "title" : "Heart-rate tile across a transition",
+      "width" : 540
+    },
+    {
+      "file" : "ref-hr-tile-transition-f035.png",
+      "frame" : 35,
+      "height" : 960,
+      "scene" : "ref-hr-tile-transition",
+      "timeSec" : 1.1666666666666667,
+      "title" : "Heart-rate tile across a transition",
+      "width" : 540
+    }
+  ],
+  "machine" : "device",
+  "note" : "Rendered on a phone through the Studio export. Text, stickers, climb tags and the heart-rate tile were drawn by the Core Animation tool.",
+  "renderer" : "AVVideoCompositionCoreAnimationTool (before prompt 305)",
+  "version" : 1
+}
