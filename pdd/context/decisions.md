@@ -13633,6 +13633,25 @@ predicate, `ReelHeartRate.isRenderable`, and a placement carries its segment's i
 so a 0.05 s sliver before a 2 s segment of the same clip, or a failed first of two segments of one
 clip, cannot shift the readings.
 
+## 2026-11-26 — A sticker layer gets a bitmap we draw, never a symbol image's `.cgImage` (prompt 308)
+
+The phone's overlay reference showed every Studio sticker burned in as a solid black box. The
+layer was given `UIImage(systemName:).withTintColor(_, renderingMode: .alwaysOriginal).cgImage`:
+a symbol's `.cgImage` is the untinted template raster (measured: mean opaque colour 0, 0, 0), and
+in the export even its transparent pixels came out black. `StudioOverlays.stickerImage` now draws
+the tinted symbol with `UIGraphicsImageRenderer` (`opaque = false`, `preferredRange = .standard`,
+scale 1: the canvas is already in output pixels; scale 2 was four times the memory, about 100 MB
+per sticker on a 4K portrait at sticker scale 6), at its own size into a bitmap of its size
+rounded up, with the longest side capped at the canvas's longest side. The layer is sized to the
+symbol's own size and aspect, as the SwiftUI preview draws it, instead of a square with
+`resizeAspect`. An unknown symbol name draws nothing, as in the preview. Stickers already baked
+into a video before this keep their black boxes; nothing can repair them.
+Rule: any image given to a Core Animation export layer is a bitmap the app drew itself. The
+simulator reproduces the bug and the fix (a bitmap is not a glyph), so `StudioStickerExportTests`
+checks the exported frame's pixels; no golden scene was added (a pixel test says exactly what is
+wrong, and the golden tolerance is for whole frames). The phone's `ref-sticker-f010.png`
+reference (prompt 307) shows the bug and must be captured again with this build.
+
 ## 2026-11-26 — The overlay reference is committed as captured, with the sticker frame marked wrong (prompt 307)
 
 The phone capture of 2026-11-26 (iPhone 13 Pro Max, iOS 27.2.1, `studio-v2` at `25a7d0c8`) is
