@@ -261,7 +261,9 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
         guard WatchSendGate.allowed else { return }   // a UI test never starts a workout on the real Watch
         guard let session, session.activationState == .activated else { return }
         if session.isReachable {
-            session.sendMessage(message.payload, replyHandler: nil) { [weak self] _ in
+            // `@Sendable` (prompt 322): WatchConnectivity runs the error handler on a background queue; a
+            // plain closure here would be a main-actor closure that Swift 6 stops the app for there.
+            session.sendMessage(message.payload, replyHandler: nil) { @Sendable [weak self] _ in
                 // Delivery failed (watch asleep / unreachable) — queue it instead so
                 // a start/stop isn't silently dropped.
                 Task { @MainActor [weak self] in self?.queue(message) }

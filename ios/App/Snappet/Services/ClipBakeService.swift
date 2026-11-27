@@ -82,20 +82,7 @@ final class ClipBakeService: ClipBaking {
         // rendition wholesale (our render already starts from the original bytes via the composer),
         // so prior third-party adjustment data is irrelevant — decline it and Photos hands us the
         // original-based input.
-        // `PHContentEditingInput` isn't Sendable and the completion arrives on a background queue —
-        // box it across the continuation (the ReelExporter/ClipMediaSurface pattern).
-        let inputBox: Box<PHContentEditingInput> = try await withCheckedThrowingContinuation { cont in
-            let options = PHContentEditingInputRequestOptions()
-            options.canHandleAdjustmentData = { _ in false }
-            // An iCloud-evicted original (Optimize iPhone Storage) needs a download to edit — allowed:
-            // a bake is an explicit user action already behind a progress overlay.
-            options.isNetworkAccessAllowed = true
-            asset.requestContentEditingInput(with: options) { input, _ in
-                if let input { cont.resume(returning: Box(input)) }
-                else { cont.resume(throwing: BakeError.editingInputFailed) }
-            }
-        }
-        let input = inputBox.value
+        let input = try await Self.editingInput(for: asset).value
         let output = PHContentEditingOutput(contentEditingInput: input)
         output.adjustmentData = PHAdjustmentData(formatIdentifier: "com.snappet.app.bake",
                                                  formatVersion: "1",
@@ -105,10 +92,7 @@ final class ClipBakeService: ClipBaking {
         // Passthrough-remux into the vended URL: no re-encode, just the right container.
         try await remux(renderedURL, to: output.renderedContentURL)
         do {
-            try await PHPhotoLibrary.shared().performChanges {
-                let request = PHAssetChangeRequest(for: asset)
-                request.contentEditingOutput = output
-            }
+            try await PHPhotoLibrary.shared().performChanges(PhotosChange.setRendition(output, on: asset))
         } catch {
             throw BakeError.writeFailed(error.localizedDescription)
         }
@@ -122,10 +106,9 @@ final class ClipBakeService: ClipBaking {
         try await ensureAuthorized()
         var placeholderID: String?
         do {
-            try await PHPhotoLibrary.shared().performChanges {
-                let creation = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: renderedURL)
-                placeholderID = creation?.placeholderForCreatedAsset?.localIdentifier
-            }
+            let created = PhotosChange.IDBox()
+            try await PHPhotoLibrary.shared().performChanges(PhotosChange.createVideo(at: renderedURL, into: created))
+            placeholderID = created.value
         } catch {
             throw BakeError.writeFailed(error.localizedDescription)
         }
@@ -133,9 +116,7 @@ final class ClipBakeService: ClipBaking {
 
         if let old = PHAsset.fetchAssets(withLocalIdentifiers: [oldLocalIdentifier], options: nil).firstObject {
             do {
-                try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.deleteAssets([old] as NSArray)
-                }
+                try await PHPhotoLibrary.shared().performChanges(PhotosChange.deleteAssets([old]))
             } catch {
                 // Cancelled system dialog (or deletion failure): the app's records must stay on the
                 // ORIGINAL — re-pointing while the original survives would let auto-discovery
@@ -158,6 +139,61 @@ final class ClipBakeService: ClipBaking {
             try await session.export(to: destination, as: .mov)
         } catch {
             throw BakeError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    /// The asset's editing input, requested OFF the main actor (prompt 322). The SDK's completion and
+    /// `canHandleAdjustmentData` blocks aren't `@Sendable`, so closures written in this main-actor
+    /// class would be main-actor closures — and Swift 6 stops the app if Photos calls one on its own
+    /// queue. Built here, in a `nonisolated` function, they belong to no actor.
+    /// `PHContentEditingInput` isn't Sendable — boxed across the continuation (produced + consumed once).
+    nonisolated private static func editingInput(for asset: PHAsset) async throws -> Box<PHContentEditingInput> {
+        try await withCheckedThrowingContinuation { cont in
+            let options = PHContentEditingInputRequestOptions()
+            // We REPLACE the rendition wholesale (see `saveToOriginal`): decline prior adjustment data.
+            options.canHandleAdjustmentData = { _ in false }
+            // An iCloud-evicted original (Optimize iPhone Storage) needs a download to edit — allowed:
+            // a bake is an explicit user action already behind a progress overlay.
+            options.isNetworkAccessAllowed = true
+            asset.requestContentEditingInput(with: options) { input, _ in
+                if let input { cont.resume(returning: Box(input)) }
+                else { cont.resume(throwing: BakeError.editingInputFailed) }
+            }
+        }
+    }
+
+    /// The bake's Photos change blocks (prompt 322). Photos runs a change block on its own queue
+    /// (`com.apple.PHPhotoLibrary.transaction…`), and the SDK types it as a plain `dispatch_block_t`
+    /// (not `@Sendable`). A block written inside this main-actor class was therefore a main-actor
+    /// closure, and Swift 6's run-time check stopped the app the moment Photos ran it: "Save to
+    /// original" and "Replace original" quit on the phone. Each block is built here, in a
+    /// `nonisolated` function, typed `@Sendable`, and captures only Sendable values.
+    enum PhotosChange {
+        /// Carries the created asset's identifier out of a change block (written once, on Photos'
+        /// queue, read after `performChanges` returns).
+        final class IDBox: @unchecked Sendable { var value: String? }
+
+        /// Revertible bake: `output` becomes `asset`'s edited rendition.
+        nonisolated static func setRendition(_ output: PHContentEditingOutput,
+                                             on asset: PHAsset) -> @Sendable () -> Void {
+            let output = Box(output)
+            return {
+                let request = PHAssetChangeRequest(for: asset)
+                request.contentEditingOutput = output.value
+            }
+        }
+
+        /// Destructive bake, step 1: save the video at `url` as a new asset; its identifier goes to `id`.
+        nonisolated static func createVideo(at url: URL, into id: IDBox) -> @Sendable () -> Void {
+            {
+                let creation = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                id.value = creation?.placeholderForCreatedAsset?.localIdentifier
+            }
+        }
+
+        /// Destructive bake, step 2: delete the original (iOS asks the user first).
+        nonisolated static func deleteAssets(_ assets: [PHAsset]) -> @Sendable () -> Void {
+            { PHAssetChangeRequest.deleteAssets(assets as NSArray) }
         }
     }
 
